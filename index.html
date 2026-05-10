@@ -11,9 +11,7 @@
 <meta name="theme-color" content="#161208">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&family=Manrope:wght@300;400;500;700&family=Inter:wght@100;200;300;400;500;600&family=Share+Tech+Mono&family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,600&family=Caveat:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;1,400;1,600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="modes.css">
-<script defer src="modes.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
   /* ═════ DESIGN TOKENS (Forge palette) ═════ */
   :root {
@@ -550,18 +548,6 @@
       <a href="#contact" class="btn-chip"><span class="lang-ru">Контакты</span><span class="lang-en">Contact</span></a>
     </div>
     <div style="display:flex; align-items:center; gap:14px; flex-shrink:0;">
-      <button id="magic-toggle" class="magic-toggle" type="button"
-              aria-label="Switch visual mode"
-              title="Switch visual mode">
-        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <!-- 4-pointed spark: long thin rays, narrow waist, clear star silhouette at 20px -->
-          <path d="M12 1 L13.2 10.8 L23 12 L13.2 13.2 L12 23 L10.8 13.2 L1 12 L10.8 10.8 Z"
-                fill="currentColor"/>
-          <!-- two off-axis micro-sparks for charm -->
-          <circle cx="19" cy="5"  r="1.1" fill="currentColor" opacity="0.85"/>
-          <circle cx="5"  cy="18" r="0.8" fill="currentColor" opacity="0.55"/>
-        </svg>
-      </button>
       <div class="lang-toggle" role="group" aria-label="Language">
         <button data-lang="ru" class="active" aria-pressed="true">RU</button>
         <span class="sep">|</span>
