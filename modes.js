@@ -158,6 +158,7 @@
   }
 
   let activeRain = null;
+  let idleMatrixRain = null;  // persistent low-alpha rain as Matrix ambient
 
   async function enterMatrix() {
     if (!activeRain) {
@@ -168,14 +169,28 @@
     await activeRain.fadeAlphaTo(1, 500);
     await wait(700);
     activeRain.setSpeed(0.4);
-    await activeRain.fadeAlphaTo(0.18, 600);
+    await activeRain.fadeAlphaTo(0.16, 600);
     overlay.classList.remove('is-visible');
     await wait(420);
-    if (activeRain) { activeRain.destroy(); activeRain = null; }
+
+    // Promote the rain to a persistent ambient layer on <body>.
+    // It keeps falling, very softly, behind everything in Matrix mode —
+    // the real cypherpunk atmosphere, not just a transition gimmick.
+    const c = activeRain.canvas;
+    document.body.appendChild(c);
+    c.classList.add('matrix-rain-ambient');
+    idleMatrixRain = activeRain;
+    activeRain = null;
   }
 
   async function exitMatrix() {
-    if (!activeRain) {
+    // Pull the persistent rain back into the overlay for the exit sequence
+    if (idleMatrixRain) {
+      activeRain = idleMatrixRain;
+      idleMatrixRain = null;
+      activeRain.canvas.classList.remove('matrix-rain-ambient');
+      overlay.appendChild(activeRain.canvas);
+    } else if (!activeRain) {
       activeRain = createMatrixRain();
       activeRain.setAlpha(0);
       activeRain.start();
