@@ -937,3 +937,295 @@ html.mode-studio.is-collapsing-content > body > * {
   0%   { opacity: 1; transform: none; }
   100% { opacity: 0; transform: translateY(-22px); }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   DEEP THEME DIFFERENTIATION — phase 5
+   ───────────────────────────────────────────────────────────────────────
+   Beyond color: per-theme fonts, decorative chrome, spacing, radii,
+   uppercase rules, eyebrow ornaments, divider styles.  Same content,
+   same DOM, same behaviour — but each theme reads as a completely
+   different world.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ─────── MATRIX — dense terminal world ─────── */
+html.mode-matrix body,
+html.mode-matrix h1,
+html.mode-matrix h2,
+html.mode-matrix h3,
+html.mode-matrix p,
+html.mode-matrix a,
+html.mode-matrix button,
+html.mode-matrix .btn-primary,
+html.mode-matrix .btn-chip,
+html.mode-matrix .btn-chip-copper,
+html.mode-matrix .lang-toggle button {
+  font-family: 'Share Tech Mono', 'JetBrains Mono', ui-monospace, monospace !important;
+  letter-spacing: 0.01em !important;
+}
+
+/* Matrix headlines: tighter, sharper, with subtle prefix */
+html.mode-matrix h1,
+html.mode-matrix h2,
+html.mode-matrix h3 {
+  font-weight: 400;
+  line-height: 1.1;
+  letter-spacing: 0.005em;
+  text-transform: uppercase;
+}
+
+/* Matrix loses every soft corner — sharp, brutalist */
+html.mode-matrix .btn-chip,
+html.mode-matrix .btn-chip-copper,
+html.mode-matrix .btn-primary,
+html.mode-matrix .btn-secondary {
+  border-radius: 0 !important;
+}
+
+/* Section eyebrows in Matrix — punch them up with stronger brackets */
+html.mode-matrix .section-eyebrow::before { content: '/* '; color: #1F8B3D; }
+html.mode-matrix .section-eyebrow::after  { content: ' */'; color: #1F8B3D; }
+html.mode-matrix .section-eyebrow {
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+/* Service bullets: green chevron with terminal prompt feel */
+html.mode-matrix .svc-bullets li::before { content: '> '; color: #00FF41; }
+
+/* Marquee / ticker — saw-tooth divider rendering for Matrix */
+html.mode-matrix .marquee,
+html.mode-matrix .ticker {
+  background: rgba(0, 255, 65, 0.06) !important;
+  border-top: 1px solid rgba(0, 255, 65, 0.3);
+  border-bottom: 1px solid rgba(0, 255, 65, 0.3);
+}
+
+/* Stats numbers in Matrix — terminal-counter look with leading caret */
+html.mode-matrix .stat-num,
+html.mode-matrix [class*="stat-num"] {
+  font-family: 'Share Tech Mono', monospace !important;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+
+/* Logo dot pulse in Matrix becomes a phosphor blink */
+html.mode-matrix .logo .pulse,
+html.mode-matrix .logo::before {
+  background: #00FF41 !important;
+  box-shadow: 0 0 8px #00FF41, 0 0 14px rgba(0, 255, 65, 0.5);
+}
+
+/* ─────── ISLAND — tropical resort, generous, ornamental ─────── */
+html.mode-island body,
+html.mode-island p,
+html.mode-island a,
+html.mode-island button,
+html.mode-island .btn-primary,
+html.mode-island .btn-chip,
+html.mode-island .btn-chip-copper,
+html.mode-island .lang-toggle button {
+  font-family: 'Manrope', 'Inter', system-ui, sans-serif !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+
+/* Island headlines: Fraunces serif — instant tropical luxury */
+html.mode-island h1,
+html.mode-island h2,
+html.mode-island h3 {
+  font-family: 'Fraunces', 'Manrope', Georgia, serif !important;
+  font-weight: 400;
+  font-style: normal;
+  letter-spacing: -0.015em;
+  line-height: 1.06;
+  text-transform: none !important;
+}
+
+/* Section eyebrows: ditch brackets, use a tropical flourish */
+html.mode-island .section-eyebrow::before {
+  content: '✦ ' !important;
+  color: #C9892D;
+  margin-right: 6px;
+}
+html.mode-island .section-eyebrow::after {
+  content: ' ✦' !important;
+  color: #C9892D;
+  margin-left: 6px;
+}
+html.mode-island .section-eyebrow {
+  font-family: 'Manrope', sans-serif !important;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 500;
+  color: #8B6F47;
+}
+
+/* Service bullets: warm sun glyph */
+html.mode-island .svc-bullets li::before {
+  content: '◌' !important;
+  color: #C9892D !important;
+}
+
+/* Island gives every section more air */
+html.mode-island section {
+  padding-top: 7rem !important;
+  padding-bottom: 7rem !important;
+}
+html.mode-island .hero {
+  padding-top: 6rem !important;
+  padding-bottom: 4rem !important;
+}
+
+/* Generous rounding everywhere */
+html.mode-island .btn-primary,
+html.mode-island .btn-chip,
+html.mode-island .btn-chip-copper {
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  font-weight: 500;
+}
+
+/* Marquee in Island — softer */
+html.mode-island .marquee,
+html.mode-island .ticker {
+  background: rgba(255, 240, 215, 0.6) !important;
+  border-top: 1px solid rgba(201, 137, 45, 0.2);
+  border-bottom: 1px solid rgba(201, 137, 45, 0.2);
+  color: #8B6F47 !important;
+}
+
+/* Stats numbers in Island — display serif, huge */
+html.mode-island .stat-num,
+html.mode-island [class*="stat-num"] {
+  font-family: 'Fraunces', Georgia, serif !important;
+  font-weight: 300;
+  letter-spacing: -0.04em;
+  color: #2D1F12 !important;
+}
+
+/* Logo pulse — warm gold */
+html.mode-island .logo .pulse,
+html.mode-island .logo::before {
+  background: #C9892D !important;
+  box-shadow: 0 0 10px #E5B868, 0 0 20px rgba(229, 184, 104, 0.55);
+}
+
+/* ─────── STUDIO — Apple minimalism, huge thin air ─────── */
+html.mode-studio body,
+html.mode-studio p,
+html.mode-studio a,
+html.mode-studio button,
+html.mode-studio .btn-primary,
+html.mode-studio .btn-chip,
+html.mode-studio .btn-chip-copper,
+html.mode-studio .lang-toggle button {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif !important;
+  text-transform: none !important;
+  letter-spacing: -0.005em !important;
+}
+
+/* Studio headlines: huge, paper-thin, tight */
+html.mode-studio h1 {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 200;
+  letter-spacing: -0.045em !important;
+  line-height: 1.02;
+  text-transform: none !important;
+}
+html.mode-studio h2,
+html.mode-studio h3 {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 300;
+  letter-spacing: -0.035em;
+  text-transform: none !important;
+}
+
+/* Studio strips ALL decorative eyebrow chrome */
+html.mode-studio .section-eyebrow::before,
+html.mode-studio .section-eyebrow::after {
+  content: '' !important;
+  display: none;
+}
+html.mode-studio .section-eyebrow {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 500;
+  font-size: 12px;
+  color: #86868B;
+}
+
+/* Service bullets: minimalist em-dash */
+html.mode-studio .svc-bullets li::before {
+  content: '— ' !important;
+  color: #86868B !important;
+  font-weight: 300;
+}
+
+/* Studio: even MORE air than Island */
+html.mode-studio section {
+  padding-top: 9rem !important;
+  padding-bottom: 9rem !important;
+}
+html.mode-studio .hero {
+  padding-top: 8rem !important;
+  padding-bottom: 6rem !important;
+}
+
+/* Chips/buttons in Studio: no uppercase, hairline rendering */
+html.mode-studio .btn-primary,
+html.mode-studio .btn-chip,
+html.mode-studio .btn-chip-copper,
+html.mode-studio .btn-secondary {
+  text-transform: none !important;
+  letter-spacing: -0.005em !important;
+  font-weight: 500;
+}
+
+/* Marquee in Studio — tone down to soft grey */
+html.mode-studio .marquee,
+html.mode-studio .ticker {
+  background: rgba(0, 0, 0, 0.025) !important;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  color: #86868B !important;
+}
+
+/* Stats in Studio: oversized Inter ExtraLight — paper-thin display */
+html.mode-studio .stat-num,
+html.mode-studio [class*="stat-num"] {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 200 !important;
+  letter-spacing: -0.04em !important;
+  color: #1D1D1F !important;
+}
+
+/* Hero text alignment shift — Studio centres the main pitch */
+html.mode-studio .hero h1,
+html.mode-studio .hero h2 {
+  text-align: center;
+}
+html.mode-studio .hero .hero-meta {
+  text-align: center;
+}
+
+/* Logo pulse — iOS blue */
+html.mode-studio .logo .pulse,
+html.mode-studio .logo::before {
+  background: #007AFF !important;
+  box-shadow: 0 0 8px rgba(0, 122, 255, 0.65), 0 0 16px rgba(0, 122, 255, 0.35);
+}
+
+/* ─────── Mobile: scale back the extreme paddings ─────── */
+@media (max-width: 640px) {
+  html.mode-island section,
+  html.mode-studio section {
+    padding-top: 4rem !important;
+    padding-bottom: 4rem !important;
+  }
+  html.mode-island .hero,
+  html.mode-studio .hero {
+    padding-top: 3rem !important;
+    padding-bottom: 2rem !important;
+  }
+}
