@@ -1,0 +1,6 @@
+# Playwright/test artifacts left during verification
+node_modules/
+package-lock.json
+package.json
+*.png
+magic_toggle_test.mjs
