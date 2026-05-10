@@ -2163,3 +2163,77 @@ html.mode-studio .process-step {
 }
 html.mode-studio .process-step:first-child { border-top: 0; }
 html.mode-studio .process-arrow { display: none !important; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   INTERACTIVE LAYER — phase 9
+   Cyberpunk video bg for Matrix, themed cursor trails, 3D-tilt cards,
+   magnetic CTAs.  All cleaned up per-mode by modes.js.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ─── MATRIX: 3D-perspective tunnel canvas (video-equivalent backdrop) ─── */
+.matrix-video-bg,
+.matrix-tunnel-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.78;
+  mix-blend-mode: screen;
+}
+
+/* Stacking discipline:
+   z-index 0  → tunnel canvas (this)
+   z-index 1  → persistent matrix-rain-ambient canvas
+   z-index 2  → CRT scanlines (body::after)
+   z-index 3  → page content (nav/hero/sections)
+   z-index 9000 → mode-overlay during transitions
+   z-index 9997 → theme-cursor-canvas (trail)
+   z-index 9998 → page chrome (matrix-statusbar / studio-progress)
+   z-index 9999 → magic-toggle button (always on top, always blue)
+   ───────────────────────────────────────────────────────────────────── */
+
+/* ─── Universal themed-cursor trail canvas ─── */
+.theme-cursor-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 9997;
+}
+/* The trail layer should not block clicks even on subpixel touch */
+html .theme-cursor-canvas { touch-action: none; }
+
+/* In Matrix, the cursor canvas adds to the green glow — blend mode keeps
+   it readable over the photo + rain */
+html.mode-matrix .theme-cursor-canvas { mix-blend-mode: screen; }
+/* In Island, the cursor sparkles are warm light — screen blend so they
+   pop on the photo */
+html.mode-island .theme-cursor-canvas { mix-blend-mode: screen; }
+/* In Studio, the halos read as soft shadows on white — multiply darkens */
+html.mode-studio .theme-cursor-canvas { mix-blend-mode: multiply; }
+
+/* The existing studio-spot is now redundant (cursor trail covers it).
+   Hide it in Studio to avoid double-spot drawing. */
+html.mode-studio .studio-spot { display: none !important; }
+
+/* When a Studio card is being tilted, ensure its children inherit the
+   3D context so backdrops don't break */
+html.mode-studio .svc-card,
+html.mode-studio .testimonial-card,
+html.mode-studio .work-grid > *,
+html.mode-studio .process-step {
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+/* Magnetic CTA needs `will-change` for buttery smooth pull */
+html.mode-studio .btn-primary,
+html.mode-island .btn-primary,
+html.mode-matrix .btn-primary {
+  will-change: transform;
+}

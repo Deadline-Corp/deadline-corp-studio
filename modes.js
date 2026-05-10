@@ -184,11 +184,16 @@
 
     // Inject the terminal status bar above everything else
     injectMatrixChrome();
+    // Inject cyberpunk video backdrop (Pexels free) + cursor trail
+    injectMatrixVideo();
+    injectThemeCursor('matrix');
   }
 
   async function exitMatrix() {
     // Tear chrome FIRST
     removeMatrixChrome();
+    removeMatrixVideo();
+    removeThemeCursor();
 
     // Pull the persistent rain back into the overlay for the exit sequence
     if (idleMatrixRain) {
@@ -343,6 +348,359 @@
     if (islandChrome) { islandChrome.remove(); islandChrome = null; }
   }
 
+  // ───────── 3D perspective tunnel for Matrix mode (canvas, no network) ─────────
+  // Renders forward-flying green wire-lines vanishing to a centre point.
+  // Combined with the existing rain canvas + photo bg + scanlines, this
+  // produces a video-grade cinematic backdrop with zero external assets.
+  let matrixVideo = null;          // alias kept for symmetry with old API
+  let matrixTunnelStop = null;
+  function injectMatrixVideo() {
+    removeMatrixVideo();
+    const canvas = document.createElement('canvas');
+    canvas.className = 'matrix-video-bg matrix-tunnel-canvas';
+    canvas.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(canvas);
+    const ctx = canvas.getContext('2d', { alpha: true });
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    let W = 0, H = 0, cx = 0, cy = 0;
+
+    // A set of "rings" travelling outward from the vanishing point.
+    // Each ring has a depth z that decreases over time; perspective
+    // projects it bigger as z → 0 (closer to camera).
+    const RING_COUNT = 18;
+    const SPEED = 0.012;
+    let rings = [];
+    function reset() {
+      rings = [];
+      for (let i = 0; i < RING_COUNT; i++) {
+        rings.push({ z: 1 - (i / RING_COUNT) });
+      }
+    }
+    function resize() {
+      W = window.innerWidth;
+      H = window.innerHeight;
+      canvas.width = W * dpr;
+      canvas.height = H * dpr;
+      canvas.style.width = W + 'px';
+      canvas.style.height = H + 'px';
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.scale(dpr, dpr);
+      cx = W / 2;
+      cy = H * 0.55;          // slight depression — cinematic horizon
+    }
+    function project(z) {
+      // z in (0..1]; near = small z, far = 1. Scale grows as z → 0.
+      const k = 1 / Math.max(z, 0.001);
+      return k;
+    }
+    function frame() {
+      if (!running) return;
+      ctx.clearRect(0, 0, W, H);
+
+      // Radial fog gradient sits behind the wires for depth
+      const fog = ctx.createRadialGradient(cx, cy, 20, cx, cy, Math.max(W, H));
+      fog.addColorStop(0,    'rgba(0, 70, 30, 0.18)');
+      fog.addColorStop(0.4,  'rgba(0, 40, 18, 0.12)');
+      fog.addColorStop(1,    'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = fog;
+      ctx.fillRect(0, 0, W, H);
+
+      // 8 radial spokes vanishing to centre
+      ctx.strokeStyle = 'rgba(0, 255, 65, 0.18)';
+      ctx.lineWidth = 1;
+      const SPOKES = 16;
+      for (let s = 0; s < SPOKES; s++) {
+        const a = (s / SPOKES) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(a) * W, cy + Math.sin(a) * H);
+        ctx.stroke();
+      }
+
+      // Travelling rings (rectangular hoops)
+      for (const r of rings) {
+        r.z -= SPEED;
+        if (r.z <= 0.0) r.z = 1.0;
+
+        const scale = project(r.z);
+        const halfW = (W * 0.4) * scale;
+        const halfH = (H * 0.32) * scale;
+        const left   = cx - halfW;
+        const right  = cx + halfW;
+        const top    = cy - halfH;
+        const bottom = cy + halfH;
+
+        // Distance fade: near is brighter
+        const fade = Math.min(1, (1 - r.z) * 1.6);
+        ctx.strokeStyle = `rgba(0, 255, 65, ${0.55 * fade})`;
+        ctx.lineWidth = 1 + fade * 1.2;
+        ctx.shadowBlur = 14 * fade;
+        ctx.shadowColor = 'rgba(0, 255, 65, 0.45)';
+        ctx.strokeRect(left, top, right - left, bottom - top);
+
+        // 4 corner sparks for tech feel
+        ctx.fillStyle = `rgba(190, 255, 210, ${0.7 * fade})`;
+        const sp = 2 + fade * 2;
+        ctx.fillRect(left - sp / 2,  top - sp / 2,    sp, sp);
+        ctx.fillRect(right - sp / 2, top - sp / 2,    sp, sp);
+        ctx.fillRect(left - sp / 2,  bottom - sp / 2, sp, sp);
+        ctx.fillRect(right - sp / 2, bottom - sp / 2, sp, sp);
+      }
+
+      ctx.shadowBlur = 0;
+      raf = requestAnimationFrame(frame);
+    }
+
+    let running = true;
+    let raf = null;
+    reset();
+    resize();
+    window.addEventListener('resize', resize);
+    raf = requestAnimationFrame(frame);
+
+    matrixVideo = canvas;
+    matrixTunnelStop = () => {
+      running = false;
+      if (raf) cancelAnimationFrame(raf);
+      window.removeEventListener('resize', resize);
+    };
+  }
+  function removeMatrixVideo() {
+    if (matrixTunnelStop) { matrixTunnelStop(); matrixTunnelStop = null; }
+    if (matrixVideo) { matrixVideo.remove(); matrixVideo = null; }
+  }
+
+  // ───────── Themed cursor trail (canvas, per mode) ─────────
+  let cursorTrail = null;
+  function injectThemeCursor(theme) {
+    removeThemeCursor();
+    cursorTrail = new ThemeCursor(theme);
+  }
+  function removeThemeCursor() {
+    if (cursorTrail) { cursorTrail.destroy(); cursorTrail = null; }
+  }
+
+  class ThemeCursor {
+    constructor(theme) {
+      this.theme = theme;
+      this.particles = [];
+      this.lastSpawn = 0;
+      this.mouseX = -9999;
+      this.mouseY = -9999;
+      this.canvas = document.createElement('canvas');
+      this.canvas.className = 'theme-cursor-canvas';
+      document.body.appendChild(this.canvas);
+      this.ctx = this.canvas.getContext('2d');
+      this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+      this.resize();
+      this.running = true;
+
+      this._resize = () => this.resize();
+      this._move = (e) => this.onMove(e);
+      window.addEventListener('resize', this._resize);
+      document.addEventListener('mousemove', this._move, { passive: true });
+
+      this._frame = this.frame.bind(this);
+      requestAnimationFrame(this._frame);
+
+      // Matrix glyph pool for trail
+      this.glyphs = '01アイウエオカキクケコ<>{}[]/\\=ABCDEF0123456789'.split('');
+    }
+    resize() {
+      const w = window.innerWidth, h = window.innerHeight;
+      this.w = w; this.h = h;
+      this.canvas.width  = w * this.dpr;
+      this.canvas.height = h * this.dpr;
+      this.canvas.style.width  = w + 'px';
+      this.canvas.style.height = h + 'px';
+      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+      this.ctx.scale(this.dpr, this.dpr);
+    }
+    onMove(e) {
+      this.mouseX = e.clientX;
+      this.mouseY = e.clientY;
+      const now = performance.now();
+      // Throttle spawn to ~60Hz
+      if (now - this.lastSpawn < 14) return;
+      this.lastSpawn = now;
+      this.spawn();
+    }
+    spawn() {
+      if (this.theme === 'matrix') {
+        this.particles.push({
+          x: this.mouseX + (Math.random() - 0.5) * 4,
+          y: this.mouseY + (Math.random() - 0.5) * 4,
+          vx: (Math.random() - 0.5) * 0.4,
+          vy: 0.6 + Math.random() * 0.9,
+          ch: this.glyphs[(Math.random() * this.glyphs.length) | 0],
+          life: 1,
+          decay: 0.018 + Math.random() * 0.018,
+        });
+      } else if (this.theme === 'island') {
+        // golden water dot, multiple at once for a soft sparkle
+        for (let i = 0; i < 2; i++) {
+          this.particles.push({
+            x: this.mouseX + (Math.random() - 0.5) * 8,
+            y: this.mouseY + (Math.random() - 0.5) * 8,
+            vx: (Math.random() - 0.5) * 0.6,
+            vy: (Math.random() - 0.5) * 0.6,
+            r: 4 + Math.random() * 5,
+            life: 1,
+            decay: 0.022 + Math.random() * 0.015,
+          });
+        }
+      } else if (this.theme === 'studio') {
+        this.particles.push({
+          x: this.mouseX,
+          y: this.mouseY,
+          r: 3 + Math.random() * 3,
+          life: 1,
+          decay: 0.045 + Math.random() * 0.02,
+        });
+      }
+    }
+    frame() {
+      if (!this.running) return;
+      this.ctx.clearRect(0, 0, this.w, this.h);
+
+      this.particles = this.particles.filter(p => {
+        p.life -= p.decay;
+        return p.life > 0;
+      });
+
+      if (this.theme === 'matrix') {
+        this.ctx.font = '15px "Share Tech Mono", monospace';
+        this.ctx.textBaseline = 'top';
+        for (const p of this.particles) {
+          p.x += p.vx; p.y += p.vy;
+          const a = p.life;
+          this.ctx.fillStyle = `rgba(190, 255, 210, ${a})`;
+          this.ctx.fillText(p.ch, p.x, p.y);
+          if (Math.random() < 0.18) p.ch = this.glyphs[(Math.random() * this.glyphs.length) | 0];
+        }
+      } else if (this.theme === 'island') {
+        for (const p of this.particles) {
+          p.x += p.vx; p.y += p.vy;
+          const r = p.r * (1.4 - p.life * 0.6);
+          const grad = this.ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+          grad.addColorStop(0, `rgba(255, 230, 160, ${p.life * 0.55})`);
+          grad.addColorStop(0.6, `rgba(229, 184, 104, ${p.life * 0.22})`);
+          grad.addColorStop(1, 'rgba(201, 137, 45, 0)');
+          this.ctx.fillStyle = grad;
+          this.ctx.beginPath();
+          this.ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+          this.ctx.fill();
+        }
+      } else if (this.theme === 'studio') {
+        for (const p of this.particles) {
+          const r = p.r * (1 + (1 - p.life) * 6);
+          const grad = this.ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+          grad.addColorStop(0, `rgba(0, 122, 255, ${p.life * 0.28})`);
+          grad.addColorStop(0.7, `rgba(90, 200, 250, ${p.life * 0.10})`);
+          grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+          this.ctx.fillStyle = grad;
+          this.ctx.beginPath();
+          this.ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+          this.ctx.fill();
+        }
+      }
+
+      requestAnimationFrame(this._frame);
+    }
+    destroy() {
+      this.running = false;
+      window.removeEventListener('resize', this._resize);
+      document.removeEventListener('mousemove', this._move);
+      this.canvas.remove();
+    }
+  }
+
+  // ───────── Studio 3D-tilt cards (cursor-driven perspective) ─────────
+  let tiltTargets = [];
+  let tiltHandlers = new Map();
+
+  function enableStudio3DTilt() {
+    disableStudio3DTilt();
+    tiltTargets = [...document.querySelectorAll(
+      '.svc-card, .testimonial-card, .work-grid > *, .process-step'
+    )];
+    tiltTargets.forEach(el => {
+      el.style.transformStyle = 'preserve-3d';
+      el.style.transition = 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)';
+
+      const onMove = (e) => {
+        const rect = el.getBoundingClientRect();
+        const x = ((e.clientX - rect.left) / rect.width  - 0.5);
+        const y = ((e.clientY - rect.top)  / rect.height - 0.5);
+        el.style.transform =
+          `perspective(900px) rotateY(${x * 6}deg) rotateX(${-y * 6}deg) translateZ(0)`;
+        el.style.transition = 'transform 60ms linear';
+      };
+      const onLeave = () => {
+        el.style.transition = 'transform 360ms cubic-bezier(0.22, 1, 0.36, 1)';
+        el.style.transform = '';
+      };
+      el.addEventListener('mousemove', onMove);
+      el.addEventListener('mouseleave', onLeave);
+      tiltHandlers.set(el, { onMove, onLeave });
+    });
+  }
+  function disableStudio3DTilt() {
+    tiltTargets.forEach(el => {
+      const h = tiltHandlers.get(el);
+      if (h) {
+        el.removeEventListener('mousemove', h.onMove);
+        el.removeEventListener('mouseleave', h.onLeave);
+      }
+      el.style.transform = '';
+      el.style.transformStyle = '';
+      el.style.transition = '';
+    });
+    tiltTargets = [];
+    tiltHandlers.clear();
+  }
+
+  // ───────── Studio magnetic CTA (button pulls toward the cursor) ─────────
+  let magneticTargets = [];
+  let magneticHandlers = new Map();
+
+  function enableMagneticCTA() {
+    disableMagneticCTA();
+    magneticTargets = [...document.querySelectorAll('.btn-primary')];
+    magneticTargets.forEach(el => {
+      el.style.transition = 'transform 220ms cubic-bezier(0.22, 1, 0.36, 1)';
+      const onMove = (e) => {
+        const rect = el.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top  + rect.height / 2;
+        const dx = (e.clientX - cx) * 0.28;
+        const dy = (e.clientY - cy) * 0.28;
+        el.style.transition = 'transform 90ms linear';
+        el.style.transform = `translate(${dx.toFixed(1)}px, ${dy.toFixed(1)}px)`;
+      };
+      const onLeave = () => {
+        el.style.transition = 'transform 360ms cubic-bezier(0.34, 1.56, 0.64, 1)';
+        el.style.transform = '';
+      };
+      el.addEventListener('mousemove', onMove);
+      el.addEventListener('mouseleave', onLeave);
+      magneticHandlers.set(el, { onMove, onLeave });
+    });
+  }
+  function disableMagneticCTA() {
+    magneticTargets.forEach(el => {
+      const h = magneticHandlers.get(el);
+      if (h) {
+        el.removeEventListener('mousemove', h.onMove);
+        el.removeEventListener('mouseleave', h.onLeave);
+      }
+      el.style.transform = '';
+      el.style.transition = '';
+    });
+    magneticTargets = [];
+    magneticHandlers.clear();
+  }
+
   let studioChrome = null;
   let studioProgressHandler = null;
   function injectStudioChrome() {
@@ -384,9 +742,11 @@
     scene.remove();
     injectIslandBirds();
     injectIslandChrome();
+    injectThemeCursor('island');
   }
 
   async function exitIsland() {
+    removeThemeCursor();
     const scene = createIslandScene();
     scene.classList.add('is-noon', 'is-silhouette-on');
     overlay.classList.add('is-visible');
@@ -549,15 +909,21 @@
     HTML.classList.remove('is-revealing');
     clearBodyChildIndices();
 
-    // Install idle signatures + chrome
+    // Install idle signatures + chrome + cursor + 3D tilt + magnetic CTA
     injectStudioIdle();
     injectStudioChrome();
+    injectThemeCursor('studio');
+    enableStudio3DTilt();
+    enableMagneticCTA();
   }
 
   async function exitStudio() {
     // Tear idle + chrome FIRST so spot/parallax don't flicker through the transition
     removeStudioIdle();
     removeStudioChrome();
+    removeThemeCursor();
+    disableStudio3DTilt();
+    disableMagneticCTA();
     setBodyChildIndices();
 
     // 1. Body children rise off-screen in reverse stagger
