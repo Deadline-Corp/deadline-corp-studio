@@ -400,7 +400,7 @@ html.mode-island body {
       rgba(255, 244, 220, 0.55) 0%,
       rgba(255, 240, 210, 0.30) 30%,
       rgba(255, 235, 200, 0.55) 100%),
-    url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=85') center/cover fixed,
+    url('https://images.unsplash.com/photo-1547036967-23d11aacaee0?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=85') center/cover fixed,
     #FBEFD8 !important;
   background-blend-mode: lighten, normal;
 }
@@ -1066,10 +1066,10 @@ html.mode-island .svc-bullets li::before {
   color: #C9892D !important;
 }
 
-/* Island gives every section more air */
+/* Island gives every section more air — but not so much it hurts pacing */
 html.mode-island section {
-  padding-top: 7rem !important;
-  padding-bottom: 7rem !important;
+  padding-top: 5rem !important;
+  padding-bottom: 5rem !important;
 }
 html.mode-island .hero {
   padding-top: 6rem !important;
@@ -1162,14 +1162,14 @@ html.mode-studio .svc-bullets li::before {
   font-weight: 300;
 }
 
-/* Studio: even MORE air than Island */
+/* Studio: more air than Island, but balanced — not gaping */
 html.mode-studio section {
-  padding-top: 9rem !important;
-  padding-bottom: 9rem !important;
+  padding-top: 6rem !important;
+  padding-bottom: 6rem !important;
 }
 html.mode-studio .hero {
-  padding-top: 8rem !important;
-  padding-bottom: 6rem !important;
+  padding-top: 5rem !important;
+  padding-bottom: 4rem !important;
 }
 
 /* Chips/buttons in Studio: no uppercase, hairline rendering */
@@ -1377,7 +1377,7 @@ html.mode-island .section-headline {
 /* Make hero headlines extra-large to give the script the spotlight */
 html.mode-island .hero h1,
 html.mode-island .hero-text {
-  font-size: clamp(3.5rem, 8.5vw, 8.5rem) !important;
+  font-size: clamp(3rem, 7vw, 6.5rem) !important;
 }
 html.mode-island .section-headline {
   font-size: clamp(2.5rem, 5.5vw, 5rem) !important;
@@ -1575,7 +1575,7 @@ html.mode-island body {
       rgba(255, 244, 220, 0.35) 0%,
       rgba(255, 240, 210, 0.15) 30%,
       rgba(255, 235, 200, 0.40) 100%),
-    url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=85') center/cover fixed,
+    url('https://images.unsplash.com/photo-1547036967-23d11aacaee0?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=85') center/cover fixed,
     #FBEFD8 !important;
 }
 html.mode-island body::before {
@@ -1593,10 +1593,10 @@ html.mode-studio .hero h1,
 html.mode-studio .hero-text,
 html.mode-studio .section-headline {
   font-family: 'Inter', system-ui, sans-serif !important;
-  font-weight: 100 !important;
-  letter-spacing: -0.055em !important;
-  line-height: 0.98;
-  font-size: clamp(3.5rem, 9vw, 9rem) !important;
+  font-weight: 200 !important;
+  letter-spacing: -0.045em !important;
+  line-height: 1.0;
+  font-size: clamp(3rem, 7vw, 7rem) !important;
   text-align: center !important;
 }
 html.mode-studio .section-headline {
@@ -1756,12 +1756,6 @@ html.mode-studio .manifesto-text {
   text-align: center;
 }
 
-/* Section padding in Studio — even larger to give content breathing room */
-html.mode-studio section {
-  padding-top: 10rem !important;
-  padding-bottom: 10rem !important;
-}
-
 /* Mobile: scale these radical sizes down */
 @media (max-width: 640px) {
   html.mode-island .hero h1,
@@ -1805,7 +1799,7 @@ html.mode-matrix body {
       rgba(0, 0, 0, 0.85) 80%,
       rgba(0, 0, 0, 0.96) 100%),
     /* Cyberpunk green-code-wall imagery */
-    url('https://images.unsplash.com/photo-1633265486064-086b219458ec?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=85') center/cover fixed,
+    url('https://images.unsplash.com/photo-1635070041078-e363dbe005cb?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=85') center/cover fixed,
     #000 !important;
 }
 
@@ -1844,7 +1838,7 @@ html.mode-island body {
       rgba(255, 215, 155, 0.08) 30%,
       rgba(255, 195, 130, 0.32) 100%),
     /* Cinematic golden-hour sunset over water */
-    url('https://images.unsplash.com/photo-1506953823976-52e1fdc0149a?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=85') center/cover fixed,
+    url('https://images.unsplash.com/photo-1547036967-23d11aacaee0?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=85') center/cover fixed,
     #FBEFD8 !important;
 }
 /* Reduce the body::before blur so the sunset reads as a real photograph */
@@ -2029,8 +2023,11 @@ html.mode-matrix body { padding-top: 22px; }
 /* ─── MATRIX: dense packed 4-column services, ASCII grid look ─── */
 html.mode-matrix .services-grid {
   display: grid !important;
-  grid-template-columns: repeat(4, 1fr) !important;
+  grid-template-columns: repeat(2, 1fr) !important;
   gap: 0 !important;
+}
+@media (min-width: 1100px) {
+  html.mode-matrix .services-grid { grid-template-columns: repeat(4, 1fr) !important; }
 }
 html.mode-matrix .services-grid > * {
   border-right: 1px dashed rgba(0, 255, 65, 0.25);
@@ -2039,7 +2036,7 @@ html.mode-matrix .services-grid > * {
 html.mode-matrix .stats-grid,
 html.mode-matrix .stats-band {
   display: grid !important;
-  grid-template-columns: repeat(4, 1fr) !important;
+  grid-template-columns: repeat(2, 1fr) !important;
   gap: 0 !important;
   border-top: 1px dashed rgba(0, 255, 65, 0.35);
   border-bottom: 1px dashed rgba(0, 255, 65, 0.35);

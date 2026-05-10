@@ -4,3 +4,6 @@ package-lock.json
 package.json
 *.png
 magic_toggle_test.mjs
+*.jpg
+*.mjs
+*_results.json
