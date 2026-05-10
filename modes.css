@@ -367,3 +367,331 @@ html.mode-matrix.is-glitching body {
   80%  { transform: translateX(1px); }
   100% { transform: none; filter: none; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   ISLAND MODE — warm tropical reskin via design tokens
+   Photo backdrop with blur+fog, dark-cocoa text, gold/azure accents.
+   ═══════════════════════════════════════════════════════════════════════ */
+html.mode-island {
+  --bg:           #FBEFD8;       /* warm sand fallback */
+  --surface:      #FFFFFF;       /* card surface — white */
+  --surface-2:    #FFF7E6;
+  --border-dark:  #E8D5A8;
+  --cream:        #2D1F12;       /* primary text — dark cocoa */
+  --mute:         #8B6F47;
+  --copper:       #C9892D;       /* gold accent (kept warm) */
+  --sand:         #E5B868;
+  --rust:         #C66A3A;       /* terracotta */
+}
+
+html.mode-island body {
+  font-family: 'Manrope', system-ui, sans-serif !important;
+  font-weight: 400;
+  line-height: 1.65;
+  letter-spacing: -0.005em;
+  color: var(--cream);
+
+  /* Tropical photo backdrop with blur+haze.
+     Image is from Unsplash CDN (free license, fast cached) and blurred so
+     it never competes with content — pure atmosphere. */
+  background:
+    /* Top haze: warm white-out fading into the scene */
+    linear-gradient(180deg,
+      rgba(255, 244, 220, 0.55) 0%,
+      rgba(255, 240, 210, 0.30) 30%,
+      rgba(255, 235, 200, 0.55) 100%),
+    url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=85') center/cover fixed,
+    #FBEFD8 !important;
+  background-blend-mode: lighten, normal;
+}
+
+/* The photo itself is sharp from Unsplash; we soften it via a fixed pseudo
+   element with backdrop-filter so cards on top stay legible. */
+html.mode-island body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  backdrop-filter: blur(14px) saturate(0.92) brightness(1.08);
+  -webkit-backdrop-filter: blur(14px) saturate(0.92) brightness(1.08);
+  background: rgba(255, 240, 215, 0.35);
+  pointer-events: none;
+}
+
+/* Headlines — soft, generous */
+html.mode-island h1, html.mode-island h2, html.mode-island h3 {
+  font-family: 'Manrope', system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-shadow: 0 2px 24px rgba(255, 240, 200, 0.65);
+}
+
+/* Existing nav surfaces become translucent over the photo */
+html.mode-island .nav-bar,
+html.mode-island .hero,
+html.mode-island section {
+  background: transparent !important;
+}
+
+/* All section eyebrows etc. lose the [bracket] hard look — softer */
+html.mode-island .section-eyebrow::before,
+html.mode-island .section-eyebrow::after {
+  color: var(--copper);
+}
+
+/* Cards — white, rounded, soft shadow with warm glow */
+html.mode-island .btn-chip,
+html.mode-island .btn-chip-copper {
+  background: rgba(255, 255, 255, 0.85) !important;
+  color: #3D2817 !important;
+  border-color: rgba(201, 137, 45, 0.35) !important;
+  border-radius: 999px !important;
+  text-shadow: none;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow:
+    0 4px 18px -4px rgba(80, 50, 20, 0.12),
+    0 1px 0 rgba(255, 255, 255, 0.8) inset;
+  transition: transform 220ms ease, box-shadow 280ms ease, background 220ms ease;
+}
+html.mode-island .btn-chip:hover,
+html.mode-island .btn-chip-copper:hover {
+  transform: translateY(-2px);
+  background: #fff !important;
+  box-shadow:
+    0 12px 28px -8px rgba(201, 137, 45, 0.4),
+    0 0 0 1px rgba(201, 137, 45, 0.45) inset;
+}
+
+html.mode-island .btn-primary {
+  background: linear-gradient(135deg, #E8B85C 0%, #C9892D 50%, #B6701C 100%) !important;
+  color: #2D1F12 !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  text-shadow: 0 1px 0 rgba(255, 240, 200, 0.45);
+  box-shadow:
+    0 8px 22px -6px rgba(201, 137, 45, 0.55),
+    0 1px 0 rgba(255, 255, 255, 0.5) inset;
+  transition: transform 200ms ease, box-shadow 280ms ease, filter 200ms ease;
+}
+html.mode-island .btn-primary:hover {
+  transform: translateY(-2px) scale(1.02);
+  filter: brightness(1.08);
+  box-shadow:
+    0 0 0 6px rgba(229, 184, 104, 0.18),
+    0 14px 32px -6px rgba(201, 137, 45, 0.65),
+    0 1px 0 rgba(255, 255, 255, 0.6) inset;
+}
+
+/* Lang toggle: warm sand */
+html.mode-island .lang-toggle button { color: rgba(60, 40, 20, 0.5); }
+html.mode-island .lang-toggle button:hover,
+html.mode-island .lang-toggle button.active {
+  color: #B6701C;
+  border-bottom-color: #B6701C;
+}
+
+/* ::selection */
+html.mode-island ::selection {
+  background: rgba(201, 137, 45, 0.35);
+  color: #2D1F12;
+  text-shadow: none;
+}
+
+/* Cursor — warm sun pointer (small golden glow circle) */
+html.mode-island,
+html.mode-island body {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'><defs><radialGradient id='g'><stop offset='0%' stop-color='%23FFE8A0' stop-opacity='1'/><stop offset='60%' stop-color='%23E5B868' stop-opacity='0.5'/><stop offset='100%' stop-color='%23C9892D' stop-opacity='0'/></radialGradient></defs><circle cx='14' cy='14' r='14' fill='url(%23g)'/><circle cx='14' cy='14' r='3' fill='%232D1F12' opacity='0.7'/></svg>") 14 14, default;
+}
+
+/* Scrollbar — warm sandstone */
+html.mode-island {
+  scrollbar-color: #C9892D rgba(255, 240, 215, 0.3);
+  scrollbar-width: thin;
+}
+html.mode-island::-webkit-scrollbar { width: 10px; }
+html.mode-island::-webkit-scrollbar-track { background: rgba(255, 240, 215, 0.3); }
+html.mode-island::-webkit-scrollbar-thumb {
+  background: linear-gradient(#E5B868, #C9892D);
+  border-radius: 8px;
+}
+
+/* Idle birds — two CSS-only silhouettes drift across the sky behind everything */
+html.mode-island::before {
+  content: '🦅';                      /* placeholder — replaced by SVG via body::after stacking */
+  display: none;                     /* hidden — we use JS-injected birds instead */
+}
+
+/* Ambient bird silhouette — created via JS, positioned in the upper region */
+.island-bird {
+  position: fixed;
+  top: 18%;
+  left: -60px;
+  width: 28px;
+  height: 16px;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  color: rgba(45, 31, 18, 0.32);
+  animation: island-bird-flight 60s linear infinite;
+}
+.island-bird.b2 { top: 28%; animation-duration: 75s; animation-delay: 18s; transform: scale(0.7); }
+.island-bird svg { width: 100%; height: 100%; display: block; }
+@keyframes island-bird-flight {
+  0%   { transform: translateX(0)        translateY(0)   scale(1);   opacity: 0; }
+  6%   { opacity: 0.45; }
+  20%  { transform: translateX(20vw)     translateY(-10px) scale(1.02); }
+  50%  { transform: translateX(50vw)     translateY(8px)   scale(0.95); opacity: 0.5; }
+  85%  { transform: translateX(85vw)     translateY(-4px)  scale(0.9);  opacity: 0.35; }
+  100% { transform: translateX(105vw)    translateY(0)     scale(0.85); opacity: 0; }
+}
+.island-bird.b2 { animation-name: island-bird-flight-2; }
+@keyframes island-bird-flight-2 {
+  0%   { transform: translateX(0)        translateY(0); opacity: 0; }
+  10%  { opacity: 0.32; }
+  60%  { transform: translateX(60vw)     translateY(-18px); opacity: 0.32; }
+  100% { transform: translateX(108vw)    translateY(-8px);  opacity: 0; }
+}
+
+/* Heat haze on top edge */
+html.mode-island body::after {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 120px;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(80% 100% at 50% 0%,
+    rgba(255, 240, 200, 0.32) 0%,
+    rgba(255, 240, 200, 0) 70%);
+  mix-blend-mode: lighten;
+  animation: island-haze 7s ease-in-out infinite alternate;
+}
+@keyframes island-haze {
+  0%   { transform: translateY(0)   scaleY(1); opacity: 0.85; }
+  100% { transform: translateY(-2px) scaleY(1.04); opacity: 1; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   ISLAND THEATRE — sunrise scene injected by JS into .mode-overlay
+   ═══════════════════════════════════════════════════════════════════════ */
+.island-scene {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+/* Sky gradient layer — animates through dawn colors */
+.island-scene .sky {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, #050a1c 0%, #0a1430 35%, #11183a 60%, #1c1538 100%);
+  transition: background 1100ms cubic-bezier(0.32, 0, 0.5, 1);
+}
+.island-scene.is-dawning .sky {
+  background: linear-gradient(180deg,
+    #1a2a4a 0%,
+    #4a3870 18%,
+    #c25a3c 45%,
+    #f0a04a 70%,
+    #ffd58c 100%);
+}
+.island-scene.is-noon .sky {
+  background: linear-gradient(180deg,
+    #87b8d9 0%,
+    #ffd9a0 50%,
+    #ffe8b8 100%);
+}
+
+/* Horizon water — reflective sliver at the bottom-third */
+.island-scene .sea {
+  position: absolute;
+  left: 0; right: 0;
+  bottom: 0;
+  height: 38%;
+  background:
+    linear-gradient(180deg,
+      rgba(8, 18, 38, 0.45) 0%,
+      rgba(20, 30, 60, 0.7) 40%,
+      rgba(0, 0, 0, 0.85) 100%);
+  transition: background 1100ms ease, transform 1100ms ease;
+}
+.island-scene.is-dawning .sea {
+  background:
+    linear-gradient(180deg,
+      rgba(180, 80, 40, 0.55) 0%,
+      rgba(120, 60, 80, 0.7) 50%,
+      rgba(20, 30, 50, 0.9) 100%);
+}
+
+/* Sun disc — rises and floods */
+.island-scene .sun {
+  position: absolute;
+  left: 50%;
+  bottom: 30%;
+  width: 220px;
+  height: 220px;
+  margin-left: -110px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff7d8 0%, #ffe5a0 35%, #ffb347 70%, transparent 100%);
+  filter: blur(1px);
+  opacity: 0;
+  transform: translateY(140px) scale(0.5);
+  transition: transform 1300ms cubic-bezier(0.22, 1, 0.36, 1),
+              opacity 1300ms ease,
+              filter 1300ms ease;
+}
+.island-scene.is-dawning .sun {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+.island-scene.is-noon .sun {
+  opacity: 1;
+  transform: translateY(-80px) scale(1.4);
+  filter: blur(0px) brightness(1.4);
+}
+
+/* Palm + horizon silhouettes — rendered as SVG injected by JS */
+.island-scene .silhouette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 700ms ease;
+}
+.island-scene.is-silhouette-on .silhouette { opacity: 1; }
+.island-scene .silhouette svg {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* The white flash that caps the sunrise */
+.island-scene .flash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(60% 70% at 50% 65%,
+    rgba(255, 255, 235, 1) 0%,
+    rgba(255, 240, 200, 0.6) 45%,
+    rgba(255, 220, 160, 0) 100%);
+  opacity: 0;
+  transition: opacity 350ms ease-out;
+  mix-blend-mode: screen;
+}
+.island-scene.is-flashing .flash { opacity: 1; }
+
+/* Fast sun-set for exit */
+.island-scene.is-falling .sun {
+  transform: translateY(180px) scale(0.6);
+  opacity: 0.85;
+  filter: blur(3px) brightness(0.8);
+  transition: transform 600ms cubic-bezier(0.55, 0, 0.7, 0.2),
+              opacity 600ms ease,
+              filter 600ms ease;
+}
+.island-scene.is-falling .sky {
+  background: linear-gradient(180deg, #02050f 0%, #060a18 60%, #000 100%);
+  transition: background 700ms ease-in;
+}
