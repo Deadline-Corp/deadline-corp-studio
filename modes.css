@@ -212,3 +212,158 @@ html.is-transitioning .magic-toggle {
     height: 34px;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   THEME OVERLAY CANVAS — full-screen scrim used by all theatrical transitions
+   ═══════════════════════════════════════════════════════════════════════ */
+.mode-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 400ms linear;
+  background: #000;
+  will-change: opacity;
+}
+.mode-overlay.is-visible { opacity: 1; }
+.mode-overlay canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Magic button stays above any overlay */
+.magic-toggle { z-index: 9999; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MATRIX MODE — re-paint via design tokens (everything that uses these vars
+   re-skins automatically: btn-chip, btn-primary gradient, borders, text,
+   selection, hero grid, etc.)
+   ═══════════════════════════════════════════════════════════════════════ */
+html.mode-matrix {
+  --bg:           #000000;
+  --surface:      #04100A;
+  --surface-2:    #082014;
+  --border-dark:  #0E1F12;
+  --cream:        #00FF41;   /* primary text — iconic matrix green */
+  --mute:         #1F8B3D;   /* dim green for muted text */
+  --copper:       #5BFF7E;   /* mid-bright green for accents */
+  --sand:         #A5FFB7;   /* highlight green */
+  --rust:         #00CD33;   /* darker green */
+}
+
+/* Body-level overrides that the existing CSS doesn't channel through vars */
+html.mode-matrix body {
+  background: #000 !important;
+  color: var(--cream);
+  caret-color: #00FF41;
+}
+
+/* ::selection in Matrix — inverted contrast */
+html.mode-matrix ::selection {
+  background: #00FF41;
+  color: #000;
+  text-shadow: none;
+}
+
+/* Card-ish surfaces become transparent with a thin green outline */
+html.mode-matrix .nav-bar,
+html.mode-matrix .hero,
+html.mode-matrix section {
+  background: transparent !important;
+}
+
+/* All existing chips, buttons, cards take a green outline + transparent fill */
+html.mode-matrix .btn-chip,
+html.mode-matrix .btn-chip-copper {
+  background: rgba(0, 255, 65, 0.04) !important;
+  color: #00FF41 !important;
+  border-color: rgba(0, 255, 65, 0.45) !important;
+  text-shadow: 0 0 6px rgba(0, 255, 65, 0.4);
+}
+html.mode-matrix .btn-primary {
+  background: transparent !important;
+  color: #00FF41 !important;
+  border: 1px solid #00FF41 !important;
+  text-shadow: 0 0 8px rgba(0, 255, 65, 0.5);
+  box-shadow: 0 0 18px rgba(0, 255, 65, 0.25), inset 0 0 12px rgba(0, 255, 65, 0.1);
+}
+html.mode-matrix .btn-primary:hover {
+  background: rgba(0, 255, 65, 0.08) !important;
+  box-shadow: 0 0 24px rgba(0, 255, 65, 0.45), inset 0 0 16px rgba(0, 255, 65, 0.15);
+}
+
+/* Lang toggle: keep readable in matrix */
+html.mode-matrix .lang-toggle button { color: rgba(0, 255, 65, 0.5); }
+html.mode-matrix .lang-toggle button:hover,
+html.mode-matrix .lang-toggle button.active {
+  color: #00FF41;
+  border-bottom-color: #00FF41;
+}
+
+/* Headline glow — subtle */
+html.mode-matrix h1, html.mode-matrix h2, html.mode-matrix h3 {
+  text-shadow: 0 0 12px rgba(0, 255, 65, 0.45);
+}
+
+/* Custom green caret/cursor — terminal vibe.
+   We use an SVG data URI for a small green underscore glyph. */
+html.mode-matrix,
+html.mode-matrix body {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='22' viewBox='0 0 16 22'><rect x='1' y='17' width='14' height='3' fill='%2300FF41'/><rect x='1' y='17' width='14' height='3' fill='%2300FF41' opacity='0.35'><animate attributeName='opacity' values='1;0;1' dur='1s' repeatCount='indefinite'/></rect></svg>") 8 21, text;
+}
+
+/* Decode-hover micro-glitch on interactive elements */
+html.mode-matrix .btn-chip,
+html.mode-matrix .btn-chip-copper,
+html.mode-matrix .btn-primary,
+html.mode-matrix .lang-toggle button,
+html.mode-matrix a {
+  position: relative;
+  transition: text-shadow 120ms ease, transform 120ms ease;
+}
+html.mode-matrix .btn-chip:hover,
+html.mode-matrix .btn-chip-copper:hover,
+html.mode-matrix .btn-primary:hover,
+html.mode-matrix a:hover {
+  animation: matrix-decode 320ms steps(8, end);
+}
+@keyframes matrix-decode {
+  0%   { text-shadow: 0 0 8px #00FF41, -2px 0 0 rgba(255,255,255,0.4); transform: translateX(-1px); }
+  20%  { text-shadow: 0 0 14px #00FF41, 2px 0 0 rgba(255,255,255,0.4); transform: translateX(1px); }
+  40%  { text-shadow: 0 0 10px #00FF41, -1px 0 0 rgba(0,255,65,0.6);   transform: translateX(-0.5px); }
+  60%  { text-shadow: 0 0 16px #00FF41, 1px 0 0 rgba(255,255,255,0.5); transform: translateX(0.5px); }
+  100% { text-shadow: 0 0 8px rgba(0, 255, 65, 0.5); transform: none; }
+}
+
+/* Scrollbar — green thread on black */
+html.mode-matrix {
+  scrollbar-color: #00CD33 #050505;
+  scrollbar-width: thin;
+}
+html.mode-matrix::-webkit-scrollbar { width: 10px; }
+html.mode-matrix::-webkit-scrollbar-track { background: #050505; }
+html.mode-matrix::-webkit-scrollbar-thumb {
+  background: linear-gradient(#00FF41, #00A030);
+  border-radius: 0;
+}
+html.mode-matrix::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(#33FF66, #00CD33);
+}
+
+/* Rare scroll glitch — a horizontal jitter applied via a body class
+   toggled briefly by JS. */
+html.mode-matrix.is-glitching body {
+  animation: matrix-glitch 240ms steps(4, end);
+}
+@keyframes matrix-glitch {
+  0%   { transform: translateX(0); filter: hue-rotate(0deg); }
+  20%  { transform: translateX(-3px); filter: hue-rotate(-12deg) saturate(1.4); }
+  40%  { transform: translateX(2px);  filter: hue-rotate(8deg);  }
+  60%  { transform: translateX(-2px); filter: hue-rotate(-6deg); }
+  80%  { transform: translateX(1px); }
+  100% { transform: none; filter: none; }
+}
