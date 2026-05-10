@@ -1229,3 +1229,546 @@ html.mode-studio .logo::before {
     padding-bottom: 2rem !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   RADICAL THEME REDESIGN — phase 6
+   ───────────────────────────────────────────────────────────────────────
+   Each theme now reads as a completely different website. Same DOM,
+   same content, same functionality — but the buttons, layouts, decoration,
+   typography ROLES, and visual idioms are unmistakeably different.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ──────────────────────────────────────────────────────────────────────
+   MATRIX — terminal-numbered system, ASCII chrome, bracketed actions
+   ────────────────────────────────────────────────────────────────────── */
+
+/* Numbered nav chips via CSS counter:  [01] услуги  [02] кейсы  ... */
+html.mode-matrix .nav-chips {
+  counter-reset: navnum;
+}
+html.mode-matrix .nav-chips .btn-chip::before {
+  counter-increment: navnum;
+  content: '[' counter(navnum, decimal-leading-zero) '] ';
+  color: rgba(0, 255, 65, 0.65);
+  margin-right: 4px;
+  font-weight: 400;
+}
+
+/* Bracketed primary CTA: [ ACTION ] */
+html.mode-matrix .btn-primary::before {
+  content: '[ ';
+  color: rgba(0, 255, 65, 0.6);
+  margin-right: 4px;
+}
+html.mode-matrix .btn-primary::after {
+  content: ' ]';
+  color: rgba(0, 255, 65, 0.6);
+  margin-left: 4px;
+}
+
+/* Section headlines get a blinking cursor underscore */
+html.mode-matrix .section-headline::after,
+html.mode-matrix h2::after {
+  content: '_';
+  display: inline-block;
+  color: #00FF41;
+  margin-left: 0.18em;
+  animation: matrix-cursor-blink 1.05s steps(2, end) infinite;
+  font-weight: 400;
+}
+@keyframes matrix-cursor-blink {
+  0%, 49% { opacity: 1; }
+  50%, 99% { opacity: 0; }
+}
+
+/* Service cards in Matrix — terminal window with title bar */
+html.mode-matrix .svc-card,
+html.mode-matrix .work-grid > *,
+html.mode-matrix .testimonial-card,
+html.mode-matrix .process-step {
+  border: 1px solid #00FF41 !important;
+  background: rgba(0, 255, 65, 0.025) !important;
+  border-radius: 0 !important;
+  position: relative;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5) inset;
+}
+html.mode-matrix .svc-card::before,
+html.mode-matrix .work-grid > *::before,
+html.mode-matrix .process-step::before {
+  content: '─── ' attr(data-title-fallback, '') '';
+  position: absolute;
+  top: -10px;
+  left: 14px;
+  background: #000;
+  padding: 0 8px;
+  color: rgba(0, 255, 65, 0.7);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+html.mode-matrix .svc-card::before { content: '─── svc ───'; }
+html.mode-matrix .work-grid > *::before { content: '─── case ───'; }
+html.mode-matrix .process-step::before { content: '─── step ───'; }
+html.mode-matrix .testimonial-card::before { content: '─── log ───';
+  position: absolute; top: -10px; left: 14px; background: #000;
+  padding: 0 8px; color: rgba(0, 255, 65, 0.7);
+  font-size: 11px; letter-spacing: 0.18em; }
+
+/* Stats in Matrix — terminal output: > count = 12 */
+html.mode-matrix .stats-band,
+html.mode-matrix .stats-grid {
+  border-top: 1px solid rgba(0, 255, 65, 0.35);
+  border-bottom: 1px solid rgba(0, 255, 65, 0.35);
+}
+html.mode-matrix .num::before {
+  content: '> ';
+  color: rgba(0, 255, 65, 0.55);
+  font-weight: 400;
+}
+html.mode-matrix .label {
+  color: rgba(0, 255, 65, 0.6) !important;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 11px;
+}
+
+/* Service & process numbers in Matrix — ASCII hex feel */
+html.mode-matrix .svc-num::before,
+html.mode-matrix .ps-num::before {
+  content: '0x';
+  color: rgba(0, 255, 65, 0.55);
+  font-weight: 400;
+}
+
+/* Ticker band in Matrix — old monitor scanline feel */
+html.mode-matrix .ticker-band,
+html.mode-matrix .footer-band {
+  background: rgba(0, 255, 65, 0.05) !important;
+  border-top: 1px dashed rgba(0, 255, 65, 0.35);
+  border-bottom: 1px dashed rgba(0, 255, 65, 0.35);
+  color: #00FF41 !important;
+  text-shadow: 0 0 8px rgba(0, 255, 65, 0.6);
+}
+
+/* Manifesto block — make it look like a printed core-dump */
+html.mode-matrix .manifesto-block {
+  border-left: 2px solid #00FF41;
+  padding-left: 1.5rem !important;
+  font-family: 'Share Tech Mono', monospace !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+   ISLAND — handwritten poetry, borderless buttons, free verse layout
+   ────────────────────────────────────────────────────────────────────── */
+
+/* HERO headline becomes script — large, flowing, generous */
+html.mode-island .hero h1,
+html.mode-island .hero .hero-text,
+html.mode-island .section-headline {
+  font-family: 'Caveat', 'Playfair Display', 'Fraunces', cursive !important;
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.005em;
+  text-transform: none !important;
+  font-style: normal;
+}
+
+/* Make hero headlines extra-large to give the script the spotlight */
+html.mode-island .hero h1,
+html.mode-island .hero-text {
+  font-size: clamp(3.5rem, 8.5vw, 8.5rem) !important;
+}
+html.mode-island .section-headline {
+  font-size: clamp(2.5rem, 5.5vw, 5rem) !important;
+}
+
+/* Smaller headings stay in italic display serif — keep the layered feel */
+html.mode-island h3,
+html.mode-island .svc-name,
+html.mode-island .ps-name,
+html.mode-island .testimonial-card .quote {
+  font-family: 'Playfair Display', 'Fraunces', Georgia, serif !important;
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+/* ───── ISLAND BUTTONS: borderless, italic, just emphasized words ───── */
+html.mode-island .btn-chip,
+html.mode-island .btn-chip-copper {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  padding: 6px 4px !important;
+  color: #3D2817 !important;
+  font-family: 'Playfair Display', Georgia, serif !important;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 16px;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  position: relative;
+  transition: color 220ms ease;
+}
+html.mode-island .btn-chip::after,
+html.mode-island .btn-chip-copper::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 0;
+  height: 1px;
+  background: rgba(201, 137, 45, 0.5);
+  transition: height 220ms ease, background 220ms ease, bottom 220ms ease;
+}
+html.mode-island .btn-chip:hover,
+html.mode-island .btn-chip-copper:hover {
+  background: transparent !important;
+  color: #B6701C !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+html.mode-island .btn-chip:hover::after,
+html.mode-island .btn-chip-copper:hover::after {
+  height: 2px;
+  background: #C9892D;
+  bottom: -2px;
+}
+
+/* Primary CTA in Island: italic emphasized text with a hand-drawn arrow */
+html.mode-island .btn-primary {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  color: #B6701C !important;
+  font-family: 'Playfair Display', Georgia, serif !important;
+  font-style: italic;
+  font-weight: 600;
+  font-size: 18px;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  padding: 4px 0 !important;
+  position: relative;
+}
+html.mode-island .btn-primary::after {
+  content: '  →';
+  margin-left: 4px;
+  font-style: normal;
+  transition: transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  display: inline-block;
+}
+html.mode-island .btn-primary:hover {
+  background: transparent !important;
+  color: #8B4F11 !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+html.mode-island .btn-primary:hover::after {
+  transform: translateX(6px);
+}
+
+/* Section eyebrows in Island: handwritten ornament */
+html.mode-island .section-eyebrow {
+  font-family: 'Caveat', cursive !important;
+  font-weight: 500;
+  font-size: 22px !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  color: #8B6F47 !important;
+}
+html.mode-island .section-eyebrow::before {
+  content: '~ ' !important;
+  color: #C9892D;
+  margin-right: 0 !important;
+}
+html.mode-island .section-eyebrow::after {
+  content: ' ~' !important;
+  color: #C9892D;
+  margin-left: 0 !important;
+}
+
+/* Service numbers and stats — Playfair display italic huge */
+html.mode-island .svc-num,
+html.mode-island .ps-num {
+  font-family: 'Playfair Display', Georgia, serif !important;
+  font-style: italic;
+  font-weight: 400;
+  color: #C9892D !important;
+}
+html.mode-island .num {
+  font-family: 'Caveat', cursive !important;
+  font-weight: 700 !important;
+  font-size: clamp(3rem, 7vw, 6rem) !important;
+  color: #C9892D !important;
+  letter-spacing: 0 !important;
+}
+html.mode-island .label {
+  font-family: 'Playfair Display', Georgia, serif !important;
+  font-style: italic;
+  font-size: 14px;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  color: #8B6F47 !important;
+}
+
+/* Cards in Island: borderless, organic shadow, more padding */
+html.mode-island .svc-card,
+html.mode-island .testimonial-card,
+html.mode-island .work-grid > *,
+html.mode-island .process-step {
+  background: rgba(255, 255, 255, 0.7) !important;
+  border: 0 !important;
+  border-radius: 24px !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow:
+    0 12px 36px -12px rgba(80, 50, 20, 0.18),
+    0 0 0 1px rgba(255, 255, 255, 0.6) inset !important;
+  padding: 2rem !important;
+}
+
+/* Bullets: hand-drawn dot */
+html.mode-island .svc-bullets li::before {
+  content: '·' !important;
+  color: #C9892D !important;
+  font-size: 1.8em;
+  line-height: 0.7;
+  margin-right: 6px;
+}
+
+/* Manifesto in Island — handwritten poetry */
+html.mode-island .manifesto-block,
+html.mode-island .manifesto-text {
+  font-family: 'Caveat', cursive !important;
+  font-weight: 500;
+  font-size: clamp(1.5rem, 3vw, 2.5rem) !important;
+  line-height: 1.35;
+  letter-spacing: 0 !important;
+}
+
+/* Ticker band in Island — almost invisible, just a whisper */
+html.mode-island .ticker-band {
+  background: rgba(255, 240, 215, 0.5) !important;
+  border-top: 1px solid rgba(201, 137, 45, 0.15) !important;
+  border-bottom: 1px solid rgba(201, 137, 45, 0.15) !important;
+  color: #8B6F47 !important;
+  font-family: 'Playfair Display', Georgia, serif !important;
+  font-style: italic;
+}
+
+/* Footer band in Island — handwritten farewell */
+html.mode-island .footer-band {
+  font-family: 'Caveat', cursive !important;
+  font-size: 18px;
+  color: #8B6F47 !important;
+}
+
+/* Lighter haze on top of photo so the tropical scene shows through */
+html.mode-island body {
+  background:
+    linear-gradient(180deg,
+      rgba(255, 244, 220, 0.35) 0%,
+      rgba(255, 240, 210, 0.15) 30%,
+      rgba(255, 235, 200, 0.40) 100%),
+    url('https://images.unsplash.com/photo-1507525428034-b723cf961d3e?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=85') center/cover fixed,
+    #FBEFD8 !important;
+}
+html.mode-island body::before {
+  backdrop-filter: blur(8px) saturate(1.05) brightness(1.05);
+  -webkit-backdrop-filter: blur(8px) saturate(1.05) brightness(1.05);
+  background: rgba(255, 240, 215, 0.18);
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+   STUDIO — Apple keynote, oversized typography, no chrome
+   ────────────────────────────────────────────────────────────────────── */
+
+/* Hero headline — MASSIVE, paper-thin, perfectly centered */
+html.mode-studio .hero h1,
+html.mode-studio .hero-text,
+html.mode-studio .section-headline {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 100 !important;
+  letter-spacing: -0.055em !important;
+  line-height: 0.98;
+  font-size: clamp(3.5rem, 9vw, 9rem) !important;
+  text-align: center !important;
+}
+html.mode-studio .section-headline {
+  font-weight: 200 !important;
+  font-size: clamp(2.5rem, 6vw, 6rem) !important;
+}
+
+/* Studio: kill the bracketed eyebrow chip — replace with tiny grey label */
+html.mode-studio .btn-chip-copper {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  color: #86868B !important;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 500;
+  border-radius: 0 !important;
+}
+
+/* Nav chips in Studio — text-only, no background, hairline underline on hover */
+html.mode-studio .nav-chips .btn-chip {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 6px 8px !important;
+  color: #1D1D1F !important;
+  font-weight: 500;
+  font-size: 14px;
+  text-transform: none !important;
+  letter-spacing: -0.005em !important;
+  border-radius: 0 !important;
+  position: relative;
+}
+html.mode-studio .nav-chips .btn-chip::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 0;
+  height: 1px;
+  background: #1D1D1F;
+  transform: scaleX(0);
+  transform-origin: 50% 50%;
+  transition: transform 240ms ease;
+}
+html.mode-studio .nav-chips .btn-chip:hover {
+  background: transparent !important;
+  transform: none !important;
+  box-shadow: none !important;
+  font-weight: 600;
+}
+html.mode-studio .nav-chips .btn-chip:hover::after {
+  transform: scaleX(1);
+}
+
+/* Primary CTA in Studio — minimal pill, only thing with chrome */
+html.mode-studio .btn-primary {
+  background: #1D1D1F !important;
+  color: #FFFFFF !important;
+  border-radius: 980px !important;
+  padding: 12px 22px !important;
+  font-weight: 500;
+  font-size: 14px;
+  text-transform: none !important;
+  letter-spacing: -0.005em !important;
+  border: 0 !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+/* Stats in Studio — enormous Inter Thin, tiny grey captions */
+html.mode-studio .num {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 100 !important;
+  font-size: clamp(4rem, 9vw, 8rem) !important;
+  letter-spacing: -0.05em !important;
+  color: #1D1D1F !important;
+  line-height: 0.95;
+}
+html.mode-studio .label {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-size: 11px !important;
+  font-weight: 400;
+  color: #86868B !important;
+  text-transform: uppercase;
+  letter-spacing: 0.08em !important;
+}
+
+/* Service / process numbers in Studio — tiny grey captions, not display */
+html.mode-studio .svc-num,
+html.mode-studio .ps-num {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 500 !important;
+  font-size: 13px !important;
+  color: #86868B !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase;
+}
+
+/* Cards in Studio — almost invisible, only depth on hover */
+html.mode-studio .svc-card,
+html.mode-studio .testimonial-card,
+html.mode-studio .work-grid > *,
+html.mode-studio .process-step {
+  background: #FFFFFF !important;
+  border: 0 !important;
+  border-radius: 18px !important;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.04),
+    0 1px 2px rgba(0, 0, 0, 0.02) !important;
+  padding: 2.2rem !important;
+  transition: transform 280ms ease, box-shadow 320ms ease !important;
+}
+html.mode-studio .svc-card:hover,
+html.mode-studio .testimonial-card:hover,
+html.mode-studio .work-grid > *:hover,
+html.mode-studio .process-step:hover {
+  transform: translateY(-4px);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.06),
+    0 18px 40px -12px rgba(0, 0, 0, 0.15) !important;
+}
+
+/* Studio bullets — em-dash already set; tighten line height */
+html.mode-studio .svc-bullets li {
+  padding-left: 1.4em;
+  margin-bottom: 0.6em;
+}
+
+/* Hide the marquee ticker in Studio — Apple wouldn't ship a scrolling band */
+html.mode-studio .ticker-band,
+html.mode-studio .testimonials-marquee {
+  display: none !important;
+}
+
+/* Footer in Studio — tiny grey caption */
+html.mode-studio .footer-band {
+  background: transparent !important;
+  border: 0 !important;
+  color: #86868B !important;
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none !important;
+  padding: 3rem 0 !important;
+  text-align: center;
+}
+
+/* Manifesto in Studio — huge thin Inter centered */
+html.mode-studio .manifesto-block,
+html.mode-studio .manifesto-text {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 200 !important;
+  font-size: clamp(2rem, 4vw, 3.5rem) !important;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  text-align: center;
+}
+
+/* Section padding in Studio — even larger to give content breathing room */
+html.mode-studio section {
+  padding-top: 10rem !important;
+  padding-bottom: 10rem !important;
+}
+
+/* Mobile: scale these radical sizes down */
+@media (max-width: 640px) {
+  html.mode-island .hero h1,
+  html.mode-island .hero-text { font-size: clamp(3rem, 14vw, 5rem) !important; }
+  html.mode-island .num { font-size: clamp(3rem, 14vw, 5rem) !important; }
+  html.mode-studio .hero h1,
+  html.mode-studio .hero-text { font-size: clamp(3rem, 12vw, 5rem) !important; }
+  html.mode-studio .num { font-size: clamp(3.5rem, 14vw, 6rem) !important; }
+  html.mode-studio section { padding-top: 4rem !important; padding-bottom: 4rem !important; }
+}
