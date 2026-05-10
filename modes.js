@@ -181,9 +181,15 @@
     c.classList.add('matrix-rain-ambient');
     idleMatrixRain = activeRain;
     activeRain = null;
+
+    // Inject the terminal status bar above everything else
+    injectMatrixChrome();
   }
 
   async function exitMatrix() {
+    // Tear chrome FIRST
+    removeMatrixChrome();
+
     // Pull the persistent rain back into the overlay for the exit sequence
     if (idleMatrixRain) {
       activeRain = idleMatrixRain;
@@ -276,6 +282,94 @@
     islandBirds = [];
   }
 
+  // ───────── Per-mode page chrome (injected/removed on enter/exit) ─────────
+
+  let matrixChrome = null;
+  let matrixChromeTimer = null;
+  function injectMatrixChrome() {
+    removeMatrixChrome();
+    const bar = document.createElement('div');
+    bar.className = 'matrix-statusbar';
+    bar.innerHTML = `
+      <span class="seg">[ DEADLINE.SH ]</span>
+      <span class="seg">PID: 4096</span>
+      <span class="seg ok">✓ READY</span>
+      <span class="seg">PROJECTS=<b>12</b></span>
+      <span class="seg">MISSED=<b>0</b></span>
+      <span class="seg">RETURN=<b>100%</b></span>
+      <span class="seg">CPU=<b id="mx-cpu">23%</b></span>
+      <span class="seg">UPTIME=<b id="mx-up">00:00:00</b></span>
+      <span class="seg blinker">█</span>
+    `;
+    document.body.appendChild(bar);
+    matrixChrome = bar;
+    // Live updates: random CPU jitter + uptime ticker so it feels alive
+    const start = Date.now();
+    matrixChromeTimer = setInterval(() => {
+      if (!matrixChrome) return;
+      const cpu = matrixChrome.querySelector('#mx-cpu');
+      const up  = matrixChrome.querySelector('#mx-up');
+      if (cpu) cpu.textContent = (18 + Math.floor(Math.random() * 14)) + '%';
+      if (up) {
+        const s = Math.floor((Date.now() - start) / 1000);
+        up.textContent =
+          String((s / 3600) | 0).padStart(2,'0') + ':' +
+          String(((s / 60) | 0) % 60).padStart(2,'0') + ':' +
+          String(s % 60).padStart(2,'0');
+      }
+    }, 900);
+  }
+  function removeMatrixChrome() {
+    if (matrixChromeTimer) { clearInterval(matrixChromeTimer); matrixChromeTimer = null; }
+    if (matrixChrome) { matrixChrome.remove(); matrixChrome = null; }
+  }
+
+  let islandChrome = null;
+  function injectIslandChrome() {
+    removeIslandChrome();
+    const frame = document.createElement('div');
+    frame.className = 'island-chrome';
+    frame.innerHTML = `
+      <div class="corner tl">✦</div>
+      <div class="corner tr">✦</div>
+      <div class="corner bl">✦</div>
+      <div class="corner br">✦</div>
+      <div class="signature">~ от руки ~</div>
+    `;
+    document.body.appendChild(frame);
+    islandChrome = frame;
+  }
+  function removeIslandChrome() {
+    if (islandChrome) { islandChrome.remove(); islandChrome = null; }
+  }
+
+  let studioChrome = null;
+  let studioProgressHandler = null;
+  function injectStudioChrome() {
+    removeStudioChrome();
+    const bar = document.createElement('div');
+    bar.className = 'studio-progress';
+    bar.innerHTML = `<div class="studio-progress-fill"></div>`;
+    document.body.appendChild(bar);
+    studioChrome = bar;
+    const fill = bar.querySelector('.studio-progress-fill');
+
+    studioProgressHandler = () => {
+      const max = Math.max(document.documentElement.scrollHeight - window.innerHeight, 1);
+      const p = Math.min(1, Math.max(0, window.scrollY / max));
+      if (fill) fill.style.transform = `scaleX(${p.toFixed(4)})`;
+    };
+    document.addEventListener('scroll', studioProgressHandler, { passive: true });
+    studioProgressHandler();
+  }
+  function removeStudioChrome() {
+    if (studioProgressHandler) {
+      document.removeEventListener('scroll', studioProgressHandler);
+      studioProgressHandler = null;
+    }
+    if (studioChrome) { studioChrome.remove(); studioChrome = null; }
+  }
+
   async function enterIsland() {
     const scene = createIslandScene();
     await wait(40);
@@ -289,6 +383,7 @@
     await wait(450);
     scene.remove();
     injectIslandBirds();
+    injectIslandChrome();
   }
 
   async function exitIsland() {
@@ -300,6 +395,7 @@
     await wait(700);
     scene.remove();
     removeIslandBirds();
+    removeIslandChrome();
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -453,13 +549,15 @@
     HTML.classList.remove('is-revealing');
     clearBodyChildIndices();
 
-    // Install idle signatures
+    // Install idle signatures + chrome
     injectStudioIdle();
+    injectStudioChrome();
   }
 
   async function exitStudio() {
-    // Tear idle FIRST so spot/parallax don't flicker through the transition
+    // Tear idle + chrome FIRST so spot/parallax don't flicker through the transition
     removeStudioIdle();
+    removeStudioChrome();
     setBodyChildIndices();
 
     // 1. Body children rise off-screen in reverse stagger
