@@ -12,6 +12,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="modes.css">
+<script defer src="modes.js"></script>
 <style>
   /* ═════ DESIGN TOKENS (Forge palette) ═════ */
   :root {
@@ -553,6 +555,18 @@
         <span class="sep">|</span>
         <button data-lang="en" aria-pressed="false">EN</button>
       </div>
+      <button id="magic-toggle" class="magic-toggle" type="button"
+              aria-label="Switch visual mode"
+              title="Switch visual mode">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <!-- 4-pointed spark: long thin rays, narrow waist, clear star silhouette at 20px -->
+          <path d="M12 1 L13.2 10.8 L23 12 L13.2 13.2 L12 23 L10.8 13.2 L1 12 L10.8 10.8 Z"
+                fill="currentColor"/>
+          <!-- two off-axis micro-sparks for charm -->
+          <circle cx="19" cy="5"  r="1.1" fill="currentColor" opacity="0.85"/>
+          <circle cx="5"  cy="18" r="0.8" fill="currentColor" opacity="0.55"/>
+        </svg>
+      </button>
       <a href="#contact" class="btn-primary"><span class="lang-ru">Связаться</span><span class="lang-en">Talk to us</span></a>
     </div>
   </div>
