@@ -1,0 +1,1201 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STUDIO — FORGE v3.01 · "We ship. We craft. We code. We deploy. We love."</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  /* ─── DESIGN TOKENS (Forge palette) ─── */
+  :root {
+    --bg: #161208;
+    --surface: #1F1A0F;
+    --border-dark: #0A0805;
+    --cream: #F0E8D5;
+    --mute: #8A7E64;
+    --copper: #C76A2D;
+    --sand: #D9A057;
+    --rust: #B83227;
+    --weld: #5DB6E8;       /* the ONE blue exception — welding arc only */
+    --weld-glow: rgba(93, 182, 232, 0.6);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--cream);
+    font-family: 'JetBrains Mono', monospace;
+    margin: 0;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--copper); color: var(--bg); }
+
+  /* ─── BUTTONS (Forge signature) ─── */
+  .btn-primary, .btn-secondary, .btn-chip, .btn-chip-copper {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    display: inline-block;
+    border-radius: 0;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: transform 120ms cubic-bezier(0.4,0,0.2,1), box-shadow 120ms cubic-bezier(0.4,0,0.2,1);
+  }
+  .btn-primary {
+    background: var(--copper); color: var(--bg);
+    border: 4px solid var(--border-dark);
+    box-shadow: 8px 8px 0 var(--border-dark);
+    font-size: 13px; padding: 14px 28px;
+  }
+  .btn-secondary {
+    background: var(--surface); color: var(--cream);
+    border: 4px solid var(--border-dark);
+    box-shadow: 8px 8px 0 var(--border-dark);
+    font-size: 13px; padding: 14px 28px;
+  }
+  .btn-primary:hover, .btn-secondary:hover {
+    transform: translate(8px,8px); box-shadow: 0 0 0 var(--border-dark);
+  }
+  .btn-chip {
+    background: var(--surface); color: var(--cream);
+    border: 3px solid var(--border-dark);
+    box-shadow: 4px 4px 0 var(--border-dark);
+    font-size: 11px; font-weight: 500; padding: 8px 16px;
+  }
+  .btn-chip-copper {
+    background: var(--copper); color: var(--bg);
+    border: 3px solid var(--border-dark);
+    box-shadow: 4px 4px 0 var(--border-dark);
+    font-size: 11px; padding: 8px 16px;
+  }
+  .btn-chip:hover, .btn-chip-copper:hover {
+    transform: translate(4px,4px); box-shadow: 0 0 0 var(--border-dark);
+  }
+  .stack-chip {
+    background: transparent; border: 2px solid var(--mute); color: var(--mute);
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 500;
+    letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 10px;
+    display: inline-block; border-radius: 0;
+  }
+
+  /* ─── NAV ─── */
+  .nav-bar {
+    border-bottom: 4px solid var(--border-dark);
+    background: var(--bg); position: sticky; top: 0; z-index: 200;
+  }
+  .logo { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 22px; color: var(--copper); letter-spacing: 0.05em; text-decoration: none; text-transform: uppercase; }
+  .logo .pulse { display: inline-block; width: 8px; height: 8px; background: var(--copper); margin-right: 8px; vertical-align: 3px; animation: pulse 1.6s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  /* ──────────────────────────────────────────────────
+     HERO — scattered phrase + jumping robot + scenes
+     ────────────────────────────────────────────────── */
+  .hero {
+    position: relative;
+    width: 100%;
+    height: calc(100vh - 76px);
+    min-height: 720px;
+    overflow: hidden;
+    background: var(--bg);
+    border-bottom: 4px solid var(--border-dark);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .hero::before {
+    /* faint grid texture for depth */
+    content: '';
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(to right, rgba(240,232,213,0.02) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(240,232,213,0.02) 1px, transparent 1px);
+    background-size: 64px 64px;
+    pointer-events: none;
+  }
+
+  /* — Top-left meta block (chip + tagline) — */
+  .hero-meta {
+    position: absolute; top: 28px; left: 32px; z-index: 5;
+    max-width: 360px;
+  }
+  .hero-meta .chip { display: inline-block; }
+  .hero-meta .small {
+    margin-top: 12px; font-size: 11px; color: var(--mute);
+    letter-spacing: 0.08em; text-transform: uppercase; line-height: 1.6;
+  }
+
+  /* — Bottom-right CTA block — */
+  .hero-cta {
+    position: absolute; bottom: 32px; right: 32px; z-index: 5;
+    text-align: right;
+  }
+  .hero-cta .label {
+    font-size: 10px; color: var(--mute); letter-spacing: 0.18em;
+    text-transform: uppercase; margin-bottom: 14px;
+  }
+  .hero-cta a + a { margin-left: 14px; }
+
+  /* — Clean centered hero text — */
+  .hero-text {
+    position: relative; z-index: 3;
+    text-align: center;
+    padding: 0 48px;
+    max-width: 1400px;
+  }
+  .hero-text .line {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: clamp(48px, 8.5vw, 150px);
+    text-transform: uppercase;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    margin: 0;
+    display: flex;
+    justify-content: center;
+    gap: 0.25em;
+    flex-wrap: wrap;
+  }
+  .hero-text .line .w {
+    display: inline-block;
+    transition: transform 0.3s ease;
+    /* 3D offset shadow — same language as .btn-primary box-shadow */
+    text-shadow:
+      4px 4px 0 var(--border-dark),
+      8px 8px 0 rgba(10,8,5,0.35);
+  }
+  .hero-text .line-1 { color: var(--copper); }
+  .hero-text .line-2 { color: var(--cream); }
+
+  /* ─── 3D STAMP SHADOW (reused from .hero-text on all monumental headlines) ─── */
+  .shadow-stamp {
+    text-shadow:
+      4px 4px 0 var(--border-dark),
+      8px 8px 0 rgba(10,8,5,0.35);
+  }
+  .shadow-stamp-sm {
+    text-shadow:
+      3px 3px 0 var(--border-dark),
+      6px 6px 0 rgba(10,8,5,0.3);
+  }
+
+  /* ─── Section monumental headline (same language as hero) ─── */
+  .section-headline {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: clamp(40px, 6.5vw, 104px);
+    text-transform: uppercase;
+    letter-spacing: -0.03em;
+    line-height: 1;
+    text-align: center;
+    margin: 0 auto 64px;
+    max-width: 1100px;
+    color: var(--cream);
+    text-shadow:
+      4px 4px 0 var(--border-dark),
+      8px 8px 0 rgba(10,8,5,0.35);
+  }
+  .section-headline em { color: var(--copper); font-style: normal; }
+  .section-headline.copper { color: var(--copper); }
+  .section-headline.copper em { color: var(--cream); }
+  .section-headline.sand   { color: var(--sand); }
+
+  .section-eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--mute);
+    text-align: center;
+    margin-bottom: 18px;
+  }
+  .section-eyebrow::before { content: '['; margin-right: 8px; color: var(--copper); }
+  .section-eyebrow::after  { content: ']'; margin-left:  8px; color: var(--copper); }
+
+  /* — TEMPORARILY HIDDEN: robot + scenes + controls (waiting for user's 3D model) — */
+  /*    To restore: remove this block. */
+  .robot, .scene, .robot-control, .connector { display: none !important; }
+
+  /* ─── ROBOT (Wall-E-style mini bot, 80×96) ─── */
+  .robot {
+    position: absolute;
+    width: 80px; height: 96px;
+    top: 0; left: 0;
+    z-index: 7;
+    transform-origin: 40px 96px;
+    will-change: transform;
+    filter: drop-shadow(0 4px 0 rgba(10,8,5,0.45));
+  }
+  .robot.face-left .robot-body-group { transform: scaleX(-1); transform-origin: 40px 50px; }
+  .robot-head-group { transform-box: fill-box; transition: transform 220ms cubic-bezier(0.4,0,0.2,1); }
+  /* gentle idle bob */
+  .robot:not(.is-hopping) .robot-body-group {
+    animation: idle-bob 2.6s ease-in-out infinite;
+    transform-origin: 40px 90px;
+  }
+  @keyframes idle-bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+  .robot .eye { animation: blink 4.2s steps(2,end) infinite; transform-origin: center; }
+  .robot .eye.r { animation-delay: 0.05s; }
+  @keyframes blink { 0%,8%,12%,100% { opacity: 1; } 10% { opacity: 0.15; } }
+  .robot.is-working .eye { animation: working-eye 0.5s ease-in-out infinite alternate; }
+  @keyframes working-eye { from { opacity: 1; } to { opacity: 0.55; } }
+  .robot .antenna-tip { animation: pulse 1.4s ease-in-out infinite; transform-origin: center; }
+  .robot .eye-glow { animation: eye-glow-pulse 2.4s ease-in-out infinite; transform-origin: center; }
+  @keyframes eye-glow-pulse { 0%,100% { opacity: 0.25; } 50% { opacity: 0.5; } }
+
+  /* — eye tracking: eyes follow cursor via CSS vars set in JS — */
+  .robot-eyes {
+    transform: translate(var(--eye-x, 0px), var(--eye-y, 0px));
+    transition: transform 280ms cubic-bezier(0.4, 0, 0.2, 1);
+    transform-box: fill-box;
+  }
+
+  /* — right arm extends toward scene when working — */
+  .robot-arm-right {
+    transform-origin: 52px 54px;
+    transform-box: fill-box;
+    transition: transform 280ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .robot.is-working .robot-arm-right {
+    transform: rotate(35deg) translate(3px, -2px);
+  }
+
+  /* — head subtle 3D-ish breathing tilt (CSS-only, no JS conflict with translate) — */
+  .robot:not(.is-hopping) {
+    animation: robot-breathe 3.2s ease-in-out infinite;
+  }
+  @keyframes robot-breathe {
+    0%,100% { filter: drop-shadow(0 4px 0 rgba(10,8,5,0.45)) brightness(1); }
+    50%     { filter: drop-shadow(0 6px 0 rgba(10,8,5,0.4))  brightness(1.04); }
+  }
+
+  /* ─── SCENES — rise FROM the word's top edge, anchor BOTTOM ─── */
+  .scene {
+    position: absolute; pointer-events: none;
+    opacity: 0;
+    transform: scale(0.04);
+    transform-origin: bottom center;  /* grows UP from word top edge */
+    transition: transform 580ms cubic-bezier(0.34, 1.2, 0.4, 1),
+                opacity 320ms ease-out;
+    z-index: 4;
+  }
+  .scene.active {
+    opacity: 1;
+    transform: scale(1);
+  }
+  /* connector wire from robot to scene */
+  .connector {
+    position: absolute; pointer-events: none; z-index: 5;
+    opacity: 0; transition: opacity 220ms ease;
+  }
+  .connector.active { opacity: 1; }
+  .connector path {
+    fill: none; stroke: var(--copper); stroke-width: 2.5;
+    stroke-dasharray: 200;
+    stroke-dashoffset: 200;
+    animation: wire-draw 0.5s ease-out 0.1s forwards;
+  }
+  @keyframes wire-draw { to { stroke-dashoffset: 0; } }
+
+  /* welding arc (LOVE word) */
+  .scene-weld { width: 200px; height: 120px; }
+  .scene-weld .arc {
+    fill: var(--weld);
+    filter: drop-shadow(0 0 10px var(--weld-glow)) drop-shadow(0 0 20px var(--weld-glow));
+    animation: weld-flicker 0.12s steps(2) infinite;
+    transform-origin: center;
+  }
+  @keyframes weld-flicker { 0% { opacity: 0.92; transform: scale(1); } 50% { opacity: 1; transform: scale(1.08); } 100% { opacity: 0.7; transform: scale(0.96); } }
+  .scene-weld .spark {
+    fill: var(--weld);
+    animation: spark-fly 0.6s ease-out infinite;
+    animation-delay: var(--d, 0s);
+    transform-origin: center;
+  }
+  @keyframes spark-fly {
+    0% { transform: translate(0,0) scale(1); opacity: 1; }
+    100% { transform: translate(var(--tx,0), var(--ty,0)) scale(0.2); opacity: 0; }
+  }
+
+  /* terminal + cable */
+  .scene-term { width: 220px; height: 140px; }
+  .scene-term .term-box {
+    fill: var(--surface); stroke: var(--copper); stroke-width: 3;
+  }
+  .scene-term .term-bar { fill: var(--copper); }
+  .scene-term .term-light { animation: pulse 1s ease-in-out infinite; }
+  .scene-term .cable {
+    fill: none; stroke: var(--copper); stroke-width: 3;
+    stroke-dasharray: 200; stroke-dashoffset: 200;
+    animation: draw-cable 0.5s ease-out forwards;
+  }
+  @keyframes draw-cable { to { stroke-dashoffset: 0; } }
+  .scene-term .term-text {
+    font-family: 'JetBrains Mono', monospace; font-size: 9px; fill: var(--cream);
+  }
+
+  /* server rack rising */
+  .scene-server { width: 140px; height: 180px; }
+  .scene-server .server-body {
+    fill: var(--surface); stroke: var(--cream); stroke-width: 3;
+    transform-origin: center bottom;
+    animation: rise-up 0.8s cubic-bezier(0.4,0,0.2,1) forwards;
+  }
+  .scene-server .led { animation: led-blink 0.8s steps(1) infinite; }
+  .scene-server .led.l1 { animation-delay: 0s; }
+  .scene-server .led.l2 { animation-delay: 0.2s; }
+  .scene-server .led.l3 { animation-delay: 0.4s; }
+  @keyframes rise-up { from { transform: translateY(60px) scaleY(0.2); } to { transform: translateY(0) scaleY(1); } }
+  @keyframes led-blink { 0%,40% { fill: var(--sand); } 50%,100% { fill: var(--mute); } }
+
+  /* gear + wrench */
+  .scene-gear { width: 160px; height: 160px; }
+  .scene-gear .gear-shape {
+    fill: var(--copper); stroke: var(--border-dark); stroke-width: 2;
+    transform-origin: center; animation: gear-spin 1.6s linear infinite;
+  }
+  .scene-gear .gear-inner { fill: var(--surface); stroke: var(--border-dark); stroke-width: 2; }
+  @keyframes gear-spin { to { transform: rotate(360deg); } }
+  .scene-gear .wrench {
+    fill: var(--sand); stroke: var(--border-dark); stroke-width: 2;
+    animation: wrench-tap 1s ease-in-out infinite;
+    transform-origin: 70px 30px;
+  }
+  @keyframes wrench-tap { 0%,100% { transform: rotate(-12deg); } 50% { transform: rotate(8deg); } }
+
+  /* drill + sparks */
+  .scene-drill { width: 180px; height: 130px; }
+  .scene-drill .drill-body {
+    fill: var(--surface); stroke: var(--cream); stroke-width: 2.5;
+  }
+  .scene-drill .drill-bit {
+    fill: var(--mute); stroke: var(--border-dark); stroke-width: 2;
+    transform-origin: 60px 80px; animation: drill-spin 0.08s linear infinite;
+  }
+  @keyframes drill-spin { to { transform: rotate(360deg); } }
+  .scene-drill .drill-spark {
+    fill: var(--copper);
+    animation: spark-fly 0.4s ease-out infinite;
+    animation-delay: var(--d,0s);
+    transform-origin: center;
+  }
+
+  /* stamp checkmark */
+  .scene-stamp { width: 180px; height: 140px; }
+  .scene-stamp .stamp-body {
+    fill: var(--rust); stroke: var(--border-dark); stroke-width: 3;
+    transform-origin: center 110px;
+    animation: stamp-press 1.5s cubic-bezier(0.4,0,0.2,1) infinite;
+  }
+  .scene-stamp .stamp-handle {
+    fill: var(--cream); stroke: var(--border-dark); stroke-width: 2;
+  }
+  @keyframes stamp-press {
+    0%,40% { transform: translateY(-30px) rotate(-4deg); }
+    50% { transform: translateY(0) rotate(0deg); }
+    60%,100% { transform: translateY(-30px) rotate(-4deg); }
+  }
+  .scene-stamp .stamp-mark {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 14px;
+    fill: var(--rust); letter-spacing: 0.1em;
+    opacity: 0;
+    animation: stamp-mark-show 1.5s steps(1) infinite;
+  }
+  @keyframes stamp-mark-show {
+    0%,55% { opacity: 0; transform: scale(0.6); }
+    60%,90% { opacity: 1; transform: scale(1); }
+    95%,100% { opacity: 0; }
+  }
+
+  /* — generic skip-control hint — */
+  .robot-control {
+    position: absolute; bottom: 96px; right: 32px; z-index: 6;
+    display: flex; gap: 8px; align-items: center;
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    color: var(--mute); letter-spacing: 0.12em; text-transform: uppercase;
+  }
+  .robot-control button {
+    background: transparent; border: 1px solid var(--mute); color: var(--mute);
+    padding: 4px 10px; font-family: inherit; font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.12em;
+    cursor: pointer; transition: all 120ms ease; border-radius: 0;
+  }
+  .robot-control button:hover { color: var(--copper); border-color: var(--copper); }
+
+  /* ──────────────────────────────────────────────────
+     Mobile: simplify hero — words stacked, robot smaller
+     ────────────────────────────────────────────────── */
+  @media (max-width: 900px) {
+    .hero { height: auto; min-height: 100vh; padding: 100px 24px 80px; }
+    .hero-text .line { font-size: clamp(32px, 10vw, 72px) !important; }
+    .robot { display: none; }
+    .scene { display: none; }
+    .robot-control { display: none; }
+    .hero-meta { position: relative; top: 0; left: 0; margin-bottom: 28px; }
+    .hero-cta { position: relative; bottom: 0; right: 0; margin-top: 32px; text-align: left; }
+  }
+
+  /* ──────────────────────────────────────────────────
+     Common reused patterns from Forge
+     ────────────────────────────────────────────────── */
+  .container { max-width: 1280px; margin: 0 auto; padding: 0 32px; }
+
+  .stats-band {
+    background: var(--surface);
+    border-top: 4px solid var(--border-dark);
+    border-bottom: 4px solid var(--border-dark);
+    padding: 56px 32px;
+  }
+  .stats-grid { max-width: 1280px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); gap: 32px; text-align: left; }
+  .stats-grid .num {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+    font-size: clamp(56px, 8vw, 96px); color: var(--copper);
+    line-height: 1; letter-spacing: -0.04em;
+    font-variant-numeric: tabular-nums;
+    text-shadow:
+      3px 3px 0 var(--border-dark),
+      6px 6px 0 rgba(10,8,5,0.3);
+  }
+  .stats-grid .lbl {
+    margin-top: 12px; font-size: 10px; color: var(--mute);
+    letter-spacing: 0.18em; text-transform: uppercase;
+  }
+  @media (max-width: 760px) { .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 24px; } }
+
+  .section-label {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 500;
+    letter-spacing: 0.2em; text-transform: uppercase; color: var(--mute);
+    border-bottom: 1px solid #2A2316; padding-bottom: 12px; margin-bottom: 32px;
+  }
+
+  .sticker-card {
+    background: var(--surface);
+    border: 4px solid var(--border-dark);
+    box-shadow: 6px 6px 0 var(--border-dark);
+    padding: 28px;
+    transition: transform 120ms cubic-bezier(0.4,0,0.2,1), box-shadow 120ms cubic-bezier(0.4,0,0.2,1);
+  }
+  .sticker-card:hover { transform: translate(-3px,-3px) rotate(0deg) !important; box-shadow: 9px 9px 0 var(--border-dark); }
+
+  .services-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 20px; }
+  @media (max-width: 900px) { .services-grid { grid-template-columns: 1fr; } }
+  .svc-num { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--copper); letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 16px; }
+  .svc-name {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+    font-size: 36px; line-height: 1.02; letter-spacing: -0.02em;
+    margin-bottom: 14px;
+    text-transform: uppercase;
+    text-shadow:
+      3px 3px 0 var(--border-dark),
+      5px 5px 0 rgba(10,8,5,0.25);
+  }
+  .svc-body { font-size: 13px; color: var(--mute); line-height: 1.6; margin-bottom: 16px; }
+  .svc-stack { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  .work-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 24px; }
+  @media (max-width: 900px) { .work-grid { grid-template-columns: 1fr; } }
+  .case-art {
+    aspect-ratio: 4/3; margin: -28px -28px 20px -28px;
+    border-bottom: 4px solid var(--border-dark);
+    background: linear-gradient(135deg, var(--copper), var(--rust));
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 56px;
+    color: var(--cream); letter-spacing: -0.04em;
+  }
+  .case-art.b { background: linear-gradient(135deg, var(--surface), var(--copper)); color: var(--sand); }
+  .case-art.c { background: linear-gradient(135deg, var(--sand), var(--copper)); color: var(--bg); }
+
+  .process-row { display: flex; align-items: stretch; gap: 12px; flex-wrap: wrap; }
+  .process-step {
+    flex: 1; min-width: 220px; padding: 24px;
+    background: var(--surface); border: 4px solid var(--border-dark);
+    box-shadow: 6px 6px 0 var(--border-dark);
+  }
+  .process-step.active { background: var(--copper); color: var(--bg); }
+  .process-step .ps-num { font-family: 'JetBrains Mono', monospace; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; opacity: 0.8; }
+  .process-step .ps-name {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+    font-size: 26px; margin: 8px 0 12px; letter-spacing: -0.01em;
+    text-transform: uppercase;
+    text-shadow:
+      2px 2px 0 var(--border-dark),
+      4px 4px 0 rgba(10,8,5,0.2);
+  }
+  .process-step .ps-body { font-size: 12px; line-height: 1.55; }
+  .process-arrow { color: var(--copper); font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 20px; align-self: center; flex-shrink: 0; }
+
+  .manifesto-block {
+    background: var(--bg);
+    border-top: 4px solid var(--border-dark);
+    border-bottom: 4px solid var(--border-dark);
+    padding: 80px 32px;
+  }
+  .manifesto-text {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+    font-size: clamp(40px, 6vw, 84px); line-height: 1.05; letter-spacing: -0.03em;
+    max-width: 1100px; margin: 0 auto;
+    text-transform: uppercase;
+    text-shadow:
+      4px 4px 0 var(--border-dark),
+      8px 8px 0 rgba(10,8,5,0.35);
+  }
+  .manifesto-text em { color: var(--copper); font-style: normal; }
+
+  .contact-block {
+    background: var(--surface); border: 4px solid var(--copper);
+    box-shadow: 8px 8px 0 var(--border-dark); padding: 56px 40px;
+    max-width: 1080px; margin: 0 auto;
+  }
+
+  .footer-band {
+    border-top: 4px solid var(--border-dark);
+    background: var(--border-dark);
+    padding: 24px 32px;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    color: var(--mute); letter-spacing: 0.08em; text-transform: uppercase;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══ NAV ═══ -->
+<nav class="nav-bar">
+  <div class="container" style="display:flex; align-items:center; justify-content:space-between; height:72px; gap:24px;">
+    <a href="#" class="logo"><span class="pulse"></span>STUDIO</a>
+    <div style="display:flex; gap:10px; flex-wrap:wrap;" class="nav-chips">
+      <a href="#services" class="btn-chip">Services</a>
+      <a href="#work" class="btn-chip">Work</a>
+      <a href="#process" class="btn-chip">Process</a>
+      <a href="#contact" class="btn-chip">Contact</a>
+    </div>
+    <a href="#contact" class="btn-primary" style="flex-shrink:0;">Talk to us</a>
+  </div>
+</nav>
+
+<!-- ═══ HERO ═══ -->
+<section class="hero" id="hero">
+
+  <!-- top-left meta -->
+  <div class="hero-meta">
+    <span class="btn-chip-copper chip">[ EST. 2026 · BUILT IN PHUKET × BANGKOK ]</span>
+    <div class="small">
+      // independent practice<br>
+      // web · automation · ai<br>
+      // taking on Q3 ’26 work
+    </div>
+  </div>
+
+  <!-- bottom-right CTAs -->
+  <div class="hero-cta">
+    <div class="label">// scroll for the rest →</div>
+    <a href="#contact" class="btn-primary">Start a project</a>
+    <a href="#work" class="btn-secondary">See work</a>
+  </div>
+
+  <!-- robot pause control + sound toggle -->
+  <div class="robot-control">
+    <span>↻ robot</span>
+    <button id="robotSound">sound off</button>
+    <button id="robotPause">pause</button>
+    <button id="robotNext">▸ skip</button>
+  </div>
+
+  <!-- ── CENTERED HERO TEXT ── -->
+  <div class="hero-text">
+    <p class="line line-1"><span class="w">Skip</span> <span class="w">the</span> <span class="w">talk.</span></p>
+    <p class="line line-2"><span class="w">Deliver</span> <span class="w">the</span> <span class="w">impact.</span></p>
+  </div>
+
+  <!-- ── SCENES (hidden by default, positioned per slot via JS) ── -->
+
+  <!-- 0: WE — STAMP "✓ THIS IS US" -->
+  <svg class="scene scene-stamp" data-scene="0" viewBox="0 0 180 140" xmlns="http://www.w3.org/2000/svg">
+    <text class="stamp-mark" x="90" y="120" text-anchor="middle">✓ THIS IS US</text>
+    <g class="stamp-body">
+      <rect class="stamp-body" x="50" y="60" width="80" height="40" />
+      <rect x="60" y="100" width="60" height="14" fill="#0A0805" />
+      <rect class="stamp-handle" x="78" y="20" width="24" height="42" />
+      <circle cx="90" cy="20" r="10" fill="#F0E8D5" stroke="#0A0805" stroke-width="2" />
+    </g>
+  </svg>
+
+  <!-- 1: SHIP — SERVER RACK RISING -->
+  <svg class="scene scene-server" data-scene="1" viewBox="0 0 140 180" xmlns="http://www.w3.org/2000/svg">
+    <g class="server-body">
+      <rect x="20" y="30" width="100" height="140" fill="#1F1A0F" stroke="#F0E8D5" stroke-width="3" />
+      <!-- rack slots -->
+      <rect x="30" y="42" width="80" height="22" fill="#0A0805" />
+      <rect x="30" y="70" width="80" height="22" fill="#0A0805" />
+      <rect x="30" y="98" width="80" height="22" fill="#0A0805" />
+      <rect x="30" y="126" width="80" height="22" fill="#0A0805" />
+      <!-- LEDs -->
+      <circle class="led l1" cx="100" cy="53" r="3" fill="#D9A057" />
+      <circle class="led l2" cx="100" cy="81" r="3" fill="#D9A057" />
+      <circle class="led l3" cx="100" cy="109" r="3" fill="#D9A057" />
+      <!-- label -->
+      <text x="70" y="20" text-anchor="middle" font-family="JetBrains Mono" font-size="10" fill="#D9A057" font-weight="700">SHIPPED</text>
+    </g>
+  </svg>
+
+  <!-- 2: CRAFT — GEAR + WRENCH -->
+  <svg class="scene scene-gear" data-scene="2" viewBox="0 0 160 160" xmlns="http://www.w3.org/2000/svg">
+    <g style="transform: translate(80px, 80px);">
+      <g class="gear-shape" transform="translate(-40,-40)">
+        <!-- 8-tooth gear -->
+        <path d="M40,4 L46,4 L48,14 L56,16 L62,12 L66,16 L62,22 L72,28 L78,28 L80,34 L74,40 L80,46 L78,52 L72,52 L62,58 L66,64 L62,68 L56,64 L48,66 L46,76 L40,76 L34,76 L32,66 L24,64 L18,68 L14,64 L18,58 L8,52 L2,52 L0,46 L6,40 L0,34 L2,28 L8,28 L18,22 L14,16 L18,12 L24,16 L32,14 L34,4 Z" />
+        <circle class="gear-inner" cx="40" cy="40" r="12" />
+      </g>
+    </g>
+    <!-- wrench -->
+    <g class="wrench" style="transform-box: fill-box;">
+      <rect x="20" y="22" width="50" height="10" rx="0" />
+      <path d="M68 18 L84 18 L84 36 L68 36 L72 32 L72 22 Z" />
+      <rect x="14" y="18" width="10" height="18" fill="#C76A2D" />
+    </g>
+  </svg>
+
+  <!-- 3: CODE — TERMINAL + CABLE -->
+  <svg class="scene scene-term" data-scene="3" viewBox="0 0 220 140" xmlns="http://www.w3.org/2000/svg">
+    <!-- cable from edge -->
+    <path class="cable" d="M0,80 Q40,80 70,50" />
+    <!-- terminal box -->
+    <rect class="term-box" x="70" y="20" width="140" height="100" />
+    <rect class="term-bar" x="70" y="20" width="140" height="14" />
+    <circle class="term-light" cx="80" cy="27" r="3" fill="#0A0805" />
+    <text class="term-text" x="80" y="56">$ studio deploy --prod</text>
+    <text class="term-text" x="80" y="74" fill="#D9A057">▸ build successful</text>
+    <text class="term-text" x="80" y="92">▸ 42ms · 0 warnings</text>
+    <text class="term-text" x="80" y="110" fill="#C76A2D">▸ shipped ✓</text>
+  </svg>
+
+  <!-- 4: DEPLOY — DRILL + SPARKS -->
+  <svg class="scene scene-drill" data-scene="4" viewBox="0 0 180 130" xmlns="http://www.w3.org/2000/svg">
+    <g class="drill-body">
+      <!-- handle -->
+      <rect x="90" y="40" width="80" height="36" fill="#1F1A0F" stroke="#F0E8D5" stroke-width="2.5" />
+      <!-- grip -->
+      <rect x="120" y="76" width="22" height="36" fill="#0A0805" stroke="#F0E8D5" stroke-width="2" />
+      <!-- power button -->
+      <circle cx="118" cy="58" r="3" fill="#C76A2D" />
+    </g>
+    <!-- spinning bit -->
+    <g class="drill-bit">
+      <rect x="60" y="55" width="32" height="6" fill="#8A7E64" stroke="#0A0805" stroke-width="2" />
+      <polygon points="60,52 50,58 60,64" fill="#8A7E64" stroke="#0A0805" stroke-width="2" />
+    </g>
+    <!-- sparks -->
+    <circle class="drill-spark" style="--d:0s;--tx:-30px;--ty:30px" cx="50" cy="58" r="3" />
+    <circle class="drill-spark" style="--d:0.1s;--tx:-26px;--ty:-12px" cx="50" cy="58" r="2" />
+    <circle class="drill-spark" style="--d:0.2s;--tx:-36px;--ty:8px" cx="50" cy="58" r="2" />
+    <circle class="drill-spark" style="--d:0.3s;--tx:-22px;--ty:-26px" cx="50" cy="58" r="2.5" />
+  </svg>
+
+  <!-- 5: LOVE — WELDING ARC + SPARKS -->
+  <svg class="scene scene-weld" data-scene="5" viewBox="0 0 200 120" xmlns="http://www.w3.org/2000/svg">
+    <!-- arc star -->
+    <g style="transform: translate(100px, 60px);">
+      <polygon class="arc" points="0,-40 8,-12 36,-8 12,8 20,38 0,18 -20,38 -12,8 -36,-8 -8,-12" />
+      <circle class="arc" cx="0" cy="0" r="14" />
+    </g>
+    <!-- sparks -->
+    <circle class="spark" style="--d:0s;--tx:60px;--ty:-30px" cx="100" cy="60" r="2.5" />
+    <circle class="spark" style="--d:0.08s;--tx:-50px;--ty:-22px" cx="100" cy="60" r="2" />
+    <circle class="spark" style="--d:0.16s;--tx:70px;--ty:36px" cx="100" cy="60" r="3" />
+    <circle class="spark" style="--d:0.24s;--tx:-66px;--ty:30px" cx="100" cy="60" r="2.5" />
+    <circle class="spark" style="--d:0.32s;--tx:30px;--ty:-50px" cx="100" cy="60" r="2" />
+    <circle class="spark" style="--d:0.4s;--tx:-22px;--ty:50px" cx="100" cy="60" r="2.5" />
+    <!-- welding torch (visual prop) -->
+    <line x1="160" y1="100" x2="120" y2="76" stroke="#8A7E64" stroke-width="6" stroke-linecap="square" />
+    <rect x="156" y="94" width="22" height="14" fill="#1F1A0F" stroke="#F0E8D5" stroke-width="2" />
+  </svg>
+
+  <!-- ── ROBOT (Wall-E-style mini bot, round head + glowing blue eyes) ── -->
+  <svg class="robot" id="robot" viewBox="0 0 80 96" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <filter id="eyeGlowF" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="2.2" />
+      </filter>
+    </defs>
+    <!-- antenna -->
+    <line x1="40" y1="2" x2="40" y2="14" stroke="#F0E8D5" stroke-width="2" stroke-linecap="round" />
+    <circle class="antenna-tip" cx="40" cy="3" r="2.5" fill="#5DB6E8" />
+    <!-- side ear-detail panels -->
+    <rect x="14" y="24" width="3" height="8" fill="#0A0805" rx="1" />
+    <rect x="63" y="24" width="3" height="8" fill="#0A0805" rx="1" />
+    <!-- round head — slightly larger than body for cute proportions -->
+    <ellipse cx="40" cy="28" rx="22" ry="20" fill="#F0E8D5" stroke="#0A0805" stroke-width="2" />
+    <!-- eye visor band -->
+    <ellipse cx="40" cy="29" rx="19" ry="7" fill="#0A0805" />
+    <!-- eyes group — moves with cursor via --eye-x / --eye-y CSS vars -->
+    <g class="robot-eyes">
+      <!-- glow halos behind eyes -->
+      <circle class="eye-glow" cx="32" cy="29" r="6" fill="#5DB6E8" filter="url(#eyeGlowF)" />
+      <circle class="eye-glow" cx="48" cy="29" r="6" fill="#5DB6E8" filter="url(#eyeGlowF)" />
+      <!-- glowing blue eyes -->
+      <circle class="eye l" cx="32" cy="29" r="4" fill="#5DB6E8" />
+      <circle class="eye r" cx="48" cy="29" r="4" fill="#5DB6E8" />
+      <!-- inner eye highlights — gives life -->
+      <circle cx="33" cy="28" r="1.4" fill="#FFFFFF" opacity="0.85" />
+      <circle cx="49" cy="28" r="1.4" fill="#FFFFFF" opacity="0.85" />
+    </g>
+    <!-- body — boxy with rounded corners -->
+    <rect x="28" y="48" width="24" height="22" fill="#F0E8D5" stroke="#0A0805" stroke-width="2" rx="3" />
+    <!-- chest indicator (small blue LED) -->
+    <circle cx="40" cy="58" r="2" fill="#5DB6E8" />
+    <!-- copper tool belt with pockets -->
+    <rect x="26" y="62" width="28" height="3.5" fill="#C76A2D" stroke="#0A0805" stroke-width="0.5" />
+    <rect x="30" y="62" width="2" height="5" fill="#0A0805" />
+    <rect x="36" y="62" width="2" height="5" fill="#0A0805" />
+    <rect x="44" y="62" width="2" height="5" fill="#0A0805" />
+    <rect x="50" y="62" width="2" height="5" fill="#0A0805" />
+    <!-- left arm (idle) -->
+    <line x1="28" y1="54" x2="22" y2="64" stroke="#F0E8D5" stroke-width="3" stroke-linecap="round" />
+    <line x1="22" y1="64" x2="26" y2="72" stroke="#F0E8D5" stroke-width="3" stroke-linecap="round" />
+    <!-- right arm group + tool — extends toward scene when working -->
+    <g class="robot-arm-right">
+      <line x1="52" y1="54" x2="58" y2="64" stroke="#F0E8D5" stroke-width="3" stroke-linecap="round" />
+      <line x1="58" y1="64" x2="54" y2="72" stroke="#F0E8D5" stroke-width="3" stroke-linecap="round" />
+      <!-- screwdriver in right hand -->
+      <rect x="53" y="71" width="3" height="9" fill="#C76A2D" stroke="#0A0805" stroke-width="0.5" />
+      <rect x="51.5" y="80" width="6" height="3" fill="#D9A057" stroke="#0A0805" stroke-width="0.5" />
+    </g>
+    <!-- legs -->
+    <rect x="32" y="68" width="5" height="14" fill="#F0E8D5" stroke="#0A0805" stroke-width="2" rx="1.5" />
+    <rect x="43" y="68" width="5" height="14" fill="#F0E8D5" stroke="#0A0805" stroke-width="2" rx="1.5" />
+    <!-- feet -->
+    <ellipse cx="34.5" cy="86" rx="6" ry="3" fill="#0A0805" />
+    <ellipse cx="45.5" cy="86" rx="6" ry="3" fill="#0A0805" />
+  </svg>
+</section>
+
+<!-- ═══ STATS BAND ═══ -->
+<section class="stats-band">
+  <div class="stats-grid">
+    <div><div class="num">12+</div><div class="lbl">Projects shipped</div></div>
+    <div><div class="num">4yr</div><div class="lbl">Years building</div></div>
+    <div><div class="num">∞</div><div class="lbl">Coffee consumed</div></div>
+    <div><div class="num">0</div><div class="lbl">Bullshit pitched</div></div>
+  </div>
+</section>
+
+<!-- ═══ SERVICES ═══ -->
+<section id="services" style="padding: 96px 32px;">
+  <div class="container">
+    <div class="section-label">[ 01 / Services ]</div>
+    <div class="services-grid">
+      <div class="sticker-card" style="transform: rotate(-2deg);">
+        <div class="svc-num">// 01 · WEB</div>
+        <div class="svc-name">Web Development</div>
+        <p class="svc-body">Лендинги, веб-приложения, e-commerce, дашборды. От MVP до сложных SaaS. Production-grade с первого коммита.</p>
+        <div class="svc-stack">
+          <span class="stack-chip">Next.js</span>
+          <span class="stack-chip">Vue</span>
+          <span class="stack-chip">TypeScript</span>
+          <span class="stack-chip">Postgres</span>
+          <span class="stack-chip">Tailwind</span>
+        </div>
+      </div>
+      <div class="sticker-card" style="transform: rotate(2deg);">
+        <div class="svc-num">// 02 · AUTOMATION</div>
+        <div class="svc-name">Automation</div>
+        <p class="svc-body">Соединяем CRM, мессенджеры, базы и сервисы. Убираем ручной труд там, где он не нужен. Метрики ROI с первого месяца.</p>
+        <div class="svc-stack">
+          <span class="stack-chip">n8n</span>
+          <span class="stack-chip">Make</span>
+          <span class="stack-chip">Python</span>
+          <span class="stack-chip">Telegram API</span>
+          <span class="stack-chip">Webhooks</span>
+        </div>
+      </div>
+      <div class="sticker-card" style="transform: rotate(-1deg);">
+        <div class="svc-num">// 03 · AI AGENTS</div>
+        <div class="svc-name">AI Agents</div>
+        <p class="svc-body">Чат-боты, голосовые ассистенты, RAG-системы, автономные агенты. Не демо — production с трекингом затрат и качества.</p>
+        <div class="svc-stack">
+          <span class="stack-chip">GPT-4</span>
+          <span class="stack-chip">Claude</span>
+          <span class="stack-chip">LangChain</span>
+          <span class="stack-chip">Vector DB</span>
+          <span class="stack-chip">ElevenLabs</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ WORK ═══ -->
+<section id="work" style="padding: 96px 32px; background: var(--surface); border-top: 4px solid var(--border-dark); border-bottom: 4px solid var(--border-dark);">
+  <div class="container">
+    <div class="section-label">[ 02 / Selected work ]</div>
+    <div class="work-grid">
+      <div class="sticker-card" style="transform: rotate(-1deg); padding: 28px;">
+        <div class="case-art">VRP</div>
+        <div class="svc-num">VIP RENTAL PHUKET</div>
+        <h3 class="svc-name" style="font-size:24px;">AI-консьерж 24/7</h3>
+        <p class="svc-body">Next.js + GPT-4 концирж в чате. Конверсия лендинга +32% за 2 месяца.</p>
+        <span class="btn-chip-copper" style="font-size: 10px;">+32% conversion</span>
+      </div>
+      <div class="sticker-card" style="transform: rotate(2deg); padding: 28px;">
+        <div class="case-art b">BD</div>
+        <div class="svc-num">BACKDOOR STORE</div>
+        <h3 class="svc-name" style="font-size:24px;">Telegram-бот e-com</h3>
+        <p class="svc-body">Полная автоматизация выдачи Steam-кодов. 1k+ заказов / месяц без человека.</p>
+        <span class="btn-chip-copper" style="font-size: 10px;">99.99% uptime</span>
+      </div>
+      <div class="sticker-card" style="transform: rotate(-2deg); padding: 28px;">
+        <div class="case-art c">RA</div>
+        <div class="svc-num">RA PROJECT</div>
+        <h3 class="svc-name" style="font-size:24px;">On-chain analytics</h3>
+        <p class="svc-body">12 блокчейн-сетей, ClickHouse + Kafka. AI-классификация транзакций.</p>
+        <span class="btn-chip-copper" style="font-size: 10px;">12 chains live</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ PROCESS ═══ -->
+<section id="process" style="padding: 96px 32px;">
+  <div class="container">
+    <div class="section-label">[ 03 / How we work ]</div>
+    <div class="process-row">
+      <div class="process-step">
+        <div class="ps-num">01</div>
+        <div class="ps-name">Discovery</div>
+        <div class="ps-body">2-3 дня погружения в задачу. Без технического жаргона. Слушаем, рисуем, фиксируем.</div>
+      </div>
+      <div class="process-arrow">▸▸▸</div>
+      <div class="process-step">
+        <div class="ps-num">02</div>
+        <div class="ps-name">Architecture</div>
+        <div class="ps-body">План, ТЗ, демо архитектуры. До первой строчки кода всё уже понятно.</div>
+      </div>
+      <div class="process-arrow">▸▸▸</div>
+      <div class="process-step">
+        <div class="ps-num">03</div>
+        <div class="ps-name">Sprint Build</div>
+        <div class="ps-body">2-недельные итерации с демо. Видишь прогресс каждый Monday.</div>
+      </div>
+      <div class="process-arrow">▸▸▸</div>
+      <div class="process-step active">
+        <div class="ps-num">04</div>
+        <div class="ps-name">Handoff</div>
+        <div class="ps-body">Передача, документация, поддержка. Ты владеешь кодом — мы рядом, если нужно.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ MANIFESTO ═══ -->
+<section class="manifesto-block">
+  <div class="container" style="text-align:center;">
+    <div class="section-label" style="text-align:center; border-bottom: none; margin-bottom: 12px;">[ Manifesto ]</div>
+    <div class="manifesto-text">
+      Если мы <em>не сможем</em> запустить за 8 недель —<br>
+      <em>мы не возьмём проект</em>.
+    </div>
+    <div style="margin-top: 32px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--mute); letter-spacing: 0.18em; text-transform: uppercase;">
+      — Alex × Nikolay · founders · since 2026
+    </div>
+  </div>
+</section>
+
+<!-- ═══ CONTACT ═══ -->
+<section id="contact" style="padding: 96px 32px;">
+  <div class="contact-block">
+    <div class="section-label">[ 04 / Contact ]</div>
+    <h2 style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: clamp(36px, 5vw, 64px); line-height: 1.05; letter-spacing: -0.025em; margin-bottom: 24px;">
+      ОК, как до вас достучаться?
+    </h2>
+    <p style="color: var(--mute); font-size: 15px; line-height: 1.7; max-width: 600px; margin-bottom: 32px;">
+      Опиши задачу — мы вернёмся за 24 часа. Без brief-форм на 80 полей, без «давайте созвонимся обсудим формат созвона». Просто напиши, что нужно.
+    </p>
+    <div style="display:flex; flex-wrap: wrap; gap: 16px; align-items: center;">
+      <a href="mailto:hello@studio.dev" class="btn-primary">hello@studio.dev</a>
+      <a href="https://t.me/studio" class="btn-secondary">@studio_team</a>
+    </div>
+    <div style="margin-top: 28px; font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--mute); letter-spacing: 0.16em; text-transform: uppercase;">
+      ● Reply within 24h · 1 slot remaining for Q3 ’26
+    </div>
+  </div>
+</section>
+
+<!-- ═══ FOOTER ═══ -->
+<footer class="footer-band">
+  © 2026 STUDIO · forged in Phuket × Bangkok · by Alex × Nikolay · v3.01 forge
+</footer>
+
+<!-- ──────────────────────────────────────────────────
+     ROBOT JUMPING ENGINE
+     ────────────────────────────────────────────────── -->
+<script>
+(() => {
+  const robot = document.getElementById('robot');
+  const stage = document.querySelector('.hero');
+  const words = Array.from(document.querySelectorAll('.scatter-word'));
+  const scenes = Array.from(document.querySelectorAll('.scene'));
+  const pauseBtn = document.getElementById('robotPause');
+  const skipBtn = document.getElementById('robotNext');
+
+  if (!robot || !stage || words.length === 0) return;
+  if (matchMedia('(max-width: 900px)').matches) return; // skip animation on mobile
+
+  let currentSlot = -1;
+  let isPaused = false;
+  let timer = null;
+
+  // robot dimensions (Wall-E mini)
+  const ROBOT_W = 80, ROBOT_H = 96;
+  // — anchoring: scene's BOTTOM edge sits ON word's TOP edge
+  //   robot stands on the LEFT side of word top, scene rises on the RIGHT
+  //   no per-scene offsets needed; both anchored to wordTopY computed at runtime
+
+  function getWordCenter(idx) {
+    const r = words[idx].getBoundingClientRect();
+    const sr = stage.getBoundingClientRect();
+    return {
+      x: r.left - sr.left + r.width / 2,
+      y: r.top  - sr.top  + r.height / 2,
+      w: r.width, h: r.height,
+    };
+  }
+
+  // ── STOPS: only main words, robot skips articles ──
+  // Each stop maps a word slot to a scene type.
+  // Word slots: 0 Skip, 1 the, 2 talk., 3 Deliver, 4 the, 5 impact.
+  // Scene indices: 0 stamp, 1 server, 2 gear, 3 terminal+cable, 4 drill, 5 weld
+  const STOPS = [
+    { wordIdx: 0, sceneIdx: 4 }, // Skip    → drill+sparks (movement, motion)
+    { wordIdx: 2, sceneIdx: 3 }, // talk.   → terminal+cable (communication / output)
+    { wordIdx: 3, sceneIdx: 1 }, // Deliver → server rack (shipping)
+    { wordIdx: 5, sceneIdx: 5 }, // impact. → welding arc (high-energy moment)
+  ];
+
+  function placeScene(sceneIdx, wordIdx) {
+    const r = words[wordIdx].getBoundingClientRect();
+    const sr = stage.getBoundingClientRect();
+    const scene = scenes[sceneIdx];
+    const cs = window.getComputedStyle(scene);
+    const sceneW = parseFloat(cs.width)  || 180;
+    const sceneH = parseFloat(cs.height) || 140;
+    const wordCenterX = r.left - sr.left + r.width / 2;
+    const wordTopY    = r.top  - sr.top;
+    // anchor: scene's BOTTOM edge sits 14px below word top (overlap into word)
+    // shift scene RIGHT of word center by 60px — leaves room for robot on the left
+    scene.style.left = (wordCenterX + 60 - sceneW / 2) + 'px';
+    scene.style.top  = (wordTopY    - sceneH + 14)     + 'px';
+    // NOTE: do NOT set scene.style.transform — that is owned by .scene/.scene.active in CSS
+  }
+
+  function placeAllScenes() {
+    STOPS.forEach(s => placeScene(s.sceneIdx, s.wordIdx));
+  }
+
+  function getRobotPos(idx) {
+    // robot stands on the LEFT side of word's TOP edge, leaving room for scene on the right
+    const r = words[idx].getBoundingClientRect();
+    const sr = stage.getBoundingClientRect();
+    const wordCenterX = r.left - sr.left + r.width / 2;
+    const wordTopY    = r.top  - sr.top;
+    return {
+      // robot's center is 110px LEFT of word center → robot.x is robot's top-left corner
+      x: wordCenterX - 110 - ROBOT_W / 2,
+      y: wordTopY - ROBOT_H + 8,  // 8px overlap = feet rest on word top edge
+    };
+  }
+
+  function setRobotTransform(x, y, rot=0) {
+    robot.style.transform = `translate(${x}px, ${y}px) rotate(${rot}deg)`;
+  }
+
+  // Initial placement: bottom-left corner
+  function placeRobotInitial() {
+    const sr = stage.getBoundingClientRect();
+    setRobotTransform(40, sr.height - ROBOT_H - 60);
+  }
+
+  function activateScene(sceneIdx, wordIdx) {
+    scenes.forEach((s, i) => s.classList.toggle('active', i === sceneIdx));
+    words.forEach((w, i) => w.classList.toggle('is-target', i === wordIdx));
+    robot.classList.add('is-working');
+    sfxWork();
+  }
+  function clearScenes() {
+    scenes.forEach(s => s.classList.remove('active'));
+    words.forEach(w => w.classList.remove('is-target'));
+    robot.classList.remove('is-working');
+  }
+
+  // ── Web Animations API hop ──
+  function hopTo(idx) {
+    return new Promise(resolve => {
+      const target = getRobotPos(idx);
+      // current transform — read from style
+      const m = robot.style.transform.match(/translate\(([-\d.]+)px,\s*([-\d.]+)px\)/);
+      const startX = m ? parseFloat(m[1]) : 40;
+      const startY = m ? parseFloat(m[2]) : 600;
+
+      const peakY = Math.min(startY, target.y) - 110;  // higher arc for visible hop
+      const midX  = (startX + target.x) / 2;
+      const goingRight = target.x > startX;
+
+      robot.classList.add('is-hopping');
+      sfxJump();
+
+      const anim = robot.animate([
+        { transform: `translate(${startX}px, ${startY}px) rotate(0deg)` },
+        { transform: `translate(${midX}px, ${peakY}px) rotate(${goingRight ? 12 : -12}deg)`, offset: 0.5 },
+        { transform: `translate(${target.x}px, ${target.y}px) rotate(0deg)` },
+      ], { duration: 780, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', fill: 'forwards' });
+
+      anim.onfinish = () => {
+        robot.classList.remove('is-hopping');
+        sfxLand();
+        resolve();
+      };
+    });
+  }
+
+  async function cycleStep() {
+    if (isPaused) return;
+    currentSlot = (currentSlot + 1) % STOPS.length;
+    const stop = STOPS[currentSlot];
+    clearScenes();
+    await hopTo(stop.wordIdx);
+    if (isPaused) return;
+    placeScene(stop.sceneIdx, stop.wordIdx);
+    activateScene(stop.sceneIdx, stop.wordIdx);
+    timer = setTimeout(cycleStep, 1900);
+  }
+
+  function pauseLoop() {
+    isPaused = true;
+    if (timer) clearTimeout(timer);
+    pauseBtn.textContent = 'play';
+  }
+  function resumeLoop() {
+    isPaused = false;
+    pauseBtn.textContent = 'pause';
+    cycleStep();
+  }
+
+  pauseBtn.addEventListener('click', () => isPaused ? resumeLoop() : pauseLoop());
+  skipBtn.addEventListener('click', () => {
+    if (timer) clearTimeout(timer);
+    cycleStep();
+  });
+
+  // ── AUDIO ENGINE (Web Audio API, lazy init on user gesture) ──
+  let audioCtx = null;
+  let soundEnabled = false;
+  const soundBtn = document.getElementById('robotSound');
+
+  function initAudio() {
+    if (audioCtx) return;
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch (e) { audioCtx = null; }
+  }
+  function tone(freq, dur, type, vol) {
+    if (!soundEnabled || !audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    gain.gain.setValueAtTime(vol || 0.06, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + dur);
+  }
+  // sweep helper (freq glide) — for "boop" jump sound
+  function sweep(f1, f2, dur, type, vol) {
+    if (!soundEnabled || !audioCtx) return;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.setValueAtTime(f1, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(f2, audioCtx.currentTime + dur);
+    gain.gain.setValueAtTime(vol || 0.06, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + dur);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + dur);
+  }
+  function sfxJump() { sweep(180, 380, 0.18, 'triangle', 0.07); }
+  function sfxLand() { tone(220, 0.08, 'square', 0.04); }
+  function sfxWork() {
+    tone(880, 0.05, 'sine', 0.05);
+    setTimeout(() => tone(1100, 0.04, 'sine', 0.04), 100);
+    setTimeout(() => tone(660, 0.05, 'sine', 0.04), 220);
+  }
+
+  soundBtn.addEventListener('click', () => {
+    initAudio();
+    soundEnabled = !soundEnabled;
+    soundBtn.textContent = soundEnabled ? 'sound on' : 'sound off';
+    if (soundEnabled) sfxWork(); // give immediate audio feedback
+  });
+
+  // ── EYE TRACKING — eyes follow cursor via CSS variables ──
+  let lastEyeUpdate = 0;
+  window.addEventListener('mousemove', (e) => {
+    const now = performance.now();
+    if (now - lastEyeUpdate < 40) return; // throttle to ~25fps
+    lastEyeUpdate = now;
+    const rect = robot.getBoundingClientRect();
+    if (rect.width === 0) return;
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 3; // eyes are in the upper third of robot
+    const dx = (e.clientX - cx);
+    const dy = (e.clientY - cy);
+    // map dx/dy to subtle eye offset; clamped to ±2.4px x, ±1.6px y
+    const len = Math.max(1, Math.sqrt(dx*dx + dy*dy));
+    const nx = dx / len, ny = dy / len;
+    // strength ramps with distance, max at ~400px away
+    const strength = Math.min(1, len / 400);
+    const ex = (nx * strength * 2.4).toFixed(2);
+    const ey = (ny * strength * 1.6).toFixed(2);
+    robot.style.setProperty('--eye-x', ex + 'px');
+    robot.style.setProperty('--eye-y', ey + 'px');
+  });
+
+  // — start —
+  function init() {
+    placeAllScenes();
+    placeRobotInitial();
+    setTimeout(() => cycleStep(), 600);
+  }
+
+  // re-position scenes on resize
+  let resizeTimer = null;
+  window.addEventListener('resize', () => {
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      placeAllScenes();
+      // reposition robot if it has settled
+      if (currentSlot >= 0) {
+        const t = getRobotPos(STOPS[currentSlot].wordIdx);
+        setRobotTransform(t.x, t.y);
+      }
+    }, 200);
+  });
+
+  // wait for fonts to settle before measuring
+  if (document.fonts && document.fonts.ready) {
+    document.fonts.ready.then(init);
+  } else {
+    window.addEventListener('load', init);
+  }
+})();
+</script>
+</body>
+</html>

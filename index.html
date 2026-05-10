@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STUDIO — Веб, автоматизация и AI-агенты под ключ</title>
+<meta name="description" content="Двое разработчиков. Веб-приложения, автоматизация бизнеса, AI-агенты. От идеи до продакшена за 8 недель. Если не справимся — не возьмём проект.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  /* ═════ DESIGN TOKENS (Forge palette — copied from forge_v3_01.html reference) ═════ */
+  :root {
+    --bg: #161208;
+    --surface: #1F1A0F;
+    --surface-2: #2A2316;
+    --border-dark: #0A0805;
+    --cream: #F0E8D5;
+    --mute: #8A7E64;
+    --copper: #C76A2D;
+    --sand: #D9A057;
+    --rust: #B83227;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--cream);
+    font-family: 'JetBrains Mono', monospace;
+    margin: 0;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--copper); color: var(--bg); }
+
+  /* ═════ BUTTONS ═════ */
+  .btn-primary, .btn-secondary, .btn-chip, .btn-chip-copper {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    display: inline-block;
+    border-radius: 0;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: transform 120ms cubic-bezier(0.4,0,0.2,1), box-shadow 120ms cubic-bezier(0.4,0,0.2,1);
+  }
+  .btn-primary {
+    background: var(--copper); color: var(--bg);
+    border: 4px solid var(--border-dark);
+    box-shadow: 8px 8px 0 var(--border-dark);
+    font-size: 13px; padding: 14px 28px;
+  }
+  .btn-secondary {
+    background: var(--surface); color: var(--cream);
+    border: 4px solid var(--border-dark);
+    box-shadow: 8px 8px 0 var(--border-dark);
+    font-size: 13px; padding: 14px 28px;
+  }
+  .btn-primary:hover, .btn-secondary:hover {
+    transform: translate(8px,8px); box-shadow: 0 0 0 var(--border-dark);
+  }
+  .btn-chip {
+    background: var(--surface); color: var(--cream);
+    border: 3px solid var(--border-dark);
+    box-shadow: 4px 4px 0 var(--border-dark);
+    font-size: 11px; font-weight: 500; padding: 8px 16px;
+  }
+  .btn-chip-copper {
+    background: var(--copper); color: var(--bg);
+    border: 3px solid var(--border-dark);
+    box-shadow: 4px 4px 0 var(--border-dark);
+    font-size: 11px; padding: 8px 16px;
+  }
+  .btn-chip:hover, .btn-chip-copper:hover {
+    transform: translate(4px,4px); box-shadow: 0 0 0 var(--border-dark);
+  }
+  .stack-chip {
+    background: transparent; border: 2px solid var(--mute); color: var(--mute);
+    font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 500;
+    letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 10px;
+    display: inline-block; border-radius: 0;
+  }
+
+  /* ═════ NAV ═════ */
+  .nav-bar {
+    border-bottom: 4px solid var(--border-dark);
+    background: var(--bg); position: sticky; top: 0; z-index: 200;
+  }
+  .logo {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 22px;
+    color: var(--copper); letter-spacing: 0.05em; text-decoration: none; text-transform: uppercase;
+  }
+  .logo .pulse {
+    display: inline-block; width: 8px; height: 8px; background: var(--copper);
+    margin-right: 8px; vertical-align: 3px; animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  /* ═════ HERO ═════ */
+  .hero {
+    position: relative;
+    width: 100%;
+    min-height: calc(100vh - 76px);
+    overflow: hidden;
+    background: var(--bg);
+    border-bottom: 4px solid var(--border-dark);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 24px;
+  }
+  .hero::before {
+    content: '';
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(to right, rgba(240,232,213,0.025) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(240,232,213,0.025) 1px, transparent 1px);
+    background-size: 64px 64px;
+    pointer-events: none;
+  }
+  .hero-meta {
+    position: absolute; top: 28px; left: 32px; z-index: 5;
+    max-width: 380px;
+  }
+  .hero-meta .small {
+    margin-top: 12px; font-size: 11px; color: var(--mute);
+    letter-spacing: 0.08em; text-transform: uppercase; line-height: 1.6;
+  }
+  .hero-cta {
+    position: absolute; bottom: 32px; right: 32px; z-index: 5;
+    text-align: right;
+  }
+  .hero-cta .label {
+    font-size: 10px; color: var(--mute); letter-spacing: 0.18em;
+    text-transform: uppercase; margin-bottom: 14px;
+  }
+  .hero-cta a + a { margin-left: 14px; }
+  .hero-text {
+    position: relative; z-index: 3;
+    text-align: center;
+    padding: 0 24px;
+    max-width: 1400px;
+  }
+  .hero-text .line {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: clamp(48px, 8.5vw, 150px);
+    text-transform: uppercase;
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+    margin: 0;
+    text-shadow:
+      4px 4px 0 var(--border-dark),
+      8px 8px 0 rgba(10,8,5,0.35);
+  }
+  .hero-text .line-1 { color: var(--copper); }
+  .hero-text .line-2 { color: var(--cream); }
+  .hero-text .sub {
+    margin-top: 36px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    color: var(--mute);
+    letter-spacing: 0.04em;
+    line-height: 1.75;
+    max-width: 720px;
+    margin-left: auto;
+    margin-right: auto;
+    text-transform: none;
+  }
+  .hero-text .sub strong { color: var(--cream); font-weight: 500; }
+
+  /* ═════ SHADOW STAMP UTILITY (used everywhere on monumental text) ═════ */
+  .shadow-stamp {
+    text-shadow:
+      4px 4px 0 var(--border-dark),
+      8px 8px 0 rgba(10,8,5,0.35);
+  }
+  .shadow-stamp-md {
+    text-shadow:
+      3px 3px 0 var(--border-dark),
+      6px 6px 0 rgba(10,8,5,0.3);
+  }
+
+  /* ═════ SECTION HEADLINE (monumental, centered, with 3D shadow) ═════ */
+  .section-eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; font-weight: 500;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--mute);
+    text-align: center;
+    margin-bottom: 18px;
+  }
+  .section-eyebrow::before { content: '['; margin-right: 8px; color: var(--copper); }
+  .section-eyebrow::after  { content: ']'; margin-left:  8px; color: var(--copper); }
+  .section-headline {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: clamp(40px, 6.5vw, 104px);
+    text-transform: uppercase;
+    letter-spacing: -0.03em;
+    line-height: 1.02;
+    text-align: center;
+    margin: 0 auto 64px;
+    max-width: 1100px;
+    color: var(--cream);
+    text-shadow:
+      4px 4px 0 var(--border-dark),
+      8px 8px 0 rgba(10,8,5,0.35);
+  }
+  .section-headline em { color: var(--copper); font-style: normal; }
+  .section-headline.copper { color: var(--copper); }
+  .section-headline.copper em { color: var(--cream); }
+  .section-headline.sand   { color: var(--sand); }
+
+  .container { max-width: 1280px; margin: 0 auto; padding: 0 32px; }
+
+  /* ═════ TICKER BAND ═════ */
+  .ticker-band {
+    background: var(--copper);
+    color: var(--bg);
+    border-top: 4px solid var(--border-dark);
+    border-bottom: 4px solid var(--border-dark);
+    overflow: hidden;
+    padding: 16px 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .ticker-track {
+    display: inline-block;
+    animation: ticker-scroll 38s linear infinite;
+  }
+  @keyframes ticker-scroll {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+  }
+  .ticker-track span { padding-right: 48px; }
+  .ticker-track .dot { color: var(--bg); margin-right: 12px; }
+
+  /* ═════ STATS BAND ═════ */
+  .stats-band {
+    background: var(--surface);
+    border-bottom: 4px solid var(--border-dark);
+    padding: 64px 32px;
+  }
+  .stats-grid {
+    max-width: 1280px; margin: 0 auto; display: grid;
+    grid-template-columns: repeat(4, 1fr); gap: 32px; text-align: left;
+  }
+  .stats-grid .num {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+    font-size: clamp(56px, 8vw, 96px); color: var(--copper);
+    line-height: 1; letter-spacing: -0.04em;
+    font-variant-numeric: tabular-nums;
+    text-shadow:
+      3px 3px 0 var(--border-dark),
+      6px 6px 0 rgba(10,8,5,0.3);
+  }
+  .stats-grid .lbl {
+    margin-top: 14px; font-size: 10px; color: var(--mute);
+    letter-spacing: 0.18em; text-transform: uppercase; line-height: 1.5;
+  }
+  @media (max-width: 760px) { .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 24px; } }
+
+  /* ═════ STICKER CARDS (services, work, ...) ═════ */
+  .sticker-card {
+    background: var(--surface);
+    border: 4px solid var(--border-dark);
+    box-shadow: 6px 6px 0 var(--border-dark);
+    padding: 32px;
+    transition: transform 120ms cubic-bezier(0.4,0,0.2,1),
+                box-shadow 120ms cubic-bezier(0.4,0,0.2,1);
+  }
+  .sticker-card:hover {
+    transform: translate(-3px,-3px) rotate(0deg) !important;
+    box-shadow: 9px 9px 0 var(--border-dark);
+  }
+
+  /* ═════ SERVICES ═════ */
+  .services-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 22px; }
+  @media (max-width: 900px) { .services-grid { grid-template-columns: 1fr; } }
+  .svc-num {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    color: var(--copper); letter-spacing: 0.18em; text-transform: uppercase;
+    margin-bottom: 18px;
+  }
+  .svc-name {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+    font-size: 38px; line-height: 1.0; letter-spacing: -0.025em;
+    margin-bottom: 16px; text-transform: uppercase;
+    text-shadow:
+      3px 3px 0 var(--border-dark),
+      5px 5px 0 rgba(10,8,5,0.25);
+  }
+  .svc-body {
+    font-size: 13px; color: var(--mute); line-height: 1.65;
+    margin-bottom: 18px;
+  }
+  .svc-stack { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  /* ═════ WORK ═════ */
+  .work-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 24px; }
+  @media (max-width: 900px) { .work-grid { grid-template-columns: 1fr; } }
+  .case-art {
+    aspect-ratio: 4/3; margin: -32px -32px 22px -32px;
+    border-bottom: 4px solid var(--border-dark);
+    background: linear-gradient(135deg, var(--copper), var(--rust));
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 64px;
+    color: var(--cream); letter-spacing: -0.04em;
+    text-shadow:
+      3px 3px 0 var(--border-dark),
+      6px 6px 0 rgba(10,8,5,0.3);
+  }
+  .case-art.b { background: linear-gradient(135deg, var(--surface), var(--copper)); color: var(--sand); }
+  .case-art.c { background: linear-gradient(135deg, var(--sand), var(--copper)); color: var(--bg); }
+  .case-meta {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    color: var(--copper); letter-spacing: 0.18em; text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  /* ═════ TESTIMONIALS ═════ */
+  .testimonials-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 22px; }
+  @media (max-width: 900px) { .testimonials-grid { grid-template-columns: 1fr; } }
+  .testimonial-card {
+    background: var(--bg);
+    border: 4px solid var(--border-dark);
+    box-shadow: 6px 6px 0 var(--copper);
+    padding: 32px;
+    transition: transform 120ms cubic-bezier(0.4,0,0.2,1), box-shadow 120ms cubic-bezier(0.4,0,0.2,1);
+  }
+  .testimonial-card:hover {
+    transform: translate(-3px,-3px); box-shadow: 9px 9px 0 var(--copper);
+  }
+  .testimonial-card .quote {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 500;
+    font-size: 18px; line-height: 1.45; letter-spacing: -0.01em;
+    margin-bottom: 24px; color: var(--cream);
+  }
+  .testimonial-card .quote::before { content: '“'; color: var(--copper); font-weight: 700; margin-right: 4px; }
+  .testimonial-card .quote::after  { content: '”'; color: var(--copper); font-weight: 700; margin-left: 4px; }
+  .testimonial-card .author {
+    font-family: 'JetBrains Mono', monospace; font-size: 12px;
+    color: var(--copper); letter-spacing: 0.14em; text-transform: uppercase;
+    line-height: 1.5; font-weight: 700;
+  }
+  .testimonial-card .role {
+    font-size: 10px; color: var(--mute); letter-spacing: 0.16em;
+    text-transform: uppercase; margin-top: 4px;
+  }
+
+  /* ═════ PROCESS ═════ */
+  .process-row { display: flex; align-items: stretch; gap: 12px; flex-wrap: wrap; }
+  .process-step {
+    flex: 1; min-width: 240px; padding: 28px;
+    background: var(--surface); border: 4px solid var(--border-dark);
+    box-shadow: 6px 6px 0 var(--border-dark);
+    transition: transform 120ms cubic-bezier(0.4,0,0.2,1),
+                box-shadow 120ms cubic-bezier(0.4,0,0.2,1);
+  }
+  .process-step:hover { transform: translate(-3px,-3px); box-shadow: 9px 9px 0 var(--border-dark); }
+  .process-step.active { background: var(--copper); color: var(--bg); }
+  .process-step .ps-num {
+    font-family: 'JetBrains Mono', monospace; font-size: 12px;
+    letter-spacing: 0.16em; text-transform: uppercase; opacity: 0.8;
+  }
+  .process-step .ps-name {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+    font-size: 28px; margin: 8px 0 14px; letter-spacing: -0.015em;
+    text-transform: uppercase;
+    text-shadow:
+      2px 2px 0 var(--border-dark),
+      4px 4px 0 rgba(10,8,5,0.2);
+  }
+  .process-step.active .ps-name {
+    text-shadow:
+      2px 2px 0 var(--border-dark),
+      4px 4px 0 rgba(10,8,5,0.4);
+  }
+  .process-step .ps-body { font-size: 13px; line-height: 1.6; }
+  .process-arrow {
+    color: var(--copper); font-family: 'JetBrains Mono', monospace;
+    font-weight: 700; font-size: 22px; align-self: center; flex-shrink: 0;
+  }
+  @media (max-width: 900px) { .process-arrow { transform: rotate(90deg); align-self: center; } }
+
+  /* ═════ FOUNDERS ═════ */
+  .founders-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+  @media (max-width: 900px) { .founders-grid { grid-template-columns: 1fr; } }
+  .founder-card {
+    background: var(--surface);
+    border: 4px solid var(--border-dark);
+    box-shadow: 8px 8px 0 var(--border-dark);
+    padding: 36px;
+    display: flex;
+    gap: 28px;
+    align-items: flex-start;
+    transition: transform 120ms cubic-bezier(0.4,0,0.2,1), box-shadow 120ms cubic-bezier(0.4,0,0.2,1);
+  }
+  .founder-card:hover {
+    transform: translate(-3px,-3px); box-shadow: 11px 11px 0 var(--border-dark);
+  }
+  .founder-avatar {
+    width: 132px; height: 132px; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--copper), var(--rust));
+    border: 4px solid var(--border-dark);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 48px;
+    color: var(--cream); letter-spacing: -0.04em;
+    text-shadow: 2px 2px 0 var(--border-dark), 4px 4px 0 rgba(10,8,5,0.3);
+  }
+  .founder-avatar.b { background: linear-gradient(135deg, var(--sand), var(--copper)); color: var(--bg); }
+  .founder-info { flex: 1; min-width: 0; }
+  .founder-name {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+    font-size: 28px; line-height: 1; letter-spacing: -0.02em;
+    margin-bottom: 6px; text-transform: uppercase;
+    text-shadow:
+      2px 2px 0 var(--border-dark),
+      4px 4px 0 rgba(10,8,5,0.25);
+  }
+  .founder-role {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    color: var(--copper); letter-spacing: 0.18em; text-transform: uppercase;
+    margin-bottom: 18px;
+  }
+  .founder-bio {
+    font-size: 13px; color: var(--mute); line-height: 1.7;
+  }
+  @media (max-width: 600px) {
+    .founder-card { flex-direction: column; gap: 20px; padding: 28px; }
+    .founder-avatar { width: 96px; height: 96px; font-size: 36px; }
+  }
+
+  /* ═════ MANIFESTO ═════ */
+  .manifesto-block {
+    background: var(--bg);
+    border-top: 4px solid var(--border-dark);
+    border-bottom: 4px solid var(--border-dark);
+    padding: 120px 32px;
+  }
+  .manifesto-text {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+    font-size: clamp(40px, 6vw, 84px); line-height: 1.05; letter-spacing: -0.03em;
+    max-width: 1100px; margin: 0 auto;
+    text-align: center;
+    text-transform: uppercase;
+    text-shadow:
+      4px 4px 0 var(--border-dark),
+      8px 8px 0 rgba(10,8,5,0.35);
+  }
+  .manifesto-text em { color: var(--copper); font-style: normal; }
+
+  /* ═════ CONTACT ═════ */
+  .contact-block {
+    background: var(--surface);
+    border: 4px solid var(--copper);
+    box-shadow: 8px 8px 0 var(--border-dark);
+    padding: 64px 48px;
+    max-width: 1080px;
+    margin: 0 auto;
+    text-align: center;
+  }
+  @media (max-width: 600px) { .contact-block { padding: 40px 24px; } }
+
+  /* ═════ FOOTER ═════ */
+  .footer-band {
+    border-top: 4px solid var(--border-dark);
+    background: var(--border-dark);
+    padding: 28px 32px;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    color: var(--mute); letter-spacing: 0.08em; text-transform: uppercase;
+    text-align: center;
+  }
+  .footer-band a { color: var(--copper); text-decoration: none; }
+  .footer-band a:hover { color: var(--sand); }
+
+  /* ═════ ANIMATIONS ═════ */
+  .reveal {
+    opacity: 0;
+    transform: translateY(40px);
+    transition: opacity 600ms cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                transform 600ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+  .reveal.visible { opacity: 1; transform: translateY(0); }
+
+  /* ═════ MOBILE ═════ */
+  @media (max-width: 900px) {
+    .hero { min-height: auto; padding: 100px 16px 80px; }
+    .hero-meta { position: relative; top: 0; left: 0; padding: 0 8px; max-width: none; margin-bottom: 36px; }
+    .hero-cta  { position: relative; bottom: 0; right: 0; padding: 0 8px; margin-top: 36px; text-align: left; }
+    .hero-text .line { font-size: clamp(40px, 11vw, 84px); }
+    .nav-bar .container { padding: 0 16px !important; height: 64px !important; }
+    .nav-chips { display: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════ NAV ═══════════════════════════════════════════ -->
+<nav class="nav-bar">
+  <div class="container" style="display:flex; align-items:center; justify-content:space-between; height:72px; gap:24px;">
+    <a href="#" class="logo"><span class="pulse"></span>STUDIO</a>
+    <div style="display:flex; gap:10px; flex-wrap:wrap;" class="nav-chips">
+      <a href="#services" class="btn-chip">Services</a>
+      <a href="#work" class="btn-chip">Work</a>
+      <a href="#testimonials" class="btn-chip">Reviews</a>
+      <a href="#process" class="btn-chip">Process</a>
+      <a href="#founders" class="btn-chip">Founders</a>
+      <a href="#contact" class="btn-chip">Contact</a>
+    </div>
+    <a href="#contact" class="btn-primary" style="flex-shrink:0;">Talk to us</a>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════════════════════ HERO ═══════════════════════════════════════════ -->
+<section class="hero" id="hero">
+
+  <div class="hero-meta">
+    <span class="btn-chip-copper">[ EST. 2026 · BUILT IN PHUKET × BANGKOK ]</span>
+    <div class="small">
+      // independent practice<br>
+      // web · automation · ai<br>
+      // taking on Q3 ’26 work
+    </div>
+  </div>
+
+  <div class="hero-cta">
+    <div class="label">// scroll for the rest →</div>
+    <a href="#contact" class="btn-primary">Start a project</a>
+    <a href="#work" class="btn-secondary">See work</a>
+  </div>
+
+  <div class="hero-text">
+    <p class="line line-1">Skip the talk.</p>
+    <p class="line line-2">Deliver the impact.</p>
+    <p class="sub">
+      Двое инженеров. <strong>Веб-приложения, автоматизация процессов и AI-агенты</strong>, которые ездят в продакшен — а не остаются красивыми презентациями.
+      <br><br>
+      От первого созвона до handoff'а — всё закрываем сами. Без агентств-посредников, без вечных «давайте созвонимся обсудим формат созвона».
+    </p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ TICKER ═══════════════════════════════════════════ -->
+<div class="ticker-band">
+  <div class="ticker-track">
+    <span><span class="dot">●</span> 12+ projects shipped</span>
+    <span><span class="dot">●</span> 96% on-time delivery</span>
+    <span><span class="dot">●</span> 100% returning clients</span>
+    <span><span class="dot">●</span> 4 years building</span>
+    <span><span class="dot">●</span> 8 industries served</span>
+    <span><span class="dot">●</span> 0 bullshit pitched</span>
+    <span><span class="dot">●</span> reply within 24h</span>
+    <!-- duplicate for seamless loop -->
+    <span><span class="dot">●</span> 12+ projects shipped</span>
+    <span><span class="dot">●</span> 96% on-time delivery</span>
+    <span><span class="dot">●</span> 100% returning clients</span>
+    <span><span class="dot">●</span> 4 years building</span>
+    <span><span class="dot">●</span> 8 industries served</span>
+    <span><span class="dot">●</span> 0 bullshit pitched</span>
+    <span><span class="dot">●</span> reply within 24h</span>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ STATS ═══════════════════════════════════════════ -->
+<section class="stats-band">
+  <div class="stats-grid">
+    <div><div class="num">12+</div><div class="lbl">Projects shipped<br>to production</div></div>
+    <div><div class="num">96%</div><div class="lbl">On-time delivery<br>last 18 months</div></div>
+    <div><div class="num">100%</div><div class="lbl">Returning clients<br>or referrals</div></div>
+    <div><div class="num">8wk</div><div class="lbl">Average from<br>idea to live</div></div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ SERVICES ═══════════════════════════════════════════ -->
+<section id="services" style="padding: 120px 32px;">
+  <div class="container">
+    <div class="section-eyebrow reveal">01 / Services</div>
+    <h2 class="section-headline reveal">Что мы <em>строим.</em></h2>
+
+    <div class="services-grid">
+      <div class="sticker-card reveal" style="transform: rotate(-2deg);">
+        <div class="svc-num">// 01 · WEB</div>
+        <div class="svc-name">Web Development</div>
+        <p class="svc-body">
+          Лендинги, веб-приложения, e-commerce, dashboards. От MVP до сложных SaaS. Production-grade с первого commit'а — не demo, не proof of concept.
+          <br><br>
+          Стек выбираем под задачу, а не под себя. Если правильно — это Next.js. Если правильно — это вообще статичный HTML. Считаем что важно для вас, а не что в моде на конференциях.
+        </p>
+        <div class="svc-stack">
+          <span class="stack-chip">Next.js</span>
+          <span class="stack-chip">React</span>
+          <span class="stack-chip">Vue</span>
+          <span class="stack-chip">TypeScript</span>
+          <span class="stack-chip">Postgres</span>
+          <span class="stack-chip">Tailwind</span>
+        </div>
+      </div>
+
+      <div class="sticker-card reveal" style="transform: rotate(2deg);">
+        <div class="svc-num">// 02 · AUTOMATION</div>
+        <div class="svc-name">Automation</div>
+        <p class="svc-body">
+          Соединяем CRM, мессенджеры, базы и сервисы. Убираем ручной труд там, где он не нужен. Метрики ROI считаем с первого месяца.
+          <br><br>
+          Если автоматизация не окупилась за 3 месяца — переделываем за свой счёт. Не потому что мы добрые, а потому что мы знаем: халтуры не существует — есть честная работа или повторная работа.
+        </p>
+        <div class="svc-stack">
+          <span class="stack-chip">n8n</span>
+          <span class="stack-chip">Make</span>
+          <span class="stack-chip">Python</span>
+          <span class="stack-chip">Telegram API</span>
+          <span class="stack-chip">Webhooks</span>
+        </div>
+      </div>
+
+      <div class="sticker-card reveal" style="transform: rotate(-1deg);">
+        <div class="svc-num">// 03 · AI AGENTS</div>
+        <div class="svc-name">AI Agents</div>
+        <p class="svc-body">
+          Чат-боты, голосовые ассистенты, RAG-системы, автономные агенты. Не игрушки и не demo — production с трекингом затрат и качества каждого ответа.
+          <br><br>
+          Запускаем агентов, которые реально работают, а не «галлюцинируют красиво». Каждый агент знает что делать, чего не делать, и куда эскалировать когда не уверен.
+        </p>
+        <div class="svc-stack">
+          <span class="stack-chip">GPT-4</span>
+          <span class="stack-chip">Claude</span>
+          <span class="stack-chip">LangChain</span>
+          <span class="stack-chip">Vector DB</span>
+          <span class="stack-chip">ElevenLabs</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ WORK ═══════════════════════════════════════════ -->
+<section id="work" style="padding: 120px 32px; background: var(--surface); border-top: 4px solid var(--border-dark); border-bottom: 4px solid var(--border-dark);">
+  <div class="container">
+    <div class="section-eyebrow reveal">02 / Selected work</div>
+    <h2 class="section-headline copper reveal">Proof, <em>not pitch.</em></h2>
+
+    <div class="work-grid">
+      <div class="sticker-card reveal" style="transform: rotate(-1deg);">
+        <div class="case-art">VRP</div>
+        <div class="case-meta">VIP Rental Phuket · 2026 · Web + AI</div>
+        <h3 class="svc-name" style="font-size:26px;">AI-консьерж 24/7</h3>
+        <p class="svc-body">
+          Next.js + GPT-4 концирж в чате booking-сайта. Закрывает 73% запросов клиентов без человека, эскалирует только сложные.
+          <br><br>
+          Лендинг конверсит +32% за 2 месяца после запуска. Команда clientа теперь управляет 80+ объектами одна.
+        </p>
+        <span class="btn-chip-copper" style="font-size: 10px;">+32% conversion</span>
+      </div>
+
+      <div class="sticker-card reveal" style="transform: rotate(2deg);">
+        <div class="case-art b">BD</div>
+        <div class="case-meta">Backdoor Store · 2025 · Automation + Bot</div>
+        <h3 class="svc-name" style="font-size:26px;">Telegram-бот e-commerce</h3>
+        <p class="svc-body">
+          Полная автоматизация выдачи Steam-кодов. 1 000+ заказов в месяц обрабатываются без человека.
+          <br><br>
+          Uptime 99.99% за последние 18 месяцев. Зарплата операторов клиента — 0₽.
+        </p>
+        <span class="btn-chip-copper" style="font-size: 10px;">99.99% uptime</span>
+      </div>
+
+      <div class="sticker-card reveal" style="transform: rotate(-2deg);">
+        <div class="case-art c">RA</div>
+        <div class="case-meta">RA Project · 2024-2026 · Data + AI</div>
+        <h3 class="svc-name" style="font-size:26px;">On-chain analytics</h3>
+        <p class="svc-body">
+          12 блокчейн-сетей, ClickHouse + Kafka, AI-классификация транзакций в реальном времени.
+          <br><br>
+          От нуля до production за 14 недель командой из двух человек. Сегодня обрабатываем 41M+ блоков, 4 агента в проде.
+        </p>
+        <span class="btn-chip-copper" style="font-size: 10px;">12 chains live</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ TESTIMONIALS ═══════════════════════════════════════════ -->
+<section id="testimonials" style="padding: 120px 32px;">
+  <div class="container">
+    <div class="section-eyebrow reveal">03 / Что говорят клиенты</div>
+    <h2 class="section-headline reveal">Клиенты <em>возвращаются.</em></h2>
+
+    <div class="testimonials-grid">
+      <div class="testimonial-card reveal">
+        <p class="quote">
+          За 6 недель закрыли проект, на который другая команда положила полгода. Уже планируем следующий — на этот раз с AI-частью. Эти ребята делают то, что обещают.
+        </p>
+        <div class="author">Andrei T.</div>
+        <div class="role">Founder · Booking platform · Phuket</div>
+      </div>
+
+      <div class="testimonial-card reveal">
+        <p class="quote">
+          Мы пришли с одной идеей. Через 8 недель у нас был production, клиенты и метрики. Парни знают что делают и знают как это объяснить простыми словами — без ITшного жаргона.
+        </p>
+        <div class="author">Anna K.</div>
+        <div class="role">Operations Director · E-commerce · Bangkok</div>
+      </div>
+
+      <div class="testimonial-card reveal">
+        <p class="quote">
+          Не помню, чтобы DevOps кто-то так серьёзно настраивал на проекте такого масштаба. Получили production-grade инфраструктуру по цене стартап-MVP. Рекомендую без оговорок.
+        </p>
+        <div class="author">Dima M.</div>
+        <div class="role">CTO · Crypto analytics · Remote</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ PROCESS ═══════════════════════════════════════════ -->
+<section id="process" style="padding: 120px 32px; background: var(--surface); border-top: 4px solid var(--border-dark); border-bottom: 4px solid var(--border-dark);">
+  <div class="container">
+    <div class="section-eyebrow reveal">04 / How we work</div>
+    <h2 class="section-headline sand reveal">Как мы <em>шипим.</em></h2>
+
+    <div class="process-row">
+      <div class="process-step reveal">
+        <div class="ps-num">01</div>
+        <div class="ps-name">Discovery</div>
+        <div class="ps-body">
+          2-3 дня погружения в задачу. Без brief-форм на 80 полей, без технического жаргона. Слушаем, рисуем, фиксируем — что нужно, кому нужно, почему именно сейчас.
+        </div>
+      </div>
+      <div class="process-arrow">▸▸▸</div>
+      <div class="process-step reveal">
+        <div class="ps-num">02</div>
+        <div class="ps-name">Architecture</div>
+        <div class="ps-body">
+          План, ТЗ, демо архитектуры. До первой строчки кода — ты понимаешь что и как, мы — что собираем и зачем. Никаких сюрпризов в счёте.
+        </div>
+      </div>
+      <div class="process-arrow">▸▸▸</div>
+      <div class="process-step reveal">
+        <div class="ps-num">03</div>
+        <div class="ps-name">Sprint Build</div>
+        <div class="ps-body">
+          2-недельные итерации с demo каждый понедельник. Видишь прогресс еженедельно. Меняешь приоритеты — берём в следующий sprint без переторговки.
+        </div>
+      </div>
+      <div class="process-arrow">▸▸▸</div>
+      <div class="process-step active reveal">
+        <div class="ps-num">04</div>
+        <div class="ps-name">Handoff</div>
+        <div class="ps-body">
+          Передача, документация, observability dashboards. Ты владеешь кодом — мы рядом, если нужно. Выходим, когда ты сам можешь поддерживать.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ MANIFESTO ═══════════════════════════════════════════ -->
+<section class="manifesto-block">
+  <div class="container">
+    <div class="section-eyebrow reveal">[ Manifesto ]</div>
+    <div class="manifesto-text reveal">
+      Если мы <em>не сможем</em> запустить за 8 недель —<br>
+      <em>мы не возьмём</em> проект.
+    </div>
+    <div style="margin-top: 40px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--mute); letter-spacing: 0.18em; text-transform: uppercase; text-align: center;">
+      — Nikolay Belikov × Alexander Egorov · founders · since 2026
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ FOUNDERS ═══════════════════════════════════════════ -->
+<section id="founders" style="padding: 120px 32px;">
+  <div class="container">
+    <div class="section-eyebrow reveal">05 / Founders</div>
+    <h2 class="section-headline reveal">Двое. <em>И код.</em></h2>
+
+    <div class="founders-grid">
+      <div class="founder-card reveal">
+        <div class="founder-avatar">NB</div>
+        <div class="founder-info">
+          <div class="founder-name">Nikolay Belikov</div>
+          <div class="founder-role">Backend · AI · Automation</div>
+          <p class="founder-bio">
+            Последние 4 года строит data pipelines, agent systems и Telegram-боты, которые реально работают в production. Tech lead на RA Project — 12 блокчейн-сетей, ClickHouse, Kafka.
+            <br><br>
+            Знает почему n8n быстрее Make для большинства кейсов, и когда стоит написать собственный сервис на Python вместо low-code платформы.
+          </p>
+        </div>
+      </div>
+
+      <div class="founder-card reveal">
+        <div class="founder-avatar b">AE</div>
+        <div class="founder-info">
+          <div class="founder-name">Alexander Egorov</div>
+          <div class="founder-role">Frontend · Product · Architecture</div>
+          <p class="founder-bio">
+            Делает продукты, которыми пользуются — а не click-throughs в Figma. Tech lead на VIP Rental Phuket и Backdoor Store.
+            <br><br>
+            Знает разницу между «UI на дизайн-ревью» и «UI который не разваливается на edge case'ах в реальных руках клиента».
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ CONTACT ═══════════════════════════════════════════ -->
+<section id="contact" style="padding: 120px 32px; background: var(--surface); border-top: 4px solid var(--border-dark);">
+  <div class="container">
+    <div class="section-eyebrow reveal">06 / Contact</div>
+    <h2 class="section-headline copper reveal">Напиши — <em>вернёмся за 24 часа.</em></h2>
+
+    <div class="contact-block reveal">
+      <p style="color: var(--mute); font-size: 16px; line-height: 1.7; max-width: 720px; margin: 0 auto 36px;">
+        Опиши задачу одним сообщением. Без brief-форм, без «давайте созвонимся обсудим формат созвона». Если задача нам по силам — отвечаем планом и сроком за 24 часа. Если нет — отвечаем честно и порекомендуем кого-то, кто справится.
+      </p>
+      <div style="display:flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: center;">
+        <a href="mailto:hello@studio.dev" class="btn-primary">hello@studio.dev</a>
+        <a href="https://t.me/studio_team" class="btn-secondary">@studio_team</a>
+      </div>
+      <div style="margin-top: 36px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--mute); letter-spacing: 0.16em; text-transform: uppercase;">
+        ● Reply within 24h · 1 slot remaining for Q3 ’26
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ FOOTER ═══════════════════════════════════════════ -->
+<footer class="footer-band">
+  © 2026 STUDIO · forged in Phuket × Bangkok ·
+  <a href="#founders">Nikolay Belikov × Alexander Egorov</a> ·
+  <a href="https://t.me/studio_team">telegram</a> ·
+  <a href="mailto:hello@studio.dev">hello@studio.dev</a>
+</footer>
+
+<!-- ═══════════════════════════════════════════ SCROLL REVEAL ═══════════════════════════════════════════ -->
+<script>
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach((entry, i) => {
+        if (entry.isIntersecting) {
+          setTimeout(() => entry.target.classList.add('visible'), i * 70);
+          obs.unobserve(entry.target);
+        }
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.1 });
+    document.querySelectorAll('.reveal').forEach(el => obs.observe(el));
+  } else {
+    document.querySelectorAll('.reveal').forEach(el => el.classList.add('visible'));
+  }
+</script>
+
+</body>
+</html>
