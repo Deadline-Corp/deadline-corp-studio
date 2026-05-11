@@ -13,7 +13,7 @@
   // class, default DOM visible). Each click advances by one. Position #2
   // is NOIR by user spec, so the user can predict exactly which design
   // they'll land on by counting clicks from page-load.
-  const CYCLE = [null, 'noir', 'vault', 'kinetic', 'matrix', 'island', 'studio'];
+  const CYCLE = [null, 'noir', 'matrix', 'kinetic', 'vault', 'island', 'studio'];
   const MODE_LABELS = {
     'null':    'ORIGINAL',
     'noir':    'NOIR',
@@ -220,18 +220,15 @@
     overlay.classList.remove('is-visible');
     await wait(420);
 
-    // Promote the rain to a persistent ambient layer on <body>.
-    // It keeps falling, very softly, behind everything in Matrix mode —
-    // the real cypherpunk atmosphere, not just a transition gimmick.
-    const c = activeRain.canvas;
-    document.body.appendChild(c);
-    c.classList.add('matrix-rain-ambient');
-    idleMatrixRain = activeRain;
+    // Ambient rain DISABLED per user — no falling chars over content.
+    // Destroy the rain canvas after the entrance animation.
+    activeRain.destroy();
     activeRain = null;
+    idleMatrixRain = null;
 
-    // Inject the terminal status bar above everything else
-    injectMatrixChrome();
-    // Inject cyberpunk video backdrop (Pexels free) + cursor trail
+    // (Status-bar chrome disabled per user feedback — clean canvas.)
+    // injectMatrixChrome();
+    // Inject cinematic video backdrop + themed cursor trail
     injectMatrixVideo();
     injectThemeCursor('matrix');
   }
@@ -395,126 +392,149 @@
     if (islandChrome) { islandChrome.remove(); islandChrome = null; }
   }
 
-  // ───────── 3D perspective tunnel for Matrix mode (canvas, no network) ─────────
-  // Renders forward-flying green wire-lines vanishing to a centre point.
-  // Combined with the existing rain canvas + photo bg + scanlines, this
-  // produces a video-grade cinematic backdrop with zero external assets.
-  let matrixVideo = null;          // alias kept for symmetry with old API
+  // ───────── Cinematic video backdrop for Matrix mode ─────────
+  // Real HTML5 video (morpheus loop) for that "expensive, portfolio-grade"
+  // feel. A canvas fallback (3D tunnel) kicks in only if video fails.
+  let matrixVideo = null;
+  let matrixVignette = null;
   let matrixTunnelStop = null;
+
   function injectMatrixVideo() {
     removeMatrixVideo();
+
+    // 1) Real video element — autoplay, muted, looping, no controls.
+    //    Mobile gets the 720p file (smaller, faster).
+    const isMobile = window.innerWidth <= 768;
+    const video = document.createElement('video');
+    video.className = 'matrix-video-bg matrix-video-element';
+    video.setAttribute('aria-hidden', 'true');
+    video.autoplay = true;
+    video.loop = true;
+    video.muted = true;
+    video.defaultMuted = true;
+    video.playsInline = true;
+    video.preload = 'auto';
+
+    const src1080 = document.createElement('source');
+    src1080.src = isMobile
+      ? 'assets/video/morpheus-hero-720p.mp4'
+      : 'assets/video/morpheus-loop-1080p.mp4';
+    src1080.type = 'video/mp4';
+    video.appendChild(src1080);
+
+    const src2 = document.createElement('source');
+    src2.src = 'assets/video/morpheus-hero-1080p.mp4';
+    src2.type = 'video/mp4';
+    video.appendChild(src2);
+
+    document.body.appendChild(video);
+    matrixVideo = video;
+
+    // If video errors out, fall back to the canvas tunnel
+    video.addEventListener('error', () => {
+      if (!matrixVideo) return;
+      matrixVideo.remove();
+      matrixVideo = null;
+      injectMatrixTunnel();
+    }, { once: true });
+
+    // Force-play (muted+playsInline is allowed by browsers)
+    const playPromise = video.play();
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch(() => {
+        const retry = () => { video.play().catch(() => {}); document.removeEventListener('click', retry); };
+        document.addEventListener('click', retry, { once: true });
+      });
+    }
+
+    // 2) Cinematic vignette overlay on top of video
+    const vignette = document.createElement('div');
+    vignette.className = 'matrix-video-vignette';
+    vignette.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(vignette);
+    matrixVignette = vignette;
+  }
+
+  // Canvas tunnel — fallback when video can't load
+  function injectMatrixTunnel() {
     const canvas = document.createElement('canvas');
     canvas.className = 'matrix-video-bg matrix-tunnel-canvas';
     canvas.setAttribute('aria-hidden', 'true');
     document.body.appendChild(canvas);
+    matrixVideo = canvas;
     const ctx = canvas.getContext('2d', { alpha: true });
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     let W = 0, H = 0, cx = 0, cy = 0;
 
-    // A set of "rings" travelling outward from the vanishing point.
-    // Each ring has a depth z that decreases over time; perspective
-    // projects it bigger as z → 0 (closer to camera).
     const RING_COUNT = 18;
     const SPEED = 0.012;
     let rings = [];
     function reset() {
       rings = [];
-      for (let i = 0; i < RING_COUNT; i++) {
-        rings.push({ z: 1 - (i / RING_COUNT) });
-      }
+      for (let i = 0; i < RING_COUNT; i++) rings.push({ z: 1 - (i / RING_COUNT) });
     }
     function resize() {
-      W = window.innerWidth;
-      H = window.innerHeight;
-      canvas.width = W * dpr;
-      canvas.height = H * dpr;
-      canvas.style.width = W + 'px';
-      canvas.style.height = H + 'px';
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      ctx.scale(dpr, dpr);
-      cx = W / 2;
-      cy = H * 0.55;          // slight depression — cinematic horizon
+      W = window.innerWidth; H = window.innerHeight;
+      canvas.width = W * dpr; canvas.height = H * dpr;
+      canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+      ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.scale(dpr, dpr);
+      cx = W / 2; cy = H * 0.55;
     }
-    function project(z) {
-      // z in (0..1]; near = small z, far = 1. Scale grows as z → 0.
-      const k = 1 / Math.max(z, 0.001);
-      return k;
-    }
+    function project(z) { return 1 / Math.max(z, 0.001); }
     function frame() {
       if (!running) return;
       ctx.clearRect(0, 0, W, H);
-
-      // Radial fog gradient sits behind the wires for depth
       const fog = ctx.createRadialGradient(cx, cy, 20, cx, cy, Math.max(W, H));
-      fog.addColorStop(0,    'rgba(0, 70, 30, 0.18)');
-      fog.addColorStop(0.4,  'rgba(0, 40, 18, 0.12)');
-      fog.addColorStop(1,    'rgba(0, 0, 0, 0)');
-      ctx.fillStyle = fog;
-      ctx.fillRect(0, 0, W, H);
-
-      // 8 radial spokes vanishing to centre
-      ctx.strokeStyle = 'rgba(0, 255, 65, 0.18)';
-      ctx.lineWidth = 1;
-      const SPOKES = 16;
-      for (let s = 0; s < SPOKES; s++) {
-        const a = (s / SPOKES) * Math.PI * 2;
-        ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.lineTo(cx + Math.cos(a) * W, cy + Math.sin(a) * H);
-        ctx.stroke();
+      fog.addColorStop(0, 'rgba(0, 70, 30, 0.18)');
+      fog.addColorStop(0.4, 'rgba(0, 40, 18, 0.12)');
+      fog.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = fog; ctx.fillRect(0, 0, W, H);
+      ctx.strokeStyle = 'rgba(0, 255, 65, 0.18)'; ctx.lineWidth = 1;
+      for (let s = 0; s < 16; s++) {
+        const a = (s / 16) * Math.PI * 2;
+        ctx.beginPath(); ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(a) * W, cy + Math.sin(a) * H); ctx.stroke();
       }
-
-      // Travelling rings (rectangular hoops)
       for (const r of rings) {
-        r.z -= SPEED;
-        if (r.z <= 0.0) r.z = 1.0;
-
+        r.z -= SPEED; if (r.z <= 0.0) r.z = 1.0;
         const scale = project(r.z);
-        const halfW = (W * 0.4) * scale;
-        const halfH = (H * 0.32) * scale;
-        const left   = cx - halfW;
-        const right  = cx + halfW;
-        const top    = cy - halfH;
-        const bottom = cy + halfH;
-
-        // Distance fade: near is brighter
+        const halfW = (W * 0.4) * scale, halfH = (H * 0.32) * scale;
+        const left = cx - halfW, right = cx + halfW;
+        const top = cy - halfH, bottom = cy + halfH;
         const fade = Math.min(1, (1 - r.z) * 1.6);
         ctx.strokeStyle = `rgba(0, 255, 65, ${0.55 * fade})`;
         ctx.lineWidth = 1 + fade * 1.2;
-        ctx.shadowBlur = 14 * fade;
-        ctx.shadowColor = 'rgba(0, 255, 65, 0.45)';
+        ctx.shadowBlur = 14 * fade; ctx.shadowColor = 'rgba(0, 255, 65, 0.45)';
         ctx.strokeRect(left, top, right - left, bottom - top);
-
-        // 4 corner sparks for tech feel
         ctx.fillStyle = `rgba(190, 255, 210, ${0.7 * fade})`;
         const sp = 2 + fade * 2;
-        ctx.fillRect(left - sp / 2,  top - sp / 2,    sp, sp);
-        ctx.fillRect(right - sp / 2, top - sp / 2,    sp, sp);
-        ctx.fillRect(left - sp / 2,  bottom - sp / 2, sp, sp);
+        ctx.fillRect(left - sp / 2, top - sp / 2, sp, sp);
+        ctx.fillRect(right - sp / 2, top - sp / 2, sp, sp);
+        ctx.fillRect(left - sp / 2, bottom - sp / 2, sp, sp);
         ctx.fillRect(right - sp / 2, bottom - sp / 2, sp, sp);
       }
-
       ctx.shadowBlur = 0;
       raf = requestAnimationFrame(frame);
     }
-
-    let running = true;
-    let raf = null;
-    reset();
-    resize();
+    let running = true, raf = null;
+    reset(); resize();
     window.addEventListener('resize', resize);
     raf = requestAnimationFrame(frame);
-
-    matrixVideo = canvas;
     matrixTunnelStop = () => {
       running = false;
       if (raf) cancelAnimationFrame(raf);
       window.removeEventListener('resize', resize);
     };
   }
+
   function removeMatrixVideo() {
     if (matrixTunnelStop) { matrixTunnelStop(); matrixTunnelStop = null; }
-    if (matrixVideo) { matrixVideo.remove(); matrixVideo = null; }
+    if (matrixVideo) {
+      try { if (typeof matrixVideo.pause === 'function') matrixVideo.pause(); } catch (e) {}
+      matrixVideo.remove();
+      matrixVideo = null;
+    }
+    if (matrixVignette) { matrixVignette.remove(); matrixVignette = null; }
   }
 
   // ───────── Themed cursor trail (canvas, per mode) ─────────
@@ -2772,4 +2792,489 @@
     pickNextMode, transitionTo, getCurrentMode, MODES,
     forceMode: (m) => transitionTo(m),
   };
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // MATRIX nav scroll-collapse + cascade re-entry
+  // Scroll down past 80px → .is-collapsed (only Связаться CTA visible)
+  // Scroll up back to top → .is-reveal (cascade animation)
+  // Only active in matrix mode.
+  // ═══════════════════════════════════════════════════════════════════════
+  (() => {
+    const navBar = document.querySelector('.nav-bar');
+    if (!navBar) return;
+    let collapsed = false;
+    let revealTimer = null;
+    const THRESHOLD = 80;
+
+    function onScroll() {
+      if (!HTML.classList.contains('mode-matrix')) {
+        navBar.classList.remove('is-collapsed', 'is-reveal');
+        document.body.classList.remove('mx-nav-collapsed');
+        collapsed = false;
+        return;
+      }
+      const y = window.scrollY || window.pageYOffset;
+      const shouldCollapse = y > THRESHOLD;
+      if (shouldCollapse && !collapsed) {
+        navBar.classList.add('is-collapsed');
+        navBar.classList.remove('is-reveal');
+        // Delay body class so floating-CTA appears AFTER nav fade starts
+        setTimeout(() => {
+          if (navBar.classList.contains('is-collapsed')) {
+            document.body.classList.add('mx-nav-collapsed');
+          }
+        }, 300);
+        collapsed = true;
+      } else if (!shouldCollapse && collapsed) {
+        navBar.classList.remove('is-collapsed');
+        navBar.classList.add('is-reveal');
+        document.body.classList.remove('mx-nav-collapsed');
+        collapsed = false;
+        clearTimeout(revealTimer);
+        revealTimer = setTimeout(() => navBar.classList.remove('is-reveal'), 1200);
+      }
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+    // Re-check on mode change too
+    new MutationObserver(onScroll).observe(HTML, { attributes: true, attributeFilter: ['class'] });
+  })();
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // MATRIX scroll-reveal — sections + cards fade in with matrix flicker
+  // when they enter viewport. Only active in matrix mode.
+  // ═══════════════════════════════════════════════════════════════════════
+  (() => {
+    if (!('IntersectionObserver' in window)) return;
+    const SELECTORS = [
+      'section', '.credo-block', '.manifesto-block', '.stats-band',
+      '.sticker-card', '.svc-card', '.testimonial-card', '.process-step',
+      '.credo-item', '.stats-grid > *', '.section-headline'
+    ];
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        // Only animate in matrix mode
+        if (HTML.classList.contains('mode-matrix')) {
+          entry.target.classList.add('mx-revealed');
+        }
+        observer.unobserve(entry.target);
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
+
+    function scan() {
+      SELECTORS.forEach(sel => {
+        document.querySelectorAll(sel).forEach(el => {
+          if (!el.dataset.mxObserved) {
+            el.dataset.mxObserved = '1';
+            observer.observe(el);
+          }
+        });
+      });
+    }
+    scan();
+    // Re-scan on mode change (in case new elements appear)
+    new MutationObserver(scan).observe(document.body, { childList: true, subtree: true });
+  })();
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // MATRIX premium effects — runs only in matrix mode:
+  //   1. Custom mint cross-hair cursor + soft glow halo trail
+  //   2. Decode-hover on nav-chips, logo, CTA buttons (letters shuffle)
+  //   3. Thin horizontal scan-beam ползёт сверху вниз
+  // ═══════════════════════════════════════════════════════════════════════
+  (() => {
+    // ─── 1) Custom cursor ─────────────────────────────────────────────
+    const cur = document.createElement('div');
+    cur.className = 'mx-cursor';
+    document.body.appendChild(cur);
+    const halo = document.createElement('div');
+    halo.className = 'mx-cursor-halo';
+    document.body.appendChild(halo);
+    let mx = -100, my = -100, hx = -100, hy = -100, rafId = null;
+    const onMove = (e) => { mx = e.clientX; my = e.clientY; };
+    function tickCursor() {
+      cur.style.transform  = `translate3d(${mx}px, ${my}px, 0) translate(-50%, -50%)`;
+      hx += (mx - hx) * 0.16;
+      hy += (my - hy) * 0.16;
+      halo.style.transform = `translate3d(${hx}px, ${hy}px, 0) translate(-50%, -50%)`;
+      rafId = requestAnimationFrame(tickCursor);
+    }
+    // Toggle cursor on/off with mode
+    function refreshCursor() {
+      const active = HTML.classList.contains('mode-matrix');
+      document.body.classList.toggle('mx-fx-on', active);
+      if (active && !rafId) {
+        document.addEventListener('mousemove', onMove, { passive: true });
+        rafId = requestAnimationFrame(tickCursor);
+      } else if (!active && rafId) {
+        document.removeEventListener('mousemove', onMove);
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+    }
+    refreshCursor();
+    new MutationObserver(refreshCursor).observe(HTML, { attributes: true, attributeFilter: ['class'] });
+
+    // Enlarge cursor on interactive elements
+    const interactive = 'a, button, [role="button"], input, textarea, select';
+    document.addEventListener('mouseover', (e) => {
+      if (!HTML.classList.contains('mode-matrix')) return;
+      cur.classList.toggle('is-active', !!e.target.closest(interactive));
+    }, { passive: true });
+
+    // ─── 2) Decode hover ──────────────────────────────────────────────
+    const GLYPHS = '01アイウエオカキクケコサシスセソタチツテト<>{}[]/\\=*+-|ABCDEFGHJK0123456789'.split('');
+    function decodeText(el, durationMs = 380) {
+      const finalText = el.dataset.mxOriginal || el.textContent;
+      if (!el.dataset.mxOriginal) el.dataset.mxOriginal = finalText;
+      const frames = 14;
+      const len = finalText.length;
+      let i = 0;
+      clearInterval(el._mxTimer);
+      el._mxTimer = setInterval(() => {
+        const settled = Math.floor((len * i) / frames);
+        let out = '';
+        for (let c = 0; c < len; c++) {
+          if (c < settled || finalText[c] === ' ') out += finalText[c];
+          else out += GLYPHS[(Math.random() * GLYPHS.length) | 0];
+        }
+        el.textContent = out;
+        i++;
+        if (i > frames) {
+          clearInterval(el._mxTimer);
+          el.textContent = finalText;
+        }
+      }, durationMs / (frames + 1));
+    }
+
+    function bindDecode() {
+      // Target: visible lang-span inside nav-chips, btn-primary, btn-secondary, logo
+      const targets = document.querySelectorAll(
+        '.nav-chips .btn-chip span.lang-ru, .nav-chips .btn-chip span.lang-en,' +
+        '.nav-bar .btn-primary span.lang-ru, .nav-bar .btn-primary span.lang-en,' +
+        '.logo span.lang-ru, .logo span.lang-en'
+      );
+      targets.forEach(span => {
+        if (span.dataset.mxBound) return;
+        span.dataset.mxBound = '1';
+        const parent = span.closest('a, button');
+        if (!parent) return;
+        parent.addEventListener('mouseenter', () => {
+          if (!HTML.classList.contains('mode-matrix')) return;
+          // Only decode visible span (other lang hidden via CSS)
+          const cs = getComputedStyle(span);
+          if (cs.display === 'none') return;
+          decodeText(span, 360);
+        });
+      });
+    }
+    bindDecode();
+    new MutationObserver(bindDecode).observe(document.body, { childList: true, subtree: true });
+
+    // ─── 3) Scan-beam ─────────────────────────────────────────────────
+    const beam = document.createElement('div');
+    beam.className = 'mx-scan-beam';
+    document.body.appendChild(beam);
+
+    // ─── 4) Viewport corner brackets ─────────────────────────────────
+    ['tl', 'tr', 'bl', 'br'].forEach(pos => {
+      const c = document.createElement('div');
+      c.className = 'mx-frame-corner ' + pos;
+      document.body.appendChild(c);
+    });
+
+    // ─── 5) HUD: live timestamp + section index ──────────────────────
+    const hud = document.createElement('div');
+    hud.className = 'mx-hud';
+    hud.innerHTML =
+      '<span class="mx-hud-time">--:--:--</span>' +
+      '<span class="mx-hud-sec">00 / —</span>';
+    document.body.appendChild(hud);
+
+    const hudTime = hud.querySelector('.mx-hud-time');
+    const hudSec  = hud.querySelector('.mx-hud-sec');
+    function updateClock() {
+      const d = new Date();
+      const pad = (n) => String(n).padStart(2, '0');
+      hudTime.textContent = pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+    }
+    updateClock();
+    setInterval(updateClock, 1000);
+
+    // ─── 6) Scroll-progress rail on right edge ───────────────────────
+    const rail = document.createElement('div');
+    rail.className = 'mx-rail';
+    const railThumb = document.createElement('div');
+    railThumb.className = 'mx-rail-thumb';
+    rail.appendChild(railThumb);
+    document.body.appendChild(rail);
+
+    const SECTION_NAMES = [
+      { sel: '#hero',         label: 'HERO' },
+      { sel: '#services',     label: 'SERVICES' },
+      { sel: '.stats-band',   label: 'NUMBERS' },
+      { sel: '#process',      label: 'PROCESS' },
+      { sel: '.credo-block.matrix-only', label: 'MANIFESTO' },
+      { sel: '#testimonials', label: 'VOICES' },
+      { sel: '.manifesto-block', label: 'CREDO' },
+      { sel: '#contact',      label: 'CONTACT' },
+    ];
+    let lastScrollSync = 0;
+    function onPageScroll() {
+      const now = performance.now();
+      if (now - lastScrollSync < 60) return;
+      lastScrollSync = now;
+      const doc = document.documentElement;
+      const max = Math.max(1, (doc.scrollHeight - window.innerHeight));
+      const ratio = Math.min(1, Math.max(0, window.scrollY / max));
+      // Thumb position
+      const railH = rail.clientHeight;
+      const top = Math.round(ratio * (railH - railThumb.offsetHeight));
+      railThumb.style.top = top + 'px';
+      // Section index — find which section is mostly in view
+      const vh = window.innerHeight;
+      let bestIdx = 0;
+      for (let i = 0; i < SECTION_NAMES.length; i++) {
+        const el = document.querySelector(SECTION_NAMES[i].sel);
+        if (!el) continue;
+        const r = el.getBoundingClientRect();
+        if (r.top < vh * 0.6) bestIdx = i;
+      }
+      const cur = SECTION_NAMES[bestIdx];
+      const num = String(bestIdx + 1).padStart(2, '0');
+      hudSec.textContent = num + ' / ' + cur.label;
+    }
+    window.addEventListener('scroll', onPageScroll, { passive: true });
+    setTimeout(onPageScroll, 100);
+
+    // ─── 7) Drifting kanji/digit dust ────────────────────────────────
+    const DUST_CHARS = ['ア', 'カ', 'タ', 'ナ', 'マ', '0', '1', '7', '/', '<', '>', '{', '}'];
+    for (let i = 1; i <= 5; i++) {
+      const d = document.createElement('div');
+      d.className = 'mx-dust d' + i;
+      d.textContent = DUST_CHARS[(Math.random() * DUST_CHARS.length) | 0];
+      document.body.appendChild(d);
+    }
+    // Periodically swap char so it doesn't feel static
+    setInterval(() => {
+      if (!document.body.classList.contains('mx-fx-on')) return;
+      document.querySelectorAll('.mx-dust').forEach(d => {
+        if (Math.random() < 0.35) d.textContent = DUST_CHARS[(Math.random() * DUST_CHARS.length) | 0];
+      });
+    }, 3000);
+
+    // ─── 8) Vertical edge pulse rails (left + right of viewport) ─────
+    const eL = document.createElement('div');
+    eL.className = 'mx-edge left';
+    const eR = document.createElement('div');
+    eR.className = 'mx-edge right';
+    document.body.appendChild(eL);
+    document.body.appendChild(eR);
+  })();
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // MATRIX headline decode-reveal on scroll-in
+  // Each section eyebrow + headline scrambles letters briefly, then settles
+  // when first entering viewport (in matrix mode only).
+  // ═══════════════════════════════════════════════════════════════════════
+  (() => {
+    if (!('IntersectionObserver' in window)) return;
+    const GLYPHS = '01アイウエオカキクケコサシスセソタチツテト<>{}[]/\\=*+-|ABCDEFGHJK'.split('');
+
+    function decodeSpan(span, finalText, durationMs = 520) {
+      if (!finalText || finalText.length < 1) return;
+      span.classList.add('mx-decoding');
+      const frames = 16;
+      const len = finalText.length;
+      let i = 0;
+      clearInterval(span._mxDecodeT);
+      span._mxDecodeT = setInterval(() => {
+        const settled = Math.floor((len * i) / frames);
+        let out = '';
+        for (let c = 0; c < len; c++) {
+          const ch = finalText[c];
+          if (c < settled || ch === ' ' || ch === ' ') out += ch;
+          else out += GLYPHS[(Math.random() * GLYPHS.length) | 0];
+        }
+        span.textContent = out;
+        i++;
+        if (i > frames) {
+          clearInterval(span._mxDecodeT);
+          span.textContent = finalText;
+          span.classList.remove('mx-decoding');
+        }
+      }, durationMs / (frames + 1));
+    }
+
+    const HEADLINE_SEL = [
+      '.section-headline span.lang-ru', '.section-headline span.lang-en',
+      '.section-eyebrow span.lang-ru', '.section-eyebrow span.lang-en',
+      '.section-eyebrow', // fallback when no inner lang-span
+      '.manifesto-text span.lang-ru', '.manifesto-text span.lang-en',
+      '.credo-block .credo-headline .line span.lang-ru',
+      '.credo-block .credo-headline .line span.lang-en',
+      '.stats-grid .num',
+      '#services .sticker-card .svc-name span.lang-ru',
+      '#services .sticker-card .svc-name span.lang-en',
+      '#process .process-step .ps-name span.lang-ru',
+      '#process .process-step .ps-name span.lang-en'
+    ].join(',');
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        if (!HTML.classList.contains('mode-matrix')) {
+          observer.unobserve(entry.target);
+          return;
+        }
+        const el = entry.target;
+        // Snapshot original text on first decode
+        if (!el.dataset.mxOrig) el.dataset.mxOrig = el.textContent;
+        // Skip if hidden (other lang)
+        const cs = getComputedStyle(el);
+        if (cs.display === 'none') {
+          observer.unobserve(el);
+          return;
+        }
+        decodeSpan(el, el.dataset.mxOrig, 480);
+        observer.unobserve(el);
+      });
+    }, { threshold: 0.2, rootMargin: '0px 0px -10% 0px' });
+
+    function scanHeadlines() {
+      document.querySelectorAll(HEADLINE_SEL).forEach(el => {
+        if (el.dataset.mxHeadlineObserved) return;
+        // Don't re-decode something already empty
+        if (!el.textContent.trim()) return;
+        el.dataset.mxHeadlineObserved = '1';
+        observer.observe(el);
+      });
+    }
+    scanHeadlines();
+    new MutationObserver(scanHeadlines).observe(document.body, { childList: true, subtree: true });
+
+    // When user switches INTO matrix mode after page has loaded,
+    // re-decode visible headlines so the effect happens.
+    new MutationObserver(() => {
+      if (!HTML.classList.contains('mode-matrix')) return;
+      // Trigger decode on currently-visible headlines
+      document.querySelectorAll(HEADLINE_SEL).forEach(el => {
+        const r = el.getBoundingClientRect();
+        if (r.bottom < 0 || r.top > window.innerHeight) return;
+        const cs = getComputedStyle(el);
+        if (cs.display === 'none') return;
+        const original = el.dataset.mxOrig || el.textContent;
+        if (!el.dataset.mxOrig) el.dataset.mxOrig = original;
+        decodeSpan(el, original, 460);
+      });
+    }).observe(HTML, { attributes: true, attributeFilter: ['class'] });
+  })();
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Matrix rain drip from Связаться button (nav)
+  // Tiny mint character falls from below the button every ~1.6s
+  // ═══════════════════════════════════════════════════════════════════════
+  (() => {
+    const DRIP_CHARS = ['0', '1', 'ア', 'カ', 'タ', '/', '<', '>'];
+    let dripTimer = null;
+
+    function spawnDripOn(host) {
+      if (!host) return;
+      if (!HTML.classList.contains('mode-matrix')) return;
+      const drip = document.createElement('span');
+      drip.className = 'mx-drip';
+      drip.textContent = DRIP_CHARS[(Math.random() * DRIP_CHARS.length) | 0];
+      const offsetPct = 5 + Math.random() * 90; // 5%-95% of host width
+      drip.style.left = offsetPct + '%';
+      drip.style.setProperty('--mx-drip-x', '-50%');
+      // Random fall distance — different floors per drip (40-180px)
+      const dist = 40 + Math.floor(Math.random() * 140);
+      drip.style.setProperty('--mx-drip-dist', dist + 'px');
+      // Random duration scaled to distance (longer fall = longer time)
+      const dur = (1.2 + (dist / 180) * 1.6 + Math.random() * 0.4).toFixed(2);
+      drip.style.animationDuration = dur + 's';
+      // Randomize font-size slightly
+      drip.style.fontSize = (11 + Math.random() * 4).toFixed(1) + 'px';
+      host.appendChild(drip);
+      setTimeout(() => drip.remove(), (parseFloat(dur) * 1000) + 200);
+    }
+
+    // Floating СВЯЗАТЬСЯ pinned at top-right of viewport, independent of nav
+    function ensureFloatingCTA() {
+      if (!HTML.classList.contains('mode-matrix')) return null;
+      let cta = document.querySelector('.mx-floating-cta');
+      if (cta) return cta;
+      const navBtn = document.querySelector('.nav-bar .btn-primary');
+      cta = document.createElement('a');
+      cta.className = 'mx-floating-cta';
+      cta.href = navBtn ? (navBtn.getAttribute('href') || 'https://t.me/deadline_corp') : 'https://t.me/deadline_corp';
+      cta.target = '_blank';
+      cta.rel = 'noopener';
+      // Mirror visible lang text
+      const ru = document.createElement('span');
+      ru.className = 'lang-ru';
+      ru.textContent = 'Связаться';
+      const en = document.createElement('span');
+      en.className = 'lang-en';
+      en.textContent = 'Talk to us';
+      cta.appendChild(ru);
+      cta.appendChild(en);
+      document.body.appendChild(cta);
+      return cta;
+    }
+    function removeFloatingCTA() {
+      const cta = document.querySelector('.mx-floating-cta');
+      if (cta) cta.remove();
+    }
+
+    function spawnDrip() {
+      // Drip targets — floating CTA (pinned) + DEADLINE logo if visible
+      const cta = ensureFloatingCTA();
+      const navBar = document.querySelector('.nav-bar');
+      const navCollapsed = navBar && navBar.classList.contains('is-collapsed');
+      const logo = !navCollapsed ? document.querySelector('.nav-bar .logo') : null;
+      const targets = [cta, logo].filter(Boolean);
+      if (!targets.length) return;
+      const host = targets[(Math.random() * targets.length) | 0];
+      spawnDripOn(host);
+      if (Math.random() < 0.35 && targets.length > 1) {
+        const other = targets.find(t => t !== host);
+        if (other) spawnDripOn(other);
+      }
+    }
+
+    function startDrip() {
+      stopDrip();
+      ensureFloatingCTA();
+      setTimeout(spawnDrip, 300);
+      setTimeout(spawnDrip, 700);
+      function loop() {
+        spawnDrip();
+        dripTimer = setTimeout(loop, 600 + Math.random() * 800);
+      }
+      dripTimer = setTimeout(loop, 1100);
+    }
+    function stopDrip() {
+      if (dripTimer) { clearTimeout(dripTimer); dripTimer = null; }
+      document.querySelectorAll('.mx-drip').forEach(d => d.remove());
+    }
+
+    function check() {
+      const inMatrix = HTML.classList.contains('mode-matrix');
+      if (inMatrix) {
+        ensureFloatingCTA();
+        startDrip();
+      } else {
+        stopDrip();
+        removeFloatingCTA();
+      }
+    }
+    check();
+    new MutationObserver(check).observe(HTML, { attributes: true, attributeFilter: ['class'] });
+    const navBarEl = document.querySelector('.nav-bar');
+    if (navBarEl) {
+      new MutationObserver(check).observe(navBarEl, { attributes: true, attributeFilter: ['class'] });
+    }
+  })();
 })();
