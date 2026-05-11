@@ -2500,28 +2500,21 @@ html.mode-noir .magic-toggle {
   margin: 0 0.5em;
 }
 
-/* ─── CHAPTER (full viewport, layered) ─── */
+/* ─── CHAPTER (full viewport, layered, seamless — no divider line so
+       chapters bleed into each other) ─── */
 .noir-chapter {
   position: relative;
   width: 100%;
   height: 100vh;
   display: grid;
   padding: 4.8rem clamp(1.8rem, 4.8vw, 5rem) 3.6rem;
-  border-bottom: 1px solid var(--rule);
   isolation: isolate;
   overflow: hidden;
 }
-/* Subtle radial vignette per chapter to give depth */
-.noir-chapter::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(ellipse at 50% 40%, transparent 28%, rgba(0, 0, 0, 0.45) 90%),
-    radial-gradient(ellipse at top, rgba(184, 152, 92, 0.025), transparent 50%);
-  pointer-events: none;
-  z-index: 1;
-}
+/* No per-chapter vignette — was creating a visible seam at chapter
+   boundaries (each chapter's top was slightly lit, bottom slightly
+   darker, so adjacent edges didn't match). Body background --bg is
+   uniform across the whole book now. */
 .noir-chapter > * { position: relative; z-index: 2; }
 
 /* ─── COVER (00) ─── */
@@ -2622,7 +2615,7 @@ html.mode-noir .magic-toggle {
   text-transform: uppercase;
   color: var(--gold);
 }
-.noir-mh-top .rule { height: 1px; background: var(--rule-strong); }
+.noir-mh-top .rule { display: none; }   /* hairline removed — creates seam between chapters */
 .noir-mh-stage {
   display: grid;
   place-items: center;
@@ -2884,32 +2877,18 @@ html.mode-noir .magic-toggle {
   animation-play-state: paused;
 }
 
+/* Voice cards are pure floating text — no frame, no background, no
+   quote-glyph. The marquee carries just italic quote + mono byline. */
 .noir-voice-card {
   flex: 0 0 auto;
   width: clamp(320px, 28vw, 460px);
   padding: 1.8rem 1.8rem 1.4rem;
-  border: 1px solid var(--rule-strong);
-  background: rgba(10, 9, 8, 0.55);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
   display: grid;
   gap: 1rem;
   position: relative;
-  transition: border-color 320ms ease, transform 420ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 420ms cubic-bezier(0.16, 1, 0.3, 1);
 }
-.noir-voice-card:hover {
-  border-color: rgba(184, 152, 92, 0.55);
-  transform: translateY(-2px);
-}
-.noir-voice-card .quote-glyph {
-  font-family: 'Fraunces', serif;
-  font-weight: 400;
-  font-size: 3.2rem;
-  color: var(--gold);
-  opacity: 0.5;
-  line-height: 0.4;
-  user-select: none;
-}
+.noir-voice-card:hover { transform: translateY(-2px); }
 .noir-voice-card .quote {
   font-family: 'Playfair Display', serif;
   font-style: italic;
@@ -3131,15 +3110,8 @@ html.mode-noir .magic-toggle {
   background: var(--cream);
   margin-left: -3px; margin-top: -3px;
 }
-.noir-cursor-ring {
-  width: 38px; height: 38px;
-  background: transparent;
-  border: 1px solid var(--cream);
-  margin-left: -19px; margin-top: -19px;
-}
-.noir-cursor-dot.is-on,
-.noir-cursor-ring.is-on { opacity: 1; }
-.noir-cursor-ring.is-hovering { width: 64px; height: 64px; margin-left: -32px; margin-top: -32px; }
+.noir-cursor-ring { display: none !important; }   /* outer ring removed — only the dot remains */
+.noir-cursor-dot.is-on { opacity: 1; }
 
 @media (hover: hover) and (pointer: fine) {
   html.mode-noir,
@@ -3149,25 +3121,25 @@ html.mode-noir .magic-toggle {
   html.mode-noir [contenteditable="true"] { cursor: text !important; }
 }
 
-/* ─── 3D backdrop (Three.js canvas) — single body-level full-viewport
-       canvas. mountNoirBackdrop() creates one WebGL context shared
-       across all 12 chapter scenes via swap. Per-chapter opacity is
-       tinted via body[data-noir-ch="N"] so heavy scenes can be dimmer
-       behind text-dense chapters and bolder behind hero/contact. ─── */
+/* ─── 3D backdrop — TWO canvases for HTML/WebGL z-occlusion mix.
+       Back canvas (z-index 50) sits BEHIND .noir-book content (100).
+       Front canvas (z-index 200) sits ABOVE it. Each renderer uses
+       opposing clipping planes at world z=0 so geometry from the
+       far half of the scene appears behind HTML, near half in front.
+       Cards in the voices marquee are sandwiched between the two,
+       giving a true 3D wrap-around when the helix rotates. ─── */
 .noir-bg {
   position: fixed;
   inset: 0;
   width: 100vw;
   height: 100vh;
-  z-index: 50;             /* between page bg (0) and book content (100) */
   pointer-events: none;
   opacity: 0;
   animation: noir-bg-fade 1.6s cubic-bezier(0.16, 1, 0.3, 1) 0.5s forwards;
-  /* Smooth chapter-tint changes (filter:opacity per data-noir-ch) so
-     the per-chapter brightness step doesn't snap. Material-level fade
-     between scenes runs in JS (mountNoirBackdrop crossfade). */
   transition: filter 700ms cubic-bezier(0.4, 0, 0.2, 1);
 }
+.noir-bg-back  { z-index: 50;  }     /* far side — behind .noir-book */
+.noir-bg-front { z-index: 200; }     /* near side — above .noir-book */
 @keyframes noir-bg-fade {
   to { opacity: 1; }
 }
@@ -3176,7 +3148,7 @@ html.mode-noir .magic-toggle {
    stays primary; cover/manifesto/contact get full visual presence. */
 body[data-noir-ch="0"]  .noir-bg { filter: opacity(1.00); }    /* COVER */
 body[data-noir-ch="1"]  .noir-bg { filter: opacity(0.85); }    /* MANIFESTO */
-body[data-noir-ch="2"]  .noir-bg { filter: opacity(0.55); }    /* WEB */
+body[data-noir-ch="2"]  .noir-bg { filter: opacity(0.85); }    /* WEB — wormhole needs presence */
 body[data-noir-ch="3"]  .noir-bg { filter: opacity(0.6);  }    /* AUTOMATION (lattice) */
 body[data-noir-ch="4"]  .noir-bg { filter: opacity(0.6);  }    /* AI */
 body[data-noir-ch="5"]  .noir-bg { filter: opacity(0.75); }    /* VRP — now scene visible (no card blocking) */
@@ -3185,12 +3157,8 @@ body[data-noir-ch="7"]  .noir-bg { filter: opacity(0.75); }    /* RA */
 body[data-noir-ch="8"]  .noir-bg { filter: opacity(0.7);  }    /* VOICES (spiral) */
 body[data-noir-ch="9"]  .noir-bg { filter: opacity(0.85); }    /* WRITE */
 
-/* Chapters need transparent backgrounds so the body-level canvas shows
-   through. Keep the per-chapter vignette but push it behind everything
-   except the canvas. */
-html.mode-noir .noir-chapter::before {
-  z-index: 0;
-}
+/* Chapters have transparent backgrounds so the body-level canvas
+   shows through. Per-chapter vignette removed for seamless scroll. */
 
 /* ─── GSAP control — when GSAP is driving reveals, disable CSS
        transitions on .noir-fade and .noir-split .char so GSAP and CSS

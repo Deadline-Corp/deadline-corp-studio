@@ -1129,49 +1129,77 @@
       };
     },
 
-    // 02 WEB — flowing wave-grid floor + a wireframe "worm" (cylinder)
-    // that bounces off the grid along a sinusoidal arc, sweeping left-
-    // to-right and pitching its body along the trajectory tangent.
+    // 02 WEB — wave-grid floor ("spacetime fabric") + WORMHOLE funnel.
+    // LatheGeometry sweeps a hyperbolic throat profile around Y, giving
+    // a faceted hourglass shape with concentric rings + radial spokes.
+    // Glowing core at the throat + halo ring at the rim. Slow Y-axis
+    // rotation gives the Interstellar-tier "fabric is being pulled
+    // through a hole" sensation.
     waveGrid(T, scene) {
+      // ─── FLOOR — wave-grid wireframe (fabric of spacetime) ───
       const w = 7, h = 4.5, segX = 56, segY = 28;
       const geo = new T.PlaneGeometry(w, h, segX, segY);
-      const mesh = new T.LineSegments(new T.WireframeGeometry(geo), new T.LineBasicMaterial({ color: GOLD, transparent: true, opacity: 0.4 }));
+      const mesh = new T.LineSegments(
+        new T.WireframeGeometry(geo),
+        new T.LineBasicMaterial({ color: GOLD, transparent: true, opacity: 0.4 })
+      );
       mesh.rotation.x = -Math.PI / 2.5;
       scene.add(mesh);
       const basePositions = geo.attributes.position.array.slice();
 
-      // The worm — wireframe cylinder. Lies horizontal (long axis along X
-      // after rotation.z = π/2). Bounces above the grid via |sin| arcs.
-      const wormR = 0.075, wormLen = 0.85;
-      const wormGeo  = new T.CylinderGeometry(wormR, wormR, wormLen, 12, 1, false);
-      const wormEdges = new T.WireframeGeometry(wormGeo);
-      const worm = new T.LineSegments(wormEdges, new T.LineBasicMaterial({ color: GOLD_HI, transparent: true, opacity: 0.88 }));
-      // Two end-cap rings to make it read more "creature-like" than a pipe
-      const capGeo = new T.TorusGeometry(wormR * 1.05, 0.008, 4, 14);
-      const capMat = new T.LineBasicMaterial({ color: GOLD_HI, transparent: true, opacity: 0.7 });
-      const capA = new T.Mesh(capGeo, capMat); capA.rotation.x = Math.PI / 2;
-      const capB = new T.Mesh(capGeo, capMat); capB.rotation.x = Math.PI / 2;
-      // Group so we can transform as one
-      const wormGroup = new T.Group();
-      wormGroup.add(worm, capA, capB);
-      // Cylinder's default axis is Y — rotate the inner mesh so the long
-      // axis ends up along the group's local +X. Then the group rotates
-      // around its center to pitch along trajectory.
-      worm.rotation.z = Math.PI / 2;
-      capA.position.x =  wormLen / 2;
-      capB.position.x = -wormLen / 2;
-      scene.add(wormGroup);
+      // ─── WORMHOLE THROAT — hyperbolic lathe ───
+      // r(y) = sqrt(a^2 + (y * b)^2)  → narrow waist at y=0, flares at extremes.
+      // Sampled along Y, then LatheGeometry sweeps 360° around Y for the
+      // 3D funnel. Wireframe gives the iconic grid look (latitude rings
+      // + longitude spokes).
+      const Nh = 28;
+      const profile = [];
+      for (let i = 0; i <= Nh; i++) {
+        const y = -1.5 + (i / Nh) * 3.0;          // -1.5 .. +1.5
+        const r = Math.sqrt(0.18 + (y * 0.85) ** 2);
+        profile.push(new T.Vector2(r, y));
+      }
+      const latheGeo = new T.LatheGeometry(profile, 40);
+      const throat = new T.LineSegments(
+        new T.WireframeGeometry(latheGeo),
+        new T.LineBasicMaterial({ color: GOLD, transparent: true, opacity: 0.55 })
+      );
 
-      // Motion parameters
-      const wormSpeed   = 0.7;     // x units per second
-      const xRange      = 6;       // -3 to +3 loop
-      const bounceFreq  = 1.45;    // rad/s
-      const bounceAmp   = 1.25;    // peak height above floor
-      const floorY      = -0.55;   // resting on grid
+      // ─── CORE — bright glowing center at the throat ───
+      const coreGeo = new T.SphereGeometry(0.32, 20, 18);
+      const coreMat = new T.MeshBasicMaterial({
+        color: 0xFFEBC0, transparent: true, opacity: 0.85,
+        blending: T.AdditiveBlending,
+      });
+      const core = new T.Mesh(coreGeo, coreMat);
+
+      // ─── HALO — bright ring sitting at the throat rim ───
+      const haloGeo = new T.TorusGeometry(0.46, 0.02, 6, 56);
+      const haloMat = new T.LineBasicMaterial({
+        color: GOLD_HI, transparent: true, opacity: 0.9,
+      });
+      const halo = new T.LineSegments(new T.WireframeGeometry(haloGeo), haloMat);
+      halo.rotation.x = Math.PI / 2;            // ring horizontal at y=0
+
+      // ─── OUTER HALO — wider, dimmer secondary ring ───
+      const halo2Geo = new T.TorusGeometry(0.72, 0.008, 4, 64);
+      const halo2 = new T.LineSegments(
+        new T.WireframeGeometry(halo2Geo),
+        new T.LineBasicMaterial({ color: GOLD, transparent: true, opacity: 0.4 })
+      );
+      halo2.rotation.x = Math.PI / 2;
+
+      // Group + tilt — top of wormhole leans slightly toward camera so
+      // the viewer "looks into" the throat.
+      const wormholeGroup = new T.Group();
+      wormholeGroup.add(throat, halo2, halo, core);
+      wormholeGroup.position.set(0, 0.5, 0.4);
+      wormholeGroup.rotation.x = -Math.PI / 6;  // -30° tilt
+      scene.add(wormholeGroup);
 
       return {
         update(t, mx, my) {
-          // Grid wave displacement
+          // Wave-grid floor displacement (unchanged)
           const arr = geo.attributes.position.array;
           for (let i = 0; i < arr.length; i += 3) {
             const x = basePositions[i];
@@ -1182,34 +1210,43 @@
           mesh.rotation.z = mx * 0.18;
           mesh.position.y = -0.5 + my * 0.25;
 
-          // Worm trajectory — X linear loop, Y half-sin arcs
-          const xCycle = ((t * wormSpeed) % xRange);
-          const xPos = -xRange / 2 + xCycle;
-          const phase = t * bounceFreq;
-          const sinP = Math.sin(phase);
-          const yPos = floorY + Math.abs(sinP) * bounceAmp;
-          wormGroup.position.set(xPos, yPos, 0.35);
+          // Wormhole — slow spin around its vertical axis (the throat axis)
+          // gives the "spacetime fabric pulled through a hole" rotation.
+          // x-tilt softly responds to mouse for parallax depth.
+          wormholeGroup.rotation.y = t * 0.42;
+          wormholeGroup.rotation.x = -Math.PI / 6 + my * 0.14;
+          wormholeGroup.rotation.z = mx * 0.08;
 
-          // Pitch along tangent — atan2(dy, dx). dy = sign(sin) * bounceAmp * bounceFreq * cos
-          const dy = Math.sign(sinP || 1) * bounceAmp * bounceFreq * Math.cos(phase);
-          const dx = wormSpeed * 1.8;  // multiplier dampens pitch angle
-          wormGroup.rotation.z = Math.atan2(dy, dx);
+          // Core pulse — additive-blended sphere breathes 0.78x → 1.22x.
+          // Opacity left to the crossfade system so scene transitions
+          // fade in/out cleanly without fighting our local animation.
+          core.scale.setScalar(1 + Math.sin(t * 1.9) * 0.22);
 
-          // Subtle roll around its own long axis for "wriggle" feel
-          wormGroup.rotation.x = t * 1.4;
+          // Primary halo counter-rotates (subtle gold flicker)
+          halo.rotation.z = -t * 0.55;
+          halo.scale.setScalar(1 + Math.sin(t * 1.3) * 0.07);
 
-          // Slight mouse parallax on whole scene
+          // Outer halo slow counter
+          halo2.rotation.z = t * 0.28;
+
+          // Scene mouse parallax
           scene.rotation.y = mx * 0.06;
         },
         dispose() {
           geo.dispose();
           mesh.material.dispose();
           mesh.geometry.dispose();
-          wormGeo.dispose();
-          wormEdges.dispose();
-          worm.material.dispose();
-          capGeo.dispose();
-          capMat.dispose();
+          latheGeo.dispose();
+          throat.geometry.dispose();
+          throat.material.dispose();
+          coreGeo.dispose();
+          coreMat.dispose();
+          haloGeo.dispose();
+          halo.geometry.dispose();
+          haloMat.dispose();
+          halo2Geo.dispose();
+          halo2.geometry.dispose();
+          halo2.material.dispose();
         },
       };
     },
@@ -1497,27 +1534,32 @@
       };
     },
 
-    // 08 VOICES (background) — golden helix of connected dots running
-    // RIGHTWARD (positive Y rotation) while the marquee cards run LEFT.
-    // The opposing motion creates visual depth between foreground and bg.
+    // 08 VOICES (background) — HORIZONTAL golden helix wrapping the
+    // marquee cards. Long axis = X. Rotates around X axis = corkscrew
+    // illusion of flow LEFT→RIGHT, opposing the marquee cards which
+    // scroll RIGHT→LEFT in the foreground. Constant tube radius so the
+    // spiral reads as a uniform "wrapping" around the cards.
     dotSpiral(T, scene) {
-      const N = 140;
-      const turns = 5;
-      const height = 5.5;
-      const radius = 2.1;
+      const N = 180;
+      const turns = 7;          // tighter helix for "wrap" feel
+      const length = 7;         // X extent — beyond viewport, fades out
+      const radius = 1.55;      // ring radius — around the cards
       const pos = new Float32Array(N * 3);
       for (let i = 0; i < N; i++) {
         const tn = i / (N - 1);
         const a = tn * Math.PI * 2 * turns;
-        const r = radius * (0.4 + tn * 0.7);
-        pos[i * 3]     = Math.cos(a) * r;
-        pos[i * 3 + 1] = -height / 2 + tn * height;
-        pos[i * 3 + 2] = Math.sin(a) * r;
+        // X is the LONG axis (horizontal); Y/Z form the helix wrap
+        pos[i * 3]     = -length / 2 + tn * length;
+        pos[i * 3 + 1] = Math.cos(a) * radius;
+        pos[i * 3 + 2] = Math.sin(a) * radius;
       }
       const ptGeo = new T.BufferGeometry();
       ptGeo.setAttribute('position', new T.BufferAttribute(pos, 3));
-      const points = new T.Points(ptGeo, new T.PointsMaterial({ color: GOLD_HI, size: 0.05, transparent: true, opacity: 0.85 }));
+      const points = new T.Points(ptGeo, new T.PointsMaterial({
+        color: GOLD_HI, size: 0.048, transparent: true, opacity: 0.9, sizeAttenuation: true,
+      }));
 
+      // Lines between consecutive points = traced helix line
       const linePos = new Float32Array((N - 1) * 6);
       for (let i = 0; i < N - 1; i++) {
         linePos[i * 6]     = pos[i * 3];
@@ -1529,17 +1571,26 @@
       }
       const lineGeo = new T.BufferGeometry();
       lineGeo.setAttribute('position', new T.BufferAttribute(linePos, 3));
-      const lines = new T.LineSegments(lineGeo, new T.LineBasicMaterial({ color: GOLD, transparent: true, opacity: 0.45 }));
+      const lines = new T.LineSegments(lineGeo, new T.LineBasicMaterial({
+        color: GOLD, transparent: true, opacity: 0.5,
+      }));
 
       const group = new T.Group();
       group.add(points, lines);
-      group.rotation.z = -0.18;  // tilt so it sweeps horizontally across screen
       scene.add(group);
       return {
         update(t, mx, my) {
-          // RIGHTWARD spin (positive Y) — opposes the marquee scrolling LEFT
-          group.rotation.y = t * 0.42 + mx * 0.22;
-          group.rotation.x = my * 0.12;
+          // Corkscrew rotation around X axis = visual illusion of
+          // material flowing LEFT→RIGHT along the long axis. Combined
+          // with the helical geometry, eyes track the rotating spiral
+          // and perceive rightward motion.
+          group.rotation.x = t * 0.7 + my * 0.18;
+          // Subtle Y yaw for depth on mouse parallax — keeps long axis
+          // mostly horizontal, just a hint of perspective shift.
+          group.rotation.y = mx * 0.14;
+          // Tiny Z tilt so the helix doesn't lie flat-on against
+          // viewport plane when mouse is centered.
+          group.rotation.z = -0.04 + my * 0.05;
         },
         dispose() { ptGeo.dispose(); lineGeo.dispose(); points.material.dispose(); lines.material.dispose(); },
       };
@@ -1602,12 +1653,32 @@
     try { T = await loadThree(); }
     catch { return null; }
 
-    const canvas = document.createElement('canvas');
-    canvas.className = 'noir-bg';
-    document.body.appendChild(canvas);
+    // Two canvases for true 3D wrap-around effect — back canvas sits
+    // BEHIND the .noir-book content (z-index 50), front canvas SITS
+    // ABOVE it (z-index 200). HTML cards in voices marquee live between
+    // them at z-index 100. Each renderer draws the same scene/camera
+    // but with opposing clipping planes at world z=0: back renderer
+    // keeps z ≤ 0 (far side of helix), front renderer keeps z ≥ 0
+    // (near side). As the helix rotates, points cross the z=0 plane
+    // and migrate between canvases — visually wrapping around cards.
+    const canvasBack = document.createElement('canvas');
+    canvasBack.className = 'noir-bg noir-bg-back';
+    document.body.appendChild(canvasBack);
 
-    const renderer = new T.WebGLRenderer({ canvas, alpha: true, antialias: true });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    const canvasFront = document.createElement('canvas');
+    canvasFront.className = 'noir-bg noir-bg-front';
+    document.body.appendChild(canvasFront);
+
+    const rendererBack = new T.WebGLRenderer({ canvas: canvasBack, alpha: true, antialias: true });
+    const rendererFront = new T.WebGLRenderer({ canvas: canvasFront, alpha: true, antialias: true });
+    rendererBack.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    rendererFront.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    rendererBack.localClippingEnabled = true;
+    rendererFront.localClippingEnabled = true;
+    // Plane(normal, constant) — keeps points where dot(normal, p) + constant ≥ 0.
+    // 0.02 epsilon overlap avoids a 1-pixel seam at z=0.
+    rendererBack.clippingPlanes  = [new T.Plane(new T.Vector3(0, 0, -1), 0.02)];   // keeps z ≤ 0.02
+    rendererFront.clippingPlanes = [new T.Plane(new T.Vector3(0, 0,  1), 0.02)];   // keeps z ≥ -0.02
 
     const camera = new T.PerspectiveCamera(38, 1, 0.1, 100);
     camera.position.z = 5.4;
@@ -1615,7 +1686,8 @@
 
     function resize() {
       const w = window.innerWidth, h = window.innerHeight;
-      renderer.setSize(w, h, false);
+      rendererBack.setSize(w, h, false);
+      rendererFront.setSize(w, h, false);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
     }
@@ -1708,7 +1780,10 @@
         }
       }
 
-      renderer.render(scene, camera);
+      // Render same scene/camera through both renderers — clipping
+      // planes split it at z=0. Back goes behind cards, front goes above.
+      rendererBack.render(scene, camera);
+      rendererFront.render(scene, camera);
       if (running) raf = requestAnimationFrame(frame);
     }
     raf = requestAnimationFrame(frame);
@@ -1724,8 +1799,10 @@
         fadingOut.forEach(disposeAndRemove);
         active = null;
         fadingOut = [];
-        renderer.dispose();
-        canvas.remove();
+        rendererBack.dispose();
+        rendererFront.dispose();
+        canvasBack.remove();
+        canvasFront.remove();
       },
     };
   }
@@ -1967,7 +2044,6 @@
           <span>since 2025</span>
         </div>
         <div class="noir-mh-stage">
-          <span class="quote-glyph noir-fade d1">"</span>
           <p class="noir-statement noir-fade d2">
             <span class="lang-ru">Мы — DEADLINE.<br>У нас ничего не горит.</span>
             <span class="lang-en">We are DEADLINE.<br>Nothing's on fire here.</span>
@@ -2026,7 +2102,6 @@
     const allVoices = c.testimonials.slice(0, 12);
     const voiceCards = allVoices.map(t => `
       <div class="noir-voice-card">
-        <div class="quote-glyph">"</div>
         <p class="quote">${t.quote}</p>
         <div class="byline"><span class="author">${t.author}</span> · ${t.role}</div>
       </div>
