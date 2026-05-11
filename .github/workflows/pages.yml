@@ -24,9 +24,11 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configure Pages
-        # This step enables GitHub Pages on the repo if it is not yet
-        # enabled, provided the workflow GITHUB_TOKEN has pages:write.
+        # enablement: true tells the action to auto-create the Pages
+        # site on first run (otherwise it expects Pages to already exist).
         uses: actions/configure-pages@v5
+        with:
+          enablement: true
 
       - name: Upload site as Pages artifact
         uses: actions/upload-pages-artifact@v3
