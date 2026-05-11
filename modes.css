@@ -1,0 +1,2236 @@
+/* ═══════════════════════════════════════════════════════════════════════
+   MAGIC MODE TOGGLE — visual reskin system for index.html
+   Phase 1: button only. Themes (Matrix/Island/Studio) added in next phases.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ─────── Magic button: live, breathing, magnetic ─────── */
+.magic-toggle {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  flex-shrink: 0;
+  font: inherit;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+
+  /* Bright magical blue with subtle dimensional gradient */
+  background:
+    radial-gradient(120% 80% at 30% 25%, #6FDBFF 0%, transparent 55%),
+    linear-gradient(135deg, #1E9BFF 0%, #00BFFF 55%, #00A8E8 100%);
+  color: #fff;
+
+  /* Layered glow + inner highlight */
+  box-shadow:
+    0 0 0 0 rgba(0, 191, 255, 0.55),
+    0 4px 14px -2px rgba(0, 191, 255, 0.45),
+    0 1px 0 rgba(255, 255, 255, 0.18) inset,
+    0 -1px 0 rgba(0, 60, 110, 0.45) inset;
+
+  animation: magic-pulse 2.4s ease-in-out infinite;
+  transition:
+    box-shadow 240ms ease-out,
+    filter 200ms ease;
+  will-change: transform, box-shadow, filter;
+}
+
+/* Idle pulse: gentle scale + glow ring */
+@keyframes magic-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow:
+      0 0 0 0 rgba(0, 191, 255, 0.55),
+      0 4px 14px -2px rgba(0, 191, 255, 0.45),
+      0 1px 0 rgba(255, 255, 255, 0.18) inset,
+      0 -1px 0 rgba(0, 60, 110, 0.45) inset;
+    filter: brightness(1);
+  }
+  50% {
+    transform: scale(1.045);
+    box-shadow:
+      0 0 0 7px rgba(0, 191, 255, 0),
+      0 7px 22px -2px rgba(0, 191, 255, 0.6),
+      0 1px 0 rgba(255, 255, 255, 0.28) inset,
+      0 -1px 0 rgba(0, 60, 110, 0.45) inset;
+    filter: brightness(1.08);
+  }
+}
+
+.magic-toggle:hover {
+  animation-duration: 1.4s;
+  filter: brightness(1.12) saturate(1.15);
+}
+
+.magic-toggle:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+
+.magic-toggle:active {
+  transform: scale(0.96);
+}
+
+.magic-toggle svg {
+  width: 20px;
+  height: 20px;
+  display: block;
+  filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.85));
+  pointer-events: none;
+}
+
+/* ─────── Idle sparks drifting around the button ─────── */
+.magic-toggle::before,
+.magic-toggle::after {
+  content: '';
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 4px #fff, 0 0 8px rgba(120, 220, 255, 0.9);
+  opacity: 0;
+  pointer-events: none;
+}
+.magic-toggle::before {
+  top: 2px;
+  left: 28%;
+  animation: magic-spark-a 3.8s ease-in-out infinite;
+}
+.magic-toggle::after {
+  bottom: 2px;
+  right: 22%;
+  animation: magic-spark-b 4.6s ease-in-out infinite 0.7s;
+}
+@keyframes magic-spark-a {
+  0%, 100% { opacity: 0; transform: translate(0, 0) scale(0.6); }
+  20%      { opacity: 0.95; transform: translate(-7px, -10px) scale(1); }
+  55%      { opacity: 0.4;  transform: translate(-13px, -18px) scale(0.55); }
+  70%      { opacity: 0; }
+}
+@keyframes magic-spark-b {
+  0%, 100% { opacity: 0; transform: translate(0, 0) scale(0.6); }
+  25%      { opacity: 0.9; transform: translate(8px, 9px) scale(1); }
+  60%      { opacity: 0.35; transform: translate(15px, 16px) scale(0.5); }
+  75%      { opacity: 0; }
+}
+
+/* ─────── Charge-up burst (200ms before transition) ─────── */
+.magic-toggle.is-charging {
+  animation: magic-charge 220ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+@keyframes magic-charge {
+  0% {
+    transform: scale(1.045);
+    filter: brightness(1.08);
+  }
+  55% {
+    transform: scale(1.20);
+    filter: brightness(1.6) saturate(1.4);
+    box-shadow:
+      0 0 0 14px rgba(0, 191, 255, 0),
+      0 0 32px 10px rgba(0, 191, 255, 0.95),
+      0 1px 0 rgba(255, 255, 255, 0.7) inset;
+  }
+  100% {
+    transform: scale(0.55);
+    opacity: 0;
+    filter: brightness(2) blur(1px);
+  }
+}
+
+/* ─────── Hidden during the heavy theatre ─────── */
+.magic-toggle.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.4);
+  animation: none;
+}
+
+/* ─────── Reappear with welcome bounce ─────── */
+.magic-toggle.is-arriving {
+  animation: magic-arrive 720ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+@keyframes magic-arrive {
+  0% {
+    transform: scale(0.35);
+    opacity: 0;
+    filter: brightness(2.2) blur(3px);
+  }
+  55% {
+    transform: scale(1.08);
+    opacity: 1;
+    filter: brightness(1.35) blur(0);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+    filter: brightness(1);
+  }
+}
+
+/* ─────── Aura tint adapts to theme (button itself stays blue) ─────── */
+.mode-matrix .magic-toggle {
+  box-shadow:
+    0 0 0 0 rgba(0, 255, 95, 0.45),
+    0 4px 14px -2px rgba(0, 255, 95, 0.40),
+    0 1px 0 rgba(255, 255, 255, 0.22) inset,
+    0 -1px 0 rgba(0, 60, 110, 0.45) inset;
+}
+.mode-island .magic-toggle {
+  box-shadow:
+    0 0 0 0 rgba(255, 200, 120, 0.45),
+    0 4px 14px -2px rgba(255, 200, 120, 0.45),
+    0 1px 0 rgba(255, 255, 255, 0.28) inset,
+    0 -1px 0 rgba(0, 60, 110, 0.45) inset;
+}
+.mode-studio .magic-toggle {
+  box-shadow:
+    0 0 0 0 rgba(220, 235, 255, 0.55),
+    0 4px 14px -2px rgba(220, 235, 255, 0.5),
+    0 1px 0 rgba(255, 255, 255, 0.4) inset,
+    0 -1px 0 rgba(0, 60, 110, 0.4) inset;
+}
+
+/* ─────── Block all clicks during theatrical transition ─────── */
+html.is-transitioning,
+html.is-transitioning body {
+  pointer-events: none;
+}
+html.is-transitioning .magic-toggle {
+  pointer-events: none;
+}
+
+/* Mobile: nudge the magic button so it stays comfortably tappable */
+@media (max-width: 640px) {
+  .magic-toggle {
+    width: 42px;
+    height: 34px;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   THEME OVERLAY CANVAS — full-screen scrim used by all theatrical transitions
+   ═══════════════════════════════════════════════════════════════════════ */
+.mode-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 400ms linear;
+  background: #000;
+  will-change: opacity;
+}
+.mode-overlay.is-visible { opacity: 1; }
+.mode-overlay canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Magic button stays above any overlay */
+.magic-toggle { z-index: 9999; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MATRIX MODE — re-paint via design tokens (everything that uses these vars
+   re-skins automatically: btn-chip, btn-primary gradient, borders, text,
+   selection, hero grid, etc.)
+   ═══════════════════════════════════════════════════════════════════════ */
+html.mode-matrix {
+  --bg:           #000000;
+  --surface:      #04100A;
+  --surface-2:    #082014;
+  --border-dark:  #0E1F12;
+  --cream:        #00FF41;   /* primary text — iconic matrix green */
+  --mute:         #1F8B3D;   /* dim green for muted text */
+  --copper:       #5BFF7E;   /* mid-bright green for accents */
+  --sand:         #A5FFB7;   /* highlight green */
+  --rust:         #00CD33;   /* darker green */
+}
+
+/* Body-level overrides that the existing CSS doesn't channel through vars */
+html.mode-matrix body {
+  background: #000 !important;
+  color: var(--cream);
+  caret-color: #00FF41;
+}
+
+/* ::selection in Matrix — inverted contrast */
+html.mode-matrix ::selection {
+  background: #00FF41;
+  color: #000;
+  text-shadow: none;
+}
+
+/* Card-ish surfaces become transparent with a thin green outline */
+html.mode-matrix .nav-bar,
+html.mode-matrix .hero,
+html.mode-matrix section {
+  background: transparent !important;
+}
+
+/* All existing chips, buttons, cards take a green outline + transparent fill */
+html.mode-matrix .btn-chip,
+html.mode-matrix .btn-chip-copper {
+  background: rgba(0, 255, 65, 0.04) !important;
+  color: #00FF41 !important;
+  border-color: rgba(0, 255, 65, 0.45) !important;
+  text-shadow: 0 0 6px rgba(0, 255, 65, 0.4);
+}
+html.mode-matrix .btn-primary {
+  background: transparent !important;
+  color: #00FF41 !important;
+  border: 1px solid #00FF41 !important;
+  text-shadow: 0 0 8px rgba(0, 255, 65, 0.5);
+  box-shadow: 0 0 18px rgba(0, 255, 65, 0.25), inset 0 0 12px rgba(0, 255, 65, 0.1);
+}
+html.mode-matrix .btn-primary:hover {
+  background: rgba(0, 255, 65, 0.08) !important;
+  box-shadow: 0 0 24px rgba(0, 255, 65, 0.45), inset 0 0 16px rgba(0, 255, 65, 0.15);
+}
+
+/* Lang toggle: keep readable in matrix */
+html.mode-matrix .lang-toggle button { color: rgba(0, 255, 65, 0.5); }
+html.mode-matrix .lang-toggle button:hover,
+html.mode-matrix .lang-toggle button.active {
+  color: #00FF41;
+  border-bottom-color: #00FF41;
+}
+
+/* Headline glow — subtle */
+html.mode-matrix h1, html.mode-matrix h2, html.mode-matrix h3 {
+  text-shadow: 0 0 12px rgba(0, 255, 65, 0.45);
+}
+
+/* Custom green caret/cursor — terminal vibe.
+   We use an SVG data URI for a small green underscore glyph. */
+html.mode-matrix,
+html.mode-matrix body {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='22' viewBox='0 0 16 22'><rect x='1' y='17' width='14' height='3' fill='%2300FF41'/><rect x='1' y='17' width='14' height='3' fill='%2300FF41' opacity='0.35'><animate attributeName='opacity' values='1;0;1' dur='1s' repeatCount='indefinite'/></rect></svg>") 8 21, text;
+}
+
+/* Decode-hover micro-glitch on interactive elements */
+html.mode-matrix .btn-chip,
+html.mode-matrix .btn-chip-copper,
+html.mode-matrix .btn-primary,
+html.mode-matrix .lang-toggle button,
+html.mode-matrix a {
+  position: relative;
+  transition: text-shadow 120ms ease, transform 120ms ease;
+}
+html.mode-matrix .btn-chip:hover,
+html.mode-matrix .btn-chip-copper:hover,
+html.mode-matrix .btn-primary:hover,
+html.mode-matrix a:hover {
+  animation: matrix-decode 320ms steps(8, end);
+}
+@keyframes matrix-decode {
+  0%   { text-shadow: 0 0 8px #00FF41, -2px 0 0 rgba(255,255,255,0.4); transform: translateX(-1px); }
+  20%  { text-shadow: 0 0 14px #00FF41, 2px 0 0 rgba(255,255,255,0.4); transform: translateX(1px); }
+  40%  { text-shadow: 0 0 10px #00FF41, -1px 0 0 rgba(0,255,65,0.6);   transform: translateX(-0.5px); }
+  60%  { text-shadow: 0 0 16px #00FF41, 1px 0 0 rgba(255,255,255,0.5); transform: translateX(0.5px); }
+  100% { text-shadow: 0 0 8px rgba(0, 255, 65, 0.5); transform: none; }
+}
+
+/* Scrollbar — green thread on black */
+html.mode-matrix {
+  scrollbar-color: #00CD33 #050505;
+  scrollbar-width: thin;
+}
+html.mode-matrix::-webkit-scrollbar { width: 10px; }
+html.mode-matrix::-webkit-scrollbar-track { background: #050505; }
+html.mode-matrix::-webkit-scrollbar-thumb {
+  background: linear-gradient(#00FF41, #00A030);
+  border-radius: 0;
+}
+html.mode-matrix::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(#33FF66, #00CD33);
+}
+
+/* Rare scroll glitch — a horizontal jitter applied via a body class
+   toggled briefly by JS. */
+html.mode-matrix.is-glitching body {
+  animation: matrix-glitch 240ms steps(4, end);
+}
+@keyframes matrix-glitch {
+  0%   { transform: translateX(0); filter: hue-rotate(0deg); }
+  20%  { transform: translateX(-3px); filter: hue-rotate(-12deg) saturate(1.4); }
+  40%  { transform: translateX(2px);  filter: hue-rotate(8deg);  }
+  60%  { transform: translateX(-2px); filter: hue-rotate(-6deg); }
+  80%  { transform: translateX(1px); }
+  100% { transform: none; filter: none; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   ISLAND MODE — warm tropical reskin via design tokens
+   Photo backdrop with blur+fog, dark-cocoa text, gold/azure accents.
+   ═══════════════════════════════════════════════════════════════════════ */
+html.mode-island {
+  --bg:           #FBEFD8;       /* warm sand fallback */
+  --surface:      #FFFFFF;       /* card surface — white */
+  --surface-2:    #FFF7E6;
+  --border-dark:  #E8D5A8;
+  --cream:        #2D1F12;       /* primary text — dark cocoa */
+  --mute:         #8B6F47;
+  --copper:       #C9892D;       /* gold accent (kept warm) */
+  --sand:         #E5B868;
+  --rust:         #C66A3A;       /* terracotta */
+}
+
+html.mode-island body {
+  font-family: 'Manrope', system-ui, sans-serif !important;
+  font-weight: 400;
+  line-height: 1.65;
+  letter-spacing: -0.005em;
+  color: var(--cream);
+
+  /* Tropical photo backdrop with blur+haze.
+     Image is from Unsplash CDN (free license, fast cached) and blurred so
+     it never competes with content — pure atmosphere. */
+  background:
+    /* Top haze: warm white-out fading into the scene */
+    linear-gradient(180deg,
+      rgba(255, 244, 220, 0.55) 0%,
+      rgba(255, 240, 210, 0.30) 30%,
+      rgba(255, 235, 200, 0.55) 100%),
+    url('https://images.unsplash.com/photo-1547036967-23d11aacaee0?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=85') center/cover fixed,
+    #FBEFD8 !important;
+  background-blend-mode: lighten, normal;
+}
+
+/* The photo itself is sharp from Unsplash; we soften it via a fixed pseudo
+   element with backdrop-filter so cards on top stay legible. */
+html.mode-island body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  backdrop-filter: blur(14px) saturate(0.92) brightness(1.08);
+  -webkit-backdrop-filter: blur(14px) saturate(0.92) brightness(1.08);
+  background: rgba(255, 240, 215, 0.35);
+  pointer-events: none;
+}
+
+/* Headlines — soft, generous */
+html.mode-island h1, html.mode-island h2, html.mode-island h3 {
+  font-family: 'Manrope', system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-shadow: 0 2px 24px rgba(255, 240, 200, 0.65);
+}
+
+/* Existing nav surfaces become translucent over the photo */
+html.mode-island .nav-bar,
+html.mode-island .hero,
+html.mode-island section {
+  background: transparent !important;
+}
+
+/* All section eyebrows etc. lose the [bracket] hard look — softer */
+html.mode-island .section-eyebrow::before,
+html.mode-island .section-eyebrow::after {
+  color: var(--copper);
+}
+
+/* Cards — white, rounded, soft shadow with warm glow */
+html.mode-island .btn-chip,
+html.mode-island .btn-chip-copper {
+  background: rgba(255, 255, 255, 0.85) !important;
+  color: #3D2817 !important;
+  border-color: rgba(201, 137, 45, 0.35) !important;
+  border-radius: 999px !important;
+  text-shadow: none;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow:
+    0 4px 18px -4px rgba(80, 50, 20, 0.12),
+    0 1px 0 rgba(255, 255, 255, 0.8) inset;
+  transition: transform 220ms ease, box-shadow 280ms ease, background 220ms ease;
+}
+html.mode-island .btn-chip:hover,
+html.mode-island .btn-chip-copper:hover {
+  transform: translateY(-2px);
+  background: #fff !important;
+  box-shadow:
+    0 12px 28px -8px rgba(201, 137, 45, 0.4),
+    0 0 0 1px rgba(201, 137, 45, 0.45) inset;
+}
+
+html.mode-island .btn-primary {
+  background: linear-gradient(135deg, #E8B85C 0%, #C9892D 50%, #B6701C 100%) !important;
+  color: #2D1F12 !important;
+  border: 0 !important;
+  border-radius: 999px !important;
+  text-shadow: 0 1px 0 rgba(255, 240, 200, 0.45);
+  box-shadow:
+    0 8px 22px -6px rgba(201, 137, 45, 0.55),
+    0 1px 0 rgba(255, 255, 255, 0.5) inset;
+  transition: transform 200ms ease, box-shadow 280ms ease, filter 200ms ease;
+}
+html.mode-island .btn-primary:hover {
+  transform: translateY(-2px) scale(1.02);
+  filter: brightness(1.08);
+  box-shadow:
+    0 0 0 6px rgba(229, 184, 104, 0.18),
+    0 14px 32px -6px rgba(201, 137, 45, 0.65),
+    0 1px 0 rgba(255, 255, 255, 0.6) inset;
+}
+
+/* Lang toggle: warm sand */
+html.mode-island .lang-toggle button { color: rgba(60, 40, 20, 0.5); }
+html.mode-island .lang-toggle button:hover,
+html.mode-island .lang-toggle button.active {
+  color: #B6701C;
+  border-bottom-color: #B6701C;
+}
+
+/* ::selection */
+html.mode-island ::selection {
+  background: rgba(201, 137, 45, 0.35);
+  color: #2D1F12;
+  text-shadow: none;
+}
+
+/* Cursor — warm sun pointer (small golden glow circle) */
+html.mode-island,
+html.mode-island body {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'><defs><radialGradient id='g'><stop offset='0%' stop-color='%23FFE8A0' stop-opacity='1'/><stop offset='60%' stop-color='%23E5B868' stop-opacity='0.5'/><stop offset='100%' stop-color='%23C9892D' stop-opacity='0'/></radialGradient></defs><circle cx='14' cy='14' r='14' fill='url(%23g)'/><circle cx='14' cy='14' r='3' fill='%232D1F12' opacity='0.7'/></svg>") 14 14, default;
+}
+
+/* Scrollbar — warm sandstone */
+html.mode-island {
+  scrollbar-color: #C9892D rgba(255, 240, 215, 0.3);
+  scrollbar-width: thin;
+}
+html.mode-island::-webkit-scrollbar { width: 10px; }
+html.mode-island::-webkit-scrollbar-track { background: rgba(255, 240, 215, 0.3); }
+html.mode-island::-webkit-scrollbar-thumb {
+  background: linear-gradient(#E5B868, #C9892D);
+  border-radius: 8px;
+}
+
+/* Idle birds — two CSS-only silhouettes drift across the sky behind everything */
+html.mode-island::before {
+  content: '🦅';                      /* placeholder — replaced by SVG via body::after stacking */
+  display: none;                     /* hidden — we use JS-injected birds instead */
+}
+
+/* Ambient bird silhouette — created via JS, positioned in the upper region */
+.island-bird {
+  position: fixed;
+  top: 18%;
+  left: -60px;
+  width: 28px;
+  height: 16px;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0;
+  color: rgba(45, 31, 18, 0.32);
+  animation: island-bird-flight 60s linear infinite;
+}
+.island-bird.b2 { top: 28%; animation-duration: 75s; animation-delay: 18s; transform: scale(0.7); }
+.island-bird svg { width: 100%; height: 100%; display: block; }
+@keyframes island-bird-flight {
+  0%   { transform: translateX(0)        translateY(0)   scale(1);   opacity: 0; }
+  6%   { opacity: 0.45; }
+  20%  { transform: translateX(20vw)     translateY(-10px) scale(1.02); }
+  50%  { transform: translateX(50vw)     translateY(8px)   scale(0.95); opacity: 0.5; }
+  85%  { transform: translateX(85vw)     translateY(-4px)  scale(0.9);  opacity: 0.35; }
+  100% { transform: translateX(105vw)    translateY(0)     scale(0.85); opacity: 0; }
+}
+.island-bird.b2 { animation-name: island-bird-flight-2; }
+@keyframes island-bird-flight-2 {
+  0%   { transform: translateX(0)        translateY(0); opacity: 0; }
+  10%  { opacity: 0.32; }
+  60%  { transform: translateX(60vw)     translateY(-18px); opacity: 0.32; }
+  100% { transform: translateX(108vw)    translateY(-8px);  opacity: 0; }
+}
+
+/* Heat haze on top edge */
+html.mode-island body::after {
+  content: '';
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  height: 120px;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(80% 100% at 50% 0%,
+    rgba(255, 240, 200, 0.32) 0%,
+    rgba(255, 240, 200, 0) 70%);
+  mix-blend-mode: lighten;
+  animation: island-haze 7s ease-in-out infinite alternate;
+}
+@keyframes island-haze {
+  0%   { transform: translateY(0)   scaleY(1); opacity: 0.85; }
+  100% { transform: translateY(-2px) scaleY(1.04); opacity: 1; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   ISLAND THEATRE — sunrise scene injected by JS into .mode-overlay
+   ═══════════════════════════════════════════════════════════════════════ */
+.island-scene {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+/* Sky gradient layer — animates through dawn colors */
+.island-scene .sky {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, #050a1c 0%, #0a1430 35%, #11183a 60%, #1c1538 100%);
+  transition: background 1100ms cubic-bezier(0.32, 0, 0.5, 1);
+}
+.island-scene.is-dawning .sky {
+  background: linear-gradient(180deg,
+    #1a2a4a 0%,
+    #4a3870 18%,
+    #c25a3c 45%,
+    #f0a04a 70%,
+    #ffd58c 100%);
+}
+.island-scene.is-noon .sky {
+  background: linear-gradient(180deg,
+    #87b8d9 0%,
+    #ffd9a0 50%,
+    #ffe8b8 100%);
+}
+
+/* Horizon water — reflective sliver at the bottom-third */
+.island-scene .sea {
+  position: absolute;
+  left: 0; right: 0;
+  bottom: 0;
+  height: 38%;
+  background:
+    linear-gradient(180deg,
+      rgba(8, 18, 38, 0.45) 0%,
+      rgba(20, 30, 60, 0.7) 40%,
+      rgba(0, 0, 0, 0.85) 100%);
+  transition: background 1100ms ease, transform 1100ms ease;
+}
+.island-scene.is-dawning .sea {
+  background:
+    linear-gradient(180deg,
+      rgba(180, 80, 40, 0.55) 0%,
+      rgba(120, 60, 80, 0.7) 50%,
+      rgba(20, 30, 50, 0.9) 100%);
+}
+
+/* Sun disc — rises and floods */
+.island-scene .sun {
+  position: absolute;
+  left: 50%;
+  bottom: 30%;
+  width: 220px;
+  height: 220px;
+  margin-left: -110px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff7d8 0%, #ffe5a0 35%, #ffb347 70%, transparent 100%);
+  filter: blur(1px);
+  opacity: 0;
+  transform: translateY(140px) scale(0.5);
+  transition: transform 1300ms cubic-bezier(0.22, 1, 0.36, 1),
+              opacity 1300ms ease,
+              filter 1300ms ease;
+}
+.island-scene.is-dawning .sun {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+.island-scene.is-noon .sun {
+  opacity: 1;
+  transform: translateY(-80px) scale(1.4);
+  filter: blur(0px) brightness(1.4);
+}
+
+/* Palm + horizon silhouettes — rendered as SVG injected by JS */
+.island-scene .silhouette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 700ms ease;
+}
+.island-scene.is-silhouette-on .silhouette { opacity: 1; }
+.island-scene .silhouette svg {
+  position: absolute;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* The white flash that caps the sunrise */
+.island-scene .flash {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(60% 70% at 50% 65%,
+    rgba(255, 255, 235, 1) 0%,
+    rgba(255, 240, 200, 0.6) 45%,
+    rgba(255, 220, 160, 0) 100%);
+  opacity: 0;
+  transition: opacity 350ms ease-out;
+  mix-blend-mode: screen;
+}
+.island-scene.is-flashing .flash { opacity: 1; }
+
+/* Fast sun-set for exit */
+.island-scene.is-falling .sun {
+  transform: translateY(180px) scale(0.6);
+  opacity: 0.85;
+  filter: blur(3px) brightness(0.8);
+  transition: transform 600ms cubic-bezier(0.55, 0, 0.7, 0.2),
+              opacity 600ms ease,
+              filter 600ms ease;
+}
+.island-scene.is-falling .sky {
+  background: linear-gradient(180deg, #02050f 0%, #060a18 60%, #000 100%);
+  transition: background 700ms ease-in;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   STUDIO MODE — Apple-precise reskin via design tokens
+   Off-white surface, near-black text, Inter Light, generous whitespace,
+   minimal shadows, no decorative borders.
+   ═══════════════════════════════════════════════════════════════════════ */
+html.mode-studio {
+  --bg:           #F5F5F7;       /* Apple system background */
+  --surface:      #FFFFFF;
+  --surface-2:    #FAFAFA;
+  --border-dark:  #E8E8EA;
+  --cream:        #1D1D1F;       /* near-black text */
+  --mute:         #86868B;       /* Apple secondary grey */
+  --copper:       #007AFF;       /* iOS system blue (acts as accent) */
+  --sand:         #5AC8FA;
+  --rust:         #1D1D1F;       /* mute the warm red */
+}
+
+html.mode-studio body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'SF Pro Display', system-ui, sans-serif !important;
+  font-weight: 300;
+  letter-spacing: -0.011em;
+  line-height: 1.55;
+  color: #1D1D1F;
+  background:
+    radial-gradient(120% 80% at 30% 0%, #FFFFFF 0%, #F5F5F7 60%, #EFEFF1 100%) !important;
+  background-attachment: fixed;
+  /* Subtle parallax driven by JS — see modes.js Studio section */
+  background-position: calc(50% + var(--studio-px, 0px)) calc(50% + var(--studio-py, 0px));
+  -webkit-font-smoothing: antialiased;
+}
+
+html.mode-studio h1, html.mode-studio h2, html.mode-studio h3 {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-weight: 200;
+  letter-spacing: -0.035em;
+  text-shadow: none;
+  color: #1D1D1F;
+}
+
+/* Sections lose their dark forge surfaces */
+html.mode-studio .nav-bar,
+html.mode-studio .hero,
+html.mode-studio section {
+  background: transparent !important;
+}
+
+/* Frosted-glass nav on scroll — applied via JS (.studio-scrolled on body) */
+html.mode-studio .nav-bar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  transition: background 280ms ease, backdrop-filter 280ms ease, box-shadow 280ms ease;
+}
+html.mode-studio body.studio-scrolled .nav-bar {
+  background: rgba(245, 245, 247, 0.72) !important;
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.06);
+}
+
+/* Chips — clean, subtle, with enough opacity to read on the off-white surface */
+html.mode-studio .btn-chip,
+html.mode-studio .btn-chip-copper {
+  background: rgba(255, 255, 255, 0.94) !important;
+  color: #1D1D1F !important;
+  border-color: transparent !important;
+  border-radius: 980px !important;
+  text-shadow: none;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.08),
+    0 2px 4px rgba(0, 0, 0, 0.05);
+  transition: transform 180ms ease-out, box-shadow 220ms ease-out, background 220ms ease;
+}
+html.mode-studio .btn-chip:hover,
+html.mode-studio .btn-chip-copper:hover {
+  transform: translateY(-2px);
+  background: #FFFFFF !important;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.08),
+    0 8px 24px -8px rgba(0, 0, 0, 0.18);
+  font-weight: 600;
+}
+
+/* Primary CTA — Apple Buy-button style */
+html.mode-studio .btn-primary {
+  background: #1D1D1F !important;
+  color: #FFFFFF !important;
+  border: 0 !important;
+  border-radius: 980px !important;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  text-shadow: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  transition: transform 180ms ease-out, background 200ms ease, box-shadow 220ms ease;
+}
+html.mode-studio .btn-primary:hover {
+  background: #2D2D2F !important;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.25);
+}
+
+/* Lang toggle in studio */
+html.mode-studio .lang-toggle button { color: #86868B; font-weight: 400; }
+html.mode-studio .lang-toggle button:hover,
+html.mode-studio .lang-toggle button.active {
+  color: #007AFF;
+  border-bottom-color: #007AFF;
+}
+
+/* Selection — iOS blue */
+html.mode-studio ::selection {
+  background: rgba(0, 122, 255, 0.22);
+  color: #1D1D1F;
+  text-shadow: none;
+}
+
+/* Cursor — system default + a JS-driven follow-spot halo (.studio-spot) */
+html.mode-studio,
+html.mode-studio body {
+  cursor: default;
+}
+
+/* Soft following spotlight — a fixed div repositioned via JS in modes.js */
+.studio-spot {
+  position: fixed;
+  width: 360px;
+  height: 360px;
+  margin-left: -180px;
+  margin-top: -180px;
+  border-radius: 50%;
+  background: radial-gradient(circle,
+    rgba(0, 122, 255, 0.12) 0%,
+    rgba(0, 122, 255, 0.05) 40%,
+    transparent 70%);
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 380ms ease;
+  mix-blend-mode: multiply;
+  will-change: transform;
+}
+html.mode-studio .studio-spot { opacity: 1; }
+
+/* Scrollbar — Apple-grey */
+html.mode-studio {
+  scrollbar-color: #C7C7CC #F5F5F7;
+  scrollbar-width: thin;
+}
+html.mode-studio::-webkit-scrollbar { width: 8px; }
+html.mode-studio::-webkit-scrollbar-track { background: transparent; }
+html.mode-studio::-webkit-scrollbar-thumb {
+  background: #C7C7CC;
+  border-radius: 8px;
+}
+html.mode-studio::-webkit-scrollbar-thumb:hover { background: #8E8E93; }
+
+/* Reveal-on-scroll: any element marked .studio-reveal fades up as the
+   user scrolls.  JS attaches the marker class via IntersectionObserver. */
+html.mode-studio .studio-reveal {
+  opacity: 0;
+  transform: translateY(18px);
+  transition: opacity 700ms cubic-bezier(0.22, 1, 0.36, 1),
+              transform 700ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+html.mode-studio .studio-reveal.is-in {
+  opacity: 1;
+  transform: none;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   STUDIO THEATRE — keynote-curtain entry, collapse-to-line exit
+   ═══════════════════════════════════════════════════════════════════════ */
+.studio-scene {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  overflow: hidden;
+}
+
+/* The white curtain — starts invisible, becomes a thin horizontal line,
+   then expands vertically into a full-screen white panel, then fades. */
+.studio-scene .curtain {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  margin-top: -0.5px;
+  background: #FFFFFF;
+  box-shadow:
+    0 0 18px rgba(255, 255, 255, 0.7),
+    0 0 36px rgba(255, 255, 255, 0.35);
+  transform: scaleX(0);
+  transform-origin: 50% 50%;
+  transition: transform 480ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.studio-scene.is-line .curtain { transform: scaleX(1); }
+.studio-scene.is-opening .curtain {
+  height: 100vh;
+  margin-top: -50vh;
+  transition: height 820ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Exit reverse: from full white → 1px line → fade */
+.studio-scene.is-collapsing .curtain {
+  height: 100vh;
+  margin-top: -50vh;
+  transform: scaleX(1);
+}
+.studio-scene.is-collapsing.is-line-collapse .curtain {
+  height: 1px;
+  margin-top: -0.5px;
+  transition: height 600ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.studio-scene.is-collapsing.is-line-gone .curtain {
+  transform: scaleX(0);
+  transition: transform 360ms ease-in;
+}
+
+/* When entering studio, body's direct children stagger in from above */
+html.mode-studio.is-revealing > body > * {
+  animation: studio-reveal-up 720ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+  animation-delay: calc(80ms * var(--idx, 0));
+}
+@keyframes studio-reveal-up {
+  0%   { opacity: 0; transform: translateY(-14px); filter: blur(2px); }
+  100% { opacity: 1; transform: none;             filter: blur(0); }
+}
+
+html.mode-studio.is-collapsing-content > body > * {
+  animation: studio-collapse-up 540ms cubic-bezier(0.55, 0, 0.7, 0.2) forwards;
+  animation-delay: calc(50ms * var(--idx-rev, 0));
+}
+@keyframes studio-collapse-up {
+  0%   { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: translateY(-22px); }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   DEEP THEME DIFFERENTIATION — phase 5
+   ───────────────────────────────────────────────────────────────────────
+   Beyond color: per-theme fonts, decorative chrome, spacing, radii,
+   uppercase rules, eyebrow ornaments, divider styles.  Same content,
+   same DOM, same behaviour — but each theme reads as a completely
+   different world.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ─────── MATRIX — dense terminal world ─────── */
+html.mode-matrix body,
+html.mode-matrix h1,
+html.mode-matrix h2,
+html.mode-matrix h3,
+html.mode-matrix p,
+html.mode-matrix a,
+html.mode-matrix button,
+html.mode-matrix .btn-primary,
+html.mode-matrix .btn-chip,
+html.mode-matrix .btn-chip-copper,
+html.mode-matrix .lang-toggle button {
+  font-family: 'Share Tech Mono', 'JetBrains Mono', ui-monospace, monospace !important;
+  letter-spacing: 0.01em !important;
+}
+
+/* Matrix headlines: tighter, sharper, with subtle prefix */
+html.mode-matrix h1,
+html.mode-matrix h2,
+html.mode-matrix h3 {
+  font-weight: 400;
+  line-height: 1.1;
+  letter-spacing: 0.005em;
+  text-transform: uppercase;
+}
+
+/* Matrix loses every soft corner — sharp, brutalist */
+html.mode-matrix .btn-chip,
+html.mode-matrix .btn-chip-copper,
+html.mode-matrix .btn-primary,
+html.mode-matrix .btn-secondary {
+  border-radius: 0 !important;
+}
+
+/* Section eyebrows in Matrix — punch them up with stronger brackets */
+html.mode-matrix .section-eyebrow::before { content: '/* '; color: #1F8B3D; }
+html.mode-matrix .section-eyebrow::after  { content: ' */'; color: #1F8B3D; }
+html.mode-matrix .section-eyebrow {
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+/* Service bullets: green chevron with terminal prompt feel */
+html.mode-matrix .svc-bullets li::before { content: '> '; color: #00FF41; }
+
+/* Marquee / ticker — saw-tooth divider rendering for Matrix */
+html.mode-matrix .marquee,
+html.mode-matrix .ticker {
+  background: rgba(0, 255, 65, 0.06) !important;
+  border-top: 1px solid rgba(0, 255, 65, 0.3);
+  border-bottom: 1px solid rgba(0, 255, 65, 0.3);
+}
+
+/* Stats numbers in Matrix — terminal-counter look with leading caret */
+html.mode-matrix .stat-num,
+html.mode-matrix [class*="stat-num"] {
+  font-family: 'Share Tech Mono', monospace !important;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+}
+
+/* Logo dot pulse in Matrix becomes a phosphor blink */
+html.mode-matrix .logo .pulse,
+html.mode-matrix .logo::before {
+  background: #00FF41 !important;
+  box-shadow: 0 0 8px #00FF41, 0 0 14px rgba(0, 255, 65, 0.5);
+}
+
+/* ─────── ISLAND — tropical resort, generous, ornamental ─────── */
+html.mode-island body,
+html.mode-island p,
+html.mode-island a,
+html.mode-island button,
+html.mode-island .btn-primary,
+html.mode-island .btn-chip,
+html.mode-island .btn-chip-copper,
+html.mode-island .lang-toggle button {
+  font-family: 'Manrope', 'Inter', system-ui, sans-serif !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+}
+
+/* Island headlines: Fraunces serif — instant tropical luxury */
+html.mode-island h1,
+html.mode-island h2,
+html.mode-island h3 {
+  font-family: 'Fraunces', 'Manrope', Georgia, serif !important;
+  font-weight: 400;
+  font-style: normal;
+  letter-spacing: -0.015em;
+  line-height: 1.06;
+  text-transform: none !important;
+}
+
+/* Section eyebrows: ditch brackets, use a tropical flourish */
+html.mode-island .section-eyebrow::before {
+  content: '✦ ' !important;
+  color: #C9892D;
+  margin-right: 6px;
+}
+html.mode-island .section-eyebrow::after {
+  content: ' ✦' !important;
+  color: #C9892D;
+  margin-left: 6px;
+}
+html.mode-island .section-eyebrow {
+  font-family: 'Manrope', sans-serif !important;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 500;
+  color: #8B6F47;
+}
+
+/* Service bullets: warm sun glyph */
+html.mode-island .svc-bullets li::before {
+  content: '◌' !important;
+  color: #C9892D !important;
+}
+
+/* Island gives every section more air — but not so much it hurts pacing */
+html.mode-island section {
+  padding-top: 5rem !important;
+  padding-bottom: 5rem !important;
+}
+html.mode-island .hero {
+  padding-top: 6rem !important;
+  padding-bottom: 4rem !important;
+}
+
+/* Generous rounding everywhere */
+html.mode-island .btn-primary,
+html.mode-island .btn-chip,
+html.mode-island .btn-chip-copper {
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  font-weight: 500;
+}
+
+/* Marquee in Island — softer */
+html.mode-island .marquee,
+html.mode-island .ticker {
+  background: rgba(255, 240, 215, 0.6) !important;
+  border-top: 1px solid rgba(201, 137, 45, 0.2);
+  border-bottom: 1px solid rgba(201, 137, 45, 0.2);
+  color: #8B6F47 !important;
+}
+
+/* Stats numbers in Island — display serif, huge */
+html.mode-island .stat-num,
+html.mode-island [class*="stat-num"] {
+  font-family: 'Fraunces', Georgia, serif !important;
+  font-weight: 300;
+  letter-spacing: -0.04em;
+  color: #2D1F12 !important;
+}
+
+/* Logo pulse — warm gold */
+html.mode-island .logo .pulse,
+html.mode-island .logo::before {
+  background: #C9892D !important;
+  box-shadow: 0 0 10px #E5B868, 0 0 20px rgba(229, 184, 104, 0.55);
+}
+
+/* ─────── STUDIO — Apple minimalism, huge thin air ─────── */
+html.mode-studio body,
+html.mode-studio p,
+html.mode-studio a,
+html.mode-studio button,
+html.mode-studio .btn-primary,
+html.mode-studio .btn-chip,
+html.mode-studio .btn-chip-copper,
+html.mode-studio .lang-toggle button {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif !important;
+  text-transform: none !important;
+  letter-spacing: -0.005em !important;
+}
+
+/* Studio headlines: huge, paper-thin, tight */
+html.mode-studio h1 {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 200;
+  letter-spacing: -0.045em !important;
+  line-height: 1.02;
+  text-transform: none !important;
+}
+html.mode-studio h2,
+html.mode-studio h3 {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 300;
+  letter-spacing: -0.035em;
+  text-transform: none !important;
+}
+
+/* Studio strips ALL decorative eyebrow chrome */
+html.mode-studio .section-eyebrow::before,
+html.mode-studio .section-eyebrow::after {
+  content: '' !important;
+  display: none;
+}
+html.mode-studio .section-eyebrow {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 500;
+  font-size: 12px;
+  color: #86868B;
+}
+
+/* Service bullets: minimalist em-dash */
+html.mode-studio .svc-bullets li::before {
+  content: '— ' !important;
+  color: #86868B !important;
+  font-weight: 300;
+}
+
+/* Studio: more air than Island, but balanced — not gaping */
+html.mode-studio section {
+  padding-top: 6rem !important;
+  padding-bottom: 6rem !important;
+}
+html.mode-studio .hero {
+  padding-top: 5rem !important;
+  padding-bottom: 4rem !important;
+}
+
+/* Chips/buttons in Studio: no uppercase, hairline rendering */
+html.mode-studio .btn-primary,
+html.mode-studio .btn-chip,
+html.mode-studio .btn-chip-copper,
+html.mode-studio .btn-secondary {
+  text-transform: none !important;
+  letter-spacing: -0.005em !important;
+  font-weight: 500;
+}
+
+/* Marquee in Studio — tone down to soft grey */
+html.mode-studio .marquee,
+html.mode-studio .ticker {
+  background: rgba(0, 0, 0, 0.025) !important;
+  border-top: 1px solid rgba(0, 0, 0, 0.05);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  color: #86868B !important;
+}
+
+/* Stats in Studio: oversized Inter ExtraLight — paper-thin display */
+html.mode-studio .stat-num,
+html.mode-studio [class*="stat-num"] {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 200 !important;
+  letter-spacing: -0.04em !important;
+  color: #1D1D1F !important;
+}
+
+/* Hero text alignment shift — Studio centres the main pitch */
+html.mode-studio .hero h1,
+html.mode-studio .hero h2 {
+  text-align: center;
+}
+html.mode-studio .hero .hero-meta {
+  text-align: center;
+}
+
+/* Logo pulse — iOS blue */
+html.mode-studio .logo .pulse,
+html.mode-studio .logo::before {
+  background: #007AFF !important;
+  box-shadow: 0 0 8px rgba(0, 122, 255, 0.65), 0 0 16px rgba(0, 122, 255, 0.35);
+}
+
+/* ─────── Mobile: scale back the extreme paddings ─────── */
+@media (max-width: 640px) {
+  html.mode-island section,
+  html.mode-studio section {
+    padding-top: 4rem !important;
+    padding-bottom: 4rem !important;
+  }
+  html.mode-island .hero,
+  html.mode-studio .hero {
+    padding-top: 3rem !important;
+    padding-bottom: 2rem !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   RADICAL THEME REDESIGN — phase 6
+   ───────────────────────────────────────────────────────────────────────
+   Each theme now reads as a completely different website. Same DOM,
+   same content, same functionality — but the buttons, layouts, decoration,
+   typography ROLES, and visual idioms are unmistakeably different.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ──────────────────────────────────────────────────────────────────────
+   MATRIX — terminal-numbered system, ASCII chrome, bracketed actions
+   ────────────────────────────────────────────────────────────────────── */
+
+/* Numbered nav chips via CSS counter:  [01] услуги  [02] кейсы  ... */
+html.mode-matrix .nav-chips {
+  counter-reset: navnum;
+}
+html.mode-matrix .nav-chips .btn-chip::before {
+  counter-increment: navnum;
+  content: '[' counter(navnum, decimal-leading-zero) '] ';
+  color: rgba(0, 255, 65, 0.65);
+  margin-right: 4px;
+  font-weight: 400;
+}
+
+/* Bracketed primary CTA: [ ACTION ] */
+html.mode-matrix .btn-primary::before {
+  content: '[ ';
+  color: rgba(0, 255, 65, 0.6);
+  margin-right: 4px;
+}
+html.mode-matrix .btn-primary::after {
+  content: ' ]';
+  color: rgba(0, 255, 65, 0.6);
+  margin-left: 4px;
+}
+
+/* Section headlines get a blinking cursor underscore */
+html.mode-matrix .section-headline::after,
+html.mode-matrix h2::after {
+  content: '_';
+  display: inline-block;
+  color: #00FF41;
+  margin-left: 0.18em;
+  animation: matrix-cursor-blink 1.05s steps(2, end) infinite;
+  font-weight: 400;
+}
+@keyframes matrix-cursor-blink {
+  0%, 49% { opacity: 1; }
+  50%, 99% { opacity: 0; }
+}
+
+/* Service cards in Matrix — terminal window with title bar */
+html.mode-matrix .svc-card,
+html.mode-matrix .work-grid > *,
+html.mode-matrix .testimonial-card,
+html.mode-matrix .process-step {
+  border: 1px solid #00FF41 !important;
+  background: rgba(0, 255, 65, 0.025) !important;
+  border-radius: 0 !important;
+  position: relative;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5) inset;
+}
+html.mode-matrix .svc-card::before,
+html.mode-matrix .work-grid > *::before,
+html.mode-matrix .process-step::before {
+  content: '─── ' attr(data-title-fallback, '') '';
+  position: absolute;
+  top: -10px;
+  left: 14px;
+  background: #000;
+  padding: 0 8px;
+  color: rgba(0, 255, 65, 0.7);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+html.mode-matrix .svc-card::before { content: '─── svc ───'; }
+html.mode-matrix .work-grid > *::before { content: '─── case ───'; }
+html.mode-matrix .process-step::before { content: '─── step ───'; }
+html.mode-matrix .testimonial-card::before { content: '─── log ───';
+  position: absolute; top: -10px; left: 14px; background: #000;
+  padding: 0 8px; color: rgba(0, 255, 65, 0.7);
+  font-size: 11px; letter-spacing: 0.18em; }
+
+/* Stats in Matrix — terminal output: > count = 12 */
+html.mode-matrix .stats-band,
+html.mode-matrix .stats-grid {
+  border-top: 1px solid rgba(0, 255, 65, 0.35);
+  border-bottom: 1px solid rgba(0, 255, 65, 0.35);
+}
+html.mode-matrix .num::before {
+  content: '> ';
+  color: rgba(0, 255, 65, 0.55);
+  font-weight: 400;
+}
+html.mode-matrix .label {
+  color: rgba(0, 255, 65, 0.6) !important;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 11px;
+}
+
+/* Service & process numbers in Matrix — ASCII hex feel */
+html.mode-matrix .svc-num::before,
+html.mode-matrix .ps-num::before {
+  content: '0x';
+  color: rgba(0, 255, 65, 0.55);
+  font-weight: 400;
+}
+
+/* Ticker band in Matrix — old monitor scanline feel */
+html.mode-matrix .ticker-band,
+html.mode-matrix .footer-band {
+  background: rgba(0, 255, 65, 0.05) !important;
+  border-top: 1px dashed rgba(0, 255, 65, 0.35);
+  border-bottom: 1px dashed rgba(0, 255, 65, 0.35);
+  color: #00FF41 !important;
+  text-shadow: 0 0 8px rgba(0, 255, 65, 0.6);
+}
+
+/* Manifesto block — make it look like a printed core-dump */
+html.mode-matrix .manifesto-block {
+  border-left: 2px solid #00FF41;
+  padding-left: 1.5rem !important;
+  font-family: 'Share Tech Mono', monospace !important;
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+   ISLAND — handwritten poetry, borderless buttons, free verse layout
+   ────────────────────────────────────────────────────────────────────── */
+
+/* HERO headline becomes script — large, flowing, generous */
+html.mode-island .hero h1,
+html.mode-island .hero .hero-text,
+html.mode-island .section-headline {
+  font-family: 'Caveat', 'Playfair Display', 'Fraunces', cursive !important;
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.005em;
+  text-transform: none !important;
+  font-style: normal;
+}
+
+/* Make hero headlines extra-large to give the script the spotlight */
+html.mode-island .hero h1,
+html.mode-island .hero-text {
+  font-size: clamp(3rem, 7vw, 6.5rem) !important;
+}
+html.mode-island .section-headline {
+  font-size: clamp(2.5rem, 5.5vw, 5rem) !important;
+}
+
+/* Smaller headings stay in italic display serif — keep the layered feel */
+html.mode-island h3,
+html.mode-island .svc-name,
+html.mode-island .ps-name,
+html.mode-island .testimonial-card .quote {
+  font-family: 'Playfair Display', 'Fraunces', Georgia, serif !important;
+  font-style: italic;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+/* ───── ISLAND BUTTONS: borderless, italic, just emphasized words ───── */
+html.mode-island .btn-chip,
+html.mode-island .btn-chip-copper {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  padding: 6px 4px !important;
+  color: #3D2817 !important;
+  font-family: 'Playfair Display', Georgia, serif !important;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 16px;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  position: relative;
+  transition: color 220ms ease;
+}
+html.mode-island .btn-chip::after,
+html.mode-island .btn-chip-copper::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  bottom: 0;
+  height: 1px;
+  background: rgba(201, 137, 45, 0.5);
+  transition: height 220ms ease, background 220ms ease, bottom 220ms ease;
+}
+html.mode-island .btn-chip:hover,
+html.mode-island .btn-chip-copper:hover {
+  background: transparent !important;
+  color: #B6701C !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+html.mode-island .btn-chip:hover::after,
+html.mode-island .btn-chip-copper:hover::after {
+  height: 2px;
+  background: #C9892D;
+  bottom: -2px;
+}
+
+/* Primary CTA in Island: italic emphasized text with a hand-drawn arrow */
+html.mode-island .btn-primary {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  color: #B6701C !important;
+  font-family: 'Playfair Display', Georgia, serif !important;
+  font-style: italic;
+  font-weight: 600;
+  font-size: 18px;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  padding: 4px 0 !important;
+  position: relative;
+}
+html.mode-island .btn-primary::after {
+  content: '  →';
+  margin-left: 4px;
+  font-style: normal;
+  transition: transform 240ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  display: inline-block;
+}
+html.mode-island .btn-primary:hover {
+  background: transparent !important;
+  color: #8B4F11 !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+html.mode-island .btn-primary:hover::after {
+  transform: translateX(6px);
+}
+
+/* Section eyebrows in Island: handwritten ornament */
+html.mode-island .section-eyebrow {
+  font-family: 'Caveat', cursive !important;
+  font-weight: 500;
+  font-size: 22px !important;
+  letter-spacing: 0 !important;
+  text-transform: none !important;
+  color: #8B6F47 !important;
+}
+html.mode-island .section-eyebrow::before {
+  content: '~ ' !important;
+  color: #C9892D;
+  margin-right: 0 !important;
+}
+html.mode-island .section-eyebrow::after {
+  content: ' ~' !important;
+  color: #C9892D;
+  margin-left: 0 !important;
+}
+
+/* Service numbers and stats — Playfair display italic huge */
+html.mode-island .svc-num,
+html.mode-island .ps-num {
+  font-family: 'Playfair Display', Georgia, serif !important;
+  font-style: italic;
+  font-weight: 400;
+  color: #C9892D !important;
+}
+html.mode-island .num {
+  font-family: 'Caveat', cursive !important;
+  font-weight: 700 !important;
+  font-size: clamp(3rem, 7vw, 6rem) !important;
+  color: #C9892D !important;
+  letter-spacing: 0 !important;
+}
+html.mode-island .label {
+  font-family: 'Playfair Display', Georgia, serif !important;
+  font-style: italic;
+  font-size: 14px;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  color: #8B6F47 !important;
+}
+
+/* Cards in Island: borderless, organic shadow, more padding */
+html.mode-island .svc-card,
+html.mode-island .testimonial-card,
+html.mode-island .work-grid > *,
+html.mode-island .process-step {
+  background: rgba(255, 255, 255, 0.7) !important;
+  border: 0 !important;
+  border-radius: 24px !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow:
+    0 12px 36px -12px rgba(80, 50, 20, 0.18),
+    0 0 0 1px rgba(255, 255, 255, 0.6) inset !important;
+  padding: 2rem !important;
+}
+
+/* Bullets: hand-drawn dot */
+html.mode-island .svc-bullets li::before {
+  content: '·' !important;
+  color: #C9892D !important;
+  font-size: 1.8em;
+  line-height: 0.7;
+  margin-right: 6px;
+}
+
+/* Manifesto in Island — handwritten poetry */
+html.mode-island .manifesto-block,
+html.mode-island .manifesto-text {
+  font-family: 'Caveat', cursive !important;
+  font-weight: 500;
+  font-size: clamp(1.5rem, 3vw, 2.5rem) !important;
+  line-height: 1.35;
+  letter-spacing: 0 !important;
+}
+
+/* Ticker band in Island — almost invisible, just a whisper */
+html.mode-island .ticker-band {
+  background: rgba(255, 240, 215, 0.5) !important;
+  border-top: 1px solid rgba(201, 137, 45, 0.15) !important;
+  border-bottom: 1px solid rgba(201, 137, 45, 0.15) !important;
+  color: #8B6F47 !important;
+  font-family: 'Playfair Display', Georgia, serif !important;
+  font-style: italic;
+}
+
+/* Footer band in Island — handwritten farewell */
+html.mode-island .footer-band {
+  font-family: 'Caveat', cursive !important;
+  font-size: 18px;
+  color: #8B6F47 !important;
+}
+
+/* Lighter haze on top of photo so the tropical scene shows through */
+html.mode-island body {
+  background:
+    linear-gradient(180deg,
+      rgba(255, 244, 220, 0.35) 0%,
+      rgba(255, 240, 210, 0.15) 30%,
+      rgba(255, 235, 200, 0.40) 100%),
+    url('https://images.unsplash.com/photo-1547036967-23d11aacaee0?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=85') center/cover fixed,
+    #FBEFD8 !important;
+}
+html.mode-island body::before {
+  backdrop-filter: blur(8px) saturate(1.05) brightness(1.05);
+  -webkit-backdrop-filter: blur(8px) saturate(1.05) brightness(1.05);
+  background: rgba(255, 240, 215, 0.18);
+}
+
+/* ──────────────────────────────────────────────────────────────────────
+   STUDIO — Apple keynote, oversized typography, no chrome
+   ────────────────────────────────────────────────────────────────────── */
+
+/* Hero headline — MASSIVE, paper-thin, perfectly centered */
+html.mode-studio .hero h1,
+html.mode-studio .hero-text,
+html.mode-studio .section-headline {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 200 !important;
+  letter-spacing: -0.045em !important;
+  line-height: 1.0;
+  font-size: clamp(3rem, 7vw, 7rem) !important;
+  text-align: center !important;
+}
+html.mode-studio .section-headline {
+  font-weight: 200 !important;
+  font-size: clamp(2.5rem, 6vw, 6rem) !important;
+}
+
+/* Studio: kill the bracketed eyebrow chip — replace with tiny grey label */
+html.mode-studio .btn-chip-copper {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+  color: #86868B !important;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 500;
+  border-radius: 0 !important;
+}
+
+/* Nav chips in Studio — text-only, no background, hairline underline on hover */
+html.mode-studio .nav-chips .btn-chip {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 6px 8px !important;
+  color: #1D1D1F !important;
+  font-weight: 500;
+  font-size: 14px;
+  text-transform: none !important;
+  letter-spacing: -0.005em !important;
+  border-radius: 0 !important;
+  position: relative;
+}
+html.mode-studio .nav-chips .btn-chip::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 0;
+  height: 1px;
+  background: #1D1D1F;
+  transform: scaleX(0);
+  transform-origin: 50% 50%;
+  transition: transform 240ms ease;
+}
+html.mode-studio .nav-chips .btn-chip:hover {
+  background: transparent !important;
+  transform: none !important;
+  box-shadow: none !important;
+  font-weight: 600;
+}
+html.mode-studio .nav-chips .btn-chip:hover::after {
+  transform: scaleX(1);
+}
+
+/* Primary CTA in Studio — minimal pill, only thing with chrome */
+html.mode-studio .btn-primary {
+  background: #1D1D1F !important;
+  color: #FFFFFF !important;
+  border-radius: 980px !important;
+  padding: 12px 22px !important;
+  font-weight: 500;
+  font-size: 14px;
+  text-transform: none !important;
+  letter-spacing: -0.005em !important;
+  border: 0 !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+/* Stats in Studio — enormous Inter Thin, tiny grey captions */
+html.mode-studio .num {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 100 !important;
+  font-size: clamp(4rem, 9vw, 8rem) !important;
+  letter-spacing: -0.05em !important;
+  color: #1D1D1F !important;
+  line-height: 0.95;
+}
+html.mode-studio .label {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-size: 11px !important;
+  font-weight: 400;
+  color: #86868B !important;
+  text-transform: uppercase;
+  letter-spacing: 0.08em !important;
+}
+
+/* Service / process numbers in Studio — tiny grey captions, not display */
+html.mode-studio .svc-num,
+html.mode-studio .ps-num {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 500 !important;
+  font-size: 13px !important;
+  color: #86868B !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase;
+}
+
+/* Cards in Studio — almost invisible, only depth on hover */
+html.mode-studio .svc-card,
+html.mode-studio .testimonial-card,
+html.mode-studio .work-grid > *,
+html.mode-studio .process-step {
+  background: #FFFFFF !important;
+  border: 0 !important;
+  border-radius: 18px !important;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.04),
+    0 1px 2px rgba(0, 0, 0, 0.02) !important;
+  padding: 2.2rem !important;
+  transition: transform 280ms ease, box-shadow 320ms ease !important;
+}
+html.mode-studio .svc-card:hover,
+html.mode-studio .testimonial-card:hover,
+html.mode-studio .work-grid > *:hover,
+html.mode-studio .process-step:hover {
+  transform: translateY(-4px);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.06),
+    0 18px 40px -12px rgba(0, 0, 0, 0.15) !important;
+}
+
+/* Studio bullets — em-dash already set; tighten line height */
+html.mode-studio .svc-bullets li {
+  padding-left: 1.4em;
+  margin-bottom: 0.6em;
+}
+
+/* Hide the marquee ticker in Studio — Apple wouldn't ship a scrolling band */
+html.mode-studio .ticker-band,
+html.mode-studio .testimonials-marquee {
+  display: none !important;
+}
+
+/* Footer in Studio — tiny grey caption */
+html.mode-studio .footer-band {
+  background: transparent !important;
+  border: 0 !important;
+  color: #86868B !important;
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none !important;
+  padding: 3rem 0 !important;
+  text-align: center;
+}
+
+/* Manifesto in Studio — huge thin Inter centered */
+html.mode-studio .manifesto-block,
+html.mode-studio .manifesto-text {
+  font-family: 'Inter', system-ui, sans-serif !important;
+  font-weight: 200 !important;
+  font-size: clamp(2rem, 4vw, 3.5rem) !important;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  text-align: center;
+}
+
+/* Mobile: scale these radical sizes down */
+@media (max-width: 640px) {
+  html.mode-island .hero h1,
+  html.mode-island .hero-text { font-size: clamp(3rem, 14vw, 5rem) !important; }
+  html.mode-island .num { font-size: clamp(3rem, 14vw, 5rem) !important; }
+  html.mode-studio .hero h1,
+  html.mode-studio .hero-text { font-size: clamp(3rem, 12vw, 5rem) !important; }
+  html.mode-studio .num { font-size: clamp(3.5rem, 14vw, 6rem) !important; }
+  html.mode-studio section { padding-top: 4rem !important; padding-bottom: 4rem !important; }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PREMIUM ATMOSPHERIC BACKGROUNDS — phase 7
+   ───────────────────────────────────────────────────────────────────────
+   Each theme gets a real cinematic stage instead of a flat colour:
+     · Matrix: persistent matrix-rain canvas + cyberpunk Unsplash backdrop
+       + CRT scanlines + vignette
+     · Island: dramatic golden-hour sunset photo, less haze, more sky
+     · Studio: pastel gradient mesh + subtle SVG film grain (Stripe/Linear vibe)
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ───── MATRIX: persistent ambient rain canvas ───── */
+.matrix-rain-ambient {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 1 !important;
+  pointer-events: none !important;
+  mix-blend-mode: screen;
+}
+
+/* Body bg in Matrix: dark cyberpunk image + heavy radial vignette.
+   The rain canvas (above) sits on top of this, the page content above
+   the canvas (z-index 2+). */
+html.mode-matrix body {
+  background:
+    /* Heavy vignette so edges crush to black */
+    radial-gradient(ellipse 100% 80% at center,
+      rgba(0, 0, 0, 0.25) 0%,
+      rgba(0, 0, 0, 0.85) 80%,
+      rgba(0, 0, 0, 0.96) 100%),
+    /* Cyberpunk green-code-wall imagery */
+    url('https://images.unsplash.com/photo-1635070041078-e363dbe005cb?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=85') center/cover fixed,
+    #000 !important;
+}
+
+/* CRT scanlines — full-page overlay, very low intensity */
+html.mode-matrix body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: repeating-linear-gradient(0deg,
+    rgba(0, 255, 65, 0.03) 0px,
+    rgba(0, 255, 65, 0.03) 1px,
+    transparent 1px,
+    transparent 3px);
+  mix-blend-mode: overlay;
+}
+
+/* Lift all primary content above the rain canvas + scanlines */
+html.mode-matrix .nav-bar,
+html.mode-matrix .hero,
+html.mode-matrix section,
+html.mode-matrix .footer-band {
+  position: relative;
+  z-index: 3;
+}
+html.mode-matrix .magic-toggle { z-index: 9999; }
+html.mode-matrix .mode-overlay { z-index: 9000; }
+
+/* ───── ISLAND: dramatic golden-hour sunset ───── */
+html.mode-island body {
+  background:
+    /* Soft warm overlay so text stays readable */
+    linear-gradient(180deg,
+      rgba(255, 220, 165, 0.18) 0%,
+      rgba(255, 215, 155, 0.08) 30%,
+      rgba(255, 195, 130, 0.32) 100%),
+    /* Cinematic golden-hour sunset over water */
+    url('https://images.unsplash.com/photo-1547036967-23d11aacaee0?ixlib=rb-4.0.3&auto=format&fit=crop&w=1920&q=85') center/cover fixed,
+    #FBEFD8 !important;
+}
+/* Reduce the body::before blur so the sunset reads as a real photograph */
+html.mode-island body::before {
+  backdrop-filter: blur(4px) saturate(1.18) brightness(1.02) !important;
+  -webkit-backdrop-filter: blur(4px) saturate(1.18) brightness(1.02) !important;
+  background: rgba(255, 220, 170, 0.10) !important;
+}
+
+/* In Island, make sure cards have enough backdrop to read text against the
+   vibrant sunset image */
+html.mode-island .svc-card,
+html.mode-island .testimonial-card,
+html.mode-island .work-grid > *,
+html.mode-island .process-step {
+  background: rgba(255, 248, 235, 0.85) !important;
+  backdrop-filter: blur(18px) saturate(1.05);
+  -webkit-backdrop-filter: blur(18px) saturate(1.05);
+}
+
+/* ───── STUDIO: pastel gradient mesh + film grain ───── */
+html.mode-studio body {
+  background:
+    /* Top-left soft blue blob */
+    radial-gradient(at 8% 5%,    rgba(0, 122, 255, 0.10)  0%, transparent 45%),
+    /* Top-right warm pink blob */
+    radial-gradient(at 92% 8%,   rgba(255, 138, 188, 0.10) 0%, transparent 45%),
+    /* Bottom-left soft cyan blob */
+    radial-gradient(at 12% 92%,  rgba(90, 200, 250, 0.10)  0%, transparent 50%),
+    /* Bottom-right warm peach blob */
+    radial-gradient(at 88% 95%,  rgba(255, 175, 140, 0.08) 0%, transparent 50%),
+    /* Mid-page soft glow */
+    radial-gradient(at 50% 50%,  rgba(245, 245, 247, 0.4)  0%, transparent 70%),
+    /* Base gradient */
+    linear-gradient(180deg, #FCFCFD 0%, #F5F5F7 50%, #EEEEF2 100%) !important;
+  background-attachment: fixed !important;
+}
+
+/* Film grain — fixed full-page SVG noise at ~3% opacity */
+html.mode-studio body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='240' height='240'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.95' numOctaves='2' stitchTiles='stitch'/><feColorMatrix type='matrix' values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.5 0'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.55'/></svg>");
+  opacity: 0.045;
+  mix-blend-mode: multiply;
+}
+
+/* Glassy frosted cards in Studio (modern premium feel) */
+html.mode-studio .svc-card,
+html.mode-studio .testimonial-card,
+html.mode-studio .work-grid > *,
+html.mode-studio .process-step {
+  background: rgba(255, 255, 255, 0.7) !important;
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.6) !important;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.9) inset,
+    0 0 0 0.5px rgba(0, 0, 0, 0.05),
+    0 18px 40px -16px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* Lift content above grain layer in Studio */
+html.mode-studio .nav-bar,
+html.mode-studio .hero,
+html.mode-studio section,
+html.mode-studio .footer-band {
+  position: relative;
+  z-index: 1;
+}
+html.mode-studio .magic-toggle { z-index: 9999; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PER-MODE PAGE CHROME — phase 8
+   Top-of-page decorations injected by JS in modes.js
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ─── MATRIX: terminal status bar at the very top ─── */
+.matrix-statusbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9998;
+  font-family: 'Share Tech Mono', ui-monospace, monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: #000;
+  color: #00FF41;
+  padding: 4px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  border-bottom: 1px dashed rgba(0, 255, 65, 0.5);
+  pointer-events: none;
+  box-shadow: 0 0 12px rgba(0, 255, 65, 0.2);
+}
+.matrix-statusbar .seg { white-space: nowrap; }
+.matrix-statusbar .seg b { color: #A5FFB7; font-weight: 400; }
+.matrix-statusbar .seg.ok { color: #00FF41; }
+.matrix-statusbar .seg.blinker {
+  animation: matrix-statusbar-blink 1.05s steps(2, end) infinite;
+  margin-left: auto;
+}
+@keyframes matrix-statusbar-blink {
+  0%, 49% { opacity: 1; }
+  50%, 99% { opacity: 0; }
+}
+/* In Matrix, nudge body content down so the status bar doesn't cover the nav */
+html.mode-matrix body { padding-top: 22px; }
+
+@media (max-width: 640px) {
+  .matrix-statusbar { font-size: 9px; gap: 10px; padding: 3px 10px; }
+  .matrix-statusbar .seg:nth-child(n+5) { display: none; }
+  html.mode-matrix body { padding-top: 18px; }
+}
+
+/* ─── ISLAND: ornate corner flourishes + handwritten signature ─── */
+.island-chrome {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.island-chrome .corner {
+  position: absolute;
+  font-family: 'Caveat', cursive;
+  font-size: 38px;
+  color: #C9892D;
+  opacity: 0.55;
+  text-shadow: 0 1px 3px rgba(255, 255, 255, 0.4);
+}
+.island-chrome .corner.tl { top: 12px;    left: 14px; }
+.island-chrome .corner.tr { top: 12px;    right: 14px; }
+.island-chrome .corner.bl { bottom: 12px; left: 14px; }
+.island-chrome .corner.br { bottom: 12px; right: 14px; }
+.island-chrome .signature {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: 'Caveat', cursive;
+  font-size: 22px;
+  color: #8B6F47;
+  opacity: 0.6;
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .island-chrome .corner { font-size: 26px; }
+  .island-chrome .signature { font-size: 18px; bottom: 8px; }
+}
+
+/* ─── STUDIO: 2px hairline scroll-progress bar at the top ─── */
+.studio-progress {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  z-index: 9998;
+  background: rgba(0, 0, 0, 0.04);
+  pointer-events: none;
+}
+.studio-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #007AFF 0%, #5AC8FA 100%);
+  transform-origin: 0 50%;
+  transform: scaleX(0);
+  transition: transform 80ms linear;
+  box-shadow: 0 0 8px rgba(0, 122, 255, 0.45);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   PER-MODE GRID/LAYOUT RADICAL DIFFERENTIATION — phase 8 (cont.)
+   Same DOM, completely different visual rhythm
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ─── MATRIX: dense packed 4-column services, ASCII grid look ─── */
+html.mode-matrix .services-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, 1fr) !important;
+  gap: 0 !important;
+}
+@media (min-width: 1100px) {
+  html.mode-matrix .services-grid { grid-template-columns: repeat(4, 1fr) !important; }
+}
+html.mode-matrix .services-grid > * {
+  border-right: 1px dashed rgba(0, 255, 65, 0.25);
+  border-bottom: 1px dashed rgba(0, 255, 65, 0.25);
+}
+html.mode-matrix .stats-grid,
+html.mode-matrix .stats-band {
+  display: grid !important;
+  grid-template-columns: repeat(2, 1fr) !important;
+  gap: 0 !important;
+  border-top: 1px dashed rgba(0, 255, 65, 0.35);
+  border-bottom: 1px dashed rgba(0, 255, 65, 0.35);
+}
+html.mode-matrix .stats-grid > * {
+  border-right: 1px dashed rgba(0, 255, 65, 0.2);
+  padding: 1.5rem 1rem !important;
+}
+html.mode-matrix .work-grid {
+  display: grid !important;
+  grid-template-columns: repeat(3, 1fr) !important;
+  gap: 1px !important;
+  background: rgba(0, 255, 65, 0.18);
+}
+html.mode-matrix .process-row {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 0 !important;
+  align-items: stretch !important;
+}
+html.mode-matrix .process-step {
+  flex: 1 1 0;
+  min-width: 200px;
+  border-right: 1px dashed rgba(0, 255, 65, 0.3);
+}
+html.mode-matrix .process-arrow {
+  color: #00FF41 !important;
+  font-family: 'Share Tech Mono', monospace !important;
+}
+html.mode-matrix .process-arrow::before { content: '──>'; }
+html.mode-matrix .process-arrow > * { display: none; }
+
+/* ─── ISLAND: asymmetric magazine layout, generous gaps ─── */
+html.mode-island .services-grid {
+  display: grid !important;
+  grid-template-columns: 1fr 1.35fr !important;
+  gap: 3.5rem !important;
+}
+@media (max-width: 900px) {
+  html.mode-island .services-grid { grid-template-columns: 1fr !important; gap: 2rem !important; }
+}
+html.mode-island .stats-grid,
+html.mode-island .stats-band {
+  display: grid !important;
+  grid-template-columns: repeat(2, 1fr) !important;
+  gap: 3rem !important;
+  text-align: center;
+}
+html.mode-island .stats-grid > * {
+  padding: 2rem 1rem !important;
+}
+html.mode-island .work-grid {
+  display: grid !important;
+  grid-template-columns: 1.4fr 1fr !important;
+  gap: 2.5rem !important;
+}
+@media (max-width: 900px) {
+  html.mode-island .work-grid { grid-template-columns: 1fr !important; }
+}
+html.mode-island .process-row {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 2rem !important;
+}
+html.mode-island .process-arrow > * { display: none; }
+html.mode-island .process-arrow::before {
+  content: '~ ✦ ~';
+  display: block;
+  text-align: center;
+  font-family: 'Caveat', cursive;
+  color: #C9892D;
+  font-size: 24px;
+  padding: 1rem 0;
+}
+
+/* ─── STUDIO: ultra-airy single-column stack with massive gaps ─── */
+html.mode-studio .services-grid {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 5rem !important;
+  max-width: 880px;
+  margin: 0 auto !important;
+}
+html.mode-studio .stats-grid,
+html.mode-studio .stats-band {
+  display: grid !important;
+  grid-template-columns: repeat(4, 1fr) !important;
+  gap: 0 !important;
+  max-width: 1100px;
+  margin: 0 auto !important;
+  text-align: center;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+}
+html.mode-studio .stats-grid > * {
+  padding: 3.5rem 1rem !important;
+  border-right: 1px solid rgba(0, 0, 0, 0.05);
+}
+html.mode-studio .stats-grid > *:last-child { border-right: 0; }
+@media (max-width: 640px) {
+  html.mode-studio .stats-grid { grid-template-columns: repeat(2, 1fr) !important; }
+  html.mode-studio .stats-grid > * { padding: 2rem 1rem !important; }
+}
+html.mode-studio .work-grid {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 4rem !important;
+  max-width: 980px;
+  margin: 0 auto !important;
+}
+html.mode-studio .process-row {
+  display: grid !important;
+  grid-template-columns: 1fr !important;
+  gap: 3rem !important;
+  max-width: 720px;
+  margin: 0 auto;
+}
+html.mode-studio .process-step {
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  padding-top: 2rem !important;
+}
+html.mode-studio .process-step:first-child { border-top: 0; }
+html.mode-studio .process-arrow { display: none !important; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   INTERACTIVE LAYER — phase 9
+   Cyberpunk video bg for Matrix, themed cursor trails, 3D-tilt cards,
+   magnetic CTAs.  All cleaned up per-mode by modes.js.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ─── MATRIX: 3D-perspective tunnel canvas (video-equivalent backdrop) ─── */
+.matrix-video-bg,
+.matrix-tunnel-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.78;
+  mix-blend-mode: screen;
+}
+
+/* Stacking discipline:
+   z-index 0  → tunnel canvas (this)
+   z-index 1  → persistent matrix-rain-ambient canvas
+   z-index 2  → CRT scanlines (body::after)
+   z-index 3  → page content (nav/hero/sections)
+   z-index 9000 → mode-overlay during transitions
+   z-index 9997 → theme-cursor-canvas (trail)
+   z-index 9998 → page chrome (matrix-statusbar / studio-progress)
+   z-index 9999 → magic-toggle button (always on top, always blue)
+   ───────────────────────────────────────────────────────────────────── */
+
+/* ─── Universal themed-cursor trail canvas ─── */
+.theme-cursor-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 9997;
+}
+/* The trail layer should not block clicks even on subpixel touch */
+html .theme-cursor-canvas { touch-action: none; }
+
+/* In Matrix, the cursor canvas adds to the green glow — blend mode keeps
+   it readable over the photo + rain */
+html.mode-matrix .theme-cursor-canvas { mix-blend-mode: screen; }
+/* In Island, the cursor sparkles are warm light — screen blend so they
+   pop on the photo */
+html.mode-island .theme-cursor-canvas { mix-blend-mode: screen; }
+/* In Studio, the halos read as soft shadows on white — multiply darkens */
+html.mode-studio .theme-cursor-canvas { mix-blend-mode: multiply; }
+
+/* The existing studio-spot is now redundant (cursor trail covers it).
+   Hide it in Studio to avoid double-spot drawing. */
+html.mode-studio .studio-spot { display: none !important; }
+
+/* When a Studio card is being tilted, ensure its children inherit the
+   3D context so backdrops don't break */
+html.mode-studio .svc-card,
+html.mode-studio .testimonial-card,
+html.mode-studio .work-grid > *,
+html.mode-studio .process-step {
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+
+/* Magnetic CTA needs `will-change` for buttery smooth pull */
+html.mode-studio .btn-primary,
+html.mode-island .btn-primary,
+html.mode-matrix .btn-primary {
+  will-change: transform;
+}
