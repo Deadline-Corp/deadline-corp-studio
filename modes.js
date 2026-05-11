@@ -8,7 +8,21 @@
 (() => {
   'use strict';
 
-  const MODES = ['matrix', 'island', 'studio'];
+  const MODES = ['matrix', 'island', 'studio', 'noir', 'vault', 'kinetic'];
+  // Sequential cycle through 7 positions. Position 1 = ORIGINAL (no mode
+  // class, default DOM visible). Each click advances by one. Position #2
+  // is NOIR by user spec, so the user can predict exactly which design
+  // they'll land on by counting clicks from page-load.
+  const CYCLE = [null, 'noir', 'vault', 'kinetic', 'matrix', 'island', 'studio'];
+  const MODE_LABELS = {
+    'null':    'ORIGINAL',
+    'noir':    'NOIR',
+    'vault':   'VAULT',
+    'kinetic': 'KINETIC',
+    'matrix':  'MATRIX',
+    'island':  'ISLAND',
+    'studio':  'STUDIO',
+  };
   const TRANSITION_LOCK_CLASS = 'is-transitioning';
   const HTML = document.documentElement;
   const BODY = document.body;
@@ -30,10 +44,20 @@
     MODES.forEach(m => HTML.classList.remove(`mode-${m}`));
   }
 
+  // Sequential pick — finds current in CYCLE, returns the next entry,
+  // wrapping past STUDIO back to ORIGINAL. Result `null` clears all
+  // mode classes (default DOM visible).
   function pickNextMode() {
     const current = getCurrentMode();
-    const candidates = MODES.filter(m => m !== current);
-    return candidates[Math.floor(Math.random() * candidates.length)];
+    const idx = CYCLE.indexOf(current);
+    return CYCLE[(idx + 1) % CYCLE.length];
+  }
+
+  function getModeLabel(mode) {
+    const idx = CYCLE.indexOf(mode);
+    const pos = (idx === -1 ? 0 : idx) + 1;
+    const name = MODE_LABELS[String(mode)] || 'ORIGINAL';
+    return { pos: String(pos).padStart(2, '0'), name };
   }
 
   // ─────────────────────────────────────────────────────────────────────
@@ -43,6 +67,29 @@
   overlay.className = 'mode-overlay';
   overlay.setAttribute('aria-hidden', 'true');
   document.body.appendChild(overlay);
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Mode indicator chip — always visible under the magic-toggle. Shows
+  // the current position in the sequential cycle (e.g. "02 / NOIR") so
+  // the user can predict the next design by clicking. Updates inside
+  // transitionTo() the moment the target class is applied.
+  // ─────────────────────────────────────────────────────────────────────
+  const indicator = document.createElement('div');
+  indicator.className = 'mode-indicator';
+  indicator.innerHTML =
+    '<span class="num" data-num></span>' +
+    '<span class="sep">/</span>' +
+    '<span class="name" data-name></span>';
+  document.body.appendChild(indicator);
+  const indicatorNum  = indicator.querySelector('[data-num]');
+  const indicatorName = indicator.querySelector('[data-name]');
+
+  function updateIndicator() {
+    const { pos, name } = getModeLabel(getCurrentMode());
+    if (indicatorNum)  indicatorNum.textContent  = pos;
+    if (indicatorName) indicatorName.textContent = name;
+  }
+  updateIndicator();
 
   // ═══════════════════════════════════════════════════════════════════════
   // MATRIX
@@ -950,6 +997,1617 @@
     clearBodyChildIndices();
   }
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // NOIR — Ultranoir-inspired
+  //   Signature: difference-mode cursor (dot + ring with mix-blend-mode:
+  //   difference) + magnetic hover on headlines/CTAs + expo-out scroll
+  //   reveal. Two divs, vanilla lerp, IntersectionObserver. Zero WebGL.
+  // ═══════════════════════════════════════════════════════════════════════
+  let noirCursor = null;
+  let noirMagnetic = null;
+  let noirBook = null;
+  let noirScrollNav = null;
+  let noirRevealIO = null;
+  let noirReveals = null;             // GSAP-driven reveals disposer (if GSAP loaded)
+  let noirGrainEl = null;
+  let noirRunningEl = null;
+  let noirPagesEl = null;
+  let noirProgressEl = null;
+  let noirProgressHandler = null;
+  let noirScene = null;               // Three.js scene controller for the cover
+  let magicBtnHome = null;
+  let CONTENT = null;
+
+  // ─────────────────────────────────────────────────────────────────────
+  // 3D — dynamic Three.js loader. Three.js ESM module is fetched only
+  // when noir mode is entered for the first time, then cached on window.
+  // ─────────────────────────────────────────────────────────────────────
+  let _threePromise = null;
+  function loadThree() {
+    if (window.THREE) return Promise.resolve(window.THREE);
+    if (_threePromise) return _threePromise;
+    _threePromise = import('https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js')
+      .then(mod => { window.THREE = mod; return mod; })
+      .catch(err => { console.warn('[noir] Three.js failed to load:', err); _threePromise = null; throw err; });
+    return _threePromise;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // mountNoirScene — wireframe icosahedron behind the DEADLINE display
+  // on the cover chapter. Slow continuous rotation + mouse parallax +
+  // subtle breathing scale. Pure WebGL via Three.js. Replaceable later
+  // with a <spline-viewer> element loading the user's Spline scene URL.
+  // Returns { canvas, destroy }.
+  // ─────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────
+  // SCENE_BUILDERS — each returns { update(t, mx, my), dispose() } where
+  // t is elapsed time, mx/my are lerped normalized mouse coords [-1..1].
+  // All scenes use the warm-gold palette (#B8985C primary, #C9AB6E
+  // highlight, #8A704A deep). They're swapped into a single shared scene
+  // graph by mountNoirBackdrop() based on the active chapter.
+  // ─────────────────────────────────────────────────────────────────────
+  const GOLD = 0xB8985C, GOLD_HI = 0xC9AB6E, GOLD_DK = 0x8A704A;
+
+  const SCENE_BUILDERS = {
+    // 00 COVER — wireframe icosahedron + inner ghost-sphere
+    icosahedron(T, scene) {
+      const geo = new T.IcosahedronGeometry(1.7, 1);
+      const eg  = new T.EdgesGeometry(geo);
+      const outer = new T.LineSegments(eg, new T.LineBasicMaterial({ color: GOLD, transparent: true, opacity: 0.42 }));
+      const innerGeo = new T.SphereGeometry(0.9, 18, 14);
+      const innerEg  = new T.WireframeGeometry(innerGeo);
+      const inner = new T.LineSegments(innerEg, new T.LineBasicMaterial({ color: GOLD_HI, transparent: true, opacity: 0.18 }));
+      scene.add(outer, inner);
+      return {
+        update(t, mx, my) {
+          outer.rotation.y = t * 0.4 + mx * 0.5;
+          outer.rotation.x = mx * 0.28 + my * 0.42 + Math.sin(t * 0.3) * 0.05;
+          outer.rotation.z = Math.cos(t * 0.2) * 0.02;
+          const s = 1 + Math.sin(t * 0.45) * 0.018;
+          outer.scale.set(s, s, s);
+          inner.rotation.y = -t * 0.18;
+          inner.rotation.x =  t * 0.12 + my * -0.2;
+        },
+        dispose() { [geo, eg, innerGeo, innerEg, outer.material, inner.material].forEach(o => o.dispose()); },
+      };
+    },
+
+    // 01 MANIFESTO — neural dot-network with proximity-linked edges
+    dotNetwork(T, scene) {
+      const N = 60, maxLines = 220;
+      const pos = new Float32Array(N * 3);
+      const vel = new Float32Array(N * 3);
+      for (let i = 0; i < N; i++) {
+        pos[i*3]   = (Math.random() - 0.5) * 5.2;
+        pos[i*3+1] = (Math.random() - 0.5) * 3.5;
+        pos[i*3+2] = (Math.random() - 0.5) * 3.5;
+        vel[i*3]   = (Math.random() - 0.5) * 0.006;
+        vel[i*3+1] = (Math.random() - 0.5) * 0.006;
+        vel[i*3+2] = (Math.random() - 0.5) * 0.006;
+      }
+      const ptGeo = new T.BufferGeometry();
+      ptGeo.setAttribute('position', new T.BufferAttribute(pos, 3));
+      const points = new T.Points(ptGeo, new T.PointsMaterial({ color: GOLD_HI, size: 0.045, transparent: true, opacity: 0.85, sizeAttenuation: true }));
+      const lineGeo = new T.BufferGeometry();
+      const linePos = new Float32Array(maxLines * 6);
+      lineGeo.setAttribute('position', new T.BufferAttribute(linePos, 3));
+      const lines = new T.LineSegments(lineGeo, new T.LineBasicMaterial({ color: GOLD, transparent: true, opacity: 0.28 }));
+      const group = new T.Group();
+      group.add(points, lines);
+      scene.add(group);
+      const thr = 1.25, thr2 = thr * thr;
+      return {
+        update(t, mx, my) {
+          for (let i = 0; i < N; i++) {
+            pos[i*3]   += vel[i*3];
+            pos[i*3+1] += vel[i*3+1];
+            pos[i*3+2] += vel[i*3+2];
+            if (Math.abs(pos[i*3])   > 2.6) vel[i*3]   *= -1;
+            if (Math.abs(pos[i*3+1]) > 1.8) vel[i*3+1] *= -1;
+            if (Math.abs(pos[i*3+2]) > 1.8) vel[i*3+2] *= -1;
+          }
+          ptGeo.attributes.position.needsUpdate = true;
+          let li = 0;
+          for (let i = 0; i < N && li < maxLines; i++) {
+            for (let j = i + 1; j < N && li < maxLines; j++) {
+              const dx = pos[i*3] - pos[j*3];
+              const dy = pos[i*3+1] - pos[j*3+1];
+              const dz = pos[i*3+2] - pos[j*3+2];
+              if (dx*dx + dy*dy + dz*dz < thr2) {
+                linePos[li*6  ] = pos[i*3];   linePos[li*6+1] = pos[i*3+1]; linePos[li*6+2] = pos[i*3+2];
+                linePos[li*6+3] = pos[j*3];   linePos[li*6+4] = pos[j*3+1]; linePos[li*6+5] = pos[j*3+2];
+                li++;
+              }
+            }
+          }
+          for (let i = li * 6; i < maxLines * 6; i++) linePos[i] = 0;
+          lineGeo.attributes.position.needsUpdate = true;
+          group.rotation.y = t * 0.06 + mx * 0.22;
+          group.rotation.x = my * 0.15;
+        },
+        dispose() { ptGeo.dispose(); lineGeo.dispose(); points.material.dispose(); lines.material.dispose(); },
+      };
+    },
+
+    // 02 WEB — flowing wave-grid floor + a wireframe "worm" (cylinder)
+    // that bounces off the grid along a sinusoidal arc, sweeping left-
+    // to-right and pitching its body along the trajectory tangent.
+    waveGrid(T, scene) {
+      const w = 7, h = 4.5, segX = 56, segY = 28;
+      const geo = new T.PlaneGeometry(w, h, segX, segY);
+      const mesh = new T.LineSegments(new T.WireframeGeometry(geo), new T.LineBasicMaterial({ color: GOLD, transparent: true, opacity: 0.4 }));
+      mesh.rotation.x = -Math.PI / 2.5;
+      scene.add(mesh);
+      const basePositions = geo.attributes.position.array.slice();
+
+      // The worm — wireframe cylinder. Lies horizontal (long axis along X
+      // after rotation.z = π/2). Bounces above the grid via |sin| arcs.
+      const wormR = 0.075, wormLen = 0.85;
+      const wormGeo  = new T.CylinderGeometry(wormR, wormR, wormLen, 12, 1, false);
+      const wormEdges = new T.WireframeGeometry(wormGeo);
+      const worm = new T.LineSegments(wormEdges, new T.LineBasicMaterial({ color: GOLD_HI, transparent: true, opacity: 0.88 }));
+      // Two end-cap rings to make it read more "creature-like" than a pipe
+      const capGeo = new T.TorusGeometry(wormR * 1.05, 0.008, 4, 14);
+      const capMat = new T.LineBasicMaterial({ color: GOLD_HI, transparent: true, opacity: 0.7 });
+      const capA = new T.Mesh(capGeo, capMat); capA.rotation.x = Math.PI / 2;
+      const capB = new T.Mesh(capGeo, capMat); capB.rotation.x = Math.PI / 2;
+      // Group so we can transform as one
+      const wormGroup = new T.Group();
+      wormGroup.add(worm, capA, capB);
+      // Cylinder's default axis is Y — rotate the inner mesh so the long
+      // axis ends up along the group's local +X. Then the group rotates
+      // around its center to pitch along trajectory.
+      worm.rotation.z = Math.PI / 2;
+      capA.position.x =  wormLen / 2;
+      capB.position.x = -wormLen / 2;
+      scene.add(wormGroup);
+
+      // Motion parameters
+      const wormSpeed   = 0.7;     // x units per second
+      const xRange      = 6;       // -3 to +3 loop
+      const bounceFreq  = 1.45;    // rad/s
+      const bounceAmp   = 1.25;    // peak height above floor
+      const floorY      = -0.55;   // resting on grid
+
+      return {
+        update(t, mx, my) {
+          // Grid wave displacement
+          const arr = geo.attributes.position.array;
+          for (let i = 0; i < arr.length; i += 3) {
+            const x = basePositions[i];
+            const z = basePositions[i + 1];
+            arr[i + 2] = Math.sin(x * 1.4 + t * 1.2) * 0.18 + Math.cos(z * 1.6 + t * 0.9) * 0.18;
+          }
+          geo.attributes.position.needsUpdate = true;
+          mesh.rotation.z = mx * 0.18;
+          mesh.position.y = -0.5 + my * 0.25;
+
+          // Worm trajectory — X linear loop, Y half-sin arcs
+          const xCycle = ((t * wormSpeed) % xRange);
+          const xPos = -xRange / 2 + xCycle;
+          const phase = t * bounceFreq;
+          const sinP = Math.sin(phase);
+          const yPos = floorY + Math.abs(sinP) * bounceAmp;
+          wormGroup.position.set(xPos, yPos, 0.35);
+
+          // Pitch along tangent — atan2(dy, dx). dy = sign(sin) * bounceAmp * bounceFreq * cos
+          const dy = Math.sign(sinP || 1) * bounceAmp * bounceFreq * Math.cos(phase);
+          const dx = wormSpeed * 1.8;  // multiplier dampens pitch angle
+          wormGroup.rotation.z = Math.atan2(dy, dx);
+
+          // Subtle roll around its own long axis for "wriggle" feel
+          wormGroup.rotation.x = t * 1.4;
+
+          // Slight mouse parallax on whole scene
+          scene.rotation.y = mx * 0.06;
+        },
+        dispose() {
+          geo.dispose();
+          mesh.material.dispose();
+          mesh.geometry.dispose();
+          wormGeo.dispose();
+          wormEdges.dispose();
+          worm.material.dispose();
+          capGeo.dispose();
+          capMat.dispose();
+        },
+      };
+    },
+
+    // 03 AUTOMATION — 3 orbital rings (gimbal)
+    orbitalRings(T, scene) {
+      const mat = new T.LineBasicMaterial({ color: GOLD, transparent: true, opacity: 0.5 });
+      const matHi = new T.LineBasicMaterial({ color: GOLD_HI, transparent: true, opacity: 0.32 });
+      const ringGeo1 = new T.TorusGeometry(1.7, 0.012, 6, 80);
+      const ringGeo2 = new T.TorusGeometry(1.3, 0.01,  6, 70);
+      const ringGeo3 = new T.TorusGeometry(0.95, 0.01, 6, 60);
+      const r1 = new T.Mesh(ringGeo1, mat);
+      const r2 = new T.Mesh(ringGeo2, matHi); r2.rotation.x = Math.PI / 2;
+      const r3 = new T.Mesh(ringGeo3, mat);   r3.rotation.y = Math.PI / 2;
+      const dotGeo = new T.SphereGeometry(0.04, 12, 12);
+      const dotMat = new T.MeshBasicMaterial({ color: GOLD_HI });
+      const dot = new T.Mesh(dotGeo, dotMat);
+      scene.add(r1, r2, r3, dot);
+      return {
+        update(t, mx, my) {
+          r1.rotation.z = t * 0.25 + mx * 0.3;
+          r2.rotation.z = t * -0.18 + my * 0.25;
+          r3.rotation.x = t * 0.32 + mx * 0.25;
+          const ang = t * 0.55;
+          dot.position.set(Math.cos(ang) * 1.7, Math.sin(ang * 0.7) * 0.4, Math.sin(ang) * 1.7);
+        },
+        dispose() { [ringGeo1, ringGeo2, ringGeo3, dotGeo, mat, matHi, dotMat].forEach(o => o.dispose()); },
+      };
+    },
+
+    // 04 AI — particle swarm in pseudo-noise field
+    particleSwarm(T, scene) {
+      const N = 480;
+      const pos = new Float32Array(N * 3);
+      const seeds = new Float32Array(N * 3);
+      for (let i = 0; i < N; i++) {
+        const r = 1.3 + Math.random() * 1.5;
+        const a = Math.random() * Math.PI * 2;
+        const b = (Math.random() - 0.5) * Math.PI;
+        pos[i*3]   = Math.cos(a) * Math.cos(b) * r;
+        pos[i*3+1] = Math.sin(b) * r * 0.7;
+        pos[i*3+2] = Math.sin(a) * Math.cos(b) * r;
+        seeds[i*3]   = Math.random() * Math.PI * 2;
+        seeds[i*3+1] = Math.random() * Math.PI * 2;
+        seeds[i*3+2] = Math.random() * Math.PI * 2;
+      }
+      const geo = new T.BufferGeometry();
+      geo.setAttribute('position', new T.BufferAttribute(pos, 3));
+      const points = new T.Points(geo, new T.PointsMaterial({ color: GOLD_HI, size: 0.028, transparent: true, opacity: 0.7, sizeAttenuation: true }));
+      scene.add(points);
+      const base = pos.slice();
+      return {
+        update(t, mx, my) {
+          const arr = geo.attributes.position.array;
+          for (let i = 0; i < N; i++) {
+            arr[i*3]   = base[i*3]   + Math.sin(t * 0.6 + seeds[i*3])   * 0.18;
+            arr[i*3+1] = base[i*3+1] + Math.cos(t * 0.7 + seeds[i*3+1]) * 0.18;
+            arr[i*3+2] = base[i*3+2] + Math.sin(t * 0.5 + seeds[i*3+2]) * 0.18;
+          }
+          geo.attributes.position.needsUpdate = true;
+          points.rotation.y = t * 0.08 + mx * 0.25;
+          points.rotation.x = my * 0.18;
+        },
+        dispose() { geo.dispose(); points.material.dispose(); },
+      };
+    },
+
+    // 05 VRP — voxel stack (8 thin rotating layers, property floors)
+    voxelStack(T, scene) {
+      const mat = new T.LineBasicMaterial({ color: GOLD, transparent: true, opacity: 0.42 });
+      const matHi = new T.LineBasicMaterial({ color: GOLD_HI, transparent: true, opacity: 0.6 });
+      const boxes = [];
+      const geos = [];
+      for (let i = 0; i < 9; i++) {
+        const sz = 1.8 - i * 0.085;
+        const g = new T.BoxGeometry(sz, 0.04, sz);
+        const eg = new T.EdgesGeometry(g);
+        const m = new T.LineSegments(eg, i % 2 === 0 ? mat : matHi);
+        m.position.y = -1.4 + i * 0.35;
+        scene.add(m);
+        boxes.push(m);
+        geos.push(g, eg);
+      }
+      return {
+        update(t, mx, my) {
+          boxes.forEach((b, i) => {
+            b.rotation.y = t * (0.15 + i * 0.03) + mx * 0.18;
+            b.position.x = Math.sin(t * 0.4 + i * 0.5) * 0.05;
+            b.position.z = Math.cos(t * 0.35 + i * 0.6) * 0.05;
+          });
+        },
+        dispose() { geos.forEach(g => g.dispose()); mat.dispose(); matHi.dispose(); },
+      };
+    },
+
+    // 06 KD — flow field (horizontal scanlines drifting like a stream)
+    flowField(T, scene) {
+      const L = 26;
+      const mat = new T.LineBasicMaterial({ color: GOLD, transparent: true, opacity: 0.35 });
+      const matHi = new T.LineBasicMaterial({ color: GOLD_HI, transparent: true, opacity: 0.55 });
+      const lines = [];
+      const geos = [];
+      for (let i = 0; i < L; i++) {
+        const pts = [];
+        const y = -1.6 + i * 0.13;
+        for (let x = -3; x <= 3; x += 0.08) pts.push(new T.Vector3(x, y, 0));
+        const g = new T.BufferGeometry().setFromPoints(pts);
+        const l = new T.Line(g, i % 5 === 0 ? matHi : mat);
+        scene.add(l);
+        lines.push({ line: l, y, base: pts.map(p => p.clone()), geo: g, phase: Math.random() * Math.PI * 2 });
+        geos.push(g);
+      }
+      return {
+        update(t, mx, my) {
+          lines.forEach((ln, i) => {
+            const arr = ln.geo.attributes.position.array;
+            for (let k = 0; k < ln.base.length; k++) {
+              const bx = ln.base[k].x;
+              arr[k*3+1] = ln.y + Math.sin(bx * 0.6 + t * 1.4 + ln.phase) * 0.06;
+              arr[k*3+2] = Math.cos(bx * 0.8 + t * 0.9 + ln.phase + i * 0.4) * 0.18;
+            }
+            ln.geo.attributes.position.needsUpdate = true;
+          });
+          scene.rotation.y = mx * 0.18;
+          scene.rotation.x = my * 0.10;
+        },
+        dispose() { geos.forEach(g => g.dispose()); mat.dispose(); matHi.dispose(); scene.rotation.set(0,0,0); },
+      };
+    },
+
+    // 07 RA — torus-knot with breathing pulse
+    torusKnot(T, scene) {
+      const geo = new T.TorusKnotGeometry(1.1, 0.018, 220, 12);
+      const mesh = new T.LineSegments(new T.WireframeGeometry(geo), new T.LineBasicMaterial({ color: GOLD, transparent: true, opacity: 0.55 }));
+      const innerGeo = new T.SphereGeometry(0.3, 16, 14);
+      const inner = new T.LineSegments(new T.WireframeGeometry(innerGeo), new T.LineBasicMaterial({ color: GOLD_HI, transparent: true, opacity: 0.3 }));
+      scene.add(mesh, inner);
+      return {
+        update(t, mx, my) {
+          mesh.rotation.y = t * 0.3 + mx * 0.4;
+          mesh.rotation.x = t * 0.18 + my * 0.3;
+          const s = 1 + Math.sin(t * 0.6) * 0.04;
+          mesh.scale.set(s, s, s);
+          inner.rotation.y = -t * 0.5;
+        },
+        dispose() { geo.dispose(); innerGeo.dispose(); mesh.geometry.dispose(); inner.geometry.dispose(); mesh.material.dispose(); inner.material.dispose(); },
+      };
+    },
+
+    // 08 VOICE 01 — ripple rings (sound-wave pulses outward)
+    rippleRings(T, scene) {
+      const mats = [
+        new T.LineBasicMaterial({ color: GOLD,    transparent: true, opacity: 0.5 }),
+        new T.LineBasicMaterial({ color: GOLD_HI, transparent: true, opacity: 0.35 }),
+        new T.LineBasicMaterial({ color: GOLD_DK, transparent: true, opacity: 0.25 }),
+      ];
+      const geos = [];
+      const rings = [];
+      for (let i = 0; i < 3; i++) {
+        const g = new T.TorusGeometry(0.5 + i * 0.4, 0.008, 6, 96);
+        const r = new T.Mesh(g, mats[i]);
+        r.rotation.x = Math.PI / 2;
+        scene.add(r);
+        rings.push(r);
+        geos.push(g);
+      }
+      return {
+        update(t, mx, my) {
+          rings.forEach((r, i) => {
+            const phase = (t * 0.4 + i * 0.66) % 2;
+            r.scale.setScalar(0.5 + phase * 1.4);
+            mats[i].opacity = Math.max(0, 0.55 - phase * 0.3);
+          });
+          scene.rotation.z = mx * 0.18;
+        },
+        dispose() { geos.forEach(g => g.dispose()); mats.forEach(m => m.dispose()); scene.rotation.set(0,0,0); },
+      };
+    },
+
+    // 09 VOICE 02 — spiral curve (helix tube)
+    spiralCurve(T, scene) {
+      const pts = [];
+      for (let i = 0; i < 240; i++) {
+        const a = i * 0.18;
+        const y = -1.8 + (i / 240) * 3.6;
+        const r = 1.2 + Math.sin(a * 0.4) * 0.2;
+        pts.push(new T.Vector3(Math.cos(a) * r, y, Math.sin(a) * r));
+      }
+      const curve = new T.CatmullRomCurve3(pts);
+      const tubeGeo = new T.TubeGeometry(curve, 220, 0.015, 6, false);
+      const tube = new T.LineSegments(new T.WireframeGeometry(tubeGeo), new T.LineBasicMaterial({ color: GOLD, transparent: true, opacity: 0.55 }));
+      scene.add(tube);
+      return {
+        update(t, mx, my) {
+          tube.rotation.y = t * 0.35 + mx * 0.3;
+          tube.rotation.x = my * 0.15;
+          tube.position.y = Math.sin(t * 0.4) * 0.06;
+        },
+        dispose() { tubeGeo.dispose(); tube.geometry.dispose(); tube.material.dispose(); },
+      };
+    },
+
+    // 10 VOICE 03 — orbiting dots (12 dots on circles, gentle audio cadence)
+    orbitingDots(T, scene) {
+      const N = 12;
+      const dotGeo = new T.SphereGeometry(0.04, 12, 12);
+      const mat = new T.MeshBasicMaterial({ color: GOLD_HI, transparent: true, opacity: 0.78 });
+      const orbits = [];
+      for (let i = 0; i < N; i++) {
+        const r = 0.8 + (i % 4) * 0.4;
+        const phase = (i / N) * Math.PI * 2;
+        const dot = new T.Mesh(dotGeo, mat);
+        scene.add(dot);
+        orbits.push({ dot, r, phase, speed: 0.3 + (i % 3) * 0.12 });
+      }
+      const ringGeo = new T.TorusGeometry(2, 0.005, 4, 96);
+      const ring = new T.Mesh(ringGeo, new T.MeshBasicMaterial({ color: GOLD_DK, transparent: true, opacity: 0.18, wireframe: true }));
+      ring.rotation.x = Math.PI / 2;
+      scene.add(ring);
+      return {
+        update(t, mx, my) {
+          orbits.forEach(o => {
+            const a = t * o.speed + o.phase;
+            o.dot.position.set(Math.cos(a) * o.r, Math.sin(a * 0.7) * 0.3, Math.sin(a) * o.r);
+            const s = 0.9 + Math.sin(t * 1.4 + o.phase * 3) * 0.3;
+            o.dot.scale.setScalar(s);
+          });
+          ring.rotation.z = t * 0.1 + mx * 0.2;
+        },
+        dispose() { dotGeo.dispose(); ringGeo.dispose(); mat.dispose(); ring.material.dispose(); },
+      };
+    },
+
+    // 03 AUTOMATION (replaces orbitalRings per user feedback) —
+    // 4×4×4 lattice of connected dots, rotating slowly. Reads as a
+    // structured 3D automation graph, distinct from random dotNetwork.
+    latticeCube(T, scene) {
+      const N = 4;
+      const sp = 0.7;
+      const off = -((N - 1) / 2) * sp;
+      const pos = new Float32Array(N * N * N * 3);
+      let p = 0;
+      for (let x = 0; x < N; x++)
+        for (let y = 0; y < N; y++)
+          for (let z = 0; z < N; z++) {
+            pos[p++] = off + x * sp;
+            pos[p++] = off + y * sp;
+            pos[p++] = off + z * sp;
+          }
+      const ptGeo = new T.BufferGeometry();
+      ptGeo.setAttribute('position', new T.BufferAttribute(pos, 3));
+      const points = new T.Points(ptGeo, new T.PointsMaterial({ color: GOLD_HI, size: 0.058, transparent: true, opacity: 0.8 }));
+
+      const idx = (x, y, z) => x * N * N + y * N + z;
+      const pairs = [];
+      for (let x = 0; x < N; x++)
+        for (let y = 0; y < N; y++)
+          for (let z = 0; z < N; z++) {
+            if (x < N - 1) pairs.push(idx(x, y, z), idx(x + 1, y, z));
+            if (y < N - 1) pairs.push(idx(x, y, z), idx(x, y + 1, z));
+            if (z < N - 1) pairs.push(idx(x, y, z), idx(x, y, z + 1));
+          }
+      const linePos = new Float32Array(pairs.length * 3);
+      for (let k = 0; k < pairs.length; k++) {
+        const i = pairs[k];
+        linePos[k * 3]     = pos[i * 3];
+        linePos[k * 3 + 1] = pos[i * 3 + 1];
+        linePos[k * 3 + 2] = pos[i * 3 + 2];
+      }
+      const lineGeo = new T.BufferGeometry();
+      lineGeo.setAttribute('position', new T.BufferAttribute(linePos, 3));
+      const lines = new T.LineSegments(lineGeo, new T.LineBasicMaterial({ color: GOLD, transparent: true, opacity: 0.35 }));
+
+      const group = new T.Group();
+      group.add(points, lines);
+      scene.add(group);
+      return {
+        update(t, mx, my) {
+          group.rotation.y = t * 0.22 + mx * 0.32;
+          group.rotation.x = t * 0.1 + my * 0.26;
+          const s = 1 + Math.sin(t * 0.5) * 0.04;
+          group.scale.setScalar(s);
+        },
+        dispose() { ptGeo.dispose(); lineGeo.dispose(); points.material.dispose(); lines.material.dispose(); },
+      };
+    },
+
+    // 08 VOICES (background) — golden helix of connected dots running
+    // RIGHTWARD (positive Y rotation) while the marquee cards run LEFT.
+    // The opposing motion creates visual depth between foreground and bg.
+    dotSpiral(T, scene) {
+      const N = 140;
+      const turns = 5;
+      const height = 5.5;
+      const radius = 2.1;
+      const pos = new Float32Array(N * 3);
+      for (let i = 0; i < N; i++) {
+        const tn = i / (N - 1);
+        const a = tn * Math.PI * 2 * turns;
+        const r = radius * (0.4 + tn * 0.7);
+        pos[i * 3]     = Math.cos(a) * r;
+        pos[i * 3 + 1] = -height / 2 + tn * height;
+        pos[i * 3 + 2] = Math.sin(a) * r;
+      }
+      const ptGeo = new T.BufferGeometry();
+      ptGeo.setAttribute('position', new T.BufferAttribute(pos, 3));
+      const points = new T.Points(ptGeo, new T.PointsMaterial({ color: GOLD_HI, size: 0.05, transparent: true, opacity: 0.85 }));
+
+      const linePos = new Float32Array((N - 1) * 6);
+      for (let i = 0; i < N - 1; i++) {
+        linePos[i * 6]     = pos[i * 3];
+        linePos[i * 6 + 1] = pos[i * 3 + 1];
+        linePos[i * 6 + 2] = pos[i * 3 + 2];
+        linePos[i * 6 + 3] = pos[(i + 1) * 3];
+        linePos[i * 6 + 4] = pos[(i + 1) * 3 + 1];
+        linePos[i * 6 + 5] = pos[(i + 1) * 3 + 2];
+      }
+      const lineGeo = new T.BufferGeometry();
+      lineGeo.setAttribute('position', new T.BufferAttribute(linePos, 3));
+      const lines = new T.LineSegments(lineGeo, new T.LineBasicMaterial({ color: GOLD, transparent: true, opacity: 0.45 }));
+
+      const group = new T.Group();
+      group.add(points, lines);
+      group.rotation.z = -0.18;  // tilt so it sweeps horizontally across screen
+      scene.add(group);
+      return {
+        update(t, mx, my) {
+          // RIGHTWARD spin (positive Y) — opposes the marquee scrolling LEFT
+          group.rotation.y = t * 0.42 + mx * 0.22;
+          group.rotation.x = my * 0.12;
+        },
+        dispose() { ptGeo.dispose(); lineGeo.dispose(); points.material.dispose(); lines.material.dispose(); },
+      };
+    },
+
+    // 11 WRITE — pulse-grid 5x5 (heartbeat matrix)
+    pulseGrid(T, scene) {
+      const N = 5, dotGeo = new T.SphereGeometry(0.06, 16, 16);
+      const matBase = new T.MeshBasicMaterial({ color: GOLD, transparent: true, opacity: 0.55 });
+      const matHi   = new T.MeshBasicMaterial({ color: GOLD_HI, transparent: true, opacity: 0.95 });
+      const dots = [];
+      for (let i = 0; i < N; i++) {
+        for (let j = 0; j < N; j++) {
+          const isCenter = i === 2 && j === 2;
+          const dot = new T.Mesh(dotGeo, isCenter ? matHi : matBase);
+          dot.position.set((i - 2) * 0.55, (j - 2) * 0.55, 0);
+          scene.add(dot);
+          dots.push({ dot, ph: (i + j) * 0.7, d: Math.sqrt((i-2)**2 + (j-2)**2) });
+        }
+      }
+      const ringGeo = new T.TorusGeometry(1.8, 0.005, 6, 80);
+      const ring = new T.Mesh(ringGeo, new T.MeshBasicMaterial({ color: GOLD_DK, transparent: true, opacity: 0.25, wireframe: true }));
+      scene.add(ring);
+      return {
+        update(t, mx, my) {
+          dots.forEach(o => {
+            const s = 1 + Math.sin(t * 1.6 - o.d * 0.8) * 0.45;
+            o.dot.scale.setScalar(Math.max(0.4, s));
+          });
+          ring.rotation.z = t * 0.12 + mx * 0.18;
+        },
+        dispose() { dotGeo.dispose(); ringGeo.dispose(); matBase.dispose(); matHi.dispose(); ring.material.dispose(); },
+      };
+    },
+  };
+
+  // Map chapter id → scene name
+  const CHAPTER_SCENES = {
+    'noir-ch-0':  'icosahedron',
+    'noir-ch-1':  'dotNetwork',
+    'noir-ch-2':  'waveGrid',
+    'noir-ch-3':  'latticeCube',     // user feedback: orbitalRings replaced with connected-grid lattice
+    'noir-ch-4':  'particleSwarm',
+    'noir-ch-5':  'voxelStack',
+    'noir-ch-6':  'flowField',
+    'noir-ch-7':  'torusKnot',
+    'noir-ch-8':  'dotSpiral',       // single voices-marquee chapter — spiral runs RIGHT, cards run LEFT
+    'noir-ch-9':  'pulseGrid',       // contact (was ch-11)
+  };
+
+  // ─────────────────────────────────────────────────────────────────────
+  // mountNoirBackdrop — single body-level canvas, one renderer, one rAF.
+  // Active scene swaps in/out via setScene(name) called from the active-
+  // chapter handler. Single WebGL context for all 12 chapters keeps us
+  // under per-page WebGL context limits and rAF stays cheap.
+  // Returns { setScene, destroy }.
+  // ─────────────────────────────────────────────────────────────────────
+  async function mountNoirBackdrop() {
+    let T;
+    try { T = await loadThree(); }
+    catch { return null; }
+
+    const canvas = document.createElement('canvas');
+    canvas.className = 'noir-bg';
+    document.body.appendChild(canvas);
+
+    const renderer = new T.WebGLRenderer({ canvas, alpha: true, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+
+    const camera = new T.PerspectiveCamera(38, 1, 0.1, 100);
+    camera.position.z = 5.4;
+    let scene = new T.Scene();
+
+    function resize() {
+      const w = window.innerWidth, h = window.innerHeight;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    resize();
+
+    let mx = 0, my = 0, mxLerp = 0, myLerp = 0, t = 0;
+    function onMouse(e) {
+      mx =  (e.clientX / window.innerWidth)  * 2 - 1;
+      my = -(e.clientY / window.innerHeight) * 2 + 1;
+    }
+    window.addEventListener('resize', resize);
+    window.addEventListener('mousemove', onMouse, { passive: true });
+
+    // Crossfade between scenes — each scene lives in its own Group.
+    // On setScene: a new Group is created and added to the THREE scene,
+    // its materials start at opacity 0. The previous active Group is
+    // demoted to `fadingOut`. Each frame, active.fade ramps 0→1 and
+    // fadingOut items ramp 1→0 (over ~700ms). When an outgoing item
+    // reaches fade=0, it's disposed and removed.
+    const FADE_STEP = 0.022;   // ~45 frames @ 60fps = 750ms transition
+    let active = null;     // { group, data, name, fade: 0..1 }
+    let fadingOut = [];    // [{ group, data, name, fade: 1..0 }, ...]
+
+    function cacheBaseOpacities(group) {
+      group.traverse(obj => {
+        if (obj.material && obj.material.transparent && obj.userData.baseOpacity === undefined) {
+          obj.userData.baseOpacity = obj.material.opacity;
+        }
+      });
+    }
+
+    function applyFade(group, fade) {
+      group.traverse(obj => {
+        if (obj.material && obj.userData.baseOpacity !== undefined) {
+          obj.material.opacity = obj.userData.baseOpacity * fade;
+        }
+      });
+    }
+
+    function buildSceneGroup(name) {
+      const builder = SCENE_BUILDERS[name];
+      if (!builder) return null;
+      const group = new T.Group();
+      scene.add(group);
+      const data = builder(T, group);   // builders use scene.add → adds into the group
+      cacheBaseOpacities(group);
+      applyFade(group, 0);              // start fully invisible
+      return { group, data, name, fade: 0 };
+    }
+
+    function setScene(name) {
+      if (active && active.name === name) return;
+      // Demote current active to fading-out queue
+      if (active) fadingOut.push(active);
+      // Build new
+      const next = buildSceneGroup(name);
+      active = next;
+    }
+
+    function disposeAndRemove(item) {
+      if (item.data && item.data.dispose) item.data.dispose();
+      if (item.group && item.group.parent) item.group.parent.remove(item.group);
+    }
+
+    let running = true;
+    let raf = null;
+    function frame() {
+      t += 0.0085;
+      mxLerp += (mx - mxLerp) * 0.045;
+      myLerp += (my - myLerp) * 0.045;
+
+      // Update + fade-in active
+      if (active) {
+        if (active.fade < 1) {
+          active.fade = Math.min(1, active.fade + FADE_STEP);
+          applyFade(active.group, active.fade);
+        }
+        if (active.data.update) active.data.update(t, mxLerp, myLerp);
+      }
+
+      // Update + fade-out scenes leaving the stage
+      for (let i = fadingOut.length - 1; i >= 0; i--) {
+        const s = fadingOut[i];
+        s.fade = Math.max(0, s.fade - FADE_STEP);
+        applyFade(s.group, s.fade);
+        if (s.data.update) s.data.update(t, mxLerp, myLerp);
+        if (s.fade <= 0) {
+          disposeAndRemove(s);
+          fadingOut.splice(i, 1);
+        }
+      }
+
+      renderer.render(scene, camera);
+      if (running) raf = requestAnimationFrame(frame);
+    }
+    raf = requestAnimationFrame(frame);
+
+    return {
+      setScene,
+      destroy() {
+        running = false;
+        if (raf) cancelAnimationFrame(raf);
+        window.removeEventListener('resize', resize);
+        window.removeEventListener('mousemove', onMouse);
+        if (active) disposeAndRemove(active);
+        fadingOut.forEach(disposeAndRemove);
+        active = null;
+        fadingOut = [];
+        renderer.dispose();
+        canvas.remove();
+      },
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // GSAP-driven chapter reveals + per-char letter splits. Uses Intersection
+  // Observer to fire each chapter's paused timeline (IO is reliable for
+  // viewport intersection regardless of scroll history — works with
+  // programmatic jumps as well as natural scrolling). GSAP gives precise
+  // easing curves and frame-perfect stagger that CSS can't match.
+  // ─────────────────────────────────────────────────────────────────────
+  function gsapNoirReveals(book) {
+    if (!window.gsap) return null;
+    const gsap = window.gsap;
+
+    book.classList.add('gsap-on');
+    const chapters = [...book.querySelectorAll('.noir-chapter')];
+    const items = [];
+
+    chapters.forEach((ch) => {
+      const fades = [...ch.querySelectorAll('.noir-fade')];
+      const chars = [...ch.querySelectorAll('.noir-split .char')];
+      if (fades.length === 0 && chars.length === 0) return;
+
+      const tl = gsap.timeline({ paused: true });
+
+      if (chars.length > 0) {
+        tl.fromTo(chars,
+          { opacity: 0, yPercent: 70 },
+          { opacity: 1, yPercent: 0, stagger: 0.028, duration: 0.72, ease: 'expo.out' },
+          0
+        );
+      }
+      fades.forEach((el) => {
+        const d = el.classList.contains('d4') ? 4
+                : el.classList.contains('d3') ? 3
+                : el.classList.contains('d2') ? 2 : 1;
+        tl.fromTo(el,
+          { opacity: 0, y: 24 },
+          { opacity: 1, y: 0, duration: 0.85, ease: 'expo.out' },
+          0.12 + (d - 1) * 0.18
+        );
+      });
+      items.push({ ch, tl });
+    });
+
+    // Manual scroll-driven visibility check — more reliable than IO with
+    // a custom root + position:fixed in some browsers. Fires each chapter
+    // timeline exactly once when ≥ 18% of its area enters the book viewport.
+    function check() {
+      const vh = book.clientHeight;
+      const scroll = book.scrollTop;
+      items.forEach((it) => {
+        if (it.played) return;
+        const top = it.ch.offsetTop;
+        const bot = top + it.ch.offsetHeight;
+        const viewBot = scroll + vh;
+        // Overlap area between [top, bot] and [scroll, viewBot]
+        const visible = Math.max(0, Math.min(bot, viewBot) - Math.max(top, scroll));
+        if (visible / vh >= 0.18) {
+          it.played = true;
+          it.tl.play();
+        }
+      });
+    }
+    check();
+    book.addEventListener('scroll', check, { passive: true });
+    items.__check = check;
+    items.__detach = () => book.removeEventListener('scroll', check);
+
+    return {
+      destroy() {
+        if (items.__detach) items.__detach();
+        items.forEach(it => it.tl.kill());
+        book.classList.remove('gsap-on');
+        const all = book.querySelectorAll('.noir-fade, .noir-split .char');
+        gsap.set(all, { clearProps: 'all' });
+      },
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // CONTENT EXTRACTION — runs once on first new-mode entry. Reads the
+  // original DOM, keeps the bilingual <span class="lang-ru/en"> markup
+  // intact so existing language CSS still hides the inactive language.
+  // ─────────────────────────────────────────────────────────────────────
+  function extractContent() {
+    const $  = s => document.querySelector(s);
+    const $$ = s => [...document.querySelectorAll(s)];
+    const html = el => (el && el.innerHTML.trim()) || '';
+    const text = el => (el && el.textContent.trim()) || '';
+    const bil  = (ruText, enText) =>
+      `<span class="lang-ru">${ruText || ''}</span><span class="lang-en">${enText || ''}</span>`;
+
+    return {
+      hero: {
+        meta:  html($('.hero-meta .small')),
+        line1: html($('.hero-text .line-1')),
+        line2: html($('.hero-text .line-2')),
+        sub:   html($('.hero-text .sub')),
+      },
+      services: $$('#services .sticker-card').map(c => {
+        const ruLis = $$('.svc-bullets.lang-ru li', c).map(l => l.textContent.trim());
+        const enLis = $$('.svc-bullets.lang-en li', c).map(l => l.textContent.trim());
+        return {
+          num:     text(c.querySelector('.svc-num')),       // "// 01 · WEB"
+          name:    html(c.querySelector('.svc-name')),      // bilingual HTML
+          bullets: ruLis.map((ru, i) => bil(ru, enLis[i] || '')),
+          closing: html(c.querySelector('.svc-closing')),
+        };
+      }),
+      cases: $$('.work-grid .sticker-card').map(c => {
+        const ru = c.querySelector('.svc-body.lang-ru')?.textContent.trim() || '';
+        const en = c.querySelector('.svc-body.lang-en')?.textContent.trim() || '';
+        return {
+          art:    text(c.querySelector('.case-art')),
+          meta:   text(c.querySelector('.case-meta')),
+          name:   html(c.querySelector('.svc-name')),
+          body:   bil(ru, en),
+          metric: text(c.querySelector('.btn-chip-copper')),
+        };
+      }),
+      testimonials: $$('#testimonials .testimonial-card').slice(0, 12).map(c => ({
+        quote:  html(c.querySelector('.quote')),
+        author: text(c.querySelector('.author')),
+        role:   html(c.querySelector('.role')),
+      })),
+      contact: {
+        email:       'corpdeadline@gmail.com',
+        telegram:    '@deadline_corp',
+        telegramUrl: 'https://t.me/deadline_corp',
+      },
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // NOIR LAYOUT BUILDER — assembles the photobook HTML from CONTENT.
+  // Structure: 12 full-viewport chapters with scroll-snap:
+  //   00 cover · 01 manifesto · 02-04 services · 05-07 cases ·
+  //   08-10 voices (testimonials) · 11 contact
+  // ─────────────────────────────────────────────────────────────────────
+  // Abstract SVG glyph per case study — gives each case chapter visual
+  // texture without stock photography. Concentric squares for VRP (layers
+  // of property), vertical bar pattern for KD (key drops), orbital chain
+  // graph for RA (blockchain rings).
+  function caseGlyph(art) {
+    const id = (art || '').toUpperCase();
+    if (id.includes('VRP')) {
+      const rects = Array.from({ length: 8 }, (_, i) => {
+        const ins = i * 11;
+        const o = (0.7 - i * 0.075).toFixed(2);
+        return `<rect x="${10 + ins}" y="${10 + ins}" width="${180 - ins * 2}" height="${180 - ins * 2}" opacity="${o}"/>`;
+      }).join('');
+      return `<svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="0.6">${rects}<line x1="100" y1="20" x2="100" y2="180" opacity="0.18"/><line x1="20" y1="100" x2="180" y2="100" opacity="0.18"/><text x="100" y="107" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" letter-spacing="5" fill="currentColor">VRP</text></svg>`;
+    }
+    if (id.includes('KD')) {
+      const bars = Array.from({ length: 18 }, (_, i) => {
+        const x = (18 + i * 9.4).toFixed(1);
+        const y1 = 20 + (i % 4) * 6;
+        const h  = 150 - (i % 5) * 24;
+        const o  = (0.32 + (i % 4) * 0.15).toFixed(2);
+        return `<line x1="${x}" y1="${y1}" x2="${x}" y2="${y1 + h}" opacity="${o}"/>`;
+      }).join('');
+      return `<svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="0.6">${bars}<circle cx="100" cy="100" r="8" fill="currentColor" opacity="0.5" stroke="none"/><text x="100" y="107" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" letter-spacing="5" fill="currentColor">KD</text></svg>`;
+    }
+    // RA — orbital chain
+    const nodes = Array.from({ length: 12 }, (_, i) => {
+      const a = (i / 12) * Math.PI * 2;
+      const cx = (100 + Math.cos(a) * 70).toFixed(1);
+      const cy = (100 + Math.sin(a) * 70).toFixed(1);
+      const o  = (0.38 + (i % 3) * 0.17).toFixed(2);
+      return `<circle cx="${cx}" cy="${cy}" r="4" opacity="${o}" fill="currentColor" stroke="none"/>`;
+    }).join('');
+    const chords = Array.from({ length: 6 }, (_, i) => {
+      const a1 = (i / 6) * Math.PI * 2;
+      const a2 = ((i + 3) / 6) * Math.PI * 2;
+      return `<line x1="${(100 + Math.cos(a1) * 70).toFixed(1)}" y1="${(100 + Math.sin(a1) * 70).toFixed(1)}" x2="${(100 + Math.cos(a2) * 70).toFixed(1)}" y2="${(100 + Math.sin(a2) * 70).toFixed(1)}" opacity="0.22"/>`;
+    }).join('');
+    return `<svg viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="0.6">${chords}${nodes}<circle cx="100" cy="100" r="24" opacity="0.3"/><circle cx="100" cy="100" r="50" opacity="0.16"/><text x="100" y="107" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="11" letter-spacing="5" fill="currentColor">RA</text></svg>`;
+  }
+
+  function buildNoirHTML(c) {
+    const parts = [];
+
+    // Letter-split helper — wraps each char in a span with data-i for
+    // staggered transition-delays defined in CSS. Spaces become &nbsp;.
+    const splitWord = (txt) => {
+      const chars = [...(txt || '')].map((ch, i) =>
+        `<span class="char" data-i="${Math.min(i, 11)}">${ch === ' ' ? '&nbsp;' : ch}</span>`
+      ).join('');
+      return `<span class="noir-split">${chars}</span>`;
+    };
+
+    // 00 COVER — large 5+5 split: DEADLINE display | rule + italic lead.
+    // Bottom: 4-cell stats strip with gold numbers + mono labels.
+    parts.push(`
+      <section class="noir-chapter noir-cover" id="noir-ch-0" data-ch="0">
+        <div class="noir-cover-top noir-fade d1">
+          <span><span class="gold">●</span> DEADLINE / EST. 2025 / PHUKET × BANGKOK</span>
+          <span class="rhs"><span class="lang-ru">// дедлайны нас боятся</span><span class="lang-en">// deadlines fear us</span></span>
+        </div>
+        <div class="noir-cover-center">
+          <h1 class="noir-display">${splitWord('DEADLINE')}</h1>
+          <div class="noir-display-rhs noir-fade d2">
+            <div class="noir-display-rule"></div>
+            <p class="noir-display-lead">
+              <span class="lang-ru">Веб · Автоматизация · AI-агенты в production — к согласованной дате, без сюрпризов в счёте.</span>
+              <span class="lang-en">Web · Automation · AI agents shipped to production — by the agreed date, no surprises on the invoice.</span>
+            </p>
+          </div>
+        </div>
+        <div class="noir-cover-meta noir-fade d3">
+          <div class="noir-meta-cell">
+            <div class="num">12+</div>
+            <div class="lbl"><span class="lang-ru">в production</span><span class="lang-en">in production</span></div>
+          </div>
+          <div class="noir-meta-cell">
+            <div class="num">0</div>
+            <div class="lbl"><span class="lang-ru">пропущенных дедлайнов</span><span class="lang-en">missed deadlines</span></div>
+          </div>
+          <div class="noir-meta-cell">
+            <div class="num">100%</div>
+            <div class="lbl"><span class="lang-ru">возвращаются</span><span class="lang-en">come back</span></div>
+          </div>
+          <div class="noir-meta-cell">
+            <div class="num">8</div>
+            <div class="lbl"><span class="lang-ru">индустрий</span><span class="lang-en">industries</span></div>
+          </div>
+        </div>
+      </section>`);
+
+    // 01 MANIFESTO — ornate quote-glyph above italic statement,
+    // mono editorial header + footer rules.
+    parts.push(`
+      <section class="noir-chapter noir-manifesto" id="noir-ch-1" data-ch="1">
+        <div class="noir-mh-top noir-fade d1">
+          <span>01 / MANIFESTO</span>
+          <span class="rule"></span>
+          <span>since 2025</span>
+        </div>
+        <div class="noir-mh-stage">
+          <span class="quote-glyph noir-fade d1">"</span>
+          <p class="noir-statement noir-fade d2">
+            <span class="lang-ru">Мы — DEADLINE.<br>У нас ничего не горит.</span>
+            <span class="lang-en">We are DEADLINE.<br>Nothing's on fire here.</span>
+          </p>
+        </div>
+        <span class="noir-mh-bottom noir-fade d3">DEADLINE / since 2025 / always</span>
+      </section>`);
+
+    // 02-04 SERVICE — 5+7 asymmetric: title block left, numbered editorial
+    // list right, italic closing with gold dash.
+    c.services.slice(0, 3).forEach((s, i) => {
+      const idx = i + 2;
+      const num = String(idx).padStart(2, '0');
+      const tag = (s.num || '').replace(/^\/\/\s*\d+\s*·\s*/, '').trim();
+      parts.push(`
+        <section class="noir-chapter noir-service" id="noir-ch-${idx}" data-ch="${idx}">
+          <div class="lhs">
+            <div class="ch-tag noir-fade d1">${num} / SERVICE</div>
+            <h2 class="ch-title">${s.name}</h2>
+            <div class="ch-italic noir-fade d2">${tag.toLowerCase()}</div>
+            <p class="ch-closing noir-fade d3">${s.closing}</p>
+          </div>
+          <div class="rhs noir-fade d2">
+            <ol class="noir-numbered">
+              ${s.bullets.slice(0, 5).map(b => `<li>${b}</li>`).join('')}
+            </ol>
+          </div>
+        </section>`);
+    });
+
+    // 05-07 CASE — single-column text now (no left mark — the body-level
+    // 3D backdrop is the visual; we don't want a card blocking it). Case
+    // meta + Fraunces title + Inter body + bordered metric span the
+    // chapter's content area centered.
+    c.cases.slice(0, 3).forEach((cs, i) => {
+      const idx = i + 5;
+      const num = String(idx).padStart(2, '0');
+      parts.push(`
+        <section class="noir-chapter noir-case noir-case-solo" id="noir-ch-${idx}" data-ch="${idx}">
+          <div class="rhs">
+            <div class="meta noir-fade d1">${num} / CASE · ${cs.meta}</div>
+            <h2 class="title noir-fade d2">${cs.name}</h2>
+            <p class="desc noir-fade d3">${cs.body}</p>
+            <div class="metric noir-fade d4">
+              <span>${cs.metric}</span>
+              <span class="lbl"><span class="lang-ru">верифицированный результат</span><span class="lang-en">verified result</span></span>
+              <span class="arrow">↗</span>
+            </div>
+          </div>
+        </section>`);
+    });
+
+    // 08 VOICES — single chapter, all testimonials in a left-scrolling
+    // horizontal marquee. Cards loop seamlessly via duplicated track +
+    // CSS keyframes translateX(0 → -50%). Pauses on hover so you can read.
+    const allVoices = c.testimonials.slice(0, 12);
+    const voiceCards = allVoices.map(t => `
+      <div class="noir-voice-card">
+        <div class="quote-glyph">"</div>
+        <p class="quote">${t.quote}</p>
+        <div class="byline"><span class="author">${t.author}</span> · ${t.role}</div>
+      </div>
+    `).join('');
+    parts.push(`
+      <section class="noir-chapter noir-voices" id="noir-ch-8" data-ch="8">
+        <div class="noir-mh-top noir-fade d1">
+          <span>08 / VOICES</span>
+          <span class="rule"></span>
+          <span>returning clients</span>
+        </div>
+        <div class="noir-voices-stage noir-fade d2">
+          <div class="noir-voices-track">${voiceCards}${voiceCards}</div>
+        </div>
+        <span class="noir-mh-bottom noir-fade d3">— from those who came back —</span>
+      </section>`);
+
+    // 09 CONTACT — grand farewell (renumbered from 11; we collapsed the
+    // 3 voice chapters into the marquee above).
+    parts.push(`
+      <section class="noir-chapter noir-contact" id="noir-ch-9" data-ch="9">
+        <div class="stage">
+          <div class="label noir-fade d1">
+            <span class="lang-ru">END · НАПИШИ НАМ</span>
+            <span class="lang-en">END · MAIL US</span>
+          </div>
+          <h2 class="head noir-fade d2">
+            <span class="lang-ru">Пиши.</span>
+            <span class="lang-en">Write.</span>
+          </h2>
+          <div class="links noir-fade d3">
+            <a class="link" href="mailto:${c.contact.email}">${c.contact.email}</a>
+            <a class="link" href="${c.contact.telegramUrl}">${c.contact.telegram}</a>
+          </div>
+          <div class="signoff noir-fade d4">DEADLINE / since 2025</div>
+        </div>
+      </section>`);
+
+    const tocLabels = [
+      '00 / COVER', '01 / MANIFESTO', '02 / WEB', '03 / AUTO', '04 / AI',
+      '05 / VRP', '06 / KD', '07 / RA', '08 / VOICES', '09 / WRITE',
+    ];
+    const toc = `<nav class="noir-toc">${
+      tocLabels.map((l, i) =>
+        `<a class="noir-toc-item${i === 0 ? ' is-active' : ''}" href="#noir-ch-${i}" data-ch="${i}">${l}</a>`
+      ).join('')
+    }</nav>`;
+
+    return parts.join('') + toc;
+  }
+
+  function createNoirCursor() {
+    const dot  = document.createElement('div');
+    const ring = document.createElement('div');
+    dot.className  = 'noir-cursor-dot';
+    ring.className = 'noir-cursor-ring';
+    document.body.appendChild(dot);
+    document.body.appendChild(ring);
+
+    let mx = window.innerWidth / 2, my = window.innerHeight / 2;
+    let rx = mx, ry = my;
+    let raf = null;
+    let running = false;
+    let onScreen = false;
+
+    function onMove(e) {
+      mx = e.clientX;
+      my = e.clientY;
+      if (!onScreen) {
+        dot.classList.add('is-on');
+        ring.classList.add('is-on');
+        onScreen = true;
+      }
+    }
+    function onLeave() {
+      dot.classList.remove('is-on');
+      ring.classList.remove('is-on');
+      onScreen = false;
+    }
+    function tick() {
+      dot.style.transform  = `translate3d(${mx}px, ${my}px, 0)`;
+      rx += (mx - rx) * 0.14;
+      ry += (my - ry) * 0.14;
+      ring.style.transform = `translate3d(${rx}px, ${ry}px, 0)`;
+      if (running) raf = requestAnimationFrame(tick);
+    }
+
+    // Ring expands on hover over interactive elements
+    const hoverables = document.querySelectorAll(
+      'a, button, .btn-chip, .btn-chip-copper, .btn-primary, .svc-card, .testimonial-card, .work-grid > *, h1, h2'
+    );
+    const onEnter = () => ring.classList.add('is-hovering');
+    const onLeaveHover = () => ring.classList.remove('is-hovering');
+    hoverables.forEach(el => {
+      el.addEventListener('mouseenter', onEnter);
+      el.addEventListener('mouseleave', onLeaveHover);
+    });
+
+    return {
+      start() {
+        running = true;
+        window.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseleave', onLeave);
+        raf = requestAnimationFrame(tick);
+      },
+      destroy() {
+        running = false;
+        if (raf) cancelAnimationFrame(raf);
+        window.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseleave', onLeave);
+        hoverables.forEach(el => {
+          el.removeEventListener('mouseenter', onEnter);
+          el.removeEventListener('mouseleave', onLeaveHover);
+        });
+        dot.remove();
+        ring.remove();
+      },
+    };
+  }
+
+  function installNoirMagnetic() {
+    // Pulls big display elements in the photobook toward the cursor.
+    const targets = document.querySelectorAll('.noir-book .noir-mega, .noir-book .noir-big, .noir-book .noir-link');
+    const handlers = [];
+    targets.forEach(el => {
+      const onMove = (e) => {
+        const r = el.getBoundingClientRect();
+        const dx = (e.clientX - (r.left + r.width / 2)) * 0.08;
+        const dy = (e.clientY - (r.top + r.height / 2)) * 0.08;
+        el.style.transform = `translate(${dx}px, ${dy}px)`;
+      };
+      const onLeave = () => {
+        el.style.transition = 'transform 580ms cubic-bezier(0.16, 1, 0.3, 1)';
+        el.style.transform = '';
+        setTimeout(() => { el.style.transition = ''; }, 600);
+      };
+      el.addEventListener('mousemove', onMove);
+      el.addEventListener('mouseleave', onLeave);
+      handlers.push({ el, onMove, onLeave });
+    });
+    return {
+      destroy() {
+        handlers.forEach(h => {
+          h.el.removeEventListener('mousemove', h.onMove);
+          h.el.removeEventListener('mouseleave', h.onLeave);
+          h.el.style.transform = '';
+          h.el.style.transition = '';
+        });
+      },
+    };
+  }
+
+  function installNoirScrollNav() {
+    // Right-rail TOC highlights the chapter currently in view + handles
+    // click → smooth-scroll inside the scroll-snap container.
+    const book  = document.querySelector('.noir-book');
+    const items = [...document.querySelectorAll('.noir-toc-item')];
+    if (!book || items.length === 0) return null;
+
+    const chapters = [...book.querySelectorAll('.noir-chapter')];
+    const io = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting && e.intersectionRatio > 0.55) {
+          const ch = e.target.dataset.ch;
+          items.forEach(it => it.classList.toggle('is-active', it.dataset.ch === ch));
+        }
+      });
+    }, { threshold: [0.56], root: book });
+
+    chapters.forEach(ch => io.observe(ch));
+
+    const clickHandlers = [];
+    items.forEach(it => {
+      const onClick = (ev) => {
+        ev.preventDefault();
+        const target = book.querySelector(`#noir-ch-${it.dataset.ch}`);
+        if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      };
+      it.addEventListener('click', onClick);
+      clickHandlers.push({ el: it, fn: onClick });
+    });
+
+    return {
+      destroy() {
+        io.disconnect();
+        clickHandlers.forEach(h => h.el.removeEventListener('click', h.fn));
+      },
+    };
+  }
+
+  async function enterNoir() {
+    if (!CONTENT) CONTENT = extractContent();
+
+    // 1. Detach magic-toggle from .nav-bar to body root
+    const btn = document.getElementById('magic-toggle');
+    if (btn) {
+      magicBtnHome = btn.parentElement;
+      document.body.appendChild(btn);
+    }
+
+    // 2. Mount persistent UI chrome: grain → running header → page meta →
+    //    scroll progress hairline. Each is body-level so it floats above
+    //    the book and survives mode swaps independently.
+    noirGrainEl = document.createElement('div');
+    noirGrainEl.className = 'noir-grain';
+    document.body.appendChild(noirGrainEl);
+
+    noirRunningEl = document.createElement('div');
+    noirRunningEl.className = 'noir-running';
+    noirRunningEl.innerHTML =
+      '<span class="lhs">DEADLINE <span class="sep">/</span> SELECTED WORK 2025-2026</span>' +
+      '<span class="mid" data-mid>COVER</span>' +
+      '<span class="rhs">CH <span data-ch-num>01</span> <span class="sep">/</span> 10</span>';
+    document.body.appendChild(noirRunningEl);
+
+    noirPagesEl = document.createElement('div');
+    noirPagesEl.className = 'noir-pages';
+    noirPagesEl.innerHTML =
+      '<span class="lhs">PAGE <strong data-page-num>001</strong> / 010</span>' +
+      '<span class="rhs">EDITION I · PRINT-FOR-WEB</span>';
+    document.body.appendChild(noirPagesEl);
+
+    noirProgressEl = document.createElement('div');
+    noirProgressEl.className = 'noir-progress';
+    document.body.appendChild(noirProgressEl);
+
+    // 3. Mount the photobook
+    const wrapper = document.createElement('div');
+    wrapper.className = 'noir-book';
+    wrapper.innerHTML = buildNoirHTML(CONTENT);
+    document.body.appendChild(wrapper);
+    noirBook = wrapper;
+
+    // 4. Theatrical overlay fade
+    overlay.style.background = '#0A0908';
+    overlay.classList.add('is-visible');
+    await wait(380);
+    overlay.classList.remove('is-visible');
+    await wait(200);
+    overlay.style.background = '';
+
+    // 5. Reveals — GSAP timelines bound to ScrollTrigger when available
+    //    (precise easing + sub-frame stagger), CSS-IO fallback otherwise.
+    //    First chapter is revealed immediately regardless.
+    const chapters = [...wrapper.querySelectorAll('.noir-chapter')];
+    if (chapters[0]) chapters[0].classList.add('is-revealed');
+    noirReveals = gsapNoirReveals(wrapper);
+    if (!noirReveals) {
+      // GSAP not loaded — fall back to CSS class-driven IO reveals
+      noirRevealIO = new IntersectionObserver(entries => {
+        entries.forEach(e => {
+          if (e.isIntersecting && e.intersectionRatio > 0.15) {
+            e.target.classList.add('is-revealed');
+          }
+        });
+      }, { threshold: [0.16], root: wrapper });
+      chapters.forEach(ch => noirRevealIO.observe(ch));
+    }
+
+    // 5a. 3D backdrop — single body-level canvas, scene swaps based on
+    //     active chapter. Async load doesn't block enter.
+    mountNoirBackdrop().then(bd => {
+      noirScene = bd;
+      if (bd) bd.setScene(CHAPTER_SCENES['noir-ch-0']);
+    });
+
+    // 6. Active-chapter tracker: updates running-header mid label,
+    //    chapter number, page number, TOC highlight, AND swaps the 3D
+    //    backdrop scene to the per-chapter geometry.
+    const labels = [
+      'COVER', 'MANIFESTO', 'WEB · DEV', 'AUTOMATION', 'AI AGENTS',
+      'CASE · VRP', 'CASE · KD', 'CASE · RA',
+      'VOICES', 'WRITE',
+    ];
+    const midEl    = noirRunningEl.querySelector('[data-mid]');
+    const chNumEl  = noirRunningEl.querySelector('[data-ch-num]');
+    const pageNum  = noirPagesEl.querySelector('[data-page-num]');
+    const tocItems = [...wrapper.querySelectorAll('.noir-toc-item')];
+    const navIO = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting && e.intersectionRatio > 0.42) {
+          const idx = Number(e.target.dataset.ch);
+          if (midEl)   midEl.textContent  = labels[idx] || '';
+          if (chNumEl) chNumEl.textContent = String(idx + 1).padStart(2, '0');
+          if (pageNum) pageNum.textContent = String(idx + 1).padStart(3, '0');
+          tocItems.forEach(t => t.classList.toggle('is-active', Number(t.dataset.ch) === idx));
+          // Swap backdrop scene to match active chapter
+          if (noirScene && noirScene.setScene) {
+            const sceneName = CHAPTER_SCENES[e.target.id];
+            if (sceneName) noirScene.setScene(sceneName);
+          }
+          // Tint the body-level canvas via a class for per-mode CSS opacity
+          document.body.setAttribute('data-noir-ch', String(idx));
+        }
+      });
+    }, { threshold: [0.43], root: wrapper });
+    chapters.forEach(ch => navIO.observe(ch));
+
+    const onTocClick = (ev) => {
+      const item = ev.target.closest('.noir-toc-item');
+      if (!item) return;
+      ev.preventDefault();
+      const target = wrapper.querySelector(`#noir-ch-${item.dataset.ch}`);
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+    wrapper.addEventListener('click', onTocClick);
+
+    noirScrollNav = {
+      destroy() {
+        navIO.disconnect();
+        wrapper.removeEventListener('click', onTocClick);
+      },
+    };
+
+    // 7. Scroll-progress hairline width = scroll percentage
+    const onScroll = () => {
+      const max = wrapper.scrollHeight - wrapper.clientHeight;
+      const pct = max > 0 ? wrapper.scrollTop / max : 0;
+      if (noirProgressEl) noirProgressEl.style.transform = `scaleX(${pct.toFixed(4)})`;
+    };
+    wrapper.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    noirProgressHandler = { el: wrapper, fn: onScroll };
+
+    // 8. Cursor + magnetic
+    if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+      noirCursor   = createNoirCursor();
+      noirCursor.start();
+      noirMagnetic = installNoirMagnetic();
+    }
+  }
+
+  async function exitNoir() {
+    overlay.style.background = '#0A0908';
+    overlay.classList.add('is-visible');
+    await wait(300);
+
+    if (noirCursor)    { noirCursor.destroy();    noirCursor    = null; }
+    if (noirMagnetic)  { noirMagnetic.destroy();  noirMagnetic  = null; }
+    if (noirScrollNav) { noirScrollNav.destroy(); noirScrollNav = null; }
+    if (noirReveals)   { noirReveals.destroy();   noirReveals   = null; }
+    if (noirRevealIO)  { noirRevealIO.disconnect(); noirRevealIO = null; }
+    if (noirScene)     { noirScene.destroy();     noirScene     = null; }
+    if (noirProgressHandler) {
+      noirProgressHandler.el.removeEventListener('scroll', noirProgressHandler.fn);
+      noirProgressHandler = null;
+    }
+
+    if (noirGrainEl)    { noirGrainEl.remove();    noirGrainEl    = null; }
+    if (noirRunningEl)  { noirRunningEl.remove();  noirRunningEl  = null; }
+    if (noirPagesEl)    { noirPagesEl.remove();    noirPagesEl    = null; }
+    if (noirProgressEl) { noirProgressEl.remove(); noirProgressEl = null; }
+    document.body.removeAttribute('data-noir-ch');
+    if (noirBook)       { noirBook.remove();       noirBook       = null; }
+
+    const btn = document.getElementById('magic-toggle');
+    if (btn && magicBtnHome) {
+      magicBtnHome.appendChild(btn);
+      magicBtnHome = null;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // VAULT — Resn-inspired
+  //   Signature: four corner ghost-nav labels + mono debug strip (live time)
+  //   + stationary-cursor aquamarine load-up ring. No click-and-hold gate
+  //   (it would block normal flow); the ring captures the "patient intent"
+  //   feeling instead.
+  // ═══════════════════════════════════════════════════════════════════════
+  let vaultChrome = null;
+  let vaultRing   = null;
+
+  function installVaultChrome() {
+    const corners = [
+      { cls: 'tl', txt: '// DEADLINE / 001' },
+      { cls: 'tr', txt: 'CONTACT →',         href: '#contact' },
+      { cls: 'bl', txt: 'MODE · VAULT' },
+      { cls: 'br', txt: 'EST · 2025' },
+    ];
+    const els = corners.map(c => {
+      const tag = c.href ? 'a' : 'div';
+      const el  = document.createElement(tag);
+      el.className = `vault-corner ${c.cls}`;
+      el.textContent = c.txt;
+      if (c.href) el.href = c.href;
+      document.body.appendChild(el);
+      return el;
+    });
+
+    const debug = document.createElement('div');
+    debug.className = 'vault-debug';
+    function paint() {
+      const t = new Date();
+      const hh = String(t.getHours()).padStart(2, '0');
+      const mm = String(t.getMinutes()).padStart(2, '0');
+      const ss = String(t.getSeconds()).padStart(2, '0');
+      const lang = document.body.classList.contains('lang-en') ? 'EN' : 'RU';
+      debug.innerHTML =
+        `<span>MODE: <strong>VAULT</strong></span>` +
+        `<span>BUILD: deadline@342684c</span>` +
+        `<span>LANG: <strong>${lang}</strong></span>` +
+        `<span>${hh}:${mm}:${ss}</span>` +
+        `<span class="vault-debug-tail">// patience is precision</span>`;
+    }
+    paint();
+    const interval = setInterval(paint, 1000);
+    document.body.appendChild(debug);
+
+    return {
+      destroy() {
+        clearInterval(interval);
+        els.forEach(e => e.remove());
+        debug.remove();
+      },
+    };
+  }
+
+  function installVaultRing() {
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('class', 'vault-ring');
+    svg.setAttribute('viewBox', '0 0 56 56');
+    const bg = document.createElementNS(SVG_NS, 'circle');
+    bg.setAttribute('class', 'vault-ring-bg');
+    bg.setAttribute('cx', '28');
+    bg.setAttribute('cy', '28');
+    bg.setAttribute('r', '27');
+    const fg = document.createElementNS(SVG_NS, 'circle');
+    fg.setAttribute('class', 'vault-ring-fg');
+    fg.setAttribute('cx', '28');
+    fg.setAttribute('cy', '28');
+    fg.setAttribute('r', '27');
+    svg.appendChild(bg);
+    svg.appendChild(fg);
+    document.body.appendChild(svg);
+
+    let mx = window.innerWidth / 2, my = window.innerHeight / 2;
+    let stillTimer = null;
+    let onScreen = false;
+
+    function position() {
+      svg.style.transform = `translate3d(${mx}px, ${my}px, 0)`;
+    }
+    function onMove(e) {
+      mx = e.clientX;
+      my = e.clientY;
+      position();
+      if (!onScreen) {
+        svg.classList.add('is-on');
+        onScreen = true;
+      }
+      svg.classList.remove('is-filling');
+      if (stillTimer) clearTimeout(stillTimer);
+      stillTimer = setTimeout(() => {
+        svg.classList.add('is-filling');
+      }, 220);
+    }
+    function onLeave() {
+      svg.classList.remove('is-on', 'is-filling');
+      onScreen = false;
+      if (stillTimer) { clearTimeout(stillTimer); stillTimer = null; }
+    }
+    position();
+    window.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseleave', onLeave);
+
+    return {
+      destroy() {
+        window.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseleave', onLeave);
+        if (stillTimer) clearTimeout(stillTimer);
+        svg.remove();
+      },
+    };
+  }
+
+  async function enterVault() {
+    overlay.style.background = 'radial-gradient(circle at 50% 50%, rgba(0, 200, 180, 0.18) 0%, #000 70%)';
+    overlay.classList.add('is-visible');
+    await wait(300);
+    overlay.classList.remove('is-visible');
+    await wait(180);
+    overlay.style.background = '';
+
+    vaultChrome = installVaultChrome();
+    if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) {
+      vaultRing = installVaultRing();
+    }
+  }
+
+  async function exitVault() {
+    overlay.style.background = '#000';
+    overlay.classList.add('is-visible');
+    await wait(260);
+    if (vaultChrome) { vaultChrome.destroy(); vaultChrome = null; }
+    if (vaultRing)   { vaultRing.destroy();   vaultRing   = null; }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // KINETIC — Active Theory-inspired
+  //   Signature: scroll-velocity injected into --scroll-v CSS variable
+  //   (subtle nav squash), bottom-left fade-in section reveals, hero
+  //   clip-path wipe-in on enter. No WebGL, no Three.js — just rAF + IO.
+  // ═══════════════════════════════════════════════════════════════════════
+  let kineticScroll = null;
+  let kineticIO     = null;
+
+  function installKineticScroll() {
+    let prevY = window.scrollY;
+    let velocity = 0;
+    let raf = null;
+    let running = true;
+
+    function tick() {
+      const cur   = window.scrollY;
+      const delta = cur - prevY;
+      prevY = cur;
+      // exponential moving average so values feel springy not jittery
+      velocity += (delta - velocity) * 0.22;
+      // map to [-1, 1] with cap — squash is meant to be subtle
+      const v = Math.max(-1, Math.min(1, velocity / 24));
+      HTML.style.setProperty('--scroll-v', v.toFixed(3));
+      if (running) raf = requestAnimationFrame(tick);
+    }
+    raf = requestAnimationFrame(tick);
+    return {
+      destroy() {
+        running = false;
+        if (raf) cancelAnimationFrame(raf);
+        HTML.style.removeProperty('--scroll-v');
+      },
+    };
+  }
+
+  function installKineticReveal() {
+    const targets = document.querySelectorAll(
+      'section, .hero, .work-grid > *, .testimonial-card, .svc-card, .process-step'
+    );
+    targets.forEach(t => t.classList.add('kinetic-reveal'));
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          e.target.classList.add('is-in');
+          io.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.14, rootMargin: '0px 0px -70px 0px' });
+    targets.forEach(t => io.observe(t));
+    return {
+      destroy() {
+        io.disconnect();
+        targets.forEach(t => t.classList.remove('kinetic-reveal', 'is-in'));
+      },
+    };
+  }
+
+  async function enterKinetic() {
+    overlay.style.background = 'linear-gradient(180deg, #000 0%, #002b26 100%)';
+    overlay.classList.add('is-visible');
+    await wait(300);
+    overlay.classList.remove('is-visible');
+    await wait(160);
+    overlay.style.background = '';
+
+    // Hero clip-path wipe-in (one-shot)
+    HTML.classList.add('kinetic-entering');
+    setTimeout(() => HTML.classList.remove('kinetic-entering'), 1300);
+
+    kineticScroll = installKineticScroll();
+    kineticIO     = installKineticReveal();
+  }
+
+  async function exitKinetic() {
+    overlay.style.background = '#000';
+    overlay.classList.add('is-visible');
+    await wait(260);
+    HTML.classList.remove('kinetic-entering');
+    if (kineticScroll) { kineticScroll.destroy(); kineticScroll = null; }
+    if (kineticIO)     { kineticIO.destroy();     kineticIO     = null; }
+  }
+
   // ─────────────────────────────────────────────────────────────────────
   // Generic fallback (no longer used now that Studio has its own theatre,
   // but kept for safety)
@@ -979,19 +2637,26 @@
 
     const current = getCurrentMode();
 
-    if (current === 'matrix')      await exitMatrix();
-    else if (current === 'island') await exitIsland();
-    else if (current === 'studio') await exitStudio();
+    if (current === 'matrix')       await exitMatrix();
+    else if (current === 'island')  await exitIsland();
+    else if (current === 'studio')  await exitStudio();
+    else if (current === 'noir')    await exitNoir();
+    else if (current === 'vault')   await exitVault();
+    else if (current === 'kinetic') await exitKinetic();
     else                            await genericExit();
 
     clearModeClasses();
     if (target) HTML.classList.add(`mode-${target}`);
+    updateIndicator();
     await wait(140);
 
-    if (target === 'matrix')      await enterMatrix();
-    else if (target === 'island') await enterIsland();
-    else if (target === 'studio') await enterStudio();
-    else                           await genericEnter();
+    if (target === 'matrix')        await enterMatrix();
+    else if (target === 'island')   await enterIsland();
+    else if (target === 'studio')   await enterStudio();
+    else if (target === 'noir')     await enterNoir();
+    else if (target === 'vault')    await enterVault();
+    else if (target === 'kinetic')  await enterKinetic();
+    else                            await genericEnter();
 
     btn.classList.remove('is-hidden');
     void btn.offsetWidth;
