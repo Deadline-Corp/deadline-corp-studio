@@ -9,11 +9,6 @@ permissions:
   contents: read
   pages: write
   id-token: write
-  # administration: write is what actions/configure-pages needs to call
-  # createPagesSite on first run. Capped by the repo "Default workflow
-  # permissions" setting — if Org default is "read-only", this declaration
-  # is silently downgraded and we fall back to needing manual UI enablement.
-  administration: write
 
 # Allow one concurrent deployment; never cancel an in-progress run so
 # every push is reflected on the live site eventually.
