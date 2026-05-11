@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STUDIO — Web Development & AI Automation</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cabinet+Grotesk:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&family=Newsreader:ital,wght@1,400&display=swap" rel="stylesheet">
+
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        bg:       '#1A1410',
+        surface:  '#221912',
+        border:   '#3A2D24',
+        cream:    '#F0E8D5',
+        mute:     '#9A8A75',
+        ember:    '#D2691E',
+        amber:    '#E89B5C',
+        sand:     '#C9A878',
+      },
+      fontFamily: {
+        cabinet:  ['Cabinet Grotesk', 'sans-serif'],
+        mono:     ['JetBrains Mono', 'monospace'],
+        news:     ['Newsreader', 'serif'],
+      },
+    }
+  }
+}
+</script>
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: #1A1410;
+    color: #F0E8D5;
+    font-family: 'JetBrains Mono', monospace;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #1A1410; }
+  ::-webkit-scrollbar-thumb { background: #3A2D24; border-radius: 2px; }
+  ::-webkit-scrollbar-thumb:hover { background: #D2691E; }
+
+  /* SELECTION */
+  ::selection { background: #D2691E22; color: #F0E8D5; }
+
+  /* --- BUTTONS --- */
+  .btn-primary {
+    background: #D2691E;
+    color: #1A1410;
+    border: 3px solid #1A1410;
+    box-shadow: 5px 5px 0 #221912;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-size: 0.78rem;
+    padding: 12px 24px;
+    cursor: pointer;
+    transition: transform 220ms cubic-bezier(0.33, 1, 0.68, 1), box-shadow 220ms cubic-bezier(0.33, 1, 0.68, 1);
+    display: inline-block;
+    text-decoration: none;
+  }
+  .btn-primary:hover {
+    transform: translate(5px, 5px);
+    box-shadow: 0 0 0 #221912;
+  }
+
+  .btn-secondary {
+    background: #221912;
+    color: #F0E8D5;
+    border: 2px solid #C9A878;
+    box-shadow: 4px 4px 0 #C9A878;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-size: 0.78rem;
+    padding: 11px 24px;
+    cursor: pointer;
+    transition: transform 220ms cubic-bezier(0.33, 1, 0.68, 1), box-shadow 220ms cubic-bezier(0.33, 1, 0.68, 1);
+    display: inline-block;
+    text-decoration: none;
+  }
+  .btn-secondary:hover {
+    transform: translate(4px, 4px);
+    box-shadow: 0 0 0 #C9A878;
+  }
+
+  .btn-ghost {
+    background: transparent;
+    color: #9A8A75;
+    border: 1px solid #3A2D24;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 400;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-size: 0.72rem;
+    padding: 10px 20px;
+    cursor: pointer;
+    transition: color 220ms ease, border-color 220ms ease;
+    display: inline-block;
+    text-decoration: none;
+  }
+  .btn-ghost:hover {
+    color: #F0E8D5;
+    border-color: #9A8A75;
+  }
+
+  /* --- NAV --- */
+  .nav-bar {
+    backdrop-filter: blur(16px) saturate(120%);
+    -webkit-backdrop-filter: blur(16px) saturate(120%);
+    background: rgba(26, 20, 16, 0.88);
+    border-bottom: 1px solid #3A2D24;
+  }
+
+  .nav-dot {
+    width: 6px;
+    height: 6px;
+    background: #D2691E;
+    border-radius: 50%;
+    display: inline-block;
+    animation: pulse-dot 2.4s ease-in-out infinite;
+  }
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.45; transform: scale(0.75); }
+  }
+
+  /* --- HERO --- */
+  #hero-canvas {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .hero-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid #3A2D24;
+    background: rgba(34, 25, 18, 0.7);
+    padding: 6px 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    color: #C9A878;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .hero-chip .dot {
+    width: 5px;
+    height: 5px;
+    background: #D2691E;
+    border-radius: 50%;
+    animation: pulse-dot 2.4s ease-in-out infinite;
+  }
+
+  /* --- STATUS STRIP --- */
+  .status-strip {
+    background: #221912;
+    border-top: 1px solid #3A2D24;
+    border-bottom: 1px solid #3A2D24;
+    overflow: hidden;
+  }
+  .status-track {
+    display: flex;
+    gap: 64px;
+    white-space: nowrap;
+    animation: marquee-track 28s linear infinite;
+  }
+  .status-track:hover { animation-play-state: paused; }
+  @keyframes marquee-track {
+    0%   { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+
+  /* --- CAPABILITY CARDS --- */
+  .cap-card {
+    background: #221912;
+    border: 1px solid #3A2D24;
+    position: relative;
+    transition: border-color 320ms cubic-bezier(0.33, 1, 0.68, 1), transform 320ms cubic-bezier(0.33, 1, 0.68, 1);
+  }
+  .cap-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent);
+  }
+  .cap-card:hover {
+    border-color: #C9A878;
+    transform: translateY(-3px);
+  }
+  .cap-tag {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    color: #D2691E;
+    letter-spacing: 0.04em;
+  }
+
+  /* --- WORK PANELS --- */
+  .work-scroll {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    gap: 0;
+  }
+  .work-scroll::-webkit-scrollbar { display: none; }
+  .work-panel {
+    min-width: 100%;
+    scroll-snap-align: start;
+    position: relative;
+    overflow: hidden;
+  }
+  .work-metric-chip {
+    background: rgba(26, 20, 16, 0.75);
+    border: 1px solid #3A2D24;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    padding: 5px 12px;
+    color: #C9A878;
+    display: inline-block;
+    letter-spacing: 0.04em;
+  }
+
+  /* --- TIMELINE --- */
+  .timeline-line {
+    width: 1px;
+    background: linear-gradient(to bottom, transparent, #C9A878, transparent);
+    margin: 0 auto;
+  }
+  .timeline-node {
+    width: 10px;
+    height: 10px;
+    border: 2px solid #C9A878;
+    background: #1A1410;
+    border-radius: 50%;
+    margin: 0 auto;
+    position: relative;
+    z-index: 2;
+  }
+
+  /* --- TERMINAL --- */
+  .terminal-panel {
+    background: #0F0C08;
+    border: 1px solid #3A2D24;
+    position: relative;
+    overflow: hidden;
+  }
+  .terminal-panel::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(255,255,255,0.008) 2px,
+      rgba(255,255,255,0.008) 4px
+    );
+    pointer-events: none;
+  }
+  .terminal-line {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    line-height: 1.7;
+    opacity: 0;
+    animation: fade-line 0.3s ease forwards;
+  }
+  .terminal-cursor {
+    display: inline-block;
+    width: 8px;
+    height: 14px;
+    background: #D2691E;
+    vertical-align: middle;
+    margin-left: 2px;
+    animation: blink-caret 1.1s step-end infinite;
+  }
+  @keyframes blink-caret {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+  @keyframes fade-line {
+    from { opacity: 0; transform: translateY(3px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* --- MANIFESTO --- */
+  .manifesto-bracket {
+    width: 1px;
+    height: 32px;
+    background: #C9A878;
+    display: block;
+    margin: 0 auto;
+    opacity: 0.5;
+  }
+
+  /* --- METRICS BAND --- */
+  .metrics-band {
+    background: #221912;
+    border-top: 1px solid #3A2D24;
+    border-bottom: 1px solid #3A2D24;
+  }
+
+  /* --- CONTACT CARD --- */
+  .contact-card {
+    background: #221912;
+    border: 1px solid #3A2D24;
+    position: relative;
+  }
+  .contact-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent 10%, #C9A87840 50%, transparent 90%);
+  }
+
+  /* --- FADE UP --- */
+  .fade-up {
+    opacity: 0;
+    transform: translateY(24px);
+    transition: opacity 560ms cubic-bezier(0.33, 1, 0.68, 1), transform 560ms cubic-bezier(0.33, 1, 0.68, 1);
+  }
+  .fade-up.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  .fade-up.delay-1 { transition-delay: 80ms; }
+  .fade-up.delay-2 { transition-delay: 160ms; }
+  .fade-up.delay-3 { transition-delay: 240ms; }
+  .fade-up.delay-4 { transition-delay: 320ms; }
+
+  /* --- SECTION LABEL --- */
+  .section-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #9A8A75;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-label::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #3A2D24;
+  }
+
+  /* WORK SCROLL INDICATORS */
+  .scroll-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #3A2D24;
+    transition: background 300ms ease;
+    cursor: pointer;
+  }
+  .scroll-dot.active { background: #D2691E; }
+
+  /* FOOTER */
+  footer {
+    border-top: 1px solid #3A2D24;
+  }
+  .footer-col-head {
+    font-size: 0.65rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #9A8A75;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #3A2D24;
+  }
+  .footer-link {
+    font-size: 0.75rem;
+    color: #9A8A75;
+    display: block;
+    margin-bottom: 10px;
+    transition: color 220ms ease;
+    text-decoration: none;
+  }
+  .footer-link:hover { color: #F0E8D5; }
+
+  /* HERO CANVAS CONTAINER */
+  #hero-right {
+    position: relative;
+    pointer-events: auto;
+  }
+
+  /* MOBILE 3D HERO */
+  @media (max-width: 767px) {
+    #hero-right {
+      height: 280px;
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- ===================== NAV ===================== -->
+<nav class="nav-bar fixed top-0 left-0 right-0 z-50">
+  <div class="max-w-7xl mx-auto px-6 flex items-center justify-between h-14">
+    <!-- Logo -->
+    <div class="flex items-center gap-3">
+      <span class="font-cabinet font-700 text-cream tracking-tight text-base" style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:1rem;letter-spacing:-0.01em;">STUDIO</span>
+      <span class="nav-dot"></span>
+    </div>
+    <!-- Center nav -->
+    <div class="hidden md:flex items-center gap-8">
+      <a href="#capabilities" class="font-mono text-mute text-xs uppercase tracking-widest hover:text-cream transition-colors duration-200" style="font-size:0.67rem;letter-spacing:0.1em;">Work</a>
+      <a href="#capabilities" class="font-mono text-mute text-xs uppercase tracking-widest hover:text-cream transition-colors duration-200" style="font-size:0.67rem;letter-spacing:0.1em;">Capabilities</a>
+      <a href="#process" class="font-mono text-mute text-xs uppercase tracking-widest hover:text-cream transition-colors duration-200" style="font-size:0.67rem;letter-spacing:0.1em;">Process</a>
+      <a href="#terminal" class="font-mono text-mute text-xs uppercase tracking-widest hover:text-cream transition-colors duration-200" style="font-size:0.67rem;letter-spacing:0.1em;">Agents</a>
+    </div>
+    <!-- CTA -->
+    <a href="#contact" class="btn-primary" style="padding:8px 18px;font-size:0.68rem;">Start project</a>
+  </div>
+</nav>
+
+<!-- ===================== HERO ===================== -->
+<section style="min-height:100vh;padding-top:56px;display:grid;grid-template-columns:1fr 1fr;" id="hero">
+  <!-- LEFT -->
+  <div style="padding:64px 48px 64px 48px;display:flex;flex-direction:column;justify-content:center;max-width:640px;" class="md:pl-12 lg:pl-16">
+    <div class="hero-chip mb-8 fade-up">
+      <span class="dot"></span>
+      open for Q3 — 1 slot left
+    </div>
+    <h1 class="fade-up delay-1" style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:clamp(52px,6.5vw,96px);line-height:1.02;letter-spacing:-0.03em;color:#F0E8D5;margin-bottom:24px;">We work in<br><span style="color:#D2691E;">low light,</span><br>on hard problems.</h1>
+    <p class="fade-up delay-2" style="font-family:'JetBrains Mono',monospace;font-size:0.72rem;letter-spacing:0.14em;text-transform:uppercase;color:#9A8A75;margin-bottom:40px;">WEB &middot; AUTOMATION &middot; AI AGENTS</p>
+    <div class="flex flex-wrap gap-4 fade-up delay-3">
+      <a href="#contact" class="btn-primary">Book discovery call</a>
+      <a href="#work" class="btn-secondary">See our work</a>
+    </div>
+    <div class="fade-up delay-4" style="margin-top:56px;padding-top:32px;border-top:1px solid #3A2D24;display:flex;gap:32px;">
+      <div>
+        <div style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:1.8rem;color:#F0E8D5;line-height:1;">47</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:#9A8A75;letter-spacing:0.1em;text-transform:uppercase;margin-top:4px;">projects</div>
+      </div>
+      <div style="width:1px;background:#3A2D24;"></div>
+      <div>
+        <div style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:1.8rem;color:#F0E8D5;line-height:1;">6yr</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:#9A8A75;letter-spacing:0.1em;text-transform:uppercase;margin-top:4px;">in operation</div>
+      </div>
+      <div style="width:1px;background:#3A2D24;"></div>
+      <div>
+        <div style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:1.8rem;color:#D2691E;line-height:1;">4</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:#9A8A75;letter-spacing:0.1em;text-transform:uppercase;margin-top:4px;">agents live</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT — Three.js canvas -->
+  <div id="hero-right" style="position:relative;overflow:hidden;">
+    <canvas id="hero-canvas"></canvas>
+    <div style="position:absolute;bottom:0;left:0;right:0;height:120px;background:linear-gradient(to top, #1A1410, transparent);pointer-events:none;"></div>
+    <div style="position:absolute;top:0;left:0;width:64px;height:100%;background:linear-gradient(to right, #1A1410, transparent);pointer-events:none;"></div>
+  </div>
+</section>
+
+<!-- ===================== STATUS STRIP ===================== -->
+<div class="status-strip py-3">
+  <div class="status-track" id="status-track">
+    <!-- items will be duplicated by JS -->
+    <div class="flex items-center gap-12 px-8">
+      <span class="font-mono text-mute" style="font-size:0.67rem;letter-spacing:0.08em;"><span style="color:#D2691E;">&#9679;</span> API operational</span>
+      <span class="font-mono text-mute" style="font-size:0.67rem;letter-spacing:0.08em;">99.97% / 90d uptime</span>
+      <span class="font-mono text-mute" style="font-size:0.67rem;letter-spacing:0.08em;">4 agents in production</span>
+      <span class="font-mono text-mute" style="font-size:0.67rem;letter-spacing:0.08em;">last deploy 2h ago</span>
+      <span class="font-mono text-mute" style="font-size:0.67rem;letter-spacing:0.08em;">avg response 312ms</span>
+      <span class="font-mono text-mute" style="font-size:0.67rem;letter-spacing:0.08em;">built on next.js · node.js · python</span>
+      <span class="font-mono text-mute" style="font-size:0.67rem;letter-spacing:0.08em;"><span style="color:#D2691E;">&#9679;</span> all systems nominal</span>
+      <span class="font-mono text-mute" style="font-size:0.67rem;letter-spacing:0.08em;">сделано в темноте студии</span>
+    </div>
+    <!-- duplicate for seamless loop -->
+    <div class="flex items-center gap-12 px-8">
+      <span class="font-mono text-mute" style="font-size:0.67rem;letter-spacing:0.08em;"><span style="color:#D2691E;">&#9679;</span> API operational</span>
+      <span class="font-mono text-mute" style="font-size:0.67rem;letter-spacing:0.08em;">99.97% / 90d uptime</span>
+      <span class="font-mono text-mute" style="font-size:0.67rem;letter-spacing:0.08em;">4 agents in production</span>
+      <span class="font-mono text-mute" style="font-size:0.67rem;letter-spacing:0.08em;">last deploy 2h ago</span>
+      <span class="font-mono text-mute" style="font-size:0.67rem;letter-spacing:0.08em;">avg response 312ms</span>
+      <span class="font-mono text-mute" style="font-size:0.67rem;letter-spacing:0.08em;">built on next.js · node.js · python</span>
+      <span class="font-mono text-mute" style="font-size:0.67rem;letter-spacing:0.08em;"><span style="color:#D2691E;">&#9679;</span> all systems nominal</span>
+      <span class="font-mono text-mute" style="font-size:0.67rem;letter-spacing:0.08em;">сделано в темноте студии</span>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== CAPABILITIES ===================== -->
+<section id="capabilities" style="padding:120px 0 100px;">
+  <div class="max-w-7xl mx-auto px-6 md:px-12">
+    <div class="section-label mb-12 fade-up">02 — capabilities</div>
+    <h2 class="fade-up delay-1" style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:clamp(36px,4vw,60px);color:#F0E8D5;letter-spacing:-0.02em;margin-bottom:56px;line-height:1.05;">
+      Engineered,<br>not improvised.
+    </h2>
+    <div class="grid md:grid-cols-3 gap-6">
+      <!-- Card 1 -->
+      <div class="cap-card p-8 fade-up delay-1">
+        <div style="margin-bottom:24px;">
+          <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="2" y="8" width="22" height="14" rx="1" stroke="#D2691E" stroke-width="1.5"/>
+            <path d="M8 26 L28 26" stroke="#C9A878" stroke-width="1"/>
+            <path d="M14 22 L14 26" stroke="#C9A878" stroke-width="1"/>
+            <circle cx="29" cy="14" r="5" stroke="#D2691E" stroke-width="1.5"/>
+            <path d="M27 14 L28.5 15.5 L31 12.5" stroke="#D2691E" stroke-width="1.2"/>
+          </svg>
+        </div>
+        <h3 style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:1.55rem;color:#F0E8D5;margin-bottom:12px;letter-spacing:-0.015em;">Web Systems</h3>
+        <p style="font-family:'JetBrains Mono',monospace;font-size:0.73rem;color:#9A8A75;line-height:1.7;margin-bottom:24px;">Full-stack platforms built for durability. We architect for the next three years, not the next sprint review.</p>
+        <div class="flex flex-wrap gap-2">
+          <span class="cap-tag">[next.js]</span>
+          <span class="cap-tag">[node.js]</span>
+          <span class="cap-tag">[postgres]</span>
+          <span class="cap-tag">[prisma]</span>
+        </div>
+      </div>
+      <!-- Card 2 -->
+      <div class="cap-card p-8 fade-up delay-2">
+        <div style="margin-bottom:24px;">
+          <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M6 12 C6 12 10 8 18 10 C26 12 30 10 30 10" stroke="#D2691E" stroke-width="1.5" stroke-linecap="round"/>
+            <path d="M6 18 C6 18 10 14 18 16 C26 18 30 16 30 16" stroke="#C9A878" stroke-width="1" stroke-linecap="round"/>
+            <path d="M6 24 C6 24 10 20 18 22 C26 24 30 22 30 22" stroke="#D2691E" stroke-width="1" stroke-linecap="round" stroke-dasharray="2 2"/>
+            <circle cx="18" cy="10" r="2.5" fill="#D2691E" opacity="0.3" stroke="#D2691E" stroke-width="1"/>
+          </svg>
+        </div>
+        <h3 style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:1.55rem;color:#F0E8D5;margin-bottom:12px;letter-spacing:-0.015em;">Automation</h3>
+        <p style="font-family:'JetBrains Mono',monospace;font-size:0.73rem;color:#9A8A75;line-height:1.7;margin-bottom:24px;">Workflows that run quietly in the background — data sync, order processing, notification routing, CRM hooks.</p>
+        <div class="flex flex-wrap gap-2">
+          <span class="cap-tag">[python]</span>
+          <span class="cap-tag">[zapier]</span>
+          <span class="cap-tag">[n8n]</span>
+          <span class="cap-tag">[webhooks]</span>
+        </div>
+      </div>
+      <!-- Card 3 -->
+      <div class="cap-card p-8 fade-up delay-3">
+        <div style="margin-bottom:24px;">
+          <svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="8" y="6" width="20" height="24" rx="2" stroke="#D2691E" stroke-width="1.5"/>
+            <path d="M12 12 L24 12" stroke="#C9A878" stroke-width="1"/>
+            <path d="M12 17 L20 17" stroke="#C9A878" stroke-width="1"/>
+            <path d="M12 22 L17 22" stroke="#C9A878" stroke-width="1"/>
+            <circle cx="27" cy="27" r="5" fill="#1A1410" stroke="#D2691E" stroke-width="1.5"/>
+            <path d="M25 27 L26.5 28.5 L29 26" stroke="#D2691E" stroke-width="1.2"/>
+          </svg>
+        </div>
+        <h3 style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:1.55rem;color:#F0E8D5;margin-bottom:12px;letter-spacing:-0.015em;">AI Agents</h3>
+        <p style="font-family:'JetBrains Mono',monospace;font-size:0.73rem;color:#9A8A75;line-height:1.7;margin-bottom:24px;">Task-specific agents with tool access, memory, and clear failure boundaries. Not chatbots — operators.</p>
+        <div class="flex flex-wrap gap-2">
+          <span class="cap-tag">[openai]</span>
+          <span class="cap-tag">[langchain]</span>
+          <span class="cap-tag">[anthropic]</span>
+          <span class="cap-tag">[rag]</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== WORK ===================== -->
+<section id="work" style="padding:40px 0 100px;">
+  <div class="max-w-7xl mx-auto px-6 md:px-12">
+    <div class="section-label mb-12 fade-up">03 — selected work</div>
+  </div>
+  <div class="work-scroll" id="work-scroll">
+    <!-- Panel 1: cinnamon to walnut -->
+    <div class="work-panel" style="min-height:480px;">
+      <div style="position:absolute;inset:0;background:linear-gradient(135deg, #4A2610 0%, #2E1A0E 50%, #1A1410 100%);"></div>
+      <div style="position:absolute;inset:0;padding:64px 80px;display:flex;flex-direction:column;justify-content:flex-end;max-width:960px;">
+        <div class="font-mono mb-3" style="font-size:0.65rem;letter-spacing:0.12em;color:#9A8A75;text-transform:uppercase;">01 — E-COMMERCE PLATFORM</div>
+        <h3 style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:clamp(36px,4vw,58px);color:#F0E8D5;letter-spacing:-0.02em;margin-bottom:8px;line-height:1.05;">Meridian Supply Co.</h3>
+        <div class="font-mono mb-16" style="font-size:0.68rem;color:#9A8A75;letter-spacing:0.06em;">CLIENT — WHOLESALE DISTRIBUTION, DE</div>
+        <p style="font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:#C9A878;line-height:1.65;max-width:560px;margin-bottom:24px;">Rebuilt order management and inventory sync from legacy ERP into a headless Next.js storefront with real-time stock feeds and automated reorder triggers.</p>
+        <span class="work-metric-chip">&#9650; 34% conversion lift post-launch</span>
+      </div>
+    </div>
+    <!-- Panel 2: sand to amber -->
+    <div class="work-panel" style="min-height:480px;">
+      <div style="position:absolute;inset:0;background:linear-gradient(135deg, #3A2D18 0%, #2A1E12 50%, #1A1410 100%);"></div>
+      <div style="position:absolute;inset:0;padding:64px 80px;display:flex;flex-direction:column;justify-content:flex-end;max-width:960px;">
+        <div class="font-mono mb-3" style="font-size:0.65rem;letter-spacing:0.12em;color:#9A8A75;text-transform:uppercase;">02 — AI DOCUMENT PIPELINE</div>
+        <h3 style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:clamp(36px,4vw,58px);color:#F0E8D5;letter-spacing:-0.02em;margin-bottom:8px;line-height:1.05;">Vantage Legal Group</h3>
+        <div class="font-mono mb-16" style="font-size:0.68rem;color:#9A8A75;letter-spacing:0.06em;">CLIENT — LEGAL SERVICES, NL</div>
+        <p style="font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:#C9A878;line-height:1.65;max-width:560px;margin-bottom:24px;">Contract intake agent that classifies documents, extracts parties and obligations, routes to the correct matter, and flags non-standard clauses before human review.</p>
+        <span class="work-metric-chip">12min &rarr; 41sec per contract · 97.2% accuracy</span>
+      </div>
+    </div>
+    <!-- Panel 3: ember to tar -->
+    <div class="work-panel" style="min-height:480px;">
+      <div style="position:absolute;inset:0;background:linear-gradient(135deg, #2E1800 0%, #1E1208 50%, #1A1410 100%);"></div>
+      <div style="position:absolute;inset:0;padding:64px 80px;display:flex;flex-direction:column;justify-content:flex-end;max-width:960px;">
+        <div class="font-mono mb-3" style="font-size:0.65rem;letter-spacing:0.12em;color:#9A8A75;text-transform:uppercase;">03 — INTERNAL TOOLING</div>
+        <h3 style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:clamp(36px,4vw,58px);color:#F0E8D5;letter-spacing:-0.02em;margin-bottom:8px;line-height:1.05;">Flux Operations</h3>
+        <div class="font-mono mb-16" style="font-size:0.68rem;color:#9A8A75;letter-spacing:0.06em;">CLIENT — LOGISTICS TECH, SE</div>
+        <p style="font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:#C9A878;line-height:1.65;max-width:560px;margin-bottom:24px;">Custom operations dashboard replacing four separate SaaS tools. Shipment tracking, driver assignment, exception handling, and billing reconciliation in a single terminal-style UI.</p>
+        <span class="work-metric-chip">&#8211;&#8201;$4,200/mo SaaS savings on day one</span>
+      </div>
+    </div>
+  </div>
+  <!-- Scroll dots -->
+  <div class="flex justify-center gap-3 mt-6">
+    <div class="scroll-dot active" data-idx="0" id="dot-0"></div>
+    <div class="scroll-dot" data-idx="1" id="dot-1"></div>
+    <div class="scroll-dot" data-idx="2" id="dot-2"></div>
+  </div>
+</section>
+
+<!-- ===================== METRICS BAND ===================== -->
+<div class="metrics-band py-12 fade-up">
+  <div class="max-w-7xl mx-auto px-6 md:px-12">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-8">
+      <div>
+        <div style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:clamp(44px,5vw,72px);color:#F0E8D5;line-height:1;letter-spacing:-0.03em;">47</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:#9A8A75;letter-spacing:0.12em;text-transform:uppercase;margin-top:6px;">Projects shipped</div>
+      </div>
+      <div>
+        <div style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:clamp(44px,5vw,72px);color:#D2691E;line-height:1;letter-spacing:-0.03em;">99%</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:#9A8A75;letter-spacing:0.12em;text-transform:uppercase;margin-top:6px;">On-time delivery</div>
+      </div>
+      <div>
+        <div style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:clamp(44px,5vw,72px);color:#F0E8D5;line-height:1;letter-spacing:-0.03em;">312ms</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:#9A8A75;letter-spacing:0.12em;text-transform:uppercase;margin-top:6px;">Avg agent response</div>
+      </div>
+      <div>
+        <div style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:clamp(44px,5vw,72px);color:#F0E8D5;line-height:1;letter-spacing:-0.03em;">6yr</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:#9A8A75;letter-spacing:0.12em;text-transform:uppercase;margin-top:6px;">In production</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== PROCESS ===================== -->
+<section id="process" style="padding:120px 0 100px;">
+  <div class="max-w-7xl mx-auto px-6 md:px-12">
+    <div class="section-label mb-12 fade-up">04 — how we work</div>
+    <div class="grid md:grid-cols-2 gap-16 items-start">
+      <div>
+        <h2 class="fade-up delay-1" style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:clamp(36px,3.5vw,52px);color:#F0E8D5;letter-spacing:-0.02em;line-height:1.07;margin-bottom:24px;">Four weeks<br>from contract<br>to production.</h2>
+        <p class="fade-up delay-2" style="font-family:'JetBrains Mono',monospace;font-size:0.75rem;color:#9A8A75;line-height:1.75;max-width:420px;">We run tight cycles, ship early, and keep you in the loop through a shared Notion workspace. No discovery phases that last longer than a sprint.</p>
+      </div>
+      <!-- Timeline -->
+      <div class="fade-up delay-2">
+        <div style="position:relative;padding-left:32px;">
+          <!-- Vertical line -->
+          <div style="position:absolute;left:8px;top:16px;bottom:16px;width:1px;background:linear-gradient(to bottom, transparent, #C9A878 20%, #C9A878 80%, transparent);"></div>
+
+          <!-- Step 1 -->
+          <div style="position:relative;margin-bottom:32px;">
+            <div style="position:absolute;left:-28px;top:14px;width:10px;height:10px;border:2px solid #C9A878;background:#1A1410;border-radius:50%;"></div>
+            <div class="cap-card p-6">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:#D2691E;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:8px;">01 — day 1–3</div>
+              <h4 style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:1.15rem;color:#F0E8D5;margin-bottom:8px;">Scope &amp; Architecture</h4>
+              <p style="font-family:'JetBrains Mono',monospace;font-size:0.7rem;color:#9A8A75;line-height:1.6;">Define exact deliverables, data model, integration points. Written spec, no ambiguity.</p>
+            </div>
+          </div>
+
+          <!-- Step 2 -->
+          <div style="position:relative;margin-bottom:32px;">
+            <div style="position:absolute;left:-28px;top:14px;width:10px;height:10px;border:2px solid #C9A878;background:#1A1410;border-radius:50%;"></div>
+            <div class="cap-card p-6">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:#D2691E;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:8px;">02 — week 1–2</div>
+              <h4 style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:1.15rem;color:#F0E8D5;margin-bottom:8px;">Core Build</h4>
+              <p style="font-family:'JetBrains Mono',monospace;font-size:0.7rem;color:#9A8A75;line-height:1.6;">Foundations first. Auth, data layer, routing, primary API surface. Staging env deployed by end of week 1.</p>
+            </div>
+          </div>
+
+          <!-- Step 3 -->
+          <div style="position:relative;margin-bottom:32px;">
+            <div style="position:absolute;left:-28px;top:14px;width:10px;height:10px;border:2px solid #C9A878;background:#1A1410;border-radius:50%;"></div>
+            <div class="cap-card p-6">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:#D2691E;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:8px;">03 — week 2–3</div>
+              <h4 style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:1.15rem;color:#F0E8D5;margin-bottom:8px;">Integration &amp; Testing</h4>
+              <p style="font-family:'JetBrains Mono',monospace;font-size:0.7rem;color:#9A8A75;line-height:1.6;">Third-party integrations, edge-case hardening, load tests, client walkthrough, async feedback cycle.</p>
+            </div>
+          </div>
+
+          <!-- Step 4 -->
+          <div style="position:relative;">
+            <div style="position:absolute;left:-28px;top:14px;width:10px;height:10px;border:2px solid #D2691E;background:#D2691E;border-radius:50%;box-shadow:0 0 12px #D2691E44;"></div>
+            <div class="cap-card p-6" style="border-color:#D2691E40;">
+              <div style="font-family:'JetBrains Mono',monospace;font-size:0.6rem;color:#D2691E;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:8px;">04 — week 4</div>
+              <h4 style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:1.15rem;color:#F0E8D5;margin-bottom:8px;">Deploy &amp; Handover</h4>
+              <p style="font-family:'JetBrains Mono',monospace;font-size:0.7rem;color:#9A8A75;line-height:1.6;">Production deployment, monitoring setup, runbook, 30-day async support window. Docs included.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== AGENT TERMINAL ===================== -->
+<section id="terminal" style="padding:40px 0 100px;">
+  <div class="max-w-7xl mx-auto px-6 md:px-12">
+    <div class="section-label mb-12 fade-up">05 — agents in production</div>
+    <div class="grid md:grid-cols-2 gap-12 items-center">
+      <div class="fade-up delay-1">
+        <h2 style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:clamp(32px,3vw,48px);color:#F0E8D5;letter-spacing:-0.02em;line-height:1.08;margin-bottom:16px;">Real agents,<br>real workloads.</h2>
+        <p style="font-family:'JetBrains Mono',monospace;font-size:0.75rem;color:#9A8A75;line-height:1.75;margin-bottom:24px;">We build purpose-scoped agents with explicit tool access, deterministic fallback paths, and observability from day one. No LLM magic — structured systems with clear failure modes.</p>
+        <div class="flex flex-wrap gap-3">
+          <a href="#contact" class="btn-primary">Discuss your agent</a>
+          <a href="#work" class="btn-ghost">See examples</a>
+        </div>
+      </div>
+      <!-- Terminal -->
+      <div class="terminal-panel p-6 fade-up delay-2" style="min-height:340px;">
+        <!-- Terminal chrome -->
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid #3A2D24;">
+          <div style="width:10px;height:10px;border-radius:50%;background:#3A2D24;"></div>
+          <div style="width:10px;height:10px;border-radius:50%;background:#3A2D24;"></div>
+          <div style="width:10px;height:10px;border-radius:50%;background:#D2691E;opacity:0.6;"></div>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:#9A8A75;letter-spacing:0.06em;margin-left:12px;">studio-agent / runtime log</span>
+          <div style="margin-left:auto;width:6px;height:6px;border-radius:50%;background:#D2691E;animation:pulse-dot 2.4s ease-in-out infinite;"></div>
+        </div>
+        <div id="terminal-output" style="min-height:260px;"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== MANIFESTO ===================== -->
+<section style="padding:80px 0 100px;">
+  <div class="max-w-3xl mx-auto px-6 text-center fade-up">
+    <span class="manifesto-bracket mb-8" style="display:block;"></span>
+    <blockquote style="font-family:'Newsreader',serif;font-style:italic;font-size:clamp(26px,3vw,42px);color:#F0E8D5;line-height:1.45;letter-spacing:-0.01em;margin-bottom:8px;">
+      "The best systems are the ones no one notices — they just work, every time, without ceremony."
+    </blockquote>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:#9A8A75;letter-spacing:0.1em;text-transform:uppercase;margin-top:20px;margin-bottom:8px;">Studio principle, established 2019</div>
+    <span class="manifesto-bracket mt-8" style="display:block;"></span>
+  </div>
+</section>
+
+<!-- ===================== CONTACT ===================== -->
+<section id="contact" style="padding:40px 0 120px;">
+  <div class="max-w-7xl mx-auto px-6 md:px-12">
+    <div class="section-label mb-12 fade-up">06 — start a project</div>
+    <div class="contact-card p-12 md:p-16 max-w-2xl mx-auto text-center fade-up delay-1">
+      <div class="hero-chip justify-center mb-8" style="display:inline-flex;">
+        <span class="dot"></span>
+        we reply within 24h
+      </div>
+      <h2 style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:clamp(36px,4vw,56px);color:#F0E8D5;letter-spacing:-0.025em;line-height:1.05;margin-bottom:16px;">One slot left<br>for Q3 2026.</h2>
+      <p style="font-family:'JetBrains Mono',monospace;font-size:0.73rem;color:#9A8A75;line-height:1.7;margin-bottom:40px;max-width:420px;margin-left:auto;margin-right:auto;">We take two projects per quarter to keep quality high. If you have a hard problem and a real deadline, let's talk.</p>
+      <div class="flex flex-col sm:flex-row gap-4 justify-center mb-10">
+        <a href="mailto:hello@studio.build" class="btn-primary">Book discovery call</a>
+        <a href="mailto:hello@studio.build" class="btn-secondary">hello@studio.build</a>
+      </div>
+      <div style="padding-top:24px;border-top:1px solid #3A2D24;display:flex;justify-content:center;gap:32px;">
+        <a href="#" class="footer-link" style="margin:0;">@studio_build</a>
+        <span style="color:#3A2D24;">|</span>
+        <a href="#" class="footer-link" style="margin:0;">Telegram</a>
+        <span style="color:#3A2D24;">|</span>
+        <a href="#" class="footer-link" style="margin:0;">LinkedIn</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== FOOTER ===================== -->
+<footer style="padding:64px 0 40px;">
+  <div class="max-w-7xl mx-auto px-6 md:px-12">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-12 mb-12">
+      <div>
+        <div class="footer-col-head">Studio</div>
+        <div style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:1.5rem;color:#F0E8D5;margin-bottom:12px;">STUDIO</div>
+        <p style="font-family:'JetBrains Mono',monospace;font-size:0.68rem;color:#9A8A75;line-height:1.7;">Web development and AI automation studio. Established 2019. Remote-first.</p>
+      </div>
+      <div>
+        <div class="footer-col-head">Services</div>
+        <a href="#" class="footer-link">Web Platform Development</a>
+        <a href="#" class="footer-link">API Design &amp; Integration</a>
+        <a href="#" class="footer-link">AI Agent Engineering</a>
+        <a href="#" class="footer-link">Process Automation</a>
+        <a href="#" class="footer-link">Technical Consulting</a>
+      </div>
+      <div>
+        <div class="footer-col-head">Contact</div>
+        <a href="mailto:hello@studio.build" class="footer-link">hello@studio.build</a>
+        <a href="#" class="footer-link">@studio_build</a>
+        <a href="#" class="footer-link">t.me/studio_build</a>
+        <div style="margin-top:16px;font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:#9A8A75;line-height:1.6;">
+          Remote / EU / worldwide<br>
+          CET +/- 2h overlap preferred
+        </div>
+      </div>
+    </div>
+    <div style="border-top:1px solid #3A2D24;padding-top:24px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:#9A8A75;letter-spacing:0.06em;">&#169; 2026 Studio. All rights reserved.</div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:0.62rem;color:#9A8A75;letter-spacing:0.06em;">engineered, not improvised.</div>
+    </div>
+  </div>
+</footer>
+
+<!-- ===================== THREE.JS 3D SCENE ===================== -->
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js';
+
+(function() {
+  const container = document.getElementById('hero-right');
+  const canvas = document.getElementById('hero-canvas');
+  if (!container || !canvas) return;
+
+  let paused = false;
+  let animId;
+  const mouse = { x: 0, y: 0 };
+
+  // --- Renderer ---
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setClearColor(0x1A1410, 0);
+
+  // --- Scene / Camera ---
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x1A1410, 0.038);
+
+  const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 100);
+  camera.position.set(0, 0, 9.5);
+
+  // --- Grid Points ---
+  const COLS = 18;
+  const ROWS = 18;
+  const SPACING = 0.92;
+  const points = [];
+  const originalPositions = [];
+
+  const groupMain = new THREE.Group();
+  scene.add(groupMain);
+
+  // Small sphere geometry for regular points
+  const geoSmall = new THREE.SphereGeometry(0.04, 6, 6);
+  const matSmall = new THREE.MeshBasicMaterial({ color: 0xD2691E });
+
+  // Central large sphere
+  const geoLarge = new THREE.SphereGeometry(0.09, 8, 8);
+  const matLarge = new THREE.MeshBasicMaterial({ color: 0xF0E8D5 });
+
+  const offsetX = ((COLS - 1) * SPACING) / 2;
+  const offsetY = ((ROWS - 1) * SPACING) / 2;
+
+  const cx = Math.floor(COLS / 2);
+  const cy = Math.floor(ROWS / 2);
+
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const x = col * SPACING - offsetX;
+      const y = row * SPACING - offsetY;
+      const z = 0;
+
+      const isCentral = (row === cy && col === cx);
+      const mesh = new THREE.Mesh(
+        isCentral ? geoLarge : geoSmall,
+        isCentral ? matLarge : matSmall
+      );
+      mesh.position.set(x, y, z);
+      groupMain.add(mesh);
+      points.push(mesh);
+      originalPositions.push(new THREE.Vector3(x, y, z));
+    }
+  }
+
+  // --- Resize ---
+  function resize() {
+    const w = container.offsetWidth;
+    const h = container.offsetHeight;
+    renderer.setSize(w, h);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  // --- Mouse tracking ---
+  document.addEventListener('mousemove', (e) => {
+    const rect = container.getBoundingClientRect();
+    mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+  });
+
+  // --- Raycaster for warp ---
+  const raycaster = new THREE.Raycaster();
+  const plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
+  const target3D = new THREE.Vector3();
+
+  function getMouseWorld() {
+    raycaster.setFromCamera(new THREE.Vector2(mouse.x, mouse.y), camera);
+    raycaster.ray.intersectPlane(plane, target3D);
+    return target3D;
+  }
+
+  // --- Animation ---
+  let t = 0;
+  const WARP_RADIUS = 2.3;
+  const WARP_STRENGTH = 0.18;
+
+  function animate() {
+    animId = requestAnimationFrame(animate);
+    if (paused) return;
+
+    t += 0.016;
+    groupMain.rotation.y = t * 0.04;
+    groupMain.rotation.x = Math.sin(t * 0.011) * 0.08;
+
+    const mw = getMouseWorld();
+    const groupWorldPos = new THREE.Vector3();
+    groupMain.getWorldPosition(groupWorldPos);
+
+    points.forEach((mesh, i) => {
+      const orig = originalPositions[i];
+      const wPos = orig.clone().applyEuler(groupMain.rotation);
+
+      const dx = wPos.x - mw.x;
+      const dy = wPos.y - mw.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < WARP_RADIUS) {
+        const factor = (1 - dist / WARP_RADIUS) * WARP_STRENGTH;
+        const pushX = -(dx / (dist + 0.001)) * factor * 2.0;
+        const pushY = -(dy / (dist + 0.001)) * factor * 2.0;
+        mesh.position.x = orig.x + pushX;
+        mesh.position.y = orig.y + pushY;
+      } else {
+        mesh.position.x += (orig.x - mesh.position.x) * 0.06;
+        mesh.position.y += (orig.y - mesh.position.y) * 0.06;
+      }
+    });
+
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  // --- IntersectionObserver pause ---
+  const io = new IntersectionObserver((entries) => {
+    paused = !entries[0].isIntersecting;
+  }, { threshold: 0.1 });
+  io.observe(container);
+
+})();
+</script>
+
+<!-- ===================== TERMINAL ANIMATION ===================== -->
+<script>
+(function() {
+  const output = document.getElementById('terminal-output');
+  if (!output) return;
+
+  const lines = [
+    { text: '$ studio-agent --env production', color: '#9A8A75', delay: 0 },
+    { text: 'runtime v2.4.1 · node 20.11 · ready', color: '#C9A878', delay: 600 },
+    { text: '', delay: 900 },
+    { text: 'agent.init(id="order-processor") · 88ms ✓', color: '#F0E8D5', delay: 1200 },
+    { text: 'agent.connect(db="orders-prod") · 41ms ✓', color: '#F0E8D5', delay: 1700 },
+    { text: '', delay: 2000 },
+    { text: 'agent.dispatch(task="process_order", id=10847) → 312ms ✓', color: '#D2691E', delay: 2300 },
+    { text: '  order.validate() · schema=ok · fraud_score=0.02', color: '#9A8A75', delay: 2700 },
+    { text: '  order.charge(stripe) · charge_id=ch_3PxR · 201ms ✓', color: '#9A8A75', delay: 3100 },
+    { text: '  order.fulfill(warehouse="DE-BER") · queued', color: '#9A8A75', delay: 3500 },
+    { text: '', delay: 3800 },
+    { text: 'agent.dispatch(task="classify_doc", file="contract_48.pdf") → 891ms ✓', color: '#D2691E', delay: 4100 },
+    { text: '  doc.type="NDA" · parties=2 · clauses=14 · flags=0', color: '#9A8A75', delay: 4600 },
+    { text: '  doc.route(matter="VLG-2024-09") · routed ✓', color: '#9A8A75', delay: 5000 },
+    { text: '', delay: 5300 },
+    { text: 'agent.dispatch(task="sync_inventory") → 127ms ✓', color: '#D2691E', delay: 5600 },
+    { text: '  erp.pull(records=841) · delta=23 · applied ✓', color: '#9A8A75', delay: 6000 },
+    { text: '  reorder.check() · triggers=2 · orders_placed=2', color: '#9A8A75', delay: 6400 },
+    { text: '', delay: 6700 },
+    { text: 'heartbeat · agents=4 · tasks_24h=1847 · errors=0', color: '#C9A878', delay: 7000 },
+    { text: '$ _', color: '#9A8A75', delay: 7400, cursor: true },
+  ];
+
+  let started = false;
+
+  function startTerminal() {
+    if (started) return;
+    started = true;
+
+    lines.forEach((line) => {
+      setTimeout(() => {
+        const el = document.createElement('div');
+        el.className = 'terminal-line';
+        if (line.cursor) {
+          el.innerHTML = `<span style="color:${line.color};">${line.text.replace('_', '')}</span><span class="terminal-cursor"></span>`;
+        } else {
+          el.innerHTML = `<span style="color:${line.color};">${line.text}</span>`;
+        }
+        output.appendChild(el);
+        output.scrollTop = output.scrollHeight;
+      }, line.delay);
+    });
+  }
+
+  const io = new IntersectionObserver((entries) => {
+    if (entries[0].isIntersecting) startTerminal();
+  }, { threshold: 0.3 });
+  io.observe(document.getElementById('terminal'));
+
+})();
+</script>
+
+<!-- ===================== WORK SCROLL DOTS ===================== -->
+<script>
+(function() {
+  const scroll = document.getElementById('work-scroll');
+  if (!scroll) return;
+  const dots = [0, 1, 2].map(i => document.getElementById('dot-' + i));
+
+  scroll.addEventListener('scroll', () => {
+    const idx = Math.round(scroll.scrollLeft / scroll.offsetWidth);
+    dots.forEach((d, i) => {
+      if (!d) return;
+      d.classList.toggle('active', i === idx);
+    });
+  });
+
+  dots.forEach((d, i) => {
+    if (!d) return;
+    d.addEventListener('click', () => {
+      scroll.scrollTo({ left: i * scroll.offsetWidth, behavior: 'smooth' });
+    });
+  });
+})();
+</script>
+
+<!-- ===================== FADE-UP OBSERVER ===================== -->
+<script>
+(function() {
+  const els = document.querySelectorAll('.fade-up');
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.classList.add('visible');
+      }
+    });
+  }, { threshold: 0.12 });
+  els.forEach(el => io.observe(el));
+})();
+</script>
+
+<!-- ===================== HERO MOBILE LAYOUT ===================== -->
+<style>
+@media (max-width: 767px) {
+  #hero {
+    grid-template-columns: 1fr !important;
+    grid-template-rows: auto auto;
+  }
+  #hero-right {
+    order: 2;
+    height: 260px !important;
+  }
+  #hero > div:first-child {
+    order: 1;
+    padding: 32px 24px 24px !important;
+    max-width: 100% !important;
+  }
+}
+@media (max-width: 480px) {
+  .work-panel > div:last-child { padding: 32px 24px !important; }
+  .contact-card { padding: 32px 20px !important; }
+}
+</style>
+
+</body>
+</html>

@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STUDIO/STATUS — Web Dev & AI Automation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Cabinet+Grotesk:wght@700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        'bg':        '#0F0F12',
+        'surface':   '#181820',
+        'border':    '#2A2A33',
+        'text':      '#F0EBDB',
+        'mute':      '#8A8A95',
+        'amber':     '#F0A961',
+        'link':      '#87BCD9',
+        'sage':      '#8AB868',
+      },
+      fontFamily: {
+        mono: ['"JetBrains Mono"', 'monospace'],
+        display: ['"Cabinet Grotesk"', 'sans-serif'],
+      },
+    }
+  }
+}
+</script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: #0F0F12;
+    color: #F0EBDB;
+    font-family: 'JetBrains Mono', monospace;
+    font-feature-settings: "tnum";
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  /* ── Cursor blink ── */
+  .cursor {
+    display: inline-block;
+    width: 10px;
+    height: 1.1em;
+    background: #F0A961;
+    vertical-align: text-bottom;
+    animation: blink 1.1s step-end infinite;
+  }
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0; }
+  }
+
+  /* ── Amber blink for status dot ── */
+  .blink-amber {
+    animation: blinkAmber 1.8s step-end infinite;
+  }
+  @keyframes blinkAmber {
+    0%, 100% { color: #F0A961; }
+    50%       { color: #2A2A33; }
+  }
+
+  /* ── Primary button ── */
+  .btn-primary {
+    display: inline-block;
+    background: #F0A961;
+    color: #0F0F12;
+    border: 3px solid #0F0F12;
+    box-shadow: 5px 5px 0 #2A2A33;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 0.8125rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 10px 22px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: box-shadow 80ms linear, transform 80ms linear;
+    user-select: none;
+  }
+  .btn-primary:hover {
+    box-shadow: 2px 2px 0 #2A2A33;
+    transform: translate(3px, 3px);
+  }
+  .btn-primary:active {
+    box-shadow: 0 0 0 #2A2A33;
+    transform: translate(5px, 5px);
+  }
+
+  /* ── Secondary button ── */
+  .btn-secondary {
+    display: inline-block;
+    background: transparent;
+    color: #F0EBDB;
+    border: 2px solid #F0EBDB;
+    box-shadow: 4px 4px 0 #F0EBDB;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 500;
+    font-size: 0.8125rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 10px 22px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: box-shadow 80ms linear, transform 80ms linear;
+    user-select: none;
+  }
+  .btn-secondary:hover {
+    box-shadow: 2px 2px 0 #F0EBDB;
+    transform: translate(2px, 2px);
+  }
+  .btn-secondary:active {
+    box-shadow: 0 0 0 #F0EBDB;
+    transform: translate(4px, 4px);
+  }
+
+  /* ── ASCII frame ── */
+  .ascii-frame {
+    border: 1px solid #2A2A33;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    line-height: 1.55;
+    white-space: pre;
+    overflow-x: auto;
+    color: #F0EBDB;
+  }
+
+  /* ── Terminal table ── */
+  .term-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+  }
+  .term-table th {
+    background: #F0A961;
+    color: #0F0F12;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 10px 16px;
+    text-align: left;
+    border: 2px solid #0F0F12;
+  }
+  .term-table td {
+    padding: 10px 16px;
+    border: 1px solid #2A2A33;
+    vertical-align: top;
+    color: #F0EBDB;
+  }
+  .term-table tr:nth-child(even) td {
+    background: #181820;
+  }
+  .term-table tr:hover td {
+    background: #1E1E28;
+  }
+
+  /* ── Status pill ── */
+  .pill-ok {
+    display: inline-block;
+    background: transparent;
+    border: 1px solid #8AB868;
+    color: #8AB868;
+    font-size: 0.65rem;
+    padding: 1px 7px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .pill-prod {
+    display: inline-block;
+    background: transparent;
+    border: 1px solid #F0A961;
+    color: #F0A961;
+    font-size: 0.65rem;
+    padding: 1px 7px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  /* ── Fade-up animation ── */
+  .fade-up {
+    opacity: 0;
+    transform: translateY(28px);
+    transition: opacity 480ms cubic-bezier(0.22, 1, 0.36, 1),
+                transform 480ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .fade-up.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* ── Sparkline ── */
+  .sparkline {
+    font-size: 0.75rem;
+    color: #F0A961;
+    letter-spacing: 0;
+    display: block;
+    margin-top: 8px;
+  }
+
+  /* ── Nav prompt ── */
+  .nav-prompt {
+    color: #8A8A95;
+    font-size: 0.78rem;
+  }
+  .nav-prompt span.user { color: #F0A961; }
+  .nav-prompt span.path { color: #87BCD9; }
+
+  /* ── Hero headline ── */
+  .hero-headline {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: clamp(46px, 6.5vw, 90px);
+    letter-spacing: -0.04em;
+    line-height: 1;
+    text-transform: uppercase;
+    color: #F0EBDB;
+  }
+
+  /* ── Section heading ── */
+  .section-label {
+    font-size: 0.7rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: #8A8A95;
+    margin-bottom: 32px;
+  }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: #0F0F12; }
+  ::-webkit-scrollbar-thumb { background: #2A2A33; }
+
+  /* ── Cabinet Grotesk manifesto ── */
+  .manifesto-text {
+    font-family: 'Cabinet Grotesk', sans-serif;
+    font-weight: 700;
+    font-style: italic;
+    font-size: clamp(32px, 4.5vw, 66px);
+    line-height: 1.1;
+    color: #F0EBDB;
+  }
+
+  /* ── Agent stream line ── */
+  .stream-line {
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+    font-size: 0.78rem;
+    padding: 5px 0;
+    border-bottom: 1px solid #181820;
+  }
+  .stream-line .ts { color: #8A8A95; min-width: 78px; }
+  .stream-line .agent-name { color: #F0A961; min-width: 220px; }
+  .stream-line .latency { min-width: 70px; text-align: right; }
+  .stream-line .status-ok { color: #8AB868; }
+  .stream-line .msg { color: #8A8A95; }
+
+  /* ── Process flow ── */
+  .process-box {
+    border: 1px solid #2A2A33;
+    padding: 20px 24px;
+    position: relative;
+  }
+  .process-num {
+    font-size: 0.65rem;
+    color: #F0A961;
+    letter-spacing: 0.14em;
+    display: block;
+    margin-bottom: 10px;
+  }
+
+  /* Hero monolith panel */
+  .monolith-panel {
+    background: #181820;
+    border: 1px solid #2A2A33;
+    padding: 20px;
+    font-size: 0.72rem;
+    line-height: 1.6;
+    white-space: pre;
+    overflow-x: auto;
+    tab-size: 2;
+  }
+
+  /* ── Divider ── */
+  .mono-divider {
+    border: none;
+    border-top: 1px solid #2A2A33;
+    margin: 0;
+  }
+
+  /* Stats number */
+  .stat-num {
+    font-size: clamp(40px, 5vw, 64px);
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    color: #F0A961;
+    line-height: 1;
+    display: block;
+  }
+
+  /* contact block */
+  .contact-frame {
+    border: 1px solid #2A2A33;
+    padding: 40px;
+  }
+
+  /* nav link */
+  a.navlink {
+    color: #8A8A95;
+    text-decoration: none;
+    font-size: 0.78rem;
+    letter-spacing: 0.06em;
+    transition: color 180ms linear;
+  }
+  a.navlink:hover { color: #F0EBDB; }
+
+  /* inline link */
+  a.ilink {
+    color: #87BCD9;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    text-decoration-color: rgba(135,188,217,0.35);
+  }
+  a.ilink:hover { text-decoration-color: #87BCD9; }
+
+  /* capability card */
+  .cap-card {
+    border: 1px solid #2A2A33;
+    padding: 28px;
+    background: #0F0F12;
+  }
+  .cap-number { color: #F0A961; font-size: 0.7rem; letter-spacing: 0.14em; display: block; margin-bottom: 16px; }
+  .cap-title { font-size: 1.45rem; font-weight: 700; text-transform: uppercase; letter-spacing: -0.02em; margin-bottom: 14px; display: block; }
+  .cap-desc { font-size: 0.78rem; color: #8A8A95; line-height: 1.7; margin-bottom: 16px; }
+  .stack-tag {
+    display: inline-block;
+    font-size: 0.68rem;
+    color: #8A8A95;
+    margin-right: 6px;
+    margin-top: 4px;
+  }
+
+  @media (max-width: 768px) {
+    .hero-headline { font-size: clamp(36px, 9vw, 60px); }
+    .manifesto-text { font-size: clamp(26px, 6vw, 44px); }
+    .monolith-panel { font-size: 0.62rem; }
+    .stat-num { font-size: 40px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════ NAV ════════════════════════════════════ -->
+<nav style="background:#0F0F12; border-bottom:1px solid #2A2A33; position:sticky; top:0; z-index:50;">
+  <div style="max-width:1380px; margin:0 auto; padding:0 28px; height:52px; display:flex; align-items:center; justify-content:space-between; gap:24px;">
+
+    <!-- left: prompt -->
+    <div class="nav-prompt" style="white-space:nowrap;">
+      <span class="user">studio</span><span style="color:#2A2A33;">@</span><span class="path">status</span><span style="color:#2A2A33;">:~$</span>
+      <span style="color:#F0EBDB; margin-left:6px;"></span>
+    </div>
+
+    <!-- center: nav links -->
+    <div style="display:flex; gap:28px; align-items:center;">
+      <a href="#capabilities" class="navlink">[capabilities]</a>
+      <a href="#cases" class="navlink">[cases]</a>
+      <a href="#process" class="navlink">[process]</a>
+      <a href="#agents" class="navlink">[agents]</a>
+      <a href="#contact" class="navlink">[contact]</a>
+    </div>
+
+    <!-- right: CTA -->
+    <a href="#contact" class="btn-primary" style="padding:7px 16px; font-size:0.72rem; white-space:nowrap;">
+      start_project
+    </a>
+
+  </div>
+</nav>
+
+
+<!-- ════════════════════════════════════ HERO ════════════════════════════════════ -->
+<section style="padding:72px 28px 80px; max-width:1380px; margin:0 auto;">
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:60px; align-items:start;">
+
+    <!-- LEFT: tagline + headline + CTAs -->
+    <div class="fade-up">
+      <div class="section-label" style="margin-bottom:20px;">
+        // web dev &amp; ai automation ·
+        <span class="blink-amber">&#x25CF;</span> available Q3 '26
+      </div>
+
+      <h1 class="hero-headline" style="margin-bottom:32px;">
+        WE SHIP<br>
+        SYSTEMS<br>
+        <span style="color:#F0A961;">NOT DEMOS.</span>
+      </h1>
+
+      <p style="font-size:0.82rem; color:#8A8A95; max-width:420px; line-height:1.75; margin-bottom:36px;">
+        Production-grade web platforms and AI agent pipelines.
+        No MVPs, no prototypes — straight to PROD.<br>
+        <span style="color:#F0EBDB;">никаких MVP — только PROD.</span>
+      </p>
+
+      <div style="display:flex; gap:16px; flex-wrap:wrap;">
+        <a href="#contact" class="btn-primary">start_project</a>
+        <a href="#cases" class="btn-secondary">view_cases</a>
+      </div>
+
+      <!-- mini stats below CTAs -->
+      <div style="margin-top:40px; display:flex; gap:36px; border-top:1px solid #2A2A33; padding-top:24px;">
+        <div>
+          <span style="font-size:1.4rem; font-weight:700; color:#F0A961; display:block; line-height:1;">99.99%</span>
+          <span style="font-size:0.68rem; color:#8A8A95; letter-spacing:0.1em;">avg uptime</span>
+        </div>
+        <div>
+          <span style="font-size:1.4rem; font-weight:700; color:#F0A961; display:block; line-height:1;">41M+</span>
+          <span style="font-size:0.68rem; color:#8A8A95; letter-spacing:0.1em;">blocks indexed</span>
+        </div>
+        <div>
+          <span style="font-size:1.4rem; font-weight:700; color:#F0A961; display:block; line-height:1;">312ms</span>
+          <span style="font-size:0.68rem; color:#8A8A95; letter-spacing:0.1em;">avg agent p50</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: ASCII status monolith -->
+    <div class="fade-up" style="transition-delay:120ms;">
+      <div id="monolith-hero" class="monolith-panel"></div>
+    </div>
+
+  </div>
+</section>
+
+<hr class="mono-divider">
+
+
+<!-- ════════════════════════════════════ CAPABILITIES ════════════════════════════════════ -->
+<section id="capabilities" style="padding:80px 28px; max-width:1380px; margin:0 auto;">
+  <div class="section-label fade-up">// capabilities</div>
+
+  <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:1px; background:#2A2A33;" class="fade-up">
+
+    <!-- 01 WEB -->
+    <div class="cap-card">
+      <span class="cap-number">[01] WEB_ENGINEERING</span>
+      <span class="cap-title">Web<br>Platforms</span>
+      <p class="cap-desc">
+        Full-stack production deployments from schema to edge CDN.
+        Server-rendered, statically generated, or hybrid — we match
+        the architecture to the load curve, not the trend.
+      </p>
+      <div>
+        <span class="stack-tag">[next.js]</span>
+        <span class="stack-tag">[react]</span>
+        <span class="stack-tag">[node]</span>
+        <span class="stack-tag">[postgres]</span>
+        <span class="stack-tag">[redis]</span>
+        <span class="stack-tag">[vercel-edge]</span>
+      </div>
+      <div class="sparkline" id="spark-web"></div>
+    </div>
+
+    <!-- 02 AI -->
+    <div class="cap-card" style="border-left:none; border-right:none;">
+      <span class="cap-number">[02] AI_AUTOMATION</span>
+      <span class="cap-title">Agent<br>Pipelines</span>
+      <p class="cap-desc">
+        Multi-agent orchestration, retrieval-augmented generation,
+        and tool-use chains that run unattended at scale. Measurable
+        latency SLAs, observability from day one.
+      </p>
+      <div>
+        <span class="stack-tag">[langchain]</span>
+        <span class="stack-tag">[openai]</span>
+        <span class="stack-tag">[anthropic]</span>
+        <span class="stack-tag">[qdrant]</span>
+        <span class="stack-tag">[celery]</span>
+        <span class="stack-tag">[grafana]</span>
+      </div>
+      <div class="sparkline" id="spark-ai"></div>
+    </div>
+
+    <!-- 03 INFRA -->
+    <div class="cap-card">
+      <span class="cap-number">[03] INFRA_OPS</span>
+      <span class="cap-title">Infra &amp;<br>DevOps</span>
+      <p class="cap-desc">
+        Zero-downtime deployments, containerized workloads, secrets
+        management, and monitoring stacks. We hand you a runbook,
+        not a black box.
+      </p>
+      <div>
+        <span class="stack-tag">[docker]</span>
+        <span class="stack-tag">[k8s]</span>
+        <span class="stack-tag">[terraform]</span>
+        <span class="stack-tag">[github-actions]</span>
+        <span class="stack-tag">[datadog]</span>
+      </div>
+      <div class="sparkline" id="spark-infra"></div>
+    </div>
+
+  </div>
+</section>
+
+<hr class="mono-divider">
+
+
+<!-- ════════════════════════════════════ CASES ════════════════════════════════════ -->
+<section id="cases" style="padding:80px 28px; max-width:1380px; margin:0 auto;">
+  <div class="section-label fade-up">// case_studies</div>
+
+  <div class="fade-up" style="overflow-x:auto;">
+    <table class="term-table" style="min-width:860px;">
+      <thead>
+        <tr>
+          <th style="width:40px;">#</th>
+          <th>CLIENT</th>
+          <th>STACK</th>
+          <th>KEY METRIC</th>
+          <th>STATUS</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="color:#8A8A95;">001</td>
+          <td>
+            <span style="display:block; font-weight:700; letter-spacing:-0.01em;">VIP_RENTAL_PHUKET</span>
+            <span style="display:block; font-size:0.7rem; color:#8A8A95; margin-top:2px;">luxury real-estate booking platform</span>
+          </td>
+          <td style="color:#8A8A95; font-size:0.72rem; line-height:1.8;">
+            next.js · postgres<br>stripe · mapbox<br>vercel-edge
+          </td>
+          <td>
+            <span style="display:block; color:#F0A961; font-weight:700;">+32% conversion rate</span>
+            <span style="display:block; font-size:0.7rem; color:#8A8A95;">p95 TTFB: 210ms</span>
+            <span style="display:block; font-size:0.7rem; color:#8A8A95;">last deploy: 2h ago</span>
+          </td>
+          <td><span class="pill-prod">PROD</span></td>
+        </tr>
+        <tr>
+          <td style="color:#8A8A95;">002</td>
+          <td>
+            <span style="display:block; font-weight:700; letter-spacing:-0.01em;">BACKDOOR_STORE</span>
+            <span style="display:block; font-size:0.7rem; color:#8A8A95; margin-top:2px;">high-volume e-commerce, 40k SKU</span>
+          </td>
+          <td style="color:#8A8A95; font-size:0.72rem; line-height:1.8;">
+            remix · shopify-api<br>redis · cloudflare<br>algolia
+          </td>
+          <td>
+            <span style="display:block; color:#F0A961; font-weight:700;">99.99% uptime / 30d</span>
+            <span style="display:block; font-size:0.7rem; color:#8A8A95;">queue depth: 4 jobs</span>
+            <span style="display:block; font-size:0.7rem; color:#8A8A95;">avg order latency: 88ms</span>
+          </td>
+          <td><span class="pill-prod">PROD</span></td>
+        </tr>
+        <tr>
+          <td style="color:#8A8A95;">003</td>
+          <td>
+            <span style="display:block; font-weight:700; letter-spacing:-0.01em;">RA_PROJECT</span>
+            <span style="display:block; font-size:0.7rem; color:#8A8A95; margin-top:2px;">blockchain analytics &amp; AI data pipeline</span>
+          </td>
+          <td style="color:#8A8A95; font-size:0.72rem; line-height:1.8;">
+            python · qdrant · kafka<br>anthropic-sdk · fastapi<br>grafana · k8s
+          </td>
+          <td>
+            <span style="display:block; color:#F0A961; font-weight:700;">12 parallel agent chains</span>
+            <span style="display:block; font-size:0.7rem; color:#8A8A95;">blocks indexed: 41 023 847</span>
+            <span style="display:block; font-size:0.7rem; color:#8A8A95;">ingest rate: 3.2k events/s</span>
+          </td>
+          <td><span class="pill-prod">PROD</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<hr class="mono-divider">
+
+
+<!-- ════════════════════════════════════ PROCESS ════════════════════════════════════ -->
+<section id="process" style="padding:80px 28px; max-width:1380px; margin:0 auto;">
+  <div class="section-label fade-up">// process</div>
+
+  <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:#2A2A33;" class="fade-up">
+
+    <div class="process-box">
+      <span class="process-num">STAGE · 01</span>
+      <div style="font-size:0.65rem; color:#8A8A95; margin-bottom:14px; line-height:1.6;">
+┌──────────────────┐<br>
+│ SCOPE &amp; CONTRACT │<br>
+└──────────────────┘
+      </div>
+      <div style="font-size:0.95rem; font-weight:700; margin-bottom:12px; text-transform:uppercase; letter-spacing:-0.01em;">Scoping</div>
+      <p style="font-size:0.75rem; color:#8A8A95; line-height:1.7;">
+        Fixed-scope brief, stack decision, SLA definition.
+        We sign a contract before a single line of code.
+        Deliverables are measurable from day one.
+      </p>
+    </div>
+
+    <div class="process-box" style="border-left:none;">
+      <span class="process-num">STAGE · 02</span>
+      <div style="font-size:0.65rem; color:#8A8A95; margin-bottom:14px; line-height:1.6;">
+┌──────────────────┐<br>
+│  ARCH &amp; SCHEMA   │<br>
+└──────────────────┘
+      </div>
+      <div style="font-size:0.95rem; font-weight:700; margin-bottom:12px; text-transform:uppercase; letter-spacing:-0.01em;">Architecture</div>
+      <p style="font-size:0.75rem; color:#8A8A95; line-height:1.7;">
+        Schema design, service boundaries, infrastructure
+        provisioning. All decisions documented before
+        build begins. No surprises mid-sprint.
+      </p>
+    </div>
+
+    <div class="process-box" style="border-left:none;">
+      <span class="process-num">STAGE · 03</span>
+      <div style="font-size:0.65rem; color:#8A8A95; margin-bottom:14px; line-height:1.6;">
+┌──────────────────┐<br>
+│  BUILD &amp; TEST    │<br>
+└──────────────────┘
+      </div>
+      <div style="font-size:0.95rem; font-weight:700; margin-bottom:12px; text-transform:uppercase; letter-spacing:-0.01em;">Build</div>
+      <p style="font-size:0.75rem; color:#8A8A95; line-height:1.7;">
+        Two-week cycles, staging deploys every Friday.
+        Load tests and integration coverage shipped
+        alongside code — not as an afterthought.
+      </p>
+    </div>
+
+    <div class="process-box" style="border-left:none;">
+      <span class="process-num">STAGE · 04</span>
+      <div style="font-size:0.65rem; color:#8A8A95; margin-bottom:14px; line-height:1.6;">
+┌──────────────────┐<br>
+│  LAUNCH &amp; OPS    │<br>
+└──────────────────┘
+      </div>
+      <div style="font-size:0.95rem; font-weight:700; margin-bottom:12px; text-transform:uppercase; letter-spacing:-0.01em;">Launch</div>
+      <p style="font-size:0.75rem; color:#8A8A95; line-height:1.7;">
+        Blue-green deploy, rollback plan rehearsed, runbook
+        handed over. 30-day post-launch monitoring SLA
+        included in every engagement.
+      </p>
+    </div>
+
+  </div>
+</section>
+
+<hr class="mono-divider">
+
+
+<!-- ════════════════════════════════════ STATS ════════════════════════════════════ -->
+<section style="padding:64px 28px; max-width:1380px; margin:0 auto;">
+  <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:1px; background:#2A2A33;" class="fade-up">
+
+    <div style="padding:32px 28px; background:#0F0F12;">
+      <span class="stat-num">7</span>
+      <span style="display:block; font-size:0.7rem; color:#8A8A95; letter-spacing:0.1em; margin-top:10px; text-transform:uppercase;">production systems</span>
+    </div>
+    <div style="padding:32px 28px; background:#0F0F12;">
+      <span class="stat-num">41M+</span>
+      <span style="display:block; font-size:0.7rem; color:#8A8A95; letter-spacing:0.1em; margin-top:10px; text-transform:uppercase;">chain blocks indexed</span>
+    </div>
+    <div style="padding:32px 28px; background:#0F0F12;">
+      <span class="stat-num">99.99%</span>
+      <span style="display:block; font-size:0.7rem; color:#8A8A95; letter-spacing:0.1em; margin-top:10px; text-transform:uppercase;">avg fleet uptime</span>
+    </div>
+    <div style="padding:32px 28px; background:#0F0F12;">
+      <span class="stat-num">&lt;200ms</span>
+      <span style="display:block; font-size:0.7rem; color:#8A8A95; letter-spacing:0.1em; margin-top:10px; text-transform:uppercase;">agent p50 target</span>
+    </div>
+
+  </div>
+</section>
+
+<hr class="mono-divider">
+
+
+<!-- ════════════════════════════════════ AGENT TERMINAL ════════════════════════════════════ -->
+<section id="agents" style="padding:80px 28px; max-width:1380px; margin:0 auto;">
+  <div class="section-label fade-up">// agent_fleet · live activity stream</div>
+
+  <div class="fade-up" style="background:#181820; border:1px solid #2A2A33; padding:28px 28px 12px;">
+
+    <!-- terminal header bar -->
+    <div style="display:flex; align-items:center; gap:8px; margin-bottom:20px; padding-bottom:16px; border-bottom:1px solid #2A2A33;">
+      <span style="width:10px; height:10px; border-radius:50%; background:#2A2A33; display:inline-block;"></span>
+      <span style="width:10px; height:10px; border-radius:50%; background:#2A2A33; display:inline-block;"></span>
+      <span style="width:10px; height:10px; border-radius:50%; background:#F0A961; display:inline-block;"></span>
+      <span style="font-size:0.7rem; color:#8A8A95; margin-left:10px; letter-spacing:0.1em;">studio@fleet:~$ tail -f /var/log/agents/dispatch.log</span>
+    </div>
+
+    <!-- stream body -->
+    <div id="agent-stream" style="font-size:0.76rem; line-height:1; min-height:320px;"></div>
+
+    <!-- blinking cursor at bottom -->
+    <div style="padding:10px 0 6px; font-size:0.76rem; color:#8A8A95;">
+      <span style="color:#F0A961;">&#x25B6;</span>&nbsp;<span class="cursor"></span>
+    </div>
+
+  </div>
+</section>
+
+<hr class="mono-divider">
+
+
+<!-- ════════════════════════════════════ MANIFESTO ════════════════════════════════════ -->
+<section style="padding:96px 28px; max-width:1380px; margin:0 auto; text-align:center;" class="fade-up">
+  <div style="border-top:1px solid #2A2A33; border-bottom:1px solid #2A2A33; padding:60px 20px;">
+    <p class="manifesto-text">
+      "We don&rsquo;t build sites.<br>We ship systems."
+    </p>
+    <p style="font-size:0.7rem; color:#8A8A95; letter-spacing:0.16em; text-transform:uppercase; margin-top:24px;">
+      — studio manifesto · est. 2021
+    </p>
+  </div>
+</section>
+
+<hr class="mono-divider">
+
+
+<!-- ════════════════════════════════════ CONTACT ════════════════════════════════════ -->
+<section id="contact" style="padding:80px 28px; max-width:1380px; margin:0 auto;">
+  <div class="section-label fade-up">// contact</div>
+
+  <div class="contact-frame fade-up">
+
+    <div style="font-size:0.78rem; color:#8A8A95; margin-bottom:24px; padding-bottom:16px; border-bottom:1px solid #2A2A33;">
+      <span style="color:#F0A961;">user</span><span style="color:#2A2A33;">@</span><span style="color:#87BCD9;">studio</span><span style="color:#2A2A33;">:~$</span>
+      <span style="color:#F0EBDB; margin-left:8px;">contact --method=async --response-sla=24h</span>
+    </div>
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:40px;">
+
+      <div>
+        <div style="font-size:0.68rem; color:#8A8A95; letter-spacing:0.12em; text-transform:uppercase; margin-bottom:20px;">channels</div>
+
+        <div style="margin-bottom:16px;">
+          <span style="color:#8A8A95; font-size:0.75rem; display:block; margin-bottom:4px;">// email</span>
+          <a href="mailto:hello@studio.dev" class="ilink" style="font-size:0.9rem; font-weight:500;">hello@studio.dev</a>
+        </div>
+
+        <div style="margin-bottom:16px;">
+          <span style="color:#8A8A95; font-size:0.75rem; display:block; margin-bottom:4px;">// telegram</span>
+          <a href="https://t.me/studio_dev" class="ilink" style="font-size:0.9rem; font-weight:500;">t.me/studio_dev</a>
+        </div>
+
+        <div style="margin-bottom:32px;">
+          <span style="color:#8A8A95; font-size:0.75rem; display:block; margin-bottom:4px;">// availability</span>
+          <span style="font-size:0.88rem; color:#F0EBDB;">Q3 '26 ·</span>
+          <span style="font-size:0.88rem; color:#F0A961;"> 1 slot remaining</span>
+        </div>
+
+        <a href="mailto:hello@studio.dev" class="btn-primary">send_brief</a>
+      </div>
+
+      <div>
+        <div style="font-size:0.68rem; color:#8A8A95; letter-spacing:0.12em; text-transform:uppercase; margin-bottom:20px;">what to include</div>
+
+        <div style="font-size:0.78rem; color:#8A8A95; line-height:1.8;">
+          <div style="padding:6px 0; border-bottom:1px solid #181820; color:#F0EBDB;"># project description</div>
+          <div style="padding:6px 0; border-bottom:1px solid #181820;">&nbsp;&nbsp;type: web | ai-agent | infra | combined</div>
+          <div style="padding:6px 0; border-bottom:1px solid #181820;">&nbsp;&nbsp;expected traffic range (orders of magnitude)</div>
+          <div style="padding:6px 0; border-bottom:1px solid #181820;">&nbsp;&nbsp;budget envelope (USD)</div>
+          <div style="padding:6px 0; border-bottom:1px solid #181820;">&nbsp;&nbsp;launch timeline</div>
+          <div style="padding:6px 0; color:#F0A961;">&nbsp;&nbsp;existing_stack || none</div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+</section>
+
+<hr class="mono-divider">
+
+
+<!-- ════════════════════════════════════ FOOTER ════════════════════════════════════ -->
+<footer style="padding:20px 28px; max-width:1380px; margin:0 auto; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+  <span style="font-size:0.7rem; color:#8A8A95; letter-spacing:0.08em;">
+    studio/status · all systems nominal · uptime 99.99% · &copy; 2026
+  </span>
+  <span style="font-size:0.7rem; color:#2A2A33; letter-spacing:0.06em;">
+    build: <span style="color:#8A8A95;" id="build-hash"></span>
+  </span>
+</footer>
+
+
+<!-- ════════════════════════════════════ JAVASCRIPT ════════════════════════════════════ -->
+<script>
+(function() {
+  'use strict';
+
+  // ── Utilities ──────────────────────────────────────────────────────────────
+  function rnd(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  function pad(n, w) {
+    return String(n).padStart(w, ' ');
+  }
+
+  function fmt2(n) {
+    return String(n).padStart(2, '0');
+  }
+
+  function utcNow() {
+    var d = new Date();
+    return d.getUTCFullYear() + '-' +
+           fmt2(d.getUTCMonth() + 1) + '-' +
+           fmt2(d.getUTCDate()) + ' ' +
+           fmt2(d.getUTCHours()) + ':' +
+           fmt2(d.getUTCMinutes()) + ' UTC';
+  }
+
+  // ── Hero monolith data ─────────────────────────────────────────────────────
+  var heroData = {
+    latencies: {
+      'concierge.dispatch': rnd(280, 360),
+      'summarize.thread':   rnd(170, 230),
+      'enrich.address':     rnd(820, 960)
+    },
+    deployAgo: 2,          // hours since last deploy
+    queueDepth: 4,
+    blocksIndexed: 41023847
+  };
+
+  function renderHeroMonolith() {
+    var d = heroData;
+    var now = utcNow();
+    var W = 68; // inner width
+
+    function row(content) {
+      // pad or trim content to W chars
+      var line = '│ ' + content;
+      var pad = W - content.length - 1;
+      if (pad < 0) { line = line.slice(0, W + 1); pad = 0; }
+      return line + ' '.repeat(Math.max(0, pad)) + ' │';
+    }
+
+    function divRow() {
+      return '│ ' + '─'.repeat(W - 2) + ' │';
+    }
+
+    var topBar = '┌─ STUDIO/STATUS ' + '─'.repeat(W - 16 - now.length - 3) + ' ' + now + ' ─┐';
+
+    var lines = [
+      topBar,
+      row('projects'),
+      divRow(),
+      row('vip-rental-phuket    [PROD]  +32% conv    last deploy: ' + d.deployAgo + 'h ago   '),
+      row('backdoor-store       [PROD]  uptime 99.99%  queue: ' + d.queueDepth + '             '),
+      row('ra-project           [PROD]  ' + d.latencies['concierge.dispatch'] + 'ms agent  blocks: ' + Math.floor(d.blocksIndexed / 1e6) + 'M '),
+      divRow(),
+      row('agents in flight'),
+      divRow(),
+      row('concierge.dispatch:  ' + pad(d.latencies['concierge.dispatch'], 4) + 'ms · ok                          '),
+      row('summarize.thread:    ' + pad(d.latencies['summarize.thread'],   4) + 'ms · ok                          '),
+      row('enrich.address:      ' + pad(d.latencies['enrich.address'],     4) + 'ms · ok                          '),
+      divRow(),
+      row('availability'),
+      row("Q3 '26 ▸ 1 slot remaining                                       "),
+      '└' + '─'.repeat(W + 2) + '┘'
+    ];
+
+    var el = document.getElementById('monolith-hero');
+    if (el) {
+      el.textContent = lines.join('\n');
+    }
+  }
+
+  // ── Tick latency values every 2s ───────────────────────────────────────────
+  function tickHero() {
+    heroData.latencies['concierge.dispatch'] += rnd(-18, 22);
+    heroData.latencies['concierge.dispatch'] = Math.max(210, Math.min(480, heroData.latencies['concierge.dispatch']));
+
+    heroData.latencies['summarize.thread'] += rnd(-15, 18);
+    heroData.latencies['summarize.thread'] = Math.max(130, Math.min(340, heroData.latencies['summarize.thread']));
+
+    heroData.latencies['enrich.address'] += rnd(-40, 50);
+    heroData.latencies['enrich.address'] = Math.max(600, Math.min(1200, heroData.latencies['enrich.address']));
+
+    renderHeroMonolith();
+  }
+
+  renderHeroMonolith();
+  setInterval(tickHero, 2000);
+
+  // increment deploy-ago every 60s
+  setInterval(function() {
+    heroData.deployAgo++;
+    renderHeroMonolith();
+  }, 60000);
+
+
+  // ── Sparklines ────────────────────────────────────────────────────────────
+  var bars = ['▁', '▂', '▃', '▄', '▅', '▆', '▇', '█'];
+
+  function genSparkline(length) {
+    var s = '';
+    for (var i = 0; i < length; i++) {
+      s += bars[rnd(0, bars.length - 1)];
+    }
+    return s;
+  }
+
+  function renderSparklines() {
+    var ids = ['spark-web', 'spark-ai', 'spark-infra'];
+    var labels = ['req/s last 14d', 'chain calls / hr', 'deploys / week'];
+    ids.forEach(function(id, i) {
+      var el = document.getElementById(id);
+      if (el) {
+        el.textContent = genSparkline(24) + '  ' + labels[i];
+      }
+    });
+  }
+
+  renderSparklines();
+  setInterval(renderSparklines, 3000);
+
+
+  // ── Agent stream ───────────────────────────────────────────────────────────
+  var agentPool = [
+    { name: 'concierge.dispatch',   project: 'vip-rental-phuket', lat: 312, msg: 'routed inquiry to availability-checker' },
+    { name: 'summarize.thread',     project: 'ra-project',        lat: 198, msg: 'condensed 847 msgs → 2.1k tokens' },
+    { name: 'enrich.address',       project: 'backdoor-store',    lat: 891, msg: 'geocoded 312 shipping records' },
+    { name: 'index.block',          project: 'ra-project',        lat: 44,  msg: 'flushed 1 024 txs to qdrant' },
+    { name: 'classify.listing',     project: 'vip-rental-phuket', lat: 267, msg: 'tagged 18 new properties' },
+    { name: 'rerank.search',        project: 'backdoor-store',    lat: 132, msg: 'reranked top-20 results via colbert' },
+    { name: 'monitor.sla',          project: 'ra-project',        lat: 12,  msg: 'all p99 within threshold' },
+    { name: 'translate.content',    project: 'vip-rental-phuket', lat: 540, msg: 'en→ru+th for 6 property pages' },
+    { name: 'dedupe.products',      project: 'backdoor-store',    lat: 388, msg: 'merged 71 duplicate SKUs' },
+    { name: 'extract.chain-event',  project: 'ra-project',        lat: 28,  msg: 'parsed 4 096 log events → struct' },
+    { name: 'notify.webhook',       project: 'backdoor-store',    lat: 55,  msg: 'dispatched 14 order events' },
+    { name: 'validate.schema',      project: 'vip-rental-phuket', lat: 88,  msg: 'schema drift: 0 fields changed' },
+  ];
+
+  var streamEl = document.getElementById('agent-stream');
+  var streamLines = [];
+  var MAX_LINES = 18;
+
+  function tsNow() {
+    var d = new Date();
+    return fmt2(d.getUTCHours()) + ':' + fmt2(d.getUTCMinutes()) + ':' + fmt2(d.getUTCSeconds());
+  }
+
+  function addStreamLine() {
+    var a = agentPool[rnd(0, agentPool.length - 1)];
+    var latVar = a.lat + rnd(-20, 30);
+    var latStr = pad(latVar, 4) + 'ms';
+
+    var lineEl = document.createElement('div');
+    lineEl.className = 'stream-line';
+    lineEl.innerHTML =
+      '<span class="ts">' + tsNow() + '</span>' +
+      '<span class="agent-name" style="color:#F0A961;">' + a.name + '</span>' +
+      '<span style="color:#8A8A95; min-width:170px; font-size:0.72rem;">' + a.project + '</span>' +
+      '<span class="latency" style="color:#F0EBDB;">' + latStr + '</span>' +
+      '<span class="status-ok" style="min-width:40px; text-align:center;">ok</span>' +
+      '<span class="msg">' + a.msg + '</span>';
+
+    if (streamEl) {
+      streamEl.appendChild(lineEl);
+      streamLines.push(lineEl);
+
+      if (streamLines.length > MAX_LINES) {
+        var old = streamLines.shift();
+        // fade out old line
+        old.style.opacity = '0.3';
+        setTimeout(function() {
+          if (old.parentNode) old.parentNode.removeChild(old);
+        }, 800);
+      }
+
+      // auto-scroll
+      streamEl.scrollTop = streamEl.scrollHeight;
+    }
+  }
+
+  // seed initial lines
+  for (var i = 0; i < 10; i++) {
+    addStreamLine();
+  }
+
+  setInterval(addStreamLine, 1400);
+
+
+  // ── IntersectionObserver for fade-up ──────────────────────────────────────
+  var observer = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.08 });
+
+  document.querySelectorAll('.fade-up').forEach(function(el) {
+    observer.observe(el);
+  });
+
+
+  // ── Build hash in footer ───────────────────────────────────────────────────
+  var hashEl = document.getElementById('build-hash');
+  if (hashEl) {
+    var h = Math.floor(Math.random() * 0xFFFFFF).toString(16).padStart(6, '0');
+    hashEl.textContent = h + '-prod';
+  }
+
+})();
+</script>
+
+</body>
+</html>

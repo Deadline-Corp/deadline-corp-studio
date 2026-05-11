@@ -1,0 +1,1457 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DEADLINE — Веб, автоматизация и AI-агенты под ключ</title>
+<meta name="description" content="DEADLINE — Web, automation, AI-agents в production к согласованной дате. Мы держим deadlines.">
+<meta property="og:title" content="DEADLINE — Web · Automation · AI Agents">
+<meta property="og:description" content="Мы — DEADLINE. У нас ничего не горит.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#161208">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  /* ═════ DESIGN TOKENS (Forge palette) ═════ */
+  :root {
+    --bg: #161208;
+    --surface: #1F1A0F;
+    --surface-2: #2A2316;
+    --border-dark: #0A0805;
+    --cream: #F0E8D5;
+    --mute: #8A7E64;
+    --copper: #C76A2D;
+    --sand: #D9A057;
+    --rust: #B83227;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg);
+    color: var(--cream);
+    font-family: 'JetBrains Mono', monospace;
+    margin: 0;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: var(--copper); color: var(--bg); }
+
+  /* ═════ LANGUAGE TOGGLE (CSS hide/show, default RU)
+     Use :not() so each element keeps its OWN display (inline-block for ticker, etc).
+     :where() keeps specificity 0 so per-element overrides win. */
+  body:not(.lang-en) :where(.lang-en) { display: none !important; }
+  body.lang-en :where(.lang-ru) { display: none !important; }
+
+  .lang-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    margin-right: 4px;
+    user-select: none;
+  }
+  .lang-toggle button {
+    background: transparent;
+    border: 0;
+    padding: 6px 4px;
+    color: var(--mute);
+    font: inherit;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: color 120ms ease;
+    border-bottom: 2px solid transparent;
+  }
+  .lang-toggle button:hover { color: var(--cream); }
+  .lang-toggle button.active {
+    color: var(--copper);
+    border-bottom-color: var(--copper);
+  }
+  .lang-toggle .sep { color: var(--mute); opacity: 0.4; }
+
+  /* ═════ BUTTONS ═════ */
+  .btn-primary, .btn-secondary, .btn-chip, .btn-chip-copper {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    display: inline-block;
+    border-radius: 0;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: transform 120ms cubic-bezier(0.4,0,0.2,1), box-shadow 120ms cubic-bezier(0.4,0,0.2,1);
+  }
+  .btn-primary {
+    background: var(--copper); color: var(--bg);
+    border: 4px solid var(--border-dark);
+    box-shadow: 8px 8px 0 var(--border-dark);
+    font-size: 13px; padding: 14px 28px;
+  }
+  .btn-secondary {
+    background: var(--surface); color: var(--cream);
+    border: 4px solid var(--border-dark);
+    box-shadow: 8px 8px 0 var(--border-dark);
+    font-size: 13px; padding: 14px 28px;
+  }
+  .btn-primary:hover, .btn-secondary:hover {
+    transform: translate(8px,8px); box-shadow: 0 0 0 var(--border-dark);
+  }
+  .btn-chip {
+    background: var(--surface); color: var(--cream);
+    border: 3px solid var(--border-dark);
+    box-shadow: 4px 4px 0 var(--border-dark);
+    font-size: 11px; font-weight: 500; padding: 8px 16px;
+  }
+  .btn-chip-copper {
+    background: var(--copper); color: var(--bg);
+    border: 3px solid var(--border-dark);
+    box-shadow: 4px 4px 0 var(--border-dark);
+    font-size: 11px; padding: 8px 16px;
+  }
+  .btn-chip:hover, .btn-chip-copper:hover {
+    transform: translate(4px,4px); box-shadow: 0 0 0 var(--border-dark);
+  }
+
+  /* ═════ NAV ═════ */
+  .nav-bar {
+    border-bottom: 4px solid var(--border-dark);
+    background: var(--bg); position: sticky; top: 0; z-index: 200;
+  }
+  .logo {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 24px;
+    color: var(--copper); letter-spacing: 0.06em; text-decoration: none; text-transform: uppercase;
+    text-shadow: 2px 2px 0 var(--border-dark);
+  }
+  .logo .pulse {
+    display: inline-block; width: 8px; height: 8px; background: var(--copper);
+    margin-right: 10px; vertical-align: 3px; animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  /* ═════ HERO ═════ */
+  .hero {
+    position: relative;
+    width: 100%;
+    min-height: calc(100vh - 76px);
+    overflow: hidden;
+    background: var(--bg);
+    border-bottom: 4px solid var(--border-dark);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 80px 24px;
+  }
+  .hero::before {
+    content: '';
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(to right, rgba(240,232,213,0.025) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(240,232,213,0.025) 1px, transparent 1px);
+    background-size: 64px 64px;
+    background-position: 0 var(--parallax-y, 0px);
+    pointer-events: none;
+    will-change: background-position;
+  }
+  .hero-meta {
+    position: absolute; top: 28px; left: 32px; z-index: 5;
+    max-width: 380px;
+  }
+  .hero-meta .small {
+    margin-top: 12px; font-size: 11px; color: var(--mute);
+    letter-spacing: 0.08em; text-transform: uppercase; line-height: 1.6;
+  }
+  .hero-cta {
+    position: absolute; bottom: 32px; right: 32px; z-index: 5;
+    text-align: right;
+  }
+  .hero-cta .label {
+    font-size: 10px; color: var(--mute); letter-spacing: 0.18em;
+    text-transform: uppercase; margin-bottom: 14px;
+  }
+  .hero-cta a + a { margin-left: 14px; }
+  .hero-text {
+    position: relative; z-index: 3;
+    text-align: center;
+    padding: 0 24px;
+    max-width: 1400px;
+  }
+  .hero-text .line {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: clamp(48px, 8.5vw, 150px);
+    text-transform: uppercase;
+    letter-spacing: -0.03em;
+    line-height: 1.05;
+    margin: 0;
+    text-shadow:
+      4px 4px 0 var(--border-dark),
+      8px 8px 0 rgba(10,8,5,0.35);
+  }
+  .hero-text .line-1 { color: var(--copper); }
+  .hero-text .line-2 { color: var(--cream); }
+  .hero-text .sub {
+    margin-top: 36px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    color: var(--mute);
+    letter-spacing: 0.04em;
+    line-height: 1.75;
+    max-width: 660px;
+    margin-left: auto;
+    margin-right: auto;
+    text-transform: none;
+  }
+  .hero-text .sub strong { color: var(--cream); font-weight: 500; }
+
+  /* ═════ SHADOW STAMP UTILITY ═════ */
+  .shadow-stamp { text-shadow: 4px 4px 0 var(--border-dark), 8px 8px 0 rgba(10,8,5,0.35); }
+
+  /* ═════ SECTION HEADLINE (monumental, centered, with 3D shadow) ═════ */
+  .section-eyebrow {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; font-weight: 500;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--mute);
+    text-align: center;
+    margin-bottom: 18px;
+  }
+  .section-eyebrow::before { content: '['; margin-right: 8px; color: var(--copper); }
+  .section-eyebrow::after  { content: ']'; margin-left:  8px; color: var(--copper); }
+  .section-eyebrow { display: none; }
+
+  .section-headline {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: clamp(40px, 6.5vw, 104px);
+    text-transform: uppercase;
+    letter-spacing: -0.03em;
+    line-height: 1.02;
+    text-align: center;
+    margin: 0 auto 64px;
+    max-width: 1100px;
+    color: var(--cream);
+    text-shadow:
+      4px 4px 0 var(--border-dark),
+      8px 8px 0 rgba(10,8,5,0.35);
+  }
+  .section-headline em { color: var(--copper); font-style: normal; }
+  .section-headline.copper { color: var(--copper); }
+  .section-headline.copper em { color: var(--cream); }
+  .section-headline.sand { color: var(--sand); }
+  .section-headline.reveal {
+    text-shadow: 0 0 0 var(--border-dark), 0 0 0 rgba(10,8,5,0);
+  }
+  .section-headline.reveal.visible {
+    animation: stamp-land 720ms cubic-bezier(0.34, 1.4, 0.4, 1) forwards;
+  }
+  @keyframes stamp-land {
+    0%   { text-shadow: 0 0 0 var(--border-dark), 0 0 0 rgba(10,8,5,0); transform: translateY(40px); }
+    50%  { text-shadow: 4px 4px 0 var(--border-dark), 8px 8px 0 rgba(10,8,5,0.35); transform: translateY(-6px); }
+    100% { text-shadow: 4px 4px 0 var(--border-dark), 8px 8px 0 rgba(10,8,5,0.35); transform: translateY(0); }
+  }
+
+  .container { max-width: 1280px; margin: 0 auto; padding: 0 32px; }
+
+  /* ═════ TICKER BAND ═════ */
+  .ticker-band {
+    background: var(--copper);
+    color: var(--bg);
+    border-top: 4px solid var(--border-dark);
+    border-bottom: 4px solid var(--border-dark);
+    overflow: hidden;
+    padding: 16px 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .ticker-track {
+    display: inline-block;
+    animation: ticker-scroll 26s linear infinite;
+  }
+  .ticker-band:hover .ticker-track { animation-play-state: paused; }
+  @keyframes ticker-scroll {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+  }
+  .ticker-track > span { padding-right: 48px; }
+  .ticker-track .dot { color: var(--bg); margin-right: 12px; }
+
+  /* ═════ STATS BAND ═════ */
+  .stats-band {
+    background: var(--surface);
+    border-bottom: 4px solid var(--border-dark);
+    padding: 64px 32px;
+  }
+  .stats-grid {
+    max-width: 1280px; margin: 0 auto; display: grid;
+    grid-template-columns: repeat(4, 1fr); gap: 32px; text-align: left;
+  }
+  .stats-grid .num {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+    font-size: clamp(56px, 8vw, 96px); color: var(--copper);
+    line-height: 1; letter-spacing: -0.04em;
+    font-variant-numeric: tabular-nums;
+    text-shadow:
+      3px 3px 0 var(--border-dark),
+      6px 6px 0 rgba(10,8,5,0.3);
+  }
+  .stats-grid .lbl {
+    margin-top: 14px; font-size: 10px; color: var(--mute);
+    letter-spacing: 0.18em; text-transform: uppercase; line-height: 1.5;
+  }
+  @media (max-width: 760px) { .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 24px; } }
+
+  /* ═════ STICKER CARDS ═════ */
+  .sticker-card {
+    background: var(--surface);
+    border: 4px solid var(--border-dark);
+    box-shadow: 6px 6px 0 var(--border-dark);
+    padding: 32px;
+    transition: transform 120ms cubic-bezier(0.4,0,0.2,1),
+                box-shadow 120ms cubic-bezier(0.4,0,0.2,1);
+  }
+  .sticker-card:hover {
+    transform: translate(-3px,-3px) rotate(0deg) !important;
+    box-shadow: 9px 9px 0 var(--border-dark);
+  }
+
+  /* ═════ SERVICES ═════ */
+  .services-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 22px; }
+  @media (max-width: 900px) { .services-grid { grid-template-columns: 1fr; } }
+  .svc-num {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    color: var(--copper); letter-spacing: 0.18em; text-transform: uppercase;
+    margin-bottom: 18px;
+  }
+  .svc-name {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+    font-size: 38px; line-height: 1.0; letter-spacing: -0.025em;
+    margin-bottom: 16px; text-transform: uppercase;
+    text-shadow:
+      3px 3px 0 var(--border-dark),
+      5px 5px 0 rgba(10,8,5,0.25);
+  }
+  .svc-body { font-size: 13px; color: var(--mute); line-height: 1.65; margin-bottom: 18px; }
+  .svc-bullets { list-style: none; padding: 0; margin: 0 0 20px 0; font-size: 13px; color: var(--cream); line-height: 1.7; }
+  .svc-bullets li { padding-left: 18px; position: relative; margin-bottom: 6px; }
+  .svc-bullets li::before { content: '▸'; color: var(--copper); position: absolute; left: 0; top: 0; font-weight: 700; }
+  .svc-closing {
+    margin-top: 22px; padding-top: 18px;
+    border-top: 2px solid var(--copper);
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 15px; font-weight: 500;
+    line-height: 1.4; letter-spacing: -0.01em;
+    color: var(--copper); font-style: italic;
+  }
+
+  /* ═════ WORK ═════ */
+  .work-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 24px; }
+  @media (max-width: 900px) { .work-grid { grid-template-columns: 1fr; } }
+  .case-art {
+    aspect-ratio: 4/3; margin: -32px -32px 22px -32px;
+    border-bottom: 4px solid var(--border-dark);
+    background: linear-gradient(135deg, var(--copper), var(--rust));
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 64px;
+    color: var(--cream); letter-spacing: -0.04em;
+    text-shadow:
+      3px 3px 0 var(--border-dark),
+      6px 6px 0 rgba(10,8,5,0.3);
+  }
+  .case-art.b { background: linear-gradient(135deg, var(--surface), var(--copper)); color: var(--sand); }
+  .case-art.c { background: linear-gradient(135deg, var(--sand), var(--copper)); color: var(--bg); }
+  .case-meta {
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    color: var(--copper); letter-spacing: 0.18em; text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  /* ═════ TESTIMONIALS — marquee ═════ */
+  .testimonials-marquee {
+    position: relative;
+    overflow: hidden;
+    width: 100vw;
+    margin-left: calc(50% - 50vw);
+    -webkit-mask: linear-gradient(90deg, transparent 0, #000 80px, #000 calc(100% - 80px), transparent 100%);
+            mask: linear-gradient(90deg, transparent 0, #000 80px, #000 calc(100% - 80px), transparent 100%);
+    padding: 8px 0;
+  }
+  .testimonials-track {
+    display: flex;
+    gap: 22px;
+    width: max-content;
+    padding: 0 11px;
+    animation: testimonials-scroll 90s linear infinite;
+  }
+  .testimonials-marquee:hover .testimonials-track { animation-play-state: paused; }
+  @keyframes testimonials-scroll {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+  }
+  .testimonial-card {
+    flex-shrink: 0;
+    width: 380px;
+    background: var(--bg);
+    border: 4px solid var(--border-dark);
+    box-shadow: 6px 6px 0 var(--copper);
+    padding: 32px;
+    transition: transform 120ms cubic-bezier(0.4,0,0.2,1), box-shadow 120ms cubic-bezier(0.4,0,0.2,1);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: 280px;
+  }
+  .testimonial-card:hover { transform: translate(-3px,-3px); box-shadow: 9px 9px 0 var(--copper); }
+  @media (max-width: 600px) {
+    .testimonial-card { width: 300px; padding: 24px; min-height: 240px; }
+    .testimonials-track { animation-duration: 70s; }
+  }
+  .testimonial-card .quote {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 500;
+    font-size: 18px; line-height: 1.45; letter-spacing: -0.01em;
+    margin-bottom: 24px; color: var(--cream);
+  }
+  .testimonial-card .quote::before { content: '“'; color: var(--copper); font-weight: 700; margin-right: 4px; }
+  .testimonial-card .quote::after  { content: '”'; color: var(--copper); font-weight: 700; margin-left: 4px; }
+  .testimonial-card .author {
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    color: var(--copper); letter-spacing: 0.14em; text-transform: uppercase;
+    line-height: 1.5; font-weight: 700;
+  }
+  .testimonial-card .role {
+    font-size: 10px; color: var(--mute); letter-spacing: 0.16em;
+    text-transform: uppercase; margin-top: 4px;
+  }
+
+  /* ═════ PROCESS ═════ */
+  .process-row { display: flex; align-items: stretch; gap: 12px; flex-wrap: wrap; }
+  .process-step {
+    flex: 1; min-width: 240px; padding: 28px;
+    background: var(--surface); border: 4px solid var(--border-dark);
+    box-shadow: 6px 6px 0 var(--border-dark);
+    transition: transform 120ms cubic-bezier(0.4,0,0.2,1),
+                box-shadow 120ms cubic-bezier(0.4,0,0.2,1);
+  }
+  .process-step:hover { transform: translate(-3px,-3px); box-shadow: 9px 9px 0 var(--border-dark); }
+  .process-step.active { background: var(--copper); color: var(--bg); }
+  .process-step .ps-num {
+    font-family: 'JetBrains Mono', monospace; font-size: 12px;
+    letter-spacing: 0.16em; text-transform: uppercase; opacity: 0.8;
+  }
+  .process-step .ps-name {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+    font-size: 28px; margin: 8px 0 14px; letter-spacing: -0.015em;
+    text-transform: uppercase;
+    text-shadow: 2px 2px 0 var(--border-dark), 4px 4px 0 rgba(10,8,5,0.2);
+  }
+  .process-step.active .ps-name { text-shadow: 2px 2px 0 var(--border-dark), 4px 4px 0 rgba(10,8,5,0.4); }
+  .process-step .ps-body { font-size: 13px; line-height: 1.6; }
+  .process-arrow {
+    color: var(--copper); font-family: 'JetBrains Mono', monospace;
+    font-weight: 700; font-size: 22px; align-self: center; flex-shrink: 0;
+  }
+  @media (max-width: 900px) { .process-arrow { transform: rotate(90deg); align-self: center; } }
+
+  /* ═════ MANIFESTO ═════ */
+  .manifesto-block {
+    background: var(--bg);
+    border-top: 4px solid var(--border-dark);
+    border-bottom: 4px solid var(--border-dark);
+    padding: 120px 32px;
+  }
+  .manifesto-text {
+    font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+    font-size: clamp(40px, 6vw, 84px); line-height: 1.05; letter-spacing: -0.03em;
+    max-width: 1100px; margin: 0 auto;
+    text-align: center;
+    text-transform: uppercase;
+    text-shadow:
+      4px 4px 0 var(--border-dark),
+      8px 8px 0 rgba(10,8,5,0.35);
+  }
+  .manifesto-text em { color: var(--copper); font-style: normal; }
+
+  /* ═════ CONTACT ═════ */
+  .contact-block {
+    background: var(--surface);
+    border: 4px solid var(--copper);
+    box-shadow: 8px 8px 0 var(--border-dark);
+    padding: 64px 48px;
+    max-width: 1080px;
+    margin: 0 auto;
+    text-align: center;
+  }
+  @media (max-width: 600px) { .contact-block { padding: 40px 24px; } }
+
+  /* ═════ FOOTER ═════ */
+  .footer-band {
+    border-top: 4px solid var(--border-dark);
+    background: var(--border-dark);
+    padding: 28px 32px;
+    font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    color: var(--mute); letter-spacing: 0.08em; text-transform: uppercase;
+    text-align: center;
+  }
+  .footer-band a { color: var(--copper); text-decoration: none; }
+  .footer-band a:hover { color: var(--sand); }
+
+  /* ═════ ANIMATIONS ═════ */
+  .reveal {
+    opacity: 0;
+    transform: translateY(40px);
+    transition: opacity 600ms cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                transform 600ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+  .reveal.visible { opacity: 1; transform: translateY(0); }
+
+  /* ═════ MOBILE ═════ */
+  @media (max-width: 900px) {
+    .hero { min-height: auto; padding: 100px 16px 80px; }
+    .hero-meta { position: relative; top: 0; left: 0; padding: 0 8px; max-width: none; margin-bottom: 36px; }
+    .hero-cta  { position: relative; bottom: 0; right: 0; padding: 0 8px; margin-top: 36px; text-align: left; }
+    .hero-text .line { font-size: clamp(40px, 11vw, 84px); }
+    .nav-bar .container { padding: 0 16px !important; height: 64px !important; }
+    .nav-chips { display: none !important; }
+  }
+  @media (max-width: 600px) {
+    .hero { padding: 64px 16px 60px; }
+    .hero-text { padding: 0 12px; }
+    .hero-text .line { font-size: clamp(36px, 13vw, 64px); }
+    .hero-text .sub { font-size: 13px; line-height: 1.7; }
+    .hero-cta { display: flex; flex-direction: column; align-items: stretch; gap: 12px; }
+    .hero-cta a + a { margin-left: 0; }
+    .hero-cta .btn-primary, .hero-cta .btn-secondary { text-align: center; padding: 12px 20px; }
+    .logo { font-size: 18px; }
+    .nav-bar .btn-primary { padding: 10px 16px; font-size: 11px; box-shadow: 4px 4px 0 var(--border-dark); }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════ NAV ═══════════════════════════════════════════ -->
+<nav class="nav-bar">
+  <div class="container" style="display:flex; align-items:center; justify-content:space-between; height:72px; gap:24px;">
+    <a href="#" class="logo"><span class="pulse"></span>DEADLINE</a>
+    <div style="display:flex; gap:10px; flex-wrap:wrap;" class="nav-chips">
+      <a href="#services" class="btn-chip"><span class="lang-ru">Услуги</span><span class="lang-en">Services</span></a>
+      <a href="#work" class="btn-chip"><span class="lang-ru">Кейсы</span><span class="lang-en">Work</span></a>
+      <a href="#testimonials" class="btn-chip"><span class="lang-ru">Отзывы</span><span class="lang-en">Reviews</span></a>
+      <a href="#process" class="btn-chip"><span class="lang-ru">Процесс</span><span class="lang-en">Process</span></a>
+      <a href="#contact" class="btn-chip"><span class="lang-ru">Контакты</span><span class="lang-en">Contact</span></a>
+    </div>
+    <div style="display:flex; align-items:center; gap:14px; flex-shrink:0;">
+      <div class="lang-toggle" role="group" aria-label="Language">
+        <button data-lang="ru" class="active" aria-pressed="true">RU</button>
+        <span class="sep">|</span>
+        <button data-lang="en" aria-pressed="false">EN</button>
+      </div>
+      <a href="#contact" class="btn-primary"><span class="lang-ru">Связаться</span><span class="lang-en">Talk to us</span></a>
+    </div>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════════════════════ HERO ═══════════════════════════════════════════ -->
+<section class="hero" id="hero">
+
+  <div class="hero-meta">
+    <span class="btn-chip-copper">[ DEADLINE · EST. 2025 · PHUKET × BANGKOK ]</span>
+    <div class="small">
+      <span class="lang-ru">
+        // независимая практика<br>
+        // веб · автоматизация · ai<br>
+        // дедлайны нас боятся
+      </span>
+      <span class="lang-en">
+        // independent practice<br>
+        // web · automation · ai<br>
+        // deadlines fear us
+      </span>
+    </div>
+  </div>
+
+  <div class="hero-cta">
+    <div class="label">
+      <span class="lang-ru">// листай дальше →</span>
+      <span class="lang-en">// scroll for the rest →</span>
+    </div>
+    <a href="#contact" class="btn-primary">
+      <span class="lang-ru">Начать проект</span><span class="lang-en">Start a project</span>
+    </a>
+    <a href="#work" class="btn-secondary">
+      <span class="lang-ru">Кейсы</span><span class="lang-en">See work</span>
+    </a>
+  </div>
+
+  <div class="hero-text">
+    <p class="line line-1">
+      <span class="lang-ru">Меньше слов.</span><span class="lang-en">Skip the talk.</span>
+    </p>
+    <p class="line line-2">
+      <span class="lang-ru">Больше результата.</span><span class="lang-en">Deliver the impact.</span>
+    </p>
+    <p class="sub">
+      <span class="lang-ru">
+        <strong>Веб · Автоматизация · AI-агенты</strong> в production — к согласованной дате, без сюрпризов в счёте.
+        <br>
+        Без посредников, без brief-форм на 80 полей, без «давайте созвонимся обсудим формат созвона».
+      </span>
+      <span class="lang-en">
+        <strong>Web · Automation · AI agents</strong> in production — by the agreed date, no surprises on the invoice.
+        <br>
+        No middlemen, no 80-field brief forms, no "let's schedule a call to discuss the call format".
+      </span>
+    </p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ TICKER ═══════════════════════════════════════════ -->
+<div class="ticker-band">
+  <div class="ticker-track lang-ru">
+    <span><span class="dot">●</span> 12+ проектов в production</span>
+    <span><span class="dot">●</span> 0 пропущенных дедлайнов</span>
+    <span><span class="dot">●</span> 100% возвращающихся клиентов</span>
+    <span><span class="dot">●</span> 4 года в строю</span>
+    <span><span class="dot">●</span> 8 индустрий</span>
+    <span><span class="dot">●</span> 0 воды в брифах</span>
+    <span><span class="dot">●</span> ответ за минуты</span>
+    <span><span class="dot">●</span> 12+ проектов в production</span>
+    <span><span class="dot">●</span> 0 пропущенных дедлайнов</span>
+    <span><span class="dot">●</span> 100% возвращающихся клиентов</span>
+    <span><span class="dot">●</span> 4 года в строю</span>
+    <span><span class="dot">●</span> 8 индустрий</span>
+    <span><span class="dot">●</span> 0 воды в брифах</span>
+    <span><span class="dot">●</span> ответ за минуты</span>
+  </div>
+  <div class="ticker-track lang-en">
+    <span><span class="dot">●</span> 12+ projects shipped</span>
+    <span><span class="dot">●</span> 0 missed deadlines</span>
+    <span><span class="dot">●</span> 100% returning clients</span>
+    <span><span class="dot">●</span> 4 years building</span>
+    <span><span class="dot">●</span> 8 industries served</span>
+    <span><span class="dot">●</span> 0 bullshit pitched</span>
+    <span><span class="dot">●</span> replies in minutes</span>
+    <span><span class="dot">●</span> 12+ projects shipped</span>
+    <span><span class="dot">●</span> 0 missed deadlines</span>
+    <span><span class="dot">●</span> 100% returning clients</span>
+    <span><span class="dot">●</span> 4 years building</span>
+    <span><span class="dot">●</span> 8 industries served</span>
+    <span><span class="dot">●</span> 0 bullshit pitched</span>
+    <span><span class="dot">●</span> replies in minutes</span>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ STATS ═══════════════════════════════════════════ -->
+<section class="stats-band">
+  <div class="stats-grid">
+    <div>
+      <div class="num">12+</div>
+      <div class="lbl">
+        <span class="lang-ru">Проектов в production</span>
+        <span class="lang-en">Projects shipped to production</span>
+      </div>
+    </div>
+    <div>
+      <div class="num">0</div>
+      <div class="lbl">
+        <span class="lang-ru">Пропущенных дедлайнов с первого дня</span>
+        <span class="lang-en">Missed deadlines since day one</span>
+      </div>
+    </div>
+    <div>
+      <div class="num">100%</div>
+      <div class="lbl">
+        <span class="lang-ru">Возвращаются или приводят знакомых</span>
+        <span class="lang-en">Returning clients or referrals</span>
+      </div>
+    </div>
+    <div>
+      <div class="num">8</div>
+      <div class="lbl">
+        <span class="lang-ru">Индустрий и растёт</span>
+        <span class="lang-en">Industries served and counting</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ SERVICES ═══════════════════════════════════════════ -->
+<section id="services" style="padding: 120px 32px;">
+  <div class="container">
+    <div class="section-eyebrow reveal">01 / Services</div>
+    <h2 class="section-headline reveal">
+      <span class="lang-ru">Что мы <em>строим.</em></span>
+      <span class="lang-en">What we <em>build.</em></span>
+    </h2>
+
+    <div class="services-grid">
+      <!-- 01 WEB -->
+      <div class="sticker-card reveal" style="transform: rotate(-2deg);">
+        <div class="svc-num">// 01 · WEB</div>
+        <div class="svc-name">
+          <span class="lang-ru">Веб-разработка</span>
+          <span class="lang-en">Web Development</span>
+        </div>
+        <ul class="svc-bullets lang-ru">
+          <li>Лендинги, веб-приложения, e-commerce, dashboards</li>
+          <li>Production-grade с первого commit'а — не demo</li>
+          <li>Стек выбираем под задачу, не под себя</li>
+          <li>SEO, performance, accessibility — из коробки</li>
+          <li>Тесты, CI/CD, observability — стандарт, не апгрейд</li>
+          <li>Поддержка после запуска — не «сдали и забыли»</li>
+          <li>Адаптив под любой экран — от смарт-часов до 4К-монитора</li>
+        </ul>
+        <ul class="svc-bullets lang-en">
+          <li>Landing pages, web apps, e-commerce, dashboards</li>
+          <li>Production-grade from the first commit — not a demo</li>
+          <li>We pick the stack for the task, not for ourselves</li>
+          <li>SEO, performance, accessibility — out of the box</li>
+          <li>Tests, CI/CD, observability — standard, not an upgrade</li>
+          <li>Post-launch support — not "shipped and forgotten"</li>
+          <li>Responsive on any screen — from smartwatch to 4K</li>
+        </ul>
+        <div class="svc-closing">
+          <span class="lang-ru">Шипим продукт. Не «MVP for now».</span>
+          <span class="lang-en">We ship products. Not "MVP for now".</span>
+        </div>
+      </div>
+
+      <!-- 02 AUTOMATION -->
+      <div class="sticker-card reveal" style="transform: rotate(2deg);">
+        <div class="svc-num">// 02 · AUTOMATION</div>
+        <div class="svc-name">
+          <span class="lang-ru">Автоматизация</span>
+          <span class="lang-en">Automation</span>
+        </div>
+        <ul class="svc-bullets lang-ru">
+          <li>Соединяем CRM, мессенджеры, базы и API</li>
+          <li>Убираем ручной труд там, где он не нужен</li>
+          <li>ROI считаем с первого месяца — каждая интеграция считаема</li>
+          <li>Не окупилось за 3 месяца — переделываем за свой счёт</li>
+          <li>Документируем каждый workflow — ты владеешь логикой</li>
+          <li>Алерты на сбои в реальном времени, не «узнаешь утром»</li>
+          <li>Без vendor lock-in: уходишь — забираешь всё с собой</li>
+        </ul>
+        <ul class="svc-bullets lang-en">
+          <li>Connecting CRMs, messengers, databases, and APIs</li>
+          <li>Killing manual work where it isn't needed</li>
+          <li>ROI tracked from month one — every integration is measurable</li>
+          <li>Doesn't pay off in 3 months — we rebuild it for free</li>
+          <li>Every workflow documented — you own the logic</li>
+          <li>Real-time failure alerts, not "you'll find out in the morning"</li>
+          <li>No vendor lock-in: leave anytime, take everything with you</li>
+        </ul>
+        <div class="svc-closing">
+          <span class="lang-ru">Хорошая автоматизация — та, про которую забыл.</span>
+          <span class="lang-en">Good automation is the kind you forget about.</span>
+        </div>
+      </div>
+
+      <!-- 03 AI AGENTS -->
+      <div class="sticker-card reveal" style="transform: rotate(-1deg);">
+        <div class="svc-num">// 03 · AI AGENTS</div>
+        <div class="svc-name">
+          <span class="lang-ru">AI-агенты</span>
+          <span class="lang-en">AI Agents</span>
+        </div>
+        <ul class="svc-bullets lang-ru">
+          <li>Чат-боты, голосовые ассистенты, RAG-системы</li>
+          <li>Автономные агенты — не игрушки и не demo</li>
+          <li>Трекинг затрат и качества каждого ответа</li>
+          <li>Эскалация на человека, где модель неуверенна</li>
+          <li>Versioning prompts — откатишься на любую версию</li>
+          <li>A/B-тесты моделей на твоих реальных данных</li>
+          <li>Multi-language из коробки — RU, EN, и далее по списку</li>
+        </ul>
+        <ul class="svc-bullets lang-en">
+          <li>Chatbots, voice assistants, RAG systems</li>
+          <li>Autonomous agents — not toys, not demos</li>
+          <li>Cost and quality tracking on every response</li>
+          <li>Escalation to a human where the model is unsure</li>
+          <li>Prompt versioning — roll back to any version</li>
+          <li>A/B tests of models on your real data</li>
+          <li>Multi-language out of the box — EN, RU, and the rest</li>
+        </ul>
+        <div class="svc-closing">
+          <span class="lang-ru">Не chatbot. Production-assistant с метриками.</span>
+          <span class="lang-en">Not a chatbot. A production assistant with metrics.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ WORK ═══════════════════════════════════════════ -->
+<section id="work" style="padding: 120px 32px; background: var(--surface); border-top: 4px solid var(--border-dark); border-bottom: 4px solid var(--border-dark);">
+  <div class="container">
+    <div class="section-eyebrow reveal">02 / Selected work</div>
+    <h2 class="section-headline copper reveal">
+      <span class="lang-ru">Доказательства, <em>не питч.</em></span>
+      <span class="lang-en">Proof, <em>not pitch.</em></span>
+    </h2>
+
+    <div class="work-grid">
+      <!-- VRP -->
+      <div class="sticker-card reveal" style="transform: rotate(-1deg);">
+        <div class="case-art">VRP</div>
+        <div class="case-meta">VIP Rental Phuket · 2026 · Web + AI</div>
+        <h3 class="svc-name" style="font-size:26px;">
+          <span class="lang-ru">AI-консьерж 24/7</span>
+          <span class="lang-en">AI concierge, 24/7</span>
+        </h3>
+        <p class="svc-body lang-ru">
+          Next.js + GPT-4 концирж в чате booking-сайта. Закрывает 73% запросов без человека. Лендинг конверсит +32% за 2 месяца. Команда клиента управляет 80+ объектами одна.
+        </p>
+        <p class="svc-body lang-en">
+          Next.js + GPT-4 concierge inside the booking-site chat. Handles 73% of inquiries without a human. Landing page conversion +32% in two months. The client's team now runs 80+ properties alone.
+        </p>
+        <span class="btn-chip-copper" style="font-size: 10px;">+32% conversion</span>
+      </div>
+
+      <!-- KEYDROP -->
+      <div class="sticker-card reveal" style="transform: rotate(2deg);">
+        <div class="case-art b">KD</div>
+        <div class="case-meta">KeyDrop · 2025 · Automation + MiniApp</div>
+        <h3 class="svc-name" style="font-size:26px;">
+          <span class="lang-ru">Telegram MiniApp e-commerce</span>
+          <span class="lang-en">Telegram MiniApp e-commerce</span>
+        </h3>
+        <p class="svc-body lang-ru">
+          Полная автоматизация выдачи Steam-кодов. 1 000+ заказов/мес без человека. Uptime 99.99% за 18 месяцев. Зарплата операторов — 0₽.
+        </p>
+        <p class="svc-body lang-en">
+          End-to-end automation of Steam-code delivery. 1,000+ orders/month, zero human ops. 99.99% uptime over 18 months. Operator payroll: $0.
+        </p>
+        <span class="btn-chip-copper" style="font-size: 10px;">99.99% uptime</span>
+      </div>
+
+      <!-- RA -->
+      <div class="sticker-card reveal" style="transform: rotate(-2deg);">
+        <div class="case-art c">RA</div>
+        <div class="case-meta">RA Project · 2025-2026 · Data + AI</div>
+        <h3 class="svc-name" style="font-size:26px;">
+          <span class="lang-ru">On-chain аналитика</span>
+          <span class="lang-en">On-chain analytics</span>
+        </h3>
+        <p class="svc-body lang-ru">
+          12 блокчейн-сетей, ClickHouse + Kafka, AI-классификация транзакций. От нуля до production за 14 недель. 41M+ блоков, 4 агента в проде.
+        </p>
+        <p class="svc-body lang-en">
+          12 blockchain networks, ClickHouse + Kafka, AI-driven transaction classification. From zero to production in 14 weeks. 41M+ blocks indexed, 4 agents in prod.
+        </p>
+        <span class="btn-chip-copper" style="font-size: 10px;">12 chains live</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ TESTIMONIALS (marquee) ═══════════════════════════════════════════ -->
+<section id="testimonials" style="padding: 120px 0;">
+  <div class="container">
+    <div class="section-eyebrow reveal">03 / Reviews</div>
+    <h2 class="section-headline reveal">
+      <span class="lang-ru">Клиенты <em>возвращаются.</em></span>
+      <span class="lang-en">Clients <em>come back.</em></span>
+    </h2>
+  </div>
+
+  <div class="testimonials-marquee reveal">
+    <div class="testimonials-track">
+      <!-- 13 cards × 2 for seamless loop = 26 -->
+
+      <!-- 1 Andrei T. -->
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">За 6 недель закрыли проект, на который другая команда положила полгода. Уже планируем следующий — на этот раз с AI.</span>
+          <span class="lang-en">In six weeks they closed a project another team had been dragging for half a year. Already planning the next one — with AI this time.</span>
+        </p>
+        <div>
+          <div class="author">Андрей Т.</div>
+          <div class="role">
+            <span class="lang-ru">Owner · Booking platform · Пхукет · 2026</span>
+            <span class="lang-en">Owner · Booking platform · Phuket · 2026</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2 Elizaveta K. -->
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">Сказали «к концу мая будет production» — был production. Парни знают что делают и объясняют без IT-жаргона.</span>
+          <span class="lang-en">Said "production by end of May" — production it was. They know what they're doing and explain it without IT jargon.</span>
+        </p>
+        <div>
+          <div class="author">Елизавета К.</div>
+          <div class="role">
+            <span class="lang-ru">Operations Director · E-commerce · Бангкок · 2025</span>
+            <span class="lang-en">Operations Director · E-commerce · Bangkok · 2025</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 3 Igor R. -->
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">Production-grade инфраструктура по цене стартап-MVP. Не помню чтобы DevOps кто-то так серьёзно настраивал на проекте такого масштаба.</span>
+          <span class="lang-en">Production-grade infra at startup-MVP price. Don't remember anyone setting up DevOps this seriously on a project this size.</span>
+        </p>
+        <div>
+          <div class="author">Игорь Р.</div>
+          <div class="role">
+            <span class="lang-ru">CTO · Crypto analytics · Remote · 2025</span>
+            <span class="lang-en">CTO · Crypto analytics · Remote · 2025</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4 Nikolay B. -->
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">Запустили новый онбординг для платформы. От ТЗ до прода — 5 недель. Конверсия на регистрации +18% за первый месяц.</span>
+          <span class="lang-en">Launched the new onboarding flow. From spec to prod in 5 weeks. Sign-up conversion up +18% in the first month.</span>
+        </p>
+        <div>
+          <div class="author">Николай Б.</div>
+          <div class="role">
+            <span class="lang-ru">Founder · EdTech · Москва · 2026</span>
+            <span class="lang-en">Founder · EdTech · Moscow · 2026</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5 Alexander K. -->
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">Срочный проект на горящем дедлайне — успели за 9 дней. Команда не подвела ни разу за два контракта подряд.</span>
+          <span class="lang-en">Urgent project on a burning deadline — done in 9 days. Two contracts in a row, zero misses.</span>
+        </p>
+        <div>
+          <div class="author">Александр К.</div>
+          <div class="role">
+            <span class="lang-ru">Head of Trading · Fintech · Санкт-Петербург · 2025</span>
+            <span class="lang-en">Head of Trading · Fintech · St. Petersburg · 2025</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 6 Aigerim T. -->
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">Автоматизировали CRM с интеграцией WhatsApp Business. Менеджеры освободили 4 часа в день. Окупилось за месяц.</span>
+          <span class="lang-en">Automated the CRM with WhatsApp Business integration. Managers got back 4 hours a day. Paid off in a month.</span>
+        </p>
+        <div>
+          <div class="author">Айгерим Т.</div>
+          <div class="role">
+            <span class="lang-ru">COO · Real estate · Алма-Ата · 2025</span>
+            <span class="lang-en">COO · Real estate · Almaty · 2025</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 7 Dmitry Sh. -->
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">Сделали tracking-платформу для нашей сети. Observability на уровне, какого мы у подрядчиков ещё не видели.</span>
+          <span class="lang-en">Built a tracking platform for our network. Observability at a level we hadn't seen from any contractor before.</span>
+        </p>
+        <div>
+          <div class="author">Дмитрий Ш.</div>
+          <div class="role">
+            <span class="lang-ru">VP Operations · Logistics · Дубай · 2026</span>
+            <span class="lang-en">VP Operations · Logistics · Dubai · 2026</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 8 Anna M. -->
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">Запустили premium-сегмент магазина с Telegram MiniApp. Парни знают что делают и что предложить — а не только что выбрали в Figma.</span>
+          <span class="lang-en">Launched the premium segment with a Telegram MiniApp. They know what to do and what to suggest — not just what they picked in Figma.</span>
+        </p>
+        <div>
+          <div class="author">Анна М.</div>
+          <div class="role">
+            <span class="lang-ru">Founder · Premium e-commerce · Гонконг · 2025</span>
+            <span class="lang-en">Founder · Premium e-commerce · Hong Kong · 2025</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 9 Levan M. -->
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">Интегрировали кассы с CRM и доставкой. Заказы летят на кухню без оператора. Возвращаемся за вторым проектом.</span>
+          <span class="lang-en">Integrated POS with CRM and delivery. Orders fly straight to the kitchen, no operator. Coming back for project number two.</span>
+        </p>
+        <div>
+          <div class="author">Леван М.</div>
+          <div class="role">
+            <span class="lang-ru">Owner · Food delivery · Тбилиси · 2026</span>
+            <span class="lang-en">Owner · Food delivery · Tbilisi · 2026</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 10 Sergey V. -->
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">Сайт + booking-система + AI-ассистент в чате. Получили production за 7 недель — точно к открытию сезона.</span>
+          <span class="lang-en">Site + booking + an AI assistant in chat. Production in 7 weeks — right on time for the season opener.</span>
+        </p>
+        <div>
+          <div class="author">Сергей В.</div>
+          <div class="role">
+            <span class="lang-ru">Founder · HoReCa · Бали · 2025</span>
+            <span class="lang-en">Founder · HoReCa · Bali · 2025</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 11 Elena P. -->
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">Внедрили онлайн-консультации с записью и оплатой. Команда учла все GDPR-нюансы без единого напоминания.</span>
+          <span class="lang-en">Rolled out online consultations with bookings and payments. They handled every GDPR detail without a single reminder.</span>
+        </p>
+        <div>
+          <div class="author">Елена П.</div>
+          <div class="role">
+            <span class="lang-ru">CTO · Healthcare · Лимасол · 2025</span>
+            <span class="lang-en">CTO · Healthcare · Limassol · 2025</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 12 Viktor S. -->
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">Автоматизация склада + интеграция с 1С + дашборды для собственника. ROI считаем каждый месяц — пока окупает себя в 3 раза.</span>
+          <span class="lang-en">Warehouse automation + 1C integration + owner dashboards. ROI tracked monthly — currently paying back 3x.</span>
+        </p>
+        <div>
+          <div class="author">Виктор С.</div>
+          <div class="role">
+            <span class="lang-ru">Owner · Manufacturing · Минск · 2025</span>
+            <span class="lang-en">Owner · Manufacturing · Minsk · 2025</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 13 Maria D. -->
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">Собрали единую систему отчётности для 12 наших клиентов. Сократили время на ручную сборку отчётов на 80%.</span>
+          <span class="lang-en">Built a unified reporting system for 12 of our clients. Cut manual report-assembly time by 80%.</span>
+        </p>
+        <div>
+          <div class="author">Мария Д.</div>
+          <div class="role">
+            <span class="lang-ru">Founder · Marketing agency · Таллин · 2026</span>
+            <span class="lang-en">Founder · Marketing agency · Tallinn · 2026</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ DUPLICATE for seamless loop (same 13 again) ═══ -->
+
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">За 6 недель закрыли проект, на который другая команда положила полгода. Уже планируем следующий — на этот раз с AI.</span>
+          <span class="lang-en">In six weeks they closed a project another team had been dragging for half a year. Already planning the next one — with AI this time.</span>
+        </p>
+        <div>
+          <div class="author">Андрей Т.</div>
+          <div class="role">
+            <span class="lang-ru">Owner · Booking platform · Пхукет · 2026</span>
+            <span class="lang-en">Owner · Booking platform · Phuket · 2026</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">Сказали «к концу мая будет production» — был production. Парни знают что делают и объясняют без IT-жаргона.</span>
+          <span class="lang-en">Said "production by end of May" — production it was. They know what they're doing and explain it without IT jargon.</span>
+        </p>
+        <div>
+          <div class="author">Елизавета К.</div>
+          <div class="role">
+            <span class="lang-ru">Operations Director · E-commerce · Бангкок · 2025</span>
+            <span class="lang-en">Operations Director · E-commerce · Bangkok · 2025</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">Production-grade инфраструктура по цене стартап-MVP. Не помню чтобы DevOps кто-то так серьёзно настраивал на проекте такого масштаба.</span>
+          <span class="lang-en">Production-grade infra at startup-MVP price. Don't remember anyone setting up DevOps this seriously on a project this size.</span>
+        </p>
+        <div>
+          <div class="author">Игорь Р.</div>
+          <div class="role">
+            <span class="lang-ru">CTO · Crypto analytics · Remote · 2025</span>
+            <span class="lang-en">CTO · Crypto analytics · Remote · 2025</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">Запустили новый онбординг для платформы. От ТЗ до прода — 5 недель. Конверсия на регистрации +18% за первый месяц.</span>
+          <span class="lang-en">Launched the new onboarding flow. From spec to prod in 5 weeks. Sign-up conversion up +18% in the first month.</span>
+        </p>
+        <div>
+          <div class="author">Николай Б.</div>
+          <div class="role">
+            <span class="lang-ru">Founder · EdTech · Москва · 2026</span>
+            <span class="lang-en">Founder · EdTech · Moscow · 2026</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">Срочный проект на горящем дедлайне — успели за 9 дней. Команда не подвела ни разу за два контракта подряд.</span>
+          <span class="lang-en">Urgent project on a burning deadline — done in 9 days. Two contracts in a row, zero misses.</span>
+        </p>
+        <div>
+          <div class="author">Александр К.</div>
+          <div class="role">
+            <span class="lang-ru">Head of Trading · Fintech · Санкт-Петербург · 2025</span>
+            <span class="lang-en">Head of Trading · Fintech · St. Petersburg · 2025</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">Автоматизировали CRM с интеграцией WhatsApp Business. Менеджеры освободили 4 часа в день. Окупилось за месяц.</span>
+          <span class="lang-en">Automated the CRM with WhatsApp Business integration. Managers got back 4 hours a day. Paid off in a month.</span>
+        </p>
+        <div>
+          <div class="author">Айгерим Т.</div>
+          <div class="role">
+            <span class="lang-ru">COO · Real estate · Алма-Ата · 2025</span>
+            <span class="lang-en">COO · Real estate · Almaty · 2025</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">Сделали tracking-платформу для нашей сети. Observability на уровне, какого мы у подрядчиков ещё не видели.</span>
+          <span class="lang-en">Built a tracking platform for our network. Observability at a level we hadn't seen from any contractor before.</span>
+        </p>
+        <div>
+          <div class="author">Дмитрий Ш.</div>
+          <div class="role">
+            <span class="lang-ru">VP Operations · Logistics · Дубай · 2026</span>
+            <span class="lang-en">VP Operations · Logistics · Dubai · 2026</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">Запустили premium-сегмент магазина с Telegram MiniApp. Парни знают что делают и что предложить — а не только что выбрали в Figma.</span>
+          <span class="lang-en">Launched the premium segment with a Telegram MiniApp. They know what to do and what to suggest — not just what they picked in Figma.</span>
+        </p>
+        <div>
+          <div class="author">Анна М.</div>
+          <div class="role">
+            <span class="lang-ru">Founder · Premium e-commerce · Гонконг · 2025</span>
+            <span class="lang-en">Founder · Premium e-commerce · Hong Kong · 2025</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">Интегрировали кассы с CRM и доставкой. Заказы летят на кухню без оператора. Возвращаемся за вторым проектом.</span>
+          <span class="lang-en">Integrated POS with CRM and delivery. Orders fly straight to the kitchen, no operator. Coming back for project number two.</span>
+        </p>
+        <div>
+          <div class="author">Леван М.</div>
+          <div class="role">
+            <span class="lang-ru">Owner · Food delivery · Тбилиси · 2026</span>
+            <span class="lang-en">Owner · Food delivery · Tbilisi · 2026</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">Сайт + booking-система + AI-ассистент в чате. Получили production за 7 недель — точно к открытию сезона.</span>
+          <span class="lang-en">Site + booking + an AI assistant in chat. Production in 7 weeks — right on time for the season opener.</span>
+        </p>
+        <div>
+          <div class="author">Сергей В.</div>
+          <div class="role">
+            <span class="lang-ru">Founder · HoReCa · Бали · 2025</span>
+            <span class="lang-en">Founder · HoReCa · Bali · 2025</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">Внедрили онлайн-консультации с записью и оплатой. Команда учла все GDPR-нюансы без единого напоминания.</span>
+          <span class="lang-en">Rolled out online consultations with bookings and payments. They handled every GDPR detail without a single reminder.</span>
+        </p>
+        <div>
+          <div class="author">Елена П.</div>
+          <div class="role">
+            <span class="lang-ru">CTO · Healthcare · Лимасол · 2025</span>
+            <span class="lang-en">CTO · Healthcare · Limassol · 2025</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">Автоматизация склада + интеграция с 1С + дашборды для собственника. ROI считаем каждый месяц — пока окупает себя в 3 раза.</span>
+          <span class="lang-en">Warehouse automation + 1C integration + owner dashboards. ROI tracked monthly — currently paying back 3x.</span>
+        </p>
+        <div>
+          <div class="author">Виктор С.</div>
+          <div class="role">
+            <span class="lang-ru">Owner · Manufacturing · Минск · 2025</span>
+            <span class="lang-en">Owner · Manufacturing · Minsk · 2025</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="testimonial-card">
+        <p class="quote">
+          <span class="lang-ru">Собрали единую систему отчётности для 12 наших клиентов. Сократили время на ручную сборку отчётов на 80%.</span>
+          <span class="lang-en">Built a unified reporting system for 12 of our clients. Cut manual report-assembly time by 80%.</span>
+        </p>
+        <div>
+          <div class="author">Мария Д.</div>
+          <div class="role">
+            <span class="lang-ru">Founder · Marketing agency · Таллин · 2026</span>
+            <span class="lang-en">Founder · Marketing agency · Tallinn · 2026</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ PROCESS ═══════════════════════════════════════════ -->
+<section id="process" style="padding: 120px 32px; background: var(--surface); border-top: 4px solid var(--border-dark); border-bottom: 4px solid var(--border-dark);">
+  <div class="container">
+    <div class="section-eyebrow reveal">04 / How we work</div>
+    <h2 class="section-headline sand reveal">
+      <span class="lang-ru">Как мы <em>шипим.</em></span>
+      <span class="lang-en">How we <em>ship.</em></span>
+    </h2>
+
+    <div class="process-row">
+      <div class="process-step reveal">
+        <div class="ps-num">01</div>
+        <div class="ps-name">
+          <span class="lang-ru">Discovery</span>
+          <span class="lang-en">Discovery</span>
+        </div>
+        <div class="ps-body">
+          <span class="lang-ru">2-3 дня. Без brief-форм и жаргона. Слушаем, рисуем, фиксируем — что нужно, кому, почему сейчас.</span>
+          <span class="lang-en">2-3 days. No brief forms, no jargon. We listen, sketch, document — what's needed, for whom, and why now.</span>
+        </div>
+      </div>
+      <div class="process-arrow">▸▸▸</div>
+      <div class="process-step reveal">
+        <div class="ps-num">02</div>
+        <div class="ps-name">
+          <span class="lang-ru">Architecture</span>
+          <span class="lang-en">Architecture</span>
+        </div>
+        <div class="ps-body">
+          <span class="lang-ru">План, ТЗ, демо архитектуры. До первой строчки кода — никаких сюрпризов в счёте.</span>
+          <span class="lang-en">Plan, spec, architecture demo. Before the first line of code — no surprises on the invoice.</span>
+        </div>
+      </div>
+      <div class="process-arrow">▸▸▸</div>
+      <div class="process-step reveal">
+        <div class="ps-num">03</div>
+        <div class="ps-name">
+          <span class="lang-ru">Sprint Build</span>
+          <span class="lang-en">Sprint Build</span>
+        </div>
+        <div class="ps-body">
+          <span class="lang-ru">2-недельные итерации с demo каждый понедельник. Меняешь приоритеты — берём в следующий sprint без переторговки.</span>
+          <span class="lang-en">2-week iterations with a demo every Monday. Change priorities — we pull them into the next sprint, no renegotiation.</span>
+        </div>
+      </div>
+      <div class="process-arrow">▸▸▸</div>
+      <div class="process-step active reveal">
+        <div class="ps-num">04</div>
+        <div class="ps-name">
+          <span class="lang-ru">Handoff</span>
+          <span class="lang-en">Handoff</span>
+        </div>
+        <div class="ps-body">
+          <span class="lang-ru">Передача, документация, observability. Ты владеешь кодом — мы рядом, если нужно.</span>
+          <span class="lang-en">Handover, documentation, observability. You own the code — we stay in reach if you need us.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ MANIFESTO ═══════════════════════════════════════════ -->
+<section class="manifesto-block">
+  <div class="container">
+    <div class="section-eyebrow reveal">[ Manifesto ]</div>
+    <div class="manifesto-text reveal">
+      <span class="lang-ru">Мы — <em>DEADLINE.</em><br>У нас <em>ничего не горит.</em></span>
+      <span class="lang-en">We are <em>DEADLINE.</em><br>Nothing's <em>on fire here.</em></span>
+    </div>
+    <div style="margin-top: 40px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--mute); letter-spacing: 0.18em; text-transform: uppercase; text-align: center;">
+      — DEADLINE · since 2025
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ CONTACT ═══════════════════════════════════════════ -->
+<section id="contact" style="padding: 120px 32px; background: var(--surface); border-top: 4px solid var(--border-dark);">
+  <div class="container">
+    <div class="section-eyebrow reveal">05 / Contact</div>
+    <h2 class="section-headline copper reveal">
+      <span class="lang-ru">Пиши — <em>ответим раньше, чем уберёшь руки от клавиатуры.</em></span>
+      <span class="lang-en">Write — <em>we'll reply before your hands leave the keyboard.</em></span>
+    </h2>
+
+    <div class="contact-block reveal">
+      <p style="color: var(--mute); font-size: 16px; line-height: 1.7; max-width: 720px; margin: 0 auto 36px;">
+        <span class="lang-ru">
+          Опиши задачу одним сообщением. Без brief-форм, без «давайте созвонимся обсудим формат созвона».
+          <br><br>
+          Берёмся за всё. План и срок прилетят прежде, чем ты допьёшь кофе.
+        </span>
+        <span class="lang-en">
+          Describe the task in one message. No brief forms, no "let's schedule a call to discuss the call format".
+          <br><br>
+          We take everything on. The plan and the deadline will land before you finish your coffee.
+        </span>
+      </p>
+      <div style="display:flex; flex-wrap: wrap; gap: 16px; align-items: center; justify-content: center;">
+        <a href="mailto:corpdeadline@gmail.com" class="btn-primary">corpdeadline@gmail.com</a>
+        <a href="https://t.me/deadline_corp" class="btn-secondary">@deadline_corp</a>
+      </div>
+      <div style="margin-top: 36px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--mute); letter-spacing: 0.16em; text-transform: uppercase;">
+        <span class="lang-ru">● Ответ за минуты</span>
+        <span class="lang-en">● Replies in minutes</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════ FOOTER ═══════════════════════════════════════════ -->
+<footer class="footer-band">
+  <span class="lang-ru">© 2025-2026 DEADLINE · сделано в Пхукете × Бангкоке · </span>
+  <span class="lang-en">© 2025-2026 DEADLINE · forged in Phuket × Bangkok · </span>
+  <a href="https://t.me/deadline_corp">telegram</a> ·
+  <a href="mailto:corpdeadline@gmail.com">corpdeadline@gmail.com</a>
+</footer>
+
+<!-- ═══════════════════════════════════════════ MOTION + LANG ENGINE ═══════════════════════════════════════════ -->
+<script>
+  // === Reveal-on-scroll ===
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach((entry, i) => {
+        if (entry.isIntersecting) {
+          setTimeout(() => entry.target.classList.add('visible'), i * 70);
+          obs.unobserve(entry.target);
+        }
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.1 });
+    document.querySelectorAll('.reveal').forEach(el => obs.observe(el));
+  } else {
+    document.querySelectorAll('.reveal').forEach(el => el.classList.add('visible'));
+  }
+
+  // === Hero parallax (background grid moves slower than scroll) ===
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const hero = document.querySelector('.hero');
+    let ticking = false;
+    window.addEventListener('scroll', () => {
+      if (!ticking) {
+        requestAnimationFrame(() => {
+          const y = window.scrollY * 0.35;
+          if (hero) hero.style.setProperty('--parallax-y', `${y}px`);
+          ticking = false;
+        });
+        ticking = true;
+      }
+    }, { passive: true });
+  }
+
+  // === Magnetic cursor on hero CTAs ===
+  if (!matchMedia('(max-width: 900px)').matches && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    document.querySelectorAll('.hero-cta a').forEach(btn => {
+      btn.addEventListener('mousemove', (e) => {
+        const rect = btn.getBoundingClientRect();
+        const dx = (e.clientX - (rect.left + rect.width / 2)) / rect.width;
+        const dy = (e.clientY - (rect.top + rect.height / 2)) / rect.height;
+        const tx = (dx * 12).toFixed(1);
+        const ty = (dy * 8).toFixed(1);
+        btn.style.transform = `translate(${tx}px, ${ty}px)`;
+        btn.style.boxShadow = `${8 - tx}px ${8 - ty}px 0 var(--border-dark)`;
+      });
+      btn.addEventListener('mouseleave', () => {
+        btn.style.transform = '';
+        btn.style.boxShadow = '';
+      });
+    });
+  }
+
+  // === LANGUAGE TOGGLE (RU default, EN via class on body, persists in URL hash + localStorage) ===
+  (function() {
+    const buttons = document.querySelectorAll('.lang-toggle button[data-lang]');
+    function setLang(lang) {
+      const isEn = lang === 'en';
+      document.body.classList.toggle('lang-en', isEn);
+      document.documentElement.lang = lang;
+      buttons.forEach(b => {
+        const active = b.dataset.lang === lang;
+        b.classList.toggle('active', active);
+        b.setAttribute('aria-pressed', active ? 'true' : 'false');
+      });
+      try { localStorage.setItem('deadline-lang', lang); } catch(e) {}
+      // reflect in URL hash without scroll
+      if (isEn) {
+        if (location.hash !== '#en') history.replaceState(null, '', '#en');
+      } else if (location.hash === '#en') {
+        history.replaceState(null, '', location.pathname + location.search);
+      }
+    }
+    buttons.forEach(b => b.addEventListener('click', () => setLang(b.dataset.lang)));
+    // init from hash > localStorage > browser language > default RU
+    let initial = 'ru';
+    if (location.hash === '#en') initial = 'en';
+    else {
+      try {
+        const saved = localStorage.getItem('deadline-lang');
+        if (saved === 'en' || saved === 'ru') initial = saved;
+        else if ((navigator.language || '').toLowerCase().startsWith('en')) initial = 'en';
+      } catch(e) {}
+    }
+    setLang(initial);
+  })();
+</script>
+
+</body>
+</html>

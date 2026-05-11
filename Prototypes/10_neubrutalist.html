@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STUDIO — Web. Automation. AI.</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after {
+    box-sizing: border-box;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :root {
+    --yellow: #FFE45E;
+    --cobalt: #2B4DFF;
+    --red: #FF3B30;
+    --lime: #B6F31E;
+    --black: #000000;
+    --white: #FFFFFF;
+    --offwhite: #FAFAFA;
+    --shadow-size: 6px;
+    --border: 3px solid #000000;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--yellow);
+    color: var(--black);
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 500;
+    overflow-x: hidden;
+  }
+
+  .mono {
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* OFFSET SHADOW SYSTEM */
+  .shadow-hard {
+    box-shadow: 6px 6px 0 var(--black);
+    transition: box-shadow 0.12s cubic-bezier(0.4, 0, 0.2, 1),
+                transform 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .shadow-hard:hover {
+    box-shadow: 0 0 0 var(--black);
+    transform: translate(6px, 6px);
+  }
+
+  .shadow-hard-white {
+    box-shadow: 6px 6px 0 var(--white);
+    transition: box-shadow 0.12s cubic-bezier(0.4, 0, 0.2, 1),
+                transform 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .shadow-hard-white:hover {
+    box-shadow: 0 0 0 var(--white);
+    transform: translate(6px, 6px);
+  }
+
+  .shadow-hard-yellow {
+    box-shadow: 6px 6px 0 var(--yellow);
+    transition: box-shadow 0.12s cubic-bezier(0.4, 0, 0.2, 1),
+                transform 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .shadow-hard-yellow:hover {
+    box-shadow: 0 0 0 var(--yellow);
+    transform: translate(6px, 6px);
+  }
+
+  /* BORDERS */
+  .border-brutal {
+    border: 3px solid var(--black);
+  }
+
+  .border-brutal-white {
+    border: 3px solid var(--white);
+  }
+
+  .border-brutal-4 {
+    border: 4px solid var(--black);
+  }
+
+  /* SERVICE TILES */
+  .service-tile {
+    border: 4px solid var(--black);
+    box-shadow: 8px 8px 0 var(--black);
+    transition: box-shadow 0.12s cubic-bezier(0.4, 0, 0.2, 1),
+                transform 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .service-tile:hover {
+    box-shadow: 0 0 0 var(--black);
+    transform: translate(8px, 8px);
+  }
+
+  /* STICKER CARDS */
+  .sticker-card {
+    border: 4px solid var(--black);
+    box-shadow: 8px 8px 0 var(--black);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .sticker-1 { transform: rotate(-3deg); }
+  .sticker-2 { transform: rotate(2deg); }
+  .sticker-3 { transform: rotate(-1deg); }
+
+  .sticker-card:hover {
+    transform: rotate(0deg) !important;
+    box-shadow: 12px 12px 0 var(--black);
+  }
+
+  /* NAV CHIP */
+  .nav-chip {
+    border: 2px solid var(--black);
+    box-shadow: 3px 3px 0 var(--black);
+    transition: box-shadow 0.1s linear,
+                transform 0.1s linear;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    padding: 6px 14px;
+    text-transform: uppercase;
+    cursor: pointer;
+    background: var(--yellow);
+    color: var(--black);
+    text-decoration: none;
+    display: inline-block;
+  }
+
+  .nav-chip:hover {
+    box-shadow: 0 0 0 var(--black);
+    transform: translate(3px, 3px);
+  }
+
+  /* TAG CHIP */
+  .tag-chip {
+    border: 2px solid var(--black);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    padding: 4px 10px;
+    text-transform: uppercase;
+    display: inline-block;
+    line-height: 1;
+  }
+
+  /* PROCESS ARROWS */
+  .process-arrow {
+    position: relative;
+  }
+
+  .process-arrow::after {
+    content: '';
+    position: absolute;
+    right: -32px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 24px;
+    height: 4px;
+    background: var(--black);
+  }
+
+  .arrow-head::before {
+    content: '';
+    position: absolute;
+    right: -40px;
+    top: 50%;
+    transform: translateY(-50%) rotate(45deg);
+    width: 12px;
+    height: 12px;
+    border-right: 4px solid var(--black);
+    border-top: 4px solid var(--black);
+    margin-top: -1px;
+    margin-right: -1px;
+  }
+
+  /* SCROLL REVEAL */
+  .reveal {
+    opacity: 0;
+    transform: translateX(40px);
+    transition: opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1),
+                transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .reveal.visible {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  .reveal-up {
+    opacity: 0;
+    transform: translateY(30px);
+    transition: opacity 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+                transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .reveal-up.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* NAV BORDER */
+  nav {
+    border-bottom: 4px solid var(--black);
+  }
+
+  /* HORIZONTAL TICKER */
+  .ticker-track {
+    display: flex;
+    gap: 0;
+    white-space: nowrap;
+    animation: ticker 20s linear infinite;
+  }
+
+  @keyframes ticker {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+
+  /* NUMBER BLOCKS */
+  .number-block {
+    border: 4px solid var(--black);
+    border-right: none;
+    transition: transform 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .number-block:last-child {
+    border-right: 4px solid var(--black);
+  }
+
+  .number-block:hover {
+    transform: translateY(-4px);
+  }
+
+  /* SECTION DIVIDER */
+  .section-divider {
+    height: 4px;
+    background: var(--black);
+  }
+
+  /* BUTTON BASE */
+  .btn {
+    display: inline-block;
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    text-decoration: none;
+    border: 3px solid var(--black);
+    padding: 16px 32px;
+    font-size: 16px;
+    line-height: 1;
+    border-radius: 0;
+    box-shadow: 6px 6px 0 var(--black);
+    transition: box-shadow 0.12s cubic-bezier(0.4, 0, 0.2, 1),
+                transform 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .btn:hover {
+    box-shadow: 0 0 0 var(--black);
+    transform: translate(6px, 6px);
+  }
+
+  .btn-hero-primary {
+    background: var(--yellow);
+    color: var(--black);
+    border-color: var(--black);
+    box-shadow: 6px 6px 0 var(--black);
+  }
+
+  .btn-hero-secondary {
+    background: transparent;
+    color: var(--white);
+    border: 3px solid var(--white);
+    box-shadow: 6px 6px 0 var(--white);
+    transition: box-shadow 0.12s cubic-bezier(0.4, 0, 0.2, 1),
+                transform 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .btn-hero-secondary:hover {
+    box-shadow: 0 0 0 var(--white);
+    transform: translate(6px, 6px);
+  }
+
+  /* CONTACT EMAIL BUTTON */
+  .btn-email {
+    background: var(--white);
+    color: var(--black);
+    border: 3px solid var(--black);
+    box-shadow: 6px 6px 0 var(--black);
+    font-size: 20px;
+    padding: 20px 48px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    transition: box-shadow 0.12s cubic-bezier(0.4, 0, 0.2, 1),
+                transform 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .btn-email:hover {
+    box-shadow: 0 0 0 var(--black);
+    transform: translate(6px, 6px);
+    background: var(--lime);
+  }
+
+  .btn-telegram {
+    background: var(--cobalt);
+    color: var(--white);
+    border: 3px solid var(--black);
+    box-shadow: 6px 6px 0 var(--black);
+    font-size: 20px;
+    padding: 20px 48px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    transition: box-shadow 0.12s cubic-bezier(0.4, 0, 0.2, 1),
+                transform 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .btn-telegram:hover {
+    box-shadow: 0 0 0 var(--black);
+    transform: translate(6px, 6px);
+  }
+
+  /* RED PILL BADGE */
+  .badge-red {
+    background: var(--red);
+    color: var(--white);
+    border: 2px solid var(--black);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    padding: 5px 12px;
+    text-transform: uppercase;
+    display: inline-block;
+    border-radius: 100px;
+  }
+
+  /* MANIFESTO BLOCK */
+  .manifesto-text {
+    font-size: clamp(36px, 5vw, 64px);
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+
+  /* RESPONSIVE */
+  @media (max-width: 768px) {
+    :root {
+      --shadow-size: 4px;
+    }
+
+    .shadow-hard {
+      box-shadow: 4px 4px 0 var(--black);
+    }
+
+    .shadow-hard:hover {
+      box-shadow: 0 0 0 var(--black);
+      transform: translate(4px, 4px);
+    }
+
+    .service-tile {
+      box-shadow: 5px 5px 0 var(--black);
+    }
+
+    .service-tile:hover {
+      transform: translate(5px, 5px);
+    }
+
+    .sticker-1 { transform: rotate(-2deg); }
+    .sticker-2 { transform: rotate(1.5deg); }
+    .sticker-3 { transform: rotate(-0.5deg); }
+
+    .number-block {
+      border-right: 4px solid var(--black);
+    }
+  }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav style="background: var(--yellow);" class="sticky top-0 z-50">
+  <div style="max-width: 1400px; margin: 0 auto; padding: 16px 32px;" class="flex items-center justify-between">
+    <a href="#" style="font-size: 28px; font-weight: 700; letter-spacing: -0.02em; text-decoration: none; color: var(--black); font-family: 'Space Grotesk', sans-serif; line-height: 1;">STUDIO</a>
+    <div class="hidden md:flex items-center gap-4">
+      <a href="#services" class="nav-chip">Services</a>
+      <a href="#work" class="nav-chip">Work</a>
+      <a href="#process" class="nav-chip">Process</a>
+      <a href="#contact" class="nav-chip">Contact</a>
+    </div>
+    <a href="#contact" class="btn" style="background: var(--black); color: var(--yellow); border-color: var(--white); box-shadow: 6px 6px 0 var(--white); font-size: 13px; padding: 12px 24px;">TALK TO US</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section style="background: var(--cobalt); border-bottom: 4px solid var(--black); padding: 80px 32px 100px;">
+  <div style="max-width: 1400px; margin: 0 auto;">
+    <div style="margin-bottom: 28px;">
+      <span class="badge-red">EST. 2026</span>
+    </div>
+    <h1 style="font-size: clamp(56px, 9vw, 120px); font-weight: 700; line-height: 0.95; letter-spacing: -0.03em; color: var(--white); margin-bottom: 40px; max-width: 1000px;">
+      WE BUILD STUFF<br>THAT MAKES<br>MONEY.
+    </h1>
+    <p class="mono" style="font-size: clamp(14px, 2vw, 18px); color: var(--yellow); letter-spacing: 0.12em; text-transform: uppercase; margin-bottom: 56px; font-weight: 600;">
+      WEB. AUTOMATION. AI. NO FLUFF.
+    </p>
+    <div class="flex flex-wrap gap-6">
+      <a href="#contact" class="btn btn-hero-primary">START A PROJECT</a>
+      <a href="#work" class="btn btn-hero-secondary">VIEW WORK</a>
+    </div>
+  </div>
+</section>
+
+<!-- TICKER DIVIDER -->
+<div style="background: var(--red); border-bottom: 4px solid var(--black); border-top: 0; overflow: hidden; padding: 14px 0;">
+  <div class="ticker-track">
+    <span class="mono" style="font-size: 13px; font-weight: 700; letter-spacing: 0.15em; color: var(--white); text-transform: uppercase; padding-right: 80px;">WE SHIP IN 8 WEEKS OR LESS</span>
+    <span class="mono" style="font-size: 13px; font-weight: 700; letter-spacing: 0.15em; color: var(--yellow); text-transform: uppercase; padding-right: 80px;">NO RETAINERS. JUST RESULTS.</span>
+    <span class="mono" style="font-size: 13px; font-weight: 700; letter-spacing: 0.15em; color: var(--white); text-transform: uppercase; padding-right: 80px;">WEB. AUTOMATION. AI.</span>
+    <span class="mono" style="font-size: 13px; font-weight: 700; letter-spacing: 0.15em; color: var(--lime); text-transform: uppercase; padding-right: 80px;">БЕЗ ВОДЫ</span>
+    <span class="mono" style="font-size: 13px; font-weight: 700; letter-spacing: 0.15em; color: var(--white); text-transform: uppercase; padding-right: 80px;">WE SHIP IN 8 WEEKS OR LESS</span>
+    <span class="mono" style="font-size: 13px; font-weight: 700; letter-spacing: 0.15em; color: var(--yellow); text-transform: uppercase; padding-right: 80px;">NO RETAINERS. JUST RESULTS.</span>
+    <span class="mono" style="font-size: 13px; font-weight: 700; letter-spacing: 0.15em; color: var(--white); text-transform: uppercase; padding-right: 80px;">WEB. AUTOMATION. AI.</span>
+    <span class="mono" style="font-size: 13px; font-weight: 700; letter-spacing: 0.15em; color: var(--lime); text-transform: uppercase; padding-right: 80px;">БЕЗ ВОДЫ</span>
+  </div>
+</div>
+
+<!-- SERVICES -->
+<section id="services" style="background: var(--offwhite); border-bottom: 4px solid var(--black); padding: 80px 32px;">
+  <div style="max-width: 1400px; margin: 0 auto;">
+    <div class="reveal" style="margin-bottom: 56px;">
+      <span class="mono" style="font-size: 12px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: var(--black); display: block; margin-bottom: 16px;">WHAT WE DO</span>
+      <h2 style="font-size: clamp(40px, 5vw, 64px); font-weight: 700; letter-spacing: -0.02em; line-height: 1;">Services<br>we actually deliver.</h2>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-0 reveal" style="gap: 0; margin-left: -2px;">
+      <!-- Service 01 -->
+      <div class="service-tile" style="background: var(--yellow); padding: 48px 40px; position: relative; margin: 0 0 0 0;">
+        <div style="margin-bottom: 32px;">
+          <span class="mono" style="font-size: 48px; font-weight: 700; letter-spacing: -0.03em; color: var(--black); line-height: 1; display: block;">01</span>
+        </div>
+        <h3 style="font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 20px; line-height: 1.1;">Web Development</h3>
+        <p style="font-size: 15px; line-height: 1.65; color: #222; margin-bottom: 32px;">We build fast, focused web products. Landing pages, SaaS frontends, conversion-first funnels. Nothing fancy unless it earns its keep.</p>
+        <div class="flex flex-wrap gap-2">
+          <span class="tag-chip" style="background: var(--black); color: var(--yellow);">NEXT.JS</span>
+          <span class="tag-chip" style="background: var(--offwhite);">TAILWIND</span>
+          <span class="tag-chip" style="background: var(--offwhite);">FIGMA</span>
+          <span class="tag-chip" style="background: var(--offwhite);">VERCEL</span>
+        </div>
+      </div>
+
+      <!-- Service 02 -->
+      <div class="service-tile" style="background: var(--red); padding: 48px 40px; margin-left: -4px; position: relative; z-index: 1;">
+        <div style="margin-bottom: 32px;">
+          <span class="mono" style="font-size: 48px; font-weight: 700; letter-spacing: -0.03em; color: var(--white); line-height: 1; display: block;">02</span>
+        </div>
+        <h3 style="font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 20px; line-height: 1.1; color: var(--white);">AI Automation</h3>
+        <p style="font-size: 15px; line-height: 1.65; color: rgba(255,255,255,0.85); margin-bottom: 32px;">Your team does repetitive work. We automate it. Lead handling, CRM sync, content pipelines, internal bots. Real ROI in the first month.</p>
+        <div class="flex flex-wrap gap-2">
+          <span class="tag-chip" style="background: var(--black); color: var(--red);">GPT-4O</span>
+          <span class="tag-chip" style="background: var(--white); color: var(--black);">N8N</span>
+          <span class="tag-chip" style="background: var(--white); color: var(--black);">MAKE</span>
+          <span class="tag-chip" style="background: var(--white); color: var(--black);">ZAPIER</span>
+        </div>
+      </div>
+
+      <!-- Service 03 -->
+      <div class="service-tile" style="background: var(--lime); padding: 48px 40px; margin-left: -4px; position: relative; z-index: 0;">
+        <div style="margin-bottom: 32px;">
+          <span class="mono" style="font-size: 48px; font-weight: 700; letter-spacing: -0.03em; color: var(--black); line-height: 1; display: block;">03</span>
+        </div>
+        <h3 style="font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 20px; line-height: 1.1;">Strategy & Copy</h3>
+        <p style="font-size: 15px; line-height: 1.65; color: #222; margin-bottom: 32px;">A beautiful website that says nothing is just expensive wallpaper. We help you figure out the message, then build around it.</p>
+        <div class="flex flex-wrap gap-2">
+          <span class="tag-chip" style="background: var(--black); color: var(--lime);">CONVERSION</span>
+          <span class="tag-chip" style="background: var(--offwhite);">UX COPY</span>
+          <span class="tag-chip" style="background: var(--offwhite);">POSITIONING</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SHOWCASE / WORK -->
+<section id="work" style="background: var(--yellow); border-bottom: 4px solid var(--black); padding: 80px 32px;">
+  <div style="max-width: 1400px; margin: 0 auto;">
+    <div class="reveal" style="margin-bottom: 64px;">
+      <span class="mono" style="font-size: 12px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: var(--black); display: block; margin-bottom: 16px;">RECENT WORK</span>
+      <h2 style="font-size: clamp(40px, 5vw, 64px); font-weight: 700; letter-spacing: -0.02em; line-height: 1;">Projects that<br>moved the needle.</h2>
+    </div>
+
+    <!-- Sticker pile -->
+    <div style="position: relative; min-height: 480px;" class="reveal">
+      <!-- Card 1 -->
+      <div class="sticker-card sticker-1" style="background: var(--cobalt); width: 380px; position: absolute; left: 0; top: 20px; z-index: 3; padding: 40px;">
+        <span class="mono" style="font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--yellow); display: block; margin-bottom: 16px;">LOGISTICS / AUTOMATION</span>
+        <h3 class="mono" style="font-size: 22px; font-weight: 700; text-transform: uppercase; letter-spacing: -0.01em; color: var(--white); margin-bottom: 12px;">ROUTE FLOW</h3>
+        <p style="font-size: 14px; color: rgba(255,255,255,0.75); line-height: 1.6; margin-bottom: 28px;">Automated dispatch coordination for a mid-size Thai logistics company. Replaced 3 manual steps with one AI pipeline.</p>
+        <div style="border-top: 2px solid rgba(255,255,255,0.3); padding-top: 24px;">
+          <span style="font-size: 56px; font-weight: 700; color: var(--lime); letter-spacing: -0.03em; line-height: 1;">+47%</span>
+          <span class="mono" style="font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing: 0.08em; display: block; margin-top: 8px;">Dispatch efficiency</span>
+        </div>
+      </div>
+
+      <!-- Card 2 -->
+      <div class="sticker-card sticker-2" style="background: var(--offwhite); width: 380px; position: absolute; left: 280px; top: 0; z-index: 2; padding: 40px;">
+        <span class="mono" style="font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--cobalt); display: block; margin-bottom: 16px;">SAAS / WEB</span>
+        <h3 class="mono" style="font-size: 22px; font-weight: 700; text-transform: uppercase; letter-spacing: -0.01em; color: var(--black); margin-bottom: 12px;">PRICEPILOT</h3>
+        <p style="font-size: 14px; color: #444; line-height: 1.6; margin-bottom: 28px;">SaaS pricing page + onboarding flow rebuild for a B2B analytics tool. Focused on reducing time-to-understand for new visitors.</p>
+        <div style="border-top: 2px solid var(--black); padding-top: 24px;">
+          <span style="font-size: 56px; font-weight: 700; color: var(--red); letter-spacing: -0.03em; line-height: 1;">+32%</span>
+          <span class="mono" style="font-size: 12px; font-weight: 600; color: #666; text-transform: uppercase; letter-spacing: 0.08em; display: block; margin-top: 8px;">Trial sign-ups</span>
+        </div>
+      </div>
+
+      <!-- Card 3 -->
+      <div class="sticker-card sticker-3" style="background: var(--lime); width: 380px; position: absolute; left: 560px; top: 40px; z-index: 1; padding: 40px;">
+        <span class="mono" style="font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--black); display: block; margin-bottom: 16px;">ECOMMERCE / AI</span>
+        <h3 class="mono" style="font-size: 22px; font-weight: 700; text-transform: uppercase; letter-spacing: -0.01em; color: var(--black); margin-bottom: 12px;">SHOPFORM</h3>
+        <p style="font-size: 14px; color: #333; line-height: 1.6; margin-bottom: 28px;">AI-powered product description generator for a Bangkok accessories brand. From SKU export to live copy in 3 minutes per 100 products.</p>
+        <div style="border-top: 2px solid var(--black); padding-top: 24px;">
+          <span style="font-size: 56px; font-weight: 700; color: var(--black); letter-spacing: -0.03em; line-height: 1;">12H</span>
+          <span class="mono" style="font-size: 12px; font-weight: 600; color: #444; text-transform: uppercase; letter-spacing: 0.08em; display: block; margin-top: 8px;">Saved per week</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Spacer for absolute cards on mobile -->
+    <div style="height: 80px; display: block;" class="md:hidden"></div>
+    <div style="height: 200px;" class="hidden md:block"></div>
+  </div>
+</section>
+
+<!-- NUMBERS -->
+<section style="background: var(--black); border-bottom: 4px solid var(--black); overflow: hidden;">
+  <div class="flex flex-wrap">
+    <div class="number-block flex-1" style="background: var(--cobalt); padding: 48px 40px; min-width: 200px; border-color: var(--yellow);">
+      <span style="font-size: clamp(56px, 6vw, 80px); font-weight: 700; color: var(--white); letter-spacing: -0.03em; line-height: 1; display: block;">12</span>
+      <span class="mono" style="font-size: 12px; font-weight: 700; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing: 0.1em; display: block; margin-top: 12px;">PROJECTS SHIPPED</span>
+    </div>
+    <div class="number-block flex-1" style="background: var(--yellow); padding: 48px 40px; min-width: 200px; border-color: var(--black);">
+      <span style="font-size: clamp(56px, 6vw, 80px); font-weight: 700; color: var(--black); letter-spacing: -0.03em; line-height: 1; display: block;">4</span>
+      <span class="mono" style="font-size: 12px; font-weight: 700; color: #555; text-transform: uppercase; letter-spacing: 0.1em; display: block; margin-top: 12px;">YEARS EXPERIENCE</span>
+    </div>
+    <div class="number-block flex-1" style="background: var(--red); padding: 48px 40px; min-width: 200px; border-color: var(--black);">
+      <span style="font-size: clamp(56px, 6vw, 80px); font-weight: 700; color: var(--white); letter-spacing: -0.03em; line-height: 1; display: block;">∞</span>
+      <span class="mono" style="font-size: 12px; font-weight: 700; color: rgba(255,255,255,0.6); text-transform: uppercase; letter-spacing: 0.1em; display: block; margin-top: 12px;">COFFEE CONSUMED</span>
+    </div>
+    <div class="number-block flex-1" style="background: var(--lime); padding: 48px 40px; min-width: 200px; border-color: var(--black);">
+      <span style="font-size: clamp(56px, 6vw, 80px); font-weight: 700; color: var(--black); letter-spacing: -0.03em; line-height: 1; display: block;">0</span>
+      <span class="mono" style="font-size: 12px; font-weight: 700; color: #333; text-transform: uppercase; letter-spacing: 0.1em; display: block; margin-top: 12px;">BS TOLERATED</span>
+    </div>
+  </div>
+</section>
+
+<!-- PROCESS -->
+<section id="process" style="background: var(--offwhite); border-bottom: 4px solid var(--black); padding: 80px 32px;">
+  <div style="max-width: 1400px; margin: 0 auto;">
+    <div class="reveal" style="margin-bottom: 64px;">
+      <span class="mono" style="font-size: 12px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: var(--black); display: block; margin-bottom: 16px;">HOW WE WORK</span>
+      <h2 style="font-size: clamp(40px, 5vw, 64px); font-weight: 700; letter-spacing: -0.02em; line-height: 1;">Four steps.<br>Eight weeks.</h2>
+    </div>
+
+    <!-- Process steps -->
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-0 reveal">
+      <!-- Step 1 -->
+      <div style="background: var(--yellow); border: 4px solid var(--black); border-right: none; padding: 40px 32px; position: relative;">
+        <span class="mono" style="font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #666; display: block; margin-bottom: 20px;">STEP 01</span>
+        <h3 style="font-size: 22px; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 16px; line-height: 1.1;">DISCOVERY<br>CALL</h3>
+        <p style="font-size: 14px; line-height: 1.65; color: #333;">30 minutes. You talk, we listen. We ask the questions your last agency didn't.</p>
+        <!-- Arrow -->
+        <div class="hidden md:block" style="position: absolute; right: -24px; top: 50%; transform: translateY(-50%); z-index: 10;">
+          <div style="width: 0; height: 0; border-top: 20px solid transparent; border-bottom: 20px solid transparent; border-left: 24px solid var(--black);"></div>
+        </div>
+      </div>
+
+      <!-- Step 2 -->
+      <div style="background: var(--cobalt); border: 4px solid var(--black); border-right: none; border-left: none; padding: 40px 32px; position: relative;">
+        <span class="mono" style="font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.5); display: block; margin-bottom: 20px;">STEP 02</span>
+        <h3 style="font-size: 22px; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 16px; line-height: 1.1; color: var(--white);">SPEC +<br>QUOTE</h3>
+        <p style="font-size: 14px; line-height: 1.65; color: rgba(255,255,255,0.75);">Fixed price, defined scope, no surprises. You approve it or we refine it. Simple.</p>
+        <div class="hidden md:block" style="position: absolute; right: -24px; top: 50%; transform: translateY(-50%); z-index: 10;">
+          <div style="width: 0; height: 0; border-top: 20px solid transparent; border-bottom: 20px solid transparent; border-left: 24px solid var(--black);"></div>
+        </div>
+      </div>
+
+      <!-- Step 3 -->
+      <div style="background: var(--red); border: 4px solid var(--black); border-right: none; border-left: none; padding: 40px 32px; position: relative;">
+        <span class="mono" style="font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.5); display: block; margin-bottom: 20px;">STEP 03</span>
+        <h3 style="font-size: 22px; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 16px; line-height: 1.1; color: var(--white);">BUILD +<br>ITERATE</h3>
+        <p style="font-size: 14px; line-height: 1.65; color: rgba(255,255,255,0.75);">Weekly check-ins. Real code, real progress. You can look over our shoulder the whole time.</p>
+        <div class="hidden md:block" style="position: absolute; right: -24px; top: 50%; transform: translateY(-50%); z-index: 10;">
+          <div style="width: 0; height: 0; border-top: 20px solid transparent; border-bottom: 20px solid transparent; border-left: 24px solid var(--black);"></div>
+        </div>
+      </div>
+
+      <!-- Step 4 -->
+      <div style="background: var(--lime); border: 4px solid var(--black); padding: 40px 32px;">
+        <span class="mono" style="font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #555; display: block; margin-bottom: 20px;">STEP 04</span>
+        <h3 style="font-size: 22px; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 16px; line-height: 1.1; color: var(--black);">SHIP +<br>HANDOFF</h3>
+        <p style="font-size: 14px; line-height: 1.65; color: #333;">We deploy, document, and make sure you're not dependent on us for every small change. You own it.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- MANIFESTO -->
+<section style="background: var(--red); border-bottom: 4px solid var(--black); padding: 100px 32px;">
+  <div style="max-width: 1400px; margin: 0 auto; text-align: center;">
+    <div class="reveal-up">
+      <span class="mono" style="font-size: 12px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: rgba(255,255,255,0.6); display: block; margin-bottom: 40px;">OUR RULE</span>
+      <p class="manifesto-text" style="color: var(--white); max-width: 900px; margin: 0 auto 48px;">
+        "If we can't ship it in 8 weeks,<br>we don't take it."
+      </p>
+      <p class="mono" style="font-size: 14px; font-weight: 500; color: rgba(255,255,255,0.65); letter-spacing: 0.08em; text-transform: uppercase;">
+        — ALEX &amp; NIKOLAY, STUDIO FOUNDERS
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- WHO WE ARE -->
+<section style="background: var(--yellow); border-bottom: 4px solid var(--black); padding: 80px 32px;">
+  <div style="max-width: 1400px; margin: 0 auto;">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
+      <div class="reveal">
+        <span class="mono" style="font-size: 12px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: #555; display: block; margin-bottom: 24px;">THE TEAM</span>
+        <h2 style="font-size: clamp(36px, 4vw, 56px); font-weight: 700; letter-spacing: -0.02em; line-height: 1.05; margin-bottom: 32px;">Two people.<br>No committees.<br>Fast decisions.</h2>
+        <p style="font-size: 17px; line-height: 1.75; color: #333; margin-bottom: 28px;">We're Alex and Nikolay. One designs and strategizes, one engineers and automates. We work from Phuket and Bangkok. We don't do bloated proposals, three rounds of legal review, or six-week onboarding.</p>
+        <p style="font-size: 17px; line-height: 1.75; color: #333;">You get direct access to the people who actually build your product. That's the whole point.</p>
+      </div>
+      <div class="reveal">
+        <!-- Name cards -->
+        <div style="display: flex; flex-direction: column; gap: 20px;">
+          <div class="shadow-hard" style="background: var(--cobalt); border: 3px solid var(--black); padding: 32px 36px;">
+            <span class="mono" style="font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(255,255,255,0.5); display: block; margin-bottom: 12px;">FOUNDER</span>
+            <h3 style="font-size: 28px; font-weight: 700; color: var(--white); letter-spacing: -0.01em; margin-bottom: 8px;">Alex</h3>
+            <p style="font-size: 14px; color: rgba(255,255,255,0.7); line-height: 1.6;">Strategy. Design. Client work. Makes projects make sense before we build them.</p>
+            <div class="flex gap-2 flex-wrap" style="margin-top: 16px;">
+              <span class="tag-chip" style="background: var(--yellow); color: var(--black);">STRATEGY</span>
+              <span class="tag-chip" style="background: var(--yellow); color: var(--black);">UX</span>
+              <span class="tag-chip" style="background: var(--yellow); color: var(--black);">FIGMA</span>
+            </div>
+          </div>
+          <div class="shadow-hard" style="background: var(--offwhite); border: 3px solid var(--black); padding: 32px 36px;">
+            <span class="mono" style="font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: #777; display: block; margin-bottom: 12px;">FOUNDER</span>
+            <h3 style="font-size: 28px; font-weight: 700; color: var(--black); letter-spacing: -0.01em; margin-bottom: 8px;">Nikolay</h3>
+            <p style="font-size: 14px; color: #444; line-height: 1.6;">Engineering. AI systems. Automation. The one who builds what Alex draws.</p>
+            <div class="flex gap-2 flex-wrap" style="margin-top: 16px;">
+              <span class="tag-chip" style="background: var(--black); color: var(--offwhite);">NEXT.JS</span>
+              <span class="tag-chip" style="background: var(--black); color: var(--offwhite);">AI / LLM</span>
+              <span class="tag-chip" style="background: var(--black); color: var(--offwhite);">PYTHON</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CONTACT -->
+<section id="contact" style="background: var(--yellow); border-bottom: 4px solid var(--black); padding: 100px 32px;">
+  <div style="max-width: 1400px; margin: 0 auto; text-align: center;">
+    <div class="reveal-up">
+      <span class="mono" style="font-size: 12px; font-weight: 700; letter-spacing: 0.15em; text-transform: uppercase; color: #666; display: block; margin-bottom: 24px;">PING US</span>
+      <h2 style="font-size: clamp(36px, 6vw, 80px); font-weight: 700; letter-spacing: -0.03em; line-height: 1; margin-bottom: 20px;">OK BUT HOW DO<br>I REACH YOU?</h2>
+      <p class="mono" style="font-size: 14px; font-weight: 500; color: #555; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 56px;">We reply within 24 hours. Promise.</p>
+
+      <div class="flex flex-wrap gap-6 justify-center" style="margin-bottom: 48px;">
+        <a href="mailto:hello@studio.build" class="btn btn-email mono" style="text-transform: uppercase; letter-spacing: 0.06em;">
+          hello@studio.build
+        </a>
+        <a href="https://t.me/studioxbkk" class="btn btn-telegram mono" style="text-transform: uppercase; letter-spacing: 0.06em;">
+          Telegram
+        </a>
+      </div>
+
+      <!-- FAQ mini -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-0 text-left" style="margin-top: 40px; max-width: 900px; margin-left: auto; margin-right: auto;">
+        <div style="border: 3px solid var(--black); border-right: none; padding: 28px 28px;">
+          <span class="mono" style="font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #666; display: block; margin-bottom: 10px;">Budget?</span>
+          <p style="font-size: 15px; font-weight: 500; line-height: 1.55;">Projects start at $3,000. Most land between $5k–$15k.</p>
+        </div>
+        <div style="border: 3px solid var(--black); border-right: none; padding: 28px 28px; background: var(--cobalt);">
+          <span class="mono" style="font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.5); display: block; margin-bottom: 10px;">Timeline?</span>
+          <p style="font-size: 15px; font-weight: 500; line-height: 1.55; color: var(--white);">4 to 8 weeks. Always. We don't scope what we can't deliver.</p>
+        </div>
+        <div style="border: 3px solid var(--black); padding: 28px 28px; background: var(--lime);">
+          <span class="mono" style="font-size: 11px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #555; display: block; margin-bottom: 10px;">Retainers?</span>
+          <p style="font-size: 15px; font-weight: 500; line-height: 1.55;">No mandatory retainers. But we do offer monthly support packages. Optional.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer style="background: var(--black); padding: 28px 32px;">
+  <div style="max-width: 1400px; margin: 0 auto;">
+    <div class="flex flex-col md:flex-row items-center justify-between gap-4">
+      <p class="mono" style="font-size: 12px; font-weight: 500; color: rgba(255,255,255,0.7); letter-spacing: 0.08em; text-transform: uppercase; margin: 0;">
+        &copy; 2026 STUDIO
+      </p>
+      <p class="mono" style="font-size: 12px; font-weight: 500; color: rgba(255,255,255,0.5); letter-spacing: 0.08em; text-transform: uppercase; margin: 0; text-align: center;">
+        MADE LOUDLY IN PHUKET &times; BANGKOK
+      </p>
+      <p class="mono" style="font-size: 12px; font-weight: 500; color: rgba(255,255,255,0.7); letter-spacing: 0.08em; text-transform: uppercase; margin: 0;">
+        BY ALEX &times; NIKOLAY
+      </p>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // IntersectionObserver for scroll reveal
+  const revealElements = document.querySelectorAll('.reveal, .reveal-up');
+
+  const observer = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry, i) => {
+        if (entry.isIntersecting) {
+          // Stagger siblings slightly
+          const siblings = entry.target.parentElement.querySelectorAll('.reveal, .reveal-up');
+          let delay = 0;
+          siblings.forEach((sibling, idx) => {
+            if (sibling === entry.target) {
+              delay = idx * 60;
+            }
+          });
+          setTimeout(() => {
+            entry.target.classList.add('visible');
+          }, delay);
+          observer.unobserve(entry.target);
+        }
+      });
+    },
+    {
+      threshold: 0.1,
+      rootMargin: '0px 0px -40px 0px'
+    }
+  );
+
+  revealElements.forEach((el) => observer.observe(el));
+
+  // Nav smooth highlight on scroll
+  const sections = document.querySelectorAll('section[id]');
+  const navLinks = document.querySelectorAll('nav a.nav-chip');
+
+  const sectionObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          const id = entry.target.getAttribute('id');
+          navLinks.forEach((link) => {
+            if (link.getAttribute('href') === '#' + id) {
+              link.style.background = '#000';
+              link.style.color = '#FFE45E';
+            } else {
+              link.style.background = '#FFE45E';
+              link.style.color = '#000';
+            }
+          });
+        }
+      });
+    },
+    { threshold: 0.4 }
+  );
+
+  sections.forEach((s) => sectionObserver.observe(s));
+
+  // Mobile: reduce sticker rotation
+  if (window.innerWidth < 768) {
+    document.querySelector('.sticker-1').style.transform = 'rotate(-1.5deg)';
+    document.querySelector('.sticker-2').style.transform = 'rotate(1deg)';
+    document.querySelector('.sticker-3').style.transform = 'rotate(-0.5deg)';
+
+    // Stack stickers on mobile
+    const stickerContainer = document.querySelector('.sticker-1').parentElement;
+    if (stickerContainer) {
+      stickerContainer.style.minHeight = 'auto';
+      const cards = stickerContainer.querySelectorAll('.sticker-card');
+      let offset = 0;
+      cards.forEach((card) => {
+        card.style.position = 'relative';
+        card.style.left = 'auto';
+        card.style.top = 'auto';
+        card.style.width = '100%';
+        card.style.marginTop = offset === 0 ? '0' : '-20px';
+        card.style.zIndex = String(5 - offset);
+        offset++;
+      });
+    }
+  }
+</script>
+</body>
+</html>

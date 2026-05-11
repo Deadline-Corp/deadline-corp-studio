@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>studio@~/agency $ — WEB · AUTOMATION · AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+          colors: {
+            acid: '#00FF66',
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    * {
+      font-family: 'JetBrains Mono', monospace;
+      border-radius: 0 !important;
+      box-sizing: border-box;
+    }
+
+    body {
+      background: #ffffff;
+      color: #000000;
+      margin: 0;
+      padding: 0;
+      font-size: 14px;
+      line-height: 1.6;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* cursor blink */
+    .cursor {
+      display: inline-block;
+      width: 10px;
+      height: 1.2em;
+      background: #00FF66;
+      animation: blink 1s step-end infinite;
+      vertical-align: text-bottom;
+      margin-left: 2px;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+
+    /* typewriter */
+    .typewriter {
+      overflow: hidden;
+      white-space: nowrap;
+      border-right: none;
+      width: 0;
+      animation: typing 3s steps(40, end) 0.8s forwards;
+    }
+
+    @keyframes typing {
+      from { width: 0; }
+      to { width: 100%; }
+    }
+
+    /* hover invert — no transition, snap */
+    .invert-hover:hover {
+      background: #000000 !important;
+      color: #ffffff !important;
+      cursor: pointer;
+    }
+
+    .invert-hover-green:hover {
+      background: #00FF66 !important;
+      color: #000000 !important;
+      cursor: pointer;
+    }
+
+    /* nav flags hover */
+    .nav-flag {
+      color: #000;
+      text-decoration: none;
+      padding: 2px 8px;
+      border: 1px solid transparent;
+    }
+    .nav-flag:hover {
+      background: #000;
+      color: #fff;
+      border-color: #000;
+    }
+
+    /* table rows */
+    .case-row {
+      border-bottom: 1px solid #000;
+    }
+    .case-row:hover td {
+      background: #000 !important;
+      color: #fff !important;
+    }
+
+    /* grid lines */
+    .grid-cols-hairline {
+      position: relative;
+    }
+
+    /* ascii frame */
+    .ascii-frame {
+      border: 1px solid #000;
+      position: relative;
+    }
+
+    /* green code highlight */
+    code.green {
+      color: #00AA44;
+      background: #f0fff4;
+      padding: 0 3px;
+    }
+
+    /* section divider */
+    .section-divider {
+      border: none;
+      border-top: 1px solid #000;
+      margin: 0;
+    }
+
+    /* strip */
+    .stats-strip {
+      background: #000;
+      color: #fff;
+    }
+
+    /* hero */
+    .hero-section {
+      background: #000;
+      color: #fff;
+    }
+
+    /* scrollbar */
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: #fff; border-left: 1px solid #000; }
+    ::-webkit-scrollbar-thumb { background: #000; }
+
+    /* no smooth scroll — override Tailwind */
+    html { scroll-behavior: auto; }
+
+    /* grid visual overlay for services */
+    .services-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border: 1px solid #000;
+    }
+    .services-grid > div {
+      border-right: 1px solid #000;
+      padding: 32px;
+    }
+    .services-grid > div:last-child {
+      border-right: none;
+    }
+
+    /* process flow */
+    .process-step {
+      border: 1px solid #000;
+      padding: 16px 24px;
+      background: #fff;
+      display: inline-block;
+    }
+    .process-arrow {
+      display: inline-block;
+      padding: 0 8px;
+      font-weight: 700;
+      font-size: 20px;
+    }
+
+    /* manifesto */
+    .manifesto-block {
+      border: 1px solid #000;
+      padding: 40px;
+      background: #fff;
+    }
+
+    /* contact terminal */
+    .terminal-frame {
+      border: 1px solid #000;
+      background: #000;
+      color: #fff;
+    }
+
+    /* version chip */
+    .version-chip {
+      border: 1px solid #000;
+      padding: 1px 6px;
+      font-size: 11px;
+      font-weight: 700;
+    }
+
+    /* mobile */
+    @media (max-width: 768px) {
+      .services-grid {
+        grid-template-columns: 1fr;
+      }
+      .services-grid > div {
+        border-right: none;
+        border-bottom: 1px solid #000;
+      }
+      .services-grid > div:last-child {
+        border-bottom: none;
+      }
+      .hero-text {
+        font-size: 48px !important;
+        line-height: 1.1 !important;
+      }
+      .process-flow {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .process-arrow {
+        transform: rotate(90deg);
+        padding: 4px 0;
+      }
+      .stats-grid {
+        grid-template-columns: repeat(2, 1fr) !important;
+      }
+      .cases-table {
+        font-size: 11px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ============================================================ -->
+<!-- TOP BAR                                                       -->
+<!-- ============================================================ -->
+<header style="border-bottom: 1px solid #000;">
+  <div style="max-width: 1400px; margin: 0 auto; padding: 10px 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+    <div style="font-weight: 700; font-size: 13px; letter-spacing: 0.02em;">
+      <span style="color: #666;">studio@~/agency</span>
+      <span style="color: #00AA44; font-weight: 400;"> $ </span>
+      <span>_</span>
+    </div>
+    <nav style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+      <a href="#services" class="nav-flag" style="font-size: 12px; font-weight: 700;">--services</a>
+      <a href="#cases" class="nav-flag" style="font-size: 12px; font-weight: 700;">--cases</a>
+      <a href="#process" class="nav-flag" style="font-size: 12px; font-weight: 700;">--process</a>
+      <a href="#contact" class="nav-flag" style="font-size: 12px; font-weight: 700;">--contact</a>
+      <span style="margin-left: 12px;" class="version-chip">[v1.0.0]</span>
+    </nav>
+  </div>
+</header>
+
+<!-- ============================================================ -->
+<!-- HERO                                                          -->
+<!-- ============================================================ -->
+<section class="hero-section" id="home" style="min-height: 100vh; display: flex; flex-direction: column; justify-content: center; padding: 80px 24px; border-bottom: 1px solid #333;">
+  <div style="max-width: 1400px; margin: 0 auto; width: 100%;">
+
+    <div style="font-size: 11px; color: #555; margin-bottom: 24px; letter-spacing: 0.08em;">
+      // initialized 2022 · running on caffeine + conviction
+    </div>
+
+    <h1 class="hero-text" style="font-size: 96px; font-weight: 700; line-height: 1.0; letter-spacing: -0.02em; margin: 0 0 8px 0; color: #fff;">
+      WE BUILD
+    </h1>
+    <h1 class="hero-text" style="font-size: 96px; font-weight: 700; line-height: 1.0; letter-spacing: -0.02em; margin: 0 0 8px 0; color: #fff;">
+      SHIP
+    </h1>
+    <h1 class="hero-text" style="font-size: 96px; font-weight: 700; line-height: 1.0; letter-spacing: -0.02em; margin: 0 0 40px 0; color: #fff;">
+      AUTOMATE.
+    </h1>
+
+    <div style="display: flex; align-items: center; gap: 0; margin-bottom: 16px; overflow: hidden; max-width: 600px;">
+      <span style="color: #555; font-size: 15px; margin-right: 8px;">&gt;&gt;</span>
+      <span id="typed-subtitle" class="typewriter" style="color: #aaa; font-size: 15px; font-weight: 400;">// web · automation · ai agents · ничего лишнего</span>
+    </div>
+    <div style="display: flex; align-items: center; height: 24px; margin-bottom: 64px;">
+      <span class="cursor"></span>
+    </div>
+
+    <div style="display: flex; gap: 16px; flex-wrap: wrap; align-items: center;">
+      <a href="#contact" class="invert-hover-green" style="display: inline-block; padding: 12px 24px; border: 1px solid #00FF66; color: #00FF66; font-weight: 700; font-size: 14px; text-decoration: none; letter-spacing: 0.04em;">
+        $ ./contact_us --priority=high
+      </a>
+      <a href="#cases" class="nav-flag" style="padding: 12px 24px; color: #666; font-size: 13px;">
+        cat ./cases.json ▸
+      </a>
+    </div>
+
+    <div style="margin-top: 80px; color: #333; font-size: 11px; letter-spacing: 0.06em;">
+      /* stack: Next.js · n8n · LangChain · Whisper · Supabase · Vercel · Python · Node */
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- SERVICES                                                      -->
+<!-- ============================================================ -->
+<section id="services" style="border-bottom: 1px solid #000;">
+  <div style="max-width: 1400px; margin: 0 auto;">
+
+    <div style="padding: 24px 24px 0 24px; border-bottom: 1px solid #000;">
+      <span style="font-size: 11px; color: #666; letter-spacing: 0.08em;">./services</span>
+      <span style="margin: 0 16px; color: #ccc;">——————————————————————————————————————</span>
+      <span style="font-size: 11px; color: #666;">// что мы делаем</span>
+    </div>
+
+    <div class="services-grid">
+
+      <!-- WEB -->
+      <div>
+        <div style="font-size: 11px; color: #666; margin-bottom: 16px;">/* module 01 */</div>
+        <div style="font-size: 22px; font-weight: 700; margin-bottom: 8px;">[01] WEB</div>
+        <div style="font-size: 12px; color: #555; margin-bottom: 24px;">// from spec to production in weeks, not months</div>
+        <hr class="section-divider" style="margin-bottom: 24px;" />
+        <ul style="list-style: none; padding: 0; margin: 0; font-size: 13px; line-height: 2;">
+          <li>&gt; Landing pages &amp; MVPs</li>
+          <li>&gt; SaaS frontends</li>
+          <li>&gt; Admin dashboards</li>
+          <li>&gt; E-commerce storefronts</li>
+          <li>&gt; API integrations</li>
+        </ul>
+        <div style="margin-top: 24px; font-size: 11px; color: #888; border-top: 1px solid #eee; padding-top: 16px;">
+          STACK: Next.js · Tailwind · Supabase · Vercel
+        </div>
+      </div>
+
+      <!-- AUTOMATION -->
+      <div>
+        <div style="font-size: 11px; color: #666; margin-bottom: 16px;">/* module 02 */</div>
+        <div style="font-size: 22px; font-weight: 700; margin-bottom: 8px;">[02] AUTOMATION</div>
+        <div style="font-size: 12px; color: #555; margin-bottom: 24px;">// kill repetitive work. permanently.</div>
+        <hr class="section-divider" style="margin-bottom: 24px;" />
+        <ul style="list-style: none; padding: 0; margin: 0; font-size: 13px; line-height: 2;">
+          <li>&gt; n8n / Make workflow builds</li>
+          <li>&gt; CRM &amp; data pipeline automation</li>
+          <li>&gt; Telegram bots with logic</li>
+          <li>&gt; Report generation pipelines</li>
+          <li>&gt; Multi-system integrations</li>
+        </ul>
+        <div style="margin-top: 24px; font-size: 11px; color: #888; border-top: 1px solid #eee; padding-top: 16px;">
+          STACK: n8n · Make · Python · Webhooks · REST
+        </div>
+      </div>
+
+      <!-- AI AGENTS -->
+      <div>
+        <div style="font-size: 11px; color: #666; margin-bottom: 16px;">/* module 03 */</div>
+        <div style="font-size: 22px; font-weight: 700; margin-bottom: 8px;">[03] AI_AGENTS</div>
+        <div style="font-size: 12px; color: #555; margin-bottom: 24px;">// not chatbots. agents that actually do things.</div>
+        <hr class="section-divider" style="margin-bottom: 24px;" />
+        <ul style="list-style: none; padding: 0; margin: 0; font-size: 13px; line-height: 2;">
+          <li>&gt; RAG systems &amp; knowledge bases</li>
+          <li>&gt; Voice agents (Whisper + TTS)</li>
+          <li>&gt; Document processing pipelines</li>
+          <li>&gt; Custom LLM fine-tuning</li>
+          <li>&gt; Multi-agent orchestration</li>
+        </ul>
+        <div style="margin-top: 24px; font-size: 11px; color: #888; border-top: 1px solid #eee; padding-top: 16px;">
+          STACK: LangChain · OpenAI · Whisper · Claude · Qdrant
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- CASES                                                         -->
+<!-- ============================================================ -->
+<section id="cases" style="border-bottom: 1px solid #000;">
+  <div style="max-width: 1400px; margin: 0 auto;">
+
+    <div style="padding: 24px 24px 0 24px; border-bottom: 1px solid #000;">
+      <span style="font-size: 11px; color: #666; letter-spacing: 0.08em;">./cases</span>
+      <span style="margin: 0 16px; color: #ccc;">——————————————————————————————————————</span>
+      <span style="font-size: 11px; color: #666;">// shipped · production · real clients</span>
+    </div>
+
+    <div style="padding: 0 24px 24px 24px; overflow-x: auto;">
+      <table class="cases-table" style="width: 100%; border-collapse: collapse; min-width: 600px;">
+        <thead>
+          <tr style="background: #000; color: #fff;">
+            <th style="padding: 12px 16px; text-align: left; font-size: 11px; letter-spacing: 0.1em; border-right: 1px solid #333; font-weight: 700;">ID</th>
+            <th style="padding: 12px 16px; text-align: left; font-size: 11px; letter-spacing: 0.1em; border-right: 1px solid #333; font-weight: 700;">CLIENT</th>
+            <th style="padding: 12px 16px; text-align: left; font-size: 11px; letter-spacing: 0.1em; border-right: 1px solid #333; font-weight: 700;">STACK</th>
+            <th style="padding: 12px 16px; text-align: left; font-size: 11px; letter-spacing: 0.1em; border-right: 1px solid #333; font-weight: 700;">TYPE</th>
+            <th style="padding: 12px 16px; text-align: left; font-size: 11px; letter-spacing: 0.1em; font-weight: 700;">RESULT</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="case-row" style="border-bottom: 1px solid #000;">
+            <td style="padding: 14px 16px; font-size: 12px; font-weight: 700; border-right: 1px solid #e0e0e0; color: #555;">#001</td>
+            <td style="padding: 14px 16px; font-size: 13px; font-weight: 700; border-right: 1px solid #e0e0e0;">VIP_RENTAL_PHUKET</td>
+            <td style="padding: 14px 16px; font-size: 11px; color: #555; border-right: 1px solid #e0e0e0;">Next.js · Supabase · n8n</td>
+            <td style="padding: 14px 16px; font-size: 11px; border-right: 1px solid #e0e0e0;">[WEB + AUTOMATION]</td>
+            <td style="padding: 14px 16px; font-size: 12px;">Luxury rental platform · booking flow · CRM sync · 3x conversion</td>
+          </tr>
+          <tr class="case-row" style="border-bottom: 1px solid #000;">
+            <td style="padding: 14px 16px; font-size: 12px; font-weight: 700; border-right: 1px solid #e0e0e0; color: #555;">#002</td>
+            <td style="padding: 14px 16px; font-size: 13px; font-weight: 700; border-right: 1px solid #e0e0e0;">BACKDOOR_STORE</td>
+            <td style="padding: 14px 16px; font-size: 11px; color: #555; border-right: 1px solid #e0e0e0;">React · Telegram Bot · Python</td>
+            <td style="padding: 14px 16px; font-size: 11px; border-right: 1px solid #e0e0e0;">[WEB + BOT]</td>
+            <td style="padding: 14px 16px; font-size: 12px;">Streetwear e-commerce · order automation · Telegram sales channel</td>
+          </tr>
+          <tr class="case-row" style="border-bottom: 1px solid #000;">
+            <td style="padding: 14px 16px; font-size: 12px; font-weight: 700; border-right: 1px solid #e0e0e0; color: #555;">#003</td>
+            <td style="padding: 14px 16px; font-size: 13px; font-weight: 700; border-right: 1px solid #e0e0e0;">RA_PROJECT</td>
+            <td style="padding: 14px 16px; font-size: 11px; color: #555; border-right: 1px solid #e0e0e0;">LangChain · Claude · Qdrant · n8n</td>
+            <td style="padding: 14px 16px; font-size: 11px; border-right: 1px solid #e0e0e0;">[AI_AGENT]</td>
+            <td style="padding: 14px 16px; font-size: 12px;">RAG knowledge system · doc processing · voice interface · production</td>
+          </tr>
+          <tr class="case-row">
+            <td style="padding: 14px 16px; font-size: 12px; font-weight: 700; border-right: 1px solid #e0e0e0; color: #555;">#???</td>
+            <td style="padding: 14px 16px; font-size: 13px; font-weight: 700; border-right: 1px solid #e0e0e0;">YOUR_PROJECT</td>
+            <td style="padding: 14px 16px; font-size: 11px; color: #888; border-right: 1px solid #e0e0e0; font-style: normal;">TBD</td>
+            <td style="padding: 14px 16px; font-size: 11px; color: #888; border-right: 1px solid #e0e0e0;">[OPEN]</td>
+            <td style="padding: 14px 16px; font-size: 12px; color: #888;">// slot available — $ ./contact_us</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- PROCESS                                                       -->
+<!-- ============================================================ -->
+<section id="process" style="border-bottom: 1px solid #000;">
+  <div style="max-width: 1400px; margin: 0 auto;">
+
+    <div style="padding: 24px 24px 0 24px; border-bottom: 1px solid #000;">
+      <span style="font-size: 11px; color: #666; letter-spacing: 0.08em;">./process</span>
+      <span style="margin: 0 16px; color: #ccc;">——————————————————————————————————————</span>
+      <span style="font-size: 11px; color: #666;">// how we operate. no surprises.</span>
+    </div>
+
+    <div style="padding: 40px 24px;">
+
+      <div class="process-flow" style="display: flex; align-items: center; flex-wrap: wrap; gap: 0; margin-bottom: 48px;">
+        <div class="process-step">
+          <div style="font-size: 11px; color: #888; margin-bottom: 4px;">01</div>
+          <div style="font-weight: 700; font-size: 14px; letter-spacing: 0.06em;">DISCOVERY</div>
+        </div>
+        <span class="process-arrow">▸</span>
+        <div class="process-step">
+          <div style="font-size: 11px; color: #888; margin-bottom: 4px;">02</div>
+          <div style="font-weight: 700; font-size: 14px; letter-spacing: 0.06em;">ARCH</div>
+        </div>
+        <span class="process-arrow">▸</span>
+        <div class="process-step">
+          <div style="font-size: 11px; color: #888; margin-bottom: 4px;">03</div>
+          <div style="font-weight: 700; font-size: 14px; letter-spacing: 0.06em;">BUILD</div>
+        </div>
+        <span class="process-arrow">▸</span>
+        <div class="process-step">
+          <div style="font-size: 11px; color: #888; margin-bottom: 4px;">04</div>
+          <div style="font-weight: 700; font-size: 14px; letter-spacing: 0.06em;">REVIEW</div>
+        </div>
+        <span class="process-arrow">▸</span>
+        <div class="process-step">
+          <div style="font-size: 11px; color: #888; margin-bottom: 4px;">05</div>
+          <div style="font-weight: 700; font-size: 14px; letter-spacing: 0.06em;">HANDOFF</div>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0; border: 1px solid #000;">
+        <div style="padding: 24px; border-right: 1px solid #000; border-bottom: 1px solid #000;">
+          <div style="font-size: 11px; color: #666; margin-bottom: 8px;">STEP_01 / discovery</div>
+          <div style="font-weight: 700; margin-bottom: 8px;">30min call. No sales deck.</div>
+          <div style="font-size: 12px; color: #555;">We understand the problem. You get a spec doc + cost estimate within 48h. If it's not a fit — we say so.</div>
+          <div style="margin-top: 12px; font-size: 11px; color: #888;">// duration: 30-60 min</div>
+        </div>
+        <div style="padding: 24px; border-right: 1px solid #000; border-bottom: 1px solid #000;">
+          <div style="font-size: 11px; color: #666; margin-bottom: 8px;">STEP_02 / architecture</div>
+          <div style="font-weight: 700; margin-bottom: 8px;">Tech decisions documented.</div>
+          <div style="font-size: 12px; color: #555;">Stack chosen for the problem, not for the resume. Architecture doc shared. You own it from day one.</div>
+          <div style="margin-top: 12px; font-size: 11px; color: #888;">// output: arch.md + repo init</div>
+        </div>
+        <div style="padding: 24px; border-bottom: 1px solid #000;">
+          <div style="font-size: 11px; color: #666; margin-bottom: 8px;">STEP_03 / build</div>
+          <div style="font-weight: 700; margin-bottom: 8px;">Weekly deploys. Always working.</div>
+          <div style="font-size: 12px; color: #555;">No dark periods. You see progress every week. Staging env from day one. Async updates via Telegram.</div>
+          <div style="margin-top: 12px; font-size: 11px; color: #888;">// cadence: weekly deploy</div>
+        </div>
+        <div style="padding: 24px; border-right: 1px solid #000;">
+          <div style="font-size: 11px; color: #666; margin-bottom: 8px;">STEP_04 / review</div>
+          <div style="font-weight: 700; margin-bottom: 8px;">2 revision rounds. Counted.</div>
+          <div style="font-size: 12px; color: #555;">Revisions are scoped and tracked. We fix what's wrong, we don't rebuild on a whim. Scope creep = new ticket.</div>
+          <div style="margin-top: 12px; font-size: 11px; color: #888;">/* revision_limit: 2 */</div>
+        </div>
+        <div style="padding: 24px; border-right: 1px solid #000;">
+          <div style="font-size: 11px; color: #666; margin-bottom: 8px;">STEP_05 / handoff</div>
+          <div style="font-weight: 700; margin-bottom: 8px;">You get the keys. All of them.</div>
+          <div style="font-size: 12px; color: #555;">Repo access, env vars, deployment docs, runbooks. No vendor lock-in. You can run it yourself — or we support it.</div>
+          <div style="margin-top: 12px; font-size: 11px; color: #888;">// shipped 2026</div>
+        </div>
+        <div style="padding: 24px; background: #000; color: #fff;">
+          <div style="font-size: 11px; color: #555; margin-bottom: 8px;">TIMELINE / typical</div>
+          <div style="font-weight: 700; margin-bottom: 8px; color: #00FF66;">MVP: 2-3 weeks</div>
+          <div style="font-size: 12px; color: #999;">Landing / automation: 1-2 weeks.<br/>AI agent: 2-4 weeks.<br/>Complex SaaS: by scope.</div>
+          <div style="margin-top: 12px; font-size: 11px; color: #555;">/* MVP in 2 weeks */</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- STATS STRIP                                                   -->
+<!-- ============================================================ -->
+<section class="stats-strip" style="border-bottom: 1px solid #333;">
+  <div style="max-width: 1400px; margin: 0 auto; padding: 0 24px;">
+    <div class="stats-grid" style="display: grid; grid-template-columns: repeat(4, 1fr);">
+      <div style="padding: 40px 24px; border-right: 1px solid #333; text-align: center;">
+        <div style="font-size: 56px; font-weight: 700; letter-spacing: -0.02em; color: #fff; line-height: 1;">12+</div>
+        <div style="font-size: 11px; color: #666; margin-top: 8px; letter-spacing: 0.08em;">PROJECTS SHIPPED</div>
+      </div>
+      <div style="padding: 40px 24px; border-right: 1px solid #333; text-align: center;">
+        <div style="font-size: 56px; font-weight: 700; letter-spacing: -0.02em; color: #fff; line-height: 1;">4yr</div>
+        <div style="font-size: 11px; color: #666; margin-top: 8px; letter-spacing: 0.08em;">EXPERIENCE</div>
+      </div>
+      <div style="padding: 40px 24px; border-right: 1px solid #333; text-align: center;">
+        <div style="font-size: 56px; font-weight: 700; letter-spacing: -0.02em; color: #fff; line-height: 1;">0</div>
+        <div style="font-size: 11px; color: #666; margin-top: 8px; letter-spacing: 0.08em;">LAYERS OF BUREAUCRACY</div>
+      </div>
+      <div style="padding: 40px 24px; text-align: center;">
+        <div style="font-size: 56px; font-weight: 700; letter-spacing: -0.02em; color: #00FF66; line-height: 1;">2</div>
+        <div style="font-size: 11px; color: #666; margin-top: 8px; letter-spacing: 0.08em;">REVISION ROUNDS <span style="color: #444;">// (∞ was a joke)</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- MANIFESTO                                                     -->
+<!-- ============================================================ -->
+<section id="manifesto" style="border-bottom: 1px solid #000;">
+  <div style="max-width: 1400px; margin: 0 auto;">
+
+    <div style="padding: 24px 24px 0 24px; border-bottom: 1px solid #000;">
+      <span style="font-size: 11px; color: #666; letter-spacing: 0.08em;">./manifesto</span>
+      <span style="margin: 0 16px; color: #ccc;">——————————————————————————————————————</span>
+      <span style="font-size: 11px; color: #666;">// README.md</span>
+    </div>
+
+    <div class="manifesto-block" style="border: none; border-bottom: 1px solid #000; padding: 48px 24px; max-width: 900px;">
+
+      <div style="font-size: 22px; font-weight: 700; margin-bottom: 32px;"># manifesto.md</div>
+
+      <div style="font-size: 14px; line-height: 2; color: #111;">
+
+        <p style="margin: 0 0 16px 0;">
+          We are a two-person studio. Not an agency with 30 account managers and a Jira board with 400 tickets. You talk to the people who write the code.
+        </p>
+
+        <p style="margin: 0 0 16px 0;">
+          We don't pitch. We don't upsell. We scope the work, name a price, and ship it. If the scope grows — we say so before we build it.
+        </p>
+
+        <p style="margin: 0 0 16px 0;">
+          We use <code class="green">AI tools</code> to work faster — not to replace thinking. Every <code class="green">architecture decision</code> is deliberate. Every line of code has a reason.
+        </p>
+
+        <p style="margin: 0 0 16px 0;">
+          &gt; "Perfection is achieved not when there is nothing more to add, but when there is nothing left to take away."
+          <br /><span style="color: #888; font-size: 12px;">// Saint-Exupery. Also: the entire internet industry ignores this.</span>
+        </p>
+
+        <p style="margin: 0 0 16px 0;">
+          We do not use <code class="green">bootstrap templates</code>. We do not re-use boilerplate decks. Your project gets a fresh start every time.
+        </p>
+
+        <p style="margin: 0 0 32px 0; color: #555;">
+          // ничего лишнего. только то, что работает.
+        </p>
+
+        <hr style="border: none; border-top: 1px solid #e0e0e0; margin-bottom: 24px;" />
+
+        <div style="display: flex; gap: 32px; font-size: 12px; color: #888; flex-wrap: wrap;">
+          <span>LICENSE: MIT-style (you own what we build)</span>
+          <span>STATUS: active · accepting clients</span>
+          <span>LAST_UPDATED: 2026-05-08</span>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- CONTACT                                                       -->
+<!-- ============================================================ -->
+<section id="contact" style="border-bottom: 1px solid #000;">
+  <div style="max-width: 1400px; margin: 0 auto;">
+
+    <div style="padding: 24px 24px 0 24px; border-bottom: 1px solid #000;">
+      <span style="font-size: 11px; color: #666; letter-spacing: 0.08em;">./contact</span>
+      <span style="margin: 0 16px; color: #ccc;">——————————————————————————————————————</span>
+      <span style="font-size: 11px; color: #666;">// we respond within 24h. usually faster.</span>
+    </div>
+
+    <div style="padding: 40px 24px; display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: #000;">
+
+      <!-- terminal block -->
+      <div class="terminal-frame" style="padding: 40px;">
+        <div style="font-size: 11px; color: #555; margin-bottom: 24px; letter-spacing: 0.08em;">
+          ┌──────────────────────────────────────┐<br/>
+          &nbsp;terminal v1.0.0 · studio@agency<br/>
+          └──────────────────────────────────────┘
+        </div>
+
+        <div style="margin-bottom: 16px; font-size: 13px; color: #888;">
+          user@client:~$ init_project
+        </div>
+        <div style="margin-bottom: 24px; font-size: 13px; color: #fff;">
+          &gt; Ready. Describe your project.
+        </div>
+
+        <div style="margin-bottom: 16px; font-size: 13px; color: #555; border-left: 2px solid #333; padding-left: 16px; line-height: 1.8;">
+          user@client:~$ cat brief.txt<br/>
+          // I have a problem that needs solving...<br/>
+          // budget: defined<br/>
+          // timeline: urgent<br/>
+          // decision_maker: me<br/>
+        </div>
+
+        <div style="margin-bottom: 8px; font-size: 13px; color: #00AA44;">
+          user@client:~$ send --to=studio
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; font-size: 13px; color: #888;">
+          <span>&gt; awaiting input</span>
+          <span class="cursor"></span>
+        </div>
+      </div>
+
+      <!-- links block -->
+      <div style="background: #fff; padding: 40px;">
+
+        <div style="font-size: 11px; color: #888; margin-bottom: 32px;">// choose your channel:</div>
+
+        <div style="margin-bottom: 32px;">
+          <div style="font-size: 11px; color: #888; margin-bottom: 8px;">/* primary */</div>
+          <a href="mailto:studio@agency.dev" class="invert-hover" style="display: block; padding: 16px; border: 1px solid #000; text-decoration: none; color: #000; font-weight: 700; font-size: 14px; letter-spacing: 0.04em;">
+            $ mail --to=studio@agency.dev
+          </a>
+        </div>
+
+        <div style="margin-bottom: 32px;">
+          <div style="font-size: 11px; color: #888; margin-bottom: 8px;">/* async · fastest response */</div>
+          <a href="https://t.me/yourtelegram" target="_blank" class="invert-hover" style="display: block; padding: 16px; border: 1px solid #000; text-decoration: none; color: #000; font-weight: 700; font-size: 14px; letter-spacing: 0.04em;">
+            $ open t.me/yourstudio
+          </a>
+        </div>
+
+        <div>
+          <div style="font-size: 11px; color: #888; margin-bottom: 8px;">/* response time */</div>
+          <div style="border: 1px solid #e0e0e0; padding: 16px; font-size: 12px; color: #555; background: #f9f9f9;">
+            <div style="margin-bottom: 4px;">email: &lt; 24h</div>
+            <div style="margin-bottom: 4px;">telegram: &lt; 4h</div>
+            <div>weekends: we work anyway</div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- FOOTER                                                        -->
+<!-- ============================================================ -->
+<footer style="border-top: 1px solid #000;">
+  <div style="max-width: 1400px; margin: 0 auto; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+    <div style="font-size: 11px; color: #888; letter-spacing: 0.04em;">
+      © 2026 · STUDIO · v1.0.0 · LICENSE: DO_WHAT_YOU_WANT_BUT_CREDIT_US · BUILT_WITH: coffee + conviction
+    </div>
+    <div style="display: flex; gap: 16px; font-size: 11px;">
+      <a href="https://github.com/yourstudio" target="_blank" class="nav-flag" style="font-size: 11px; padding: 2px 6px; color: #888; text-decoration: none;">github</a>
+      <span style="color: #ccc;">·</span>
+      <a href="https://t.me/yourstudio" target="_blank" class="nav-flag" style="font-size: 11px; padding: 2px 6px; color: #888; text-decoration: none;">telegram</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // typewriter effect — fires once on load
+  (function () {
+    var el = document.getElementById('typed-subtitle');
+    if (!el) return;
+    var text = el.textContent;
+    el.textContent = '';
+    el.style.width = '0';
+    var i = 0;
+    function type() {
+      if (i < text.length) {
+        el.textContent += text.charAt(i);
+        i++;
+        // variable speed — feels more terminal-like
+        var delay = text.charAt(i) === ' ' ? 80 : (Math.random() * 40 + 30);
+        setTimeout(type, delay);
+      }
+    }
+    setTimeout(type, 1200);
+  })();
+
+  // nav: no smooth scroll — instant jump
+  document.querySelectorAll('a[href^="#"]').forEach(function (a) {
+    a.addEventListener('click', function (e) {
+      var target = document.querySelector(a.getAttribute('href'));
+      if (target) {
+        e.preventDefault();
+        target.scrollIntoView({ behavior: 'instant' });
+      }
+    });
+  });
+
+  // case rows — make entire row clickable via JS (no href needed, just visual feedback already in CSS)
+  document.querySelectorAll('.case-row').forEach(function (row) {
+    row.style.cursor = 'default';
+  });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>STUDIO// — BRUTALIST FURNACE</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            bg:        '#0F0F12',
+            surface:   '#161620',
+            border:    '#000000',
+            text:      '#F5F1E8',
+            mute:      '#8A8A95',
+            primary:   '#E67E2C',
+            secondary: '#F0A961',
+          },
+          fontFamily: {
+            mono: ['"JetBrains Mono"', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background-color: #0F0F12;
+      color: #F5F1E8;
+      font-family: 'JetBrains Mono', monospace;
+      margin: 0;
+      padding: 0;
+      overflow-x: hidden;
+    }
+
+    /* ── OFFSET SHADOW SYSTEM ── */
+    .shadow-btn-primary {
+      box-shadow: 8px 8px 0 #000000;
+      transition: transform 120ms linear, box-shadow 120ms linear;
+    }
+    .shadow-btn-primary:hover {
+      transform: translate(8px, 8px);
+      box-shadow: 0 0 0 #000000;
+    }
+
+    .shadow-btn-secondary {
+      box-shadow: 8px 8px 0 #F5F1E8;
+      transition: transform 120ms linear, box-shadow 120ms linear;
+    }
+    .shadow-btn-secondary:hover {
+      transform: translate(8px, 8px);
+      box-shadow: 0 0 0 #F5F1E8;
+    }
+
+    .shadow-btn-secondary-orange {
+      box-shadow: 8px 8px 0 #E67E2C;
+      transition: transform 120ms linear, box-shadow 120ms linear;
+    }
+    .shadow-btn-secondary-orange:hover {
+      transform: translate(8px, 8px);
+      box-shadow: 0 0 0 #E67E2C;
+    }
+
+    .shadow-panel-amber {
+      box-shadow: 6px 6px 0 #F0A961;
+      transition: transform 120ms linear, box-shadow 120ms linear;
+    }
+
+    .shadow-chip {
+      box-shadow: 4px 4px 0 #000000;
+      transition: transform 80ms linear, box-shadow 80ms linear;
+    }
+    .shadow-chip:hover {
+      transform: translate(4px, 4px);
+      box-shadow: 0 0 0 #000000;
+    }
+
+    .shadow-chip-orange {
+      box-shadow: 4px 4px 0 #E67E2C;
+      transition: transform 80ms linear, box-shadow 80ms linear;
+    }
+    .shadow-chip-orange:hover {
+      transform: translate(4px, 4px);
+      box-shadow: 0 0 0 #E67E2C;
+    }
+
+    .shadow-stat-panel {
+      box-shadow: 6px 6px 0 #F0A961;
+      transition: transform 120ms linear, box-shadow 120ms linear;
+    }
+    .shadow-stat-panel:hover {
+      transform: translate(6px, 6px);
+      box-shadow: 0 0 0 #F0A961;
+    }
+
+    /* ── CURSOR BLINK ── */
+    .cursor-blink {
+      display: inline-block;
+      width: 2px;
+      height: 1em;
+      background-color: #E67E2C;
+      vertical-align: text-bottom;
+      animation: blink 1s step-end infinite;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0; }
+    }
+
+    /* ── ASCII art ── */
+    .ascii-art {
+      font-family: 'JetBrains Mono', monospace;
+      color: #E67E2C;
+      font-size: clamp(7px, 1.1vw, 13px);
+      line-height: 1.15;
+      white-space: pre;
+      user-select: none;
+    }
+
+    /* ── HERO HEADLINE ── */
+    .hero-headline {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: clamp(52px, 8.5vw, 140px);
+      line-height: 0.9;
+      letter-spacing: -0.03em;
+      text-transform: uppercase;
+      color: #F5F1E8;
+    }
+
+    /* ── SECTION REVEAL ── */
+    .reveal {
+      opacity: 0;
+      transform: translateY(60px);
+      transition: opacity 400ms cubic-bezier(0.4, 0, 0.2, 1),
+                  transform 400ms cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* ── TABLE HOVER ROW ── */
+    .case-row {
+      transition: background-color 80ms linear, color 80ms linear;
+      cursor: default;
+    }
+    .case-row:hover {
+      background-color: #E67E2C;
+      color: #0F0F12;
+    }
+    .case-row:hover td {
+      color: #0F0F12;
+    }
+
+    /* ── NAV BRACKETS LINK ── */
+    .nav-link {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #F5F1E8;
+      text-decoration: none;
+      padding: 4px 0;
+      border-bottom: 2px solid transparent;
+      transition: color 120ms linear, border-color 120ms linear;
+    }
+    .nav-link:hover {
+      color: #E67E2C;
+      border-bottom-color: #E67E2C;
+    }
+
+    /* ── STATUS MARQUEE ── */
+    .marquee-inner {
+      display: inline-block;
+      animation: marquee-scroll 18s linear infinite;
+      white-space: nowrap;
+    }
+    @keyframes marquee-scroll {
+      from { transform: translateX(0); }
+      to   { transform: translateX(-50%); }
+    }
+
+    /* ── MOBILE ADJUSTMENTS ── */
+    @media (max-width: 768px) {
+      .shadow-btn-primary  { box-shadow: 6px 6px 0 #000000; }
+      .shadow-btn-secondary { box-shadow: 6px 6px 0 #F5F1E8; }
+      .shadow-btn-secondary-orange { box-shadow: 6px 6px 0 #E67E2C; }
+      .shadow-btn-primary:hover  { transform: translate(6px, 6px); }
+      .shadow-btn-secondary:hover { transform: translate(6px, 6px); }
+      .shadow-btn-secondary-orange:hover { transform: translate(6px, 6px); }
+
+      .shadow-panel-amber { box-shadow: 4px 4px 0 #F0A961; }
+      .shadow-stat-panel  { box-shadow: 4px 4px 0 #F0A961; }
+      .shadow-stat-panel:hover { transform: translate(4px, 4px); }
+
+      .shadow-chip { box-shadow: 3px 3px 0 #000000; }
+      .shadow-chip-orange { box-shadow: 3px 3px 0 #E67E2C; }
+    }
+
+    /* ── SCROLLBAR ── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #0F0F12; }
+    ::-webkit-scrollbar-thumb { background: #E67E2C; }
+  </style>
+</head>
+<body class="bg-bg text-text">
+
+<!-- ══════════════════════════════════════════════
+     01 — NAV
+══════════════════════════════════════════════ -->
+<nav class="sticky top-0 z-50 bg-bg border-b-4 border-black">
+  <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between gap-4">
+
+    <!-- LOGO -->
+    <a href="#" class="font-mono font-700 text-xl text-primary tracking-tight uppercase no-underline" style="text-decoration:none;color:#E67E2C;font-weight:700;letter-spacing:-0.02em;">
+      STUDIO//
+    </a>
+
+    <!-- NAV LINKS — desktop -->
+    <div class="hidden md:flex items-center gap-8">
+      <a href="#services" class="nav-link">[ services ]</a>
+      <a href="#cases" class="nav-link">[ cases ]</a>
+      <a href="#process" class="nav-link">[ process ]</a>
+      <a href="#contact" class="nav-link">[ contact ]</a>
+    </div>
+
+    <!-- CTA -->
+    <a href="#contact"
+       class="hidden md:inline-flex items-center gap-2 shadow-btn-primary cursor-pointer select-none"
+       style="background:#E67E2C;color:#0F0F12;border:4px solid #000000;padding:10px 20px;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;text-decoration:none;">
+      &#9656;&nbsp;TALK TO US
+    </a>
+
+    <!-- MOBILE HAMBURGER -->
+    <button id="nav-toggle"
+            class="md:hidden flex flex-col gap-1.5 p-2 border-2 border-text"
+            style="background:transparent;">
+      <span class="block w-5 h-0.5 bg-text"></span>
+      <span class="block w-5 h-0.5 bg-text"></span>
+      <span class="block w-5 h-0.5 bg-text"></span>
+    </button>
+  </div>
+
+  <!-- MOBILE MENU -->
+  <div id="mobile-menu" class="hidden md:hidden border-t-4 border-black bg-surface px-6 py-4 flex flex-col gap-4">
+    <a href="#services" class="nav-link" onclick="document.getElementById('mobile-menu').classList.add('hidden')">[ services ]</a>
+    <a href="#cases" class="nav-link" onclick="document.getElementById('mobile-menu').classList.add('hidden')">[ cases ]</a>
+    <a href="#process" class="nav-link" onclick="document.getElementById('mobile-menu').classList.add('hidden')">[ process ]</a>
+    <a href="#contact" class="nav-link" onclick="document.getElementById('mobile-menu').classList.add('hidden')">[ contact ]</a>
+    <a href="#contact"
+       class="inline-flex items-center gap-2 shadow-btn-primary"
+       style="background:#E67E2C;color:#0F0F12;border:4px solid #000000;padding:10px 20px;font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;text-decoration:none;width:fit-content;"
+       onclick="document.getElementById('mobile-menu').classList.add('hidden')">
+      &#9656;&nbsp;TALK TO US
+    </a>
+  </div>
+</nav>
+
+
+<!-- ══════════════════════════════════════════════
+     02 — HERO
+══════════════════════════════════════════════ -->
+<section class="min-h-screen border-b-4 border-black flex items-center" style="background:#0F0F12;">
+  <div class="max-w-7xl mx-auto px-6 py-16 w-full">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-16 items-center">
+
+      <!-- LEFT: TEXT -->
+      <div class="flex flex-col gap-8">
+
+        <!-- EST chip -->
+        <div class="flex items-center gap-4">
+          <span class="shadow-chip"
+                style="background:transparent;color:#F0A961;border:3px solid #F0A961;padding:4px 10px;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;">
+            [ EST. 2026 ]
+          </span>
+          <span class="shadow-chip"
+                style="background:transparent;color:#8A8A95;border:3px solid #8A8A95;padding:4px 10px;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;">
+            без воды
+          </span>
+        </div>
+
+        <!-- HEADLINE -->
+        <div>
+          <div class="hero-headline">WE FORGE</div>
+          <div class="hero-headline" style="color:#E67E2C;">SOFTWARE.</div>
+        </div>
+
+        <!-- SUB -->
+        <div style="font-family:'JetBrains Mono',monospace;font-size:clamp(11px,1.3vw,14px);font-weight:500;letter-spacing:0.06em;text-transform:uppercase;color:#8A8A95;line-height:1.6;">
+          WEB &middot; AUTOMATION &middot; AI AGENTS &middot; 4 YEARS &middot; NO FLUFF
+          <br />
+          <span style="color:#F0A961;font-size:11px;letter-spacing:0.04em;">// сделано вдумчиво</span>
+        </div>
+
+        <!-- BUTTONS -->
+        <div class="flex flex-wrap gap-6 items-center">
+          <a href="#contact"
+             class="shadow-btn-primary"
+             style="background:#E67E2C;color:#0F0F12;border:4px solid #000000;padding:16px 32px;font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;text-decoration:none;display:inline-block;">
+            &#9656;&nbsp;START PROJECT
+          </a>
+          <a href="#cases"
+             class="shadow-btn-secondary"
+             style="background:transparent;color:#F5F1E8;border:4px solid #F5F1E8;padding:16px 32px;font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;text-decoration:none;display:inline-block;">
+            VIEW CASES
+          </a>
+        </div>
+      </div>
+
+      <!-- RIGHT: ASCII FURNACE ART -->
+      <div class="flex items-center justify-center overflow-hidden">
+        <pre class="ascii-art" aria-hidden="true">
+╔══════════════════════════════════════════════════════════════════════╗
+║                                                                      ║
+║        ╔═══════════════════════════════════════════════════╗        ║
+║        ║   ┌───┐  ┌───┐  ┌───┐  ┌───┐  ┌───┐  ┌───┐     ║        ║
+║        ║   │ ▓ │  │ ▓ │  │ ▓ │  │ ▓ │  │ ▓ │  │ ▓ │     ║        ║
+║        ║   └─┬─┘  └─┬─┘  └─┬─┘  └─┬─┘  └─┬─┘  └─┬─┘     ║        ║
+║        ║     │      │      │      │      │      │          ║        ║
+║        ╚═════╧══════╧══════╧══════╧══════╧══════╧══════════╝        ║
+║                                                                      ║
+║        ╔═══════════════════════════════════════════════════╗        ║
+║        ║                                                   ║        ║
+║        ║   ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   ║        ║
+║        ║   ░  ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  ░   ║        ║
+║        ║   ░  ▒  ████████████████████████████████  ▒  ░   ║        ║
+║        ║   ░  ▒  █  ╔══════════════════════════╗ █  ▒  ░   ║        ║
+║        ║   ░  ▒  █  ║  T E M P : 1 3 0 0 °C   ║ █  ▒  ░   ║        ║
+║        ║   ░  ▒  █  ║  F U E L : M A X I M U M ║ █  ▒  ░   ║        ║
+║        ║   ░  ▒  █  ║  O U T P U T : O N L I N E║ █  ▒  ░   ║        ║
+║        ║   ░  ▒  █  ╚══════════════════════════╝ █  ▒  ░   ║        ║
+║        ║   ░  ▒  ████████████████████████████████  ▒  ░   ║        ║
+║        ║   ░  ▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒▒  ░   ║        ║
+║        ║   ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░   ║        ║
+║        ║                                                   ║        ║
+║        ╠═══════════════════════════════════════════════════╣        ║
+║        ║                                                   ║        ║
+║        ║   ┌─────────────┐ ┌─────────────┐ ┌───────────┐  ║        ║
+║        ║   │  ╔═══════╗  │ │  ╔═══════╗  │ │ ╔═══════╗ │  ║        ║
+║        ║   │  ║ ~~~~~ ║  │ │  ║ ~~~~~ ║  │ │ ║ ~~~~~ ║ │  ║        ║
+║        ║   │  ║ ~~~~~ ║  │ │  ║ ~~~~~ ║  │ │ ║ ~~~~~ ║ │  ║        ║
+║        ║   │  ╚═══════╝  │ │  ╚═══════╝  │ │ ╚═══════╝ │  ║        ║
+║        ║   └──────┬──────┘ └──────┬──────┘ └─────┬─────┘  ║        ║
+║        ║          │               │               │         ║        ║
+║        ║   ╔══════╧═══════════════╧═══════════════╧═══════╗║        ║
+║        ║   ║   /\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\/\   ║║        ║
+║        ║   ╚═══════════════════════════════════════════════╝║        ║
+║        ║                                                   ║        ║
+║        ╚═══════════════════════════════════════════════════╝        ║
+║                                                                      ║
+╚══════════════════════════════════════════════════════════════════════╝</pre>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════
+     03 — STATUS BAND
+══════════════════════════════════════════════ -->
+<div style="border-top:4px solid #F0A961;border-bottom:4px solid #F0A961;background:#161620;overflow:hidden;padding:14px 0;">
+  <div class="marquee-inner" aria-label="Status: Taking Q3 engagements">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#F0A961;">
+      ═══ &bull; TAKING Q3 ENGAGEMENTS &nbsp;&nbsp;&middot;&nbsp;&nbsp; 1 SLOT REMAINING &nbsp;&nbsp;&middot;&nbsp;&nbsp; CONTACT WITHIN 24H &nbsp;&nbsp;&middot;&nbsp;&nbsp; RESPONSE GUARANTEED &nbsp;&nbsp;&middot;&nbsp;&nbsp; NO MIDDLEMEN &nbsp;&nbsp;&middot;&nbsp;&nbsp; PHUKET &times; BANGKOK &nbsp;&nbsp;&middot;&nbsp;&nbsp; ═══ &bull; TAKING Q3 ENGAGEMENTS &nbsp;&nbsp;&middot;&nbsp;&nbsp; 1 SLOT REMAINING &nbsp;&nbsp;&middot;&nbsp;&nbsp; CONTACT WITHIN 24H &nbsp;&nbsp;&middot;&nbsp;&nbsp; RESPONSE GUARANTEED &nbsp;&nbsp;&middot;&nbsp;&nbsp; NO MIDDLEMEN &nbsp;&nbsp;&middot;&nbsp;&nbsp; PHUKET &times; BANGKOK &nbsp;&nbsp;&middot;&nbsp;&nbsp;
+    </span>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════
+     04 — SERVICES
+══════════════════════════════════════════════ -->
+<section id="services" class="border-b-4 border-black py-20" style="background:#0F0F12;">
+  <div class="max-w-7xl mx-auto px-6">
+
+    <!-- HEADER -->
+    <div class="mb-14 reveal">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#8A8A95;">
+        // 02 — SERVICES
+      </span>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:clamp(28px,4vw,48px);font-weight:700;text-transform:uppercase;color:#F5F1E8;margin-top:8px;letter-spacing:-0.02em;">
+        WHAT WE FORGE
+      </div>
+    </div>
+
+    <!-- SERVICE PANELS -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+
+      <!-- Panel 01 -->
+      <div class="reveal shadow-panel-amber" style="background:#161620;border:3px solid #000000;padding:32px;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#F0A961;margin-bottom:16px;">
+          [01]
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:clamp(22px,2.8vw,32px);font-weight:700;text-transform:uppercase;color:#F5F1E8;line-height:1;margin-bottom:16px;letter-spacing:-0.02em;">
+          WEB<br/>DEV
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:400;color:#8A8A95;line-height:1.6;margin-bottom:24px;">
+          Full-stack production systems. Next.js, Nuxt, custom backends. We ship fast and clean — no spaghetti.
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <span class="shadow-chip-orange" style="background:transparent;color:#E67E2C;border:2px solid #E67E2C;padding:3px 8px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">NEXT.JS</span>
+          <span class="shadow-chip-orange" style="background:transparent;color:#E67E2C;border:2px solid #E67E2C;padding:3px 8px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">NODE</span>
+          <span class="shadow-chip-orange" style="background:transparent;color:#E67E2C;border:2px solid #E67E2C;padding:3px 8px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">POSTGRES</span>
+          <span class="shadow-chip-orange" style="background:transparent;color:#E67E2C;border:2px solid #E67E2C;padding:3px 8px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">DOCKER</span>
+        </div>
+      </div>
+
+      <!-- Panel 02 -->
+      <div class="reveal shadow-panel-amber" style="background:#161620;border:3px solid #000000;padding:32px;transition-delay:80ms;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#F0A961;margin-bottom:16px;">
+          [02]
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:clamp(22px,2.8vw,32px);font-weight:700;text-transform:uppercase;color:#F5F1E8;line-height:1;margin-bottom:16px;letter-spacing:-0.02em;">
+          AUTO&shy;<br/>MATION
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:400;color:#8A8A95;line-height:1.6;margin-bottom:24px;">
+          Kill the repetition. Make.com, n8n, custom pipelines. Business logic wired to APIs end-to-end.
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <span class="shadow-chip-orange" style="background:transparent;color:#E67E2C;border:2px solid #E67E2C;padding:3px 8px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">MAKE</span>
+          <span class="shadow-chip-orange" style="background:transparent;color:#E67E2C;border:2px solid #E67E2C;padding:3px 8px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">N8N</span>
+          <span class="shadow-chip-orange" style="background:transparent;color:#E67E2C;border:2px solid #E67E2C;padding:3px 8px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">ZAPIER</span>
+          <span class="shadow-chip-orange" style="background:transparent;color:#E67E2C;border:2px solid #E67E2C;padding:3px 8px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">REST/WH</span>
+        </div>
+      </div>
+
+      <!-- Panel 03 -->
+      <div class="reveal shadow-panel-amber" style="background:#161620;border:3px solid #000000;padding:32px;transition-delay:160ms;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#F0A961;margin-bottom:16px;">
+          [03]
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:clamp(22px,2.8vw,32px);font-weight:700;text-transform:uppercase;color:#F5F1E8;line-height:1;margin-bottom:16px;letter-spacing:-0.02em;">
+          AI<br/>AGENTS
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:400;color:#8A8A95;line-height:1.6;margin-bottom:24px;">
+          LLM-powered workflows that think. Claude, GPT-4, Gemini grounded in your data. Agents, not chatbots.
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <span class="shadow-chip-orange" style="background:transparent;color:#E67E2C;border:2px solid #E67E2C;padding:3px 8px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">CLAUDE</span>
+          <span class="shadow-chip-orange" style="background:transparent;color:#E67E2C;border:2px solid #E67E2C;padding:3px 8px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">OPENAI</span>
+          <span class="shadow-chip-orange" style="background:transparent;color:#E67E2C;border:2px solid #E67E2C;padding:3px 8px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">RAG</span>
+          <span class="shadow-chip-orange" style="background:transparent;color:#E67E2C;border:2px solid #E67E2C;padding:3px 8px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;">VECTOR DB</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════
+     05 — CASES (TERMINAL TABLE)
+══════════════════════════════════════════════ -->
+<section id="cases" class="border-b-4 border-black py-20" style="background:#161620;">
+  <div class="max-w-7xl mx-auto px-6">
+
+    <!-- HEADER -->
+    <div class="mb-10 reveal">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#8A8A95;">
+        // 03 — CASES
+      </span>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:clamp(28px,4vw,48px);font-weight:700;text-transform:uppercase;color:#F5F1E8;margin-top:8px;letter-spacing:-0.02em;">
+        FIELD RECORD
+      </div>
+    </div>
+
+    <!-- TABLE -->
+    <div class="reveal overflow-x-auto" style="border:4px solid #000000;">
+      <table class="w-full" style="border-collapse:collapse;min-width:700px;">
+        <!-- HEADER ROW -->
+        <thead>
+          <tr style="background:#E67E2C;">
+            <th style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#0F0F12;padding:14px 20px;text-align:left;border-right:3px solid #000000;">ID</th>
+            <th style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#0F0F12;padding:14px 20px;text-align:left;border-right:3px solid #000000;">CLIENT</th>
+            <th style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#0F0F12;padding:14px 20px;text-align:left;border-right:3px solid #000000;">STACK</th>
+            <th style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#0F0F12;padding:14px 20px;text-align:left;border-right:3px solid #000000;">RESULT</th>
+            <th style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#0F0F12;padding:14px 20px;text-align:left;">STATUS</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- ROW 1 -->
+          <tr class="case-row" style="border-top:3px solid #000000;">
+            <td style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:#F0A961;padding:16px 20px;border-right:3px solid #000000;white-space:nowrap;">001</td>
+            <td style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:500;color:#F5F1E8;padding:16px 20px;border-right:3px solid #000000;white-space:nowrap;">VIP_RENTAL_PHUKET</td>
+            <td style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:400;color:#8A8A95;padding:16px 20px;border-right:3px solid #000000;white-space:nowrap;">Next.js · Strapi · Postgres · Vercel</td>
+            <td style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:#E67E2C;padding:16px 20px;border-right:3px solid #000000;white-space:nowrap;">+340% CTR · 6WK SHIP</td>
+            <td style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:#F0A961;padding:16px 20px;white-space:nowrap;letter-spacing:0.08em;">[ LIVE ]</td>
+          </tr>
+          <!-- ROW 2 -->
+          <tr class="case-row" style="border-top:3px solid #000000;">
+            <td style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:#F0A961;padding:16px 20px;border-right:3px solid #000000;white-space:nowrap;">002</td>
+            <td style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:500;color:#F5F1E8;padding:16px 20px;border-right:3px solid #000000;white-space:nowrap;">BACKDOOR_STORE</td>
+            <td style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:400;color:#8A8A95;padding:16px 20px;border-right:3px solid #000000;white-space:nowrap;">Vue 3 · Django · Redis · Make.com</td>
+            <td style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:#E67E2C;padding:16px 20px;border-right:3px solid #000000;white-space:nowrap;">80H/MO SAVED · AUTO</td>
+            <td style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:#F0A961;padding:16px 20px;white-space:nowrap;letter-spacing:0.08em;">[ LIVE ]</td>
+          </tr>
+          <!-- ROW 3 -->
+          <tr class="case-row" style="border-top:3px solid #000000;">
+            <td style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:#F0A961;padding:16px 20px;border-right:3px solid #000000;white-space:nowrap;">003</td>
+            <td style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:500;color:#F5F1E8;padding:16px 20px;border-right:3px solid #000000;white-space:nowrap;">RA_PROJECT</td>
+            <td style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:400;color:#8A8A95;padding:16px 20px;border-right:3px solid #000000;white-space:nowrap;">FastAPI · Claude · Pinecone · n8n</td>
+            <td style="font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;color:#E67E2C;padding:16px 20px;border-right:3px solid #000000;white-space:nowrap;">AI AGENT &times;12 SPEED</td>
+            <td style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:#F0A961;padding:16px 20px;white-space:nowrap;letter-spacing:0.08em;">[ ACTIVE ]</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════
+     06 — PROCESS
+══════════════════════════════════════════════ -->
+<section id="process" class="border-b-4 border-black py-20" style="background:#0F0F12;">
+  <div class="max-w-7xl mx-auto px-6">
+
+    <!-- HEADER -->
+    <div class="mb-14 reveal">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#8A8A95;">
+        // 04 — PROCESS
+      </span>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:clamp(28px,4vw,48px);font-weight:700;text-transform:uppercase;color:#F5F1E8;margin-top:8px;letter-spacing:-0.02em;">
+        HOW WE SHIP
+      </div>
+    </div>
+
+    <!-- ASCII FLOW — desktop -->
+    <div class="hidden md:block reveal overflow-x-auto" style="padding:8px 0;">
+      <div style="font-family:'JetBrains Mono',monospace;font-size:clamp(10px,1.2vw,14px);font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#F5F1E8;white-space:nowrap;line-height:2.2;">
+        <span style="color:#F0A961;">╔══════════════╗</span>&nbsp;
+        <span style="color:#E67E2C;">════▶</span>&nbsp;
+        <span style="color:#F0A961;">╔═════════════╗</span>&nbsp;
+        <span style="color:#E67E2C;">════▶</span>&nbsp;
+        <span style="color:#F0A961;">╔═════════════╗</span>&nbsp;
+        <span style="color:#E67E2C;">════▶</span>&nbsp;
+        <span style="color:#F0A961;">╔═════════════╗</span>
+        <br/>
+        <span style="color:#F0A961;">║</span>
+        <span> 01 DISCOVERY </span>
+        <span style="color:#F0A961;">║</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+        <span style="color:#F0A961;">║</span>
+        <span>  02 ARCH    </span>
+        <span style="color:#F0A961;">║</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+        <span style="color:#F0A961;">║</span>
+        <span>  03 BUILD   </span>
+        <span style="color:#F0A961;">║</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+        <span style="color:#F0A961;">║</span>
+        <span> 04 HANDOFF  </span>
+        <span style="color:#F0A961;">║</span>
+        <br/>
+        <span style="color:#F0A961;">╚══════════════╝</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+        <span style="color:#F0A961;">╚═════════════╝</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+        <span style="color:#F0A961;">╚═════════════╝</span>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+        <span style="color:#F0A961;">╚═════════════╝</span>
+      </div>
+    </div>
+
+    <!-- STEPS — cards (visible on all sizes) -->
+    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6 mt-12">
+
+      <div class="reveal" style="border:3px solid #F0A961;padding:24px;background:#161620;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:32px;font-weight:700;color:#E67E2C;margin-bottom:8px;">01</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;text-transform:uppercase;color:#F5F1E8;margin-bottom:8px;letter-spacing:0.04em;">DISCOVERY</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A8A95;line-height:1.6;">Kick-off, goals, constraints. No meetings after this — just a spec doc.</div>
+      </div>
+
+      <div class="reveal" style="border:3px solid #F0A961;padding:24px;background:#161620;transition-delay:80ms;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:32px;font-weight:700;color:#E67E2C;margin-bottom:8px;">02</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;text-transform:uppercase;color:#F5F1E8;margin-bottom:8px;letter-spacing:0.04em;">ARCHITECTURE</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A8A95;line-height:1.6;">Stack decision, data model, infra diagram. You approve before code starts.</div>
+      </div>
+
+      <div class="reveal" style="border:3px solid #F0A961;padding:24px;background:#161620;transition-delay:160ms;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:32px;font-weight:700;color:#E67E2C;margin-bottom:8px;">03</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;text-transform:uppercase;color:#F5F1E8;margin-bottom:8px;letter-spacing:0.04em;">BUILD</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A8A95;line-height:1.6;">Weekly demo deploys. Git access from day 1. We ship — no endless WIPs.</div>
+      </div>
+
+      <div class="reveal" style="border:3px solid #F0A961;padding:24px;background:#161620;transition-delay:240ms;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:32px;font-weight:700;color:#E67E2C;margin-bottom:8px;">04</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;text-transform:uppercase;color:#F5F1E8;margin-bottom:8px;letter-spacing:0.04em;">HANDOFF</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#8A8A95;line-height:1.6;">Full source, runbook, 30-day support window. You own it completely.</div>
+      </div>
+
+    </div>
+
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════
+     07 — STATS
+══════════════════════════════════════════════ -->
+<section class="border-b-4 border-black py-20" style="background:#161620;">
+  <div class="max-w-7xl mx-auto px-6">
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+
+      <div class="reveal shadow-stat-panel" style="border:3px solid #000000;padding:28px 20px;background:#0F0F12;text-align:center;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:clamp(48px,7vw,96px);font-weight:700;color:#E67E2C;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-0.03em;">12+</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#8A8A95;margin-top:8px;">PROJECTS</div>
+      </div>
+
+      <div class="reveal shadow-stat-panel" style="border:3px solid #000000;padding:28px 20px;background:#0F0F12;text-align:center;transition-delay:80ms;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:clamp(48px,7vw,96px);font-weight:700;color:#E67E2C;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-0.03em;">96%</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#8A8A95;margin-top:8px;">ON SCHEDULE</div>
+      </div>
+
+      <div class="reveal shadow-stat-panel" style="border:3px solid #000000;padding:28px 20px;background:#0F0F12;text-align:center;transition-delay:160ms;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:clamp(48px,7vw,96px);font-weight:700;color:#E67E2C;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-0.03em;">4YR</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#8A8A95;margin-top:8px;">EXPERIENCE</div>
+      </div>
+
+      <div class="reveal shadow-stat-panel" style="border:3px solid #000000;padding:28px 20px;background:#0F0F12;text-align:center;transition-delay:240ms;">
+        <div style="font-family:'JetBrains Mono',monospace;font-size:clamp(48px,7vw,96px);font-weight:700;color:#E67E2C;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-0.03em;">&infin;</div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.12em;text-transform:uppercase;color:#8A8A95;margin-top:8px;">COMMITMENT</div>
+      </div>
+
+    </div>
+
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════
+     08 — MANIFESTO BAND
+══════════════════════════════════════════════ -->
+<div class="reveal" style="background:#F0A961;border-top:4px solid #000000;border-bottom:4px solid #000000;padding:52px 24px;text-align:center;">
+  <div style="max-width:900px;margin:0 auto;">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:clamp(18px,3.5vw,56px);font-weight:700;text-transform:uppercase;color:#0F0F12;line-height:1.1;letter-spacing:-0.02em;">
+      // IF WE CAN'T SHIP IT IN 8 WEEKS, WE DON'T TAKE IT.
+    </div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:500;letter-spacing:0.1em;text-transform:uppercase;color:#161620;margin-top:20px;opacity:0.7;">
+      — ALEX &amp; NIKOLAY, STUDIO// FOUNDERS
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════
+     09 — CONTACT
+══════════════════════════════════════════════ -->
+<section id="contact" class="border-b-4 border-black py-20" style="background:#0F0F12;">
+  <div class="max-w-4xl mx-auto px-6">
+
+    <div class="reveal" style="border:4px solid #F0A961;padding:clamp(28px,5vw,56px);position:relative;">
+
+      <!-- ASCII FRAME DECORATION — corners -->
+      <span style="position:absolute;top:-2px;left:-2px;font-family:'JetBrains Mono',monospace;font-size:18px;color:#F0A961;line-height:1;">&#9556;</span>
+      <span style="position:absolute;top:-2px;right:-2px;font-family:'JetBrains Mono',monospace;font-size:18px;color:#F0A961;line-height:1;">&#9559;</span>
+      <span style="position:absolute;bottom:-2px;left:-2px;font-family:'JetBrains Mono',monospace;font-size:18px;color:#F0A961;line-height:1;">&#9562;</span>
+      <span style="position:absolute;bottom:-2px;right:-2px;font-family:'JetBrains Mono',monospace;font-size:18px;color:#F0A961;line-height:1;">&#9565;</span>
+
+      <!-- HEADER -->
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.14em;text-transform:uppercase;color:#8A8A95;margin-bottom:8px;">
+        // 05 — CONTACT
+      </div>
+
+      <!-- PROMPT -->
+      <div style="font-family:'JetBrains Mono',monospace;font-size:clamp(14px,2vw,20px);font-weight:700;color:#F0A961;margin-bottom:32px;letter-spacing:0.02em;">
+        user@studio:~$ contact<span class="cursor-blink"></span>
+      </div>
+
+      <!-- HEADLINE -->
+      <div style="font-family:'JetBrains Mono',monospace;font-size:clamp(28px,5vw,56px);font-weight:700;text-transform:uppercase;color:#F5F1E8;line-height:0.95;margin-bottom:32px;letter-spacing:-0.03em;">
+        LET'S<br/>TALK.
+      </div>
+
+      <!-- LINKS -->
+      <div class="flex flex-col gap-5 mb-12">
+        <a href="mailto:HELLO@STUDIO.DEV"
+           style="font-family:'JetBrains Mono',monospace;font-size:clamp(14px,2vw,20px);font-weight:700;text-transform:uppercase;color:#E67E2C;letter-spacing:0.04em;text-decoration:none;display:inline-flex;align-items:center;gap:8px;transition:color 120ms linear;"
+           onmouseover="this.style.color='#F0A961'" onmouseout="this.style.color='#E67E2C'">
+          &#9492;&#9472; EMAIL: HELLO@STUDIO.DEV
+        </a>
+        <a href="https://t.me/studioxxx"
+           target="_blank"
+           style="font-family:'JetBrains Mono',monospace;font-size:clamp(14px,2vw,20px);font-weight:700;text-transform:uppercase;color:#E67E2C;letter-spacing:0.04em;text-decoration:none;display:inline-flex;align-items:center;gap:8px;transition:color 120ms linear;"
+           onmouseover="this.style.color='#F0A961'" onmouseout="this.style.color='#E67E2C'">
+          &#9492;&#9472; TELEGRAM: @STUDIOXXX
+        </a>
+      </div>
+
+      <!-- CTA BUTTONS -->
+      <div class="flex flex-wrap gap-6 items-center">
+        <a href="mailto:HELLO@STUDIO.DEV"
+           class="shadow-btn-primary"
+           style="background:#E67E2C;color:#0F0F12;border:4px solid #000000;padding:16px 36px;font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;text-decoration:none;display:inline-block;">
+          &#9656;&nbsp;SEND MESSAGE
+        </a>
+        <a href="https://t.me/studioxxx"
+           target="_blank"
+           class="shadow-btn-secondary-orange"
+           style="background:transparent;color:#F0A961;border:4px solid #F0A961;padding:16px 36px;font-family:'JetBrains Mono',monospace;font-size:14px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;text-decoration:none;display:inline-block;">
+          TELEGRAM
+        </a>
+      </div>
+
+    </div>
+
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════
+     10 — FOOTER
+══════════════════════════════════════════════ -->
+<footer style="background:#000000;border-top:0;padding:20px 24px;">
+  <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3">
+    <div style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#8A8A95;text-align:center;">
+      &copy; 2026 STUDIO// &mdash; FORGED IN PHUKET &times; BANGKOK &mdash; BY ALEX &times; NIKOLAY
+    </div>
+    <div style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:400;letter-spacing:0.08em;text-transform:uppercase;color:#3A3A45;">
+      V1.0 &middot; BRUTALIST FURNACE
+    </div>
+  </div>
+</footer>
+
+
+<!-- ══════════════════════════════════════════════
+     JS — MOBILE NAV + INTERSECTION OBSERVER
+══════════════════════════════════════════════ -->
+<script>
+  // ── Mobile nav toggle
+  const navToggle = document.getElementById('nav-toggle');
+  const mobileMenu = document.getElementById('mobile-menu');
+  if (navToggle && mobileMenu) {
+    navToggle.addEventListener('click', function() {
+      mobileMenu.classList.toggle('hidden');
+    });
+  }
+
+  // ── IntersectionObserver for .reveal elements
+  const revealEls = document.querySelectorAll('.reveal');
+  const observer = new IntersectionObserver(function(entries) {
+    entries.forEach(function(entry) {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('visible');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, {
+    threshold: 0.08,
+    rootMargin: '0px 0px -40px 0px'
+  });
+
+  revealEls.forEach(function(el) {
+    observer.observe(el);
+  });
+</script>
+
+</body>
+</html>

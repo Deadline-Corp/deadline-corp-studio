@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STUDIO — FORGE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          'bg': '#161208',
+          'surface': '#1F1A0F',
+          'border-dark': '#0A0805',
+          'cream': '#F0E8D5',
+          'mute': '#8A7E64',
+          'copper': '#C76A2D',
+          'sand': '#D9A057',
+          'rust': '#B83227',
+        },
+        fontFamily: {
+          'display': ['Space Grotesk', 'sans-serif'],
+          'mono': ['JetBrains Mono', 'monospace'],
+        },
+      }
+    }
+  }
+</script>
+<style>
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: #161208;
+    color: #F0E8D5;
+    font-family: 'JetBrains Mono', monospace;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+  }
+
+  /* --- BUTTON SYSTEM --- */
+  .btn-primary {
+    background: #C76A2D;
+    color: #161208;
+    border: 4px solid #0A0805;
+    box-shadow: 8px 8px 0 #0A0805;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 14px 28px;
+    cursor: pointer;
+    display: inline-block;
+    border-radius: 0;
+    transition: transform 120ms cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 120ms cubic-bezier(0.4, 0, 0.2, 1);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .btn-primary:hover {
+    transform: translate(8px, 8px);
+    box-shadow: 0 0 0 #0A0805;
+  }
+
+  .btn-secondary {
+    background: #1F1A0F;
+    color: #F0E8D5;
+    border: 4px solid #0A0805;
+    box-shadow: 8px 8px 0 #0A0805;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 14px 28px;
+    cursor: pointer;
+    display: inline-block;
+    border-radius: 0;
+    transition: transform 120ms cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 120ms cubic-bezier(0.4, 0, 0.2, 1);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .btn-secondary:hover {
+    transform: translate(8px, 8px);
+    box-shadow: 0 0 0 #0A0805;
+  }
+
+  .btn-chip {
+    background: #1F1A0F;
+    color: #F0E8D5;
+    border: 3px solid #0A0805;
+    box-shadow: 4px 4px 0 #0A0805;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 500;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 8px 16px;
+    cursor: pointer;
+    display: inline-block;
+    border-radius: 0;
+    transition: transform 120ms cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 120ms cubic-bezier(0.4, 0, 0.2, 1);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .btn-chip:hover {
+    transform: translate(4px, 4px);
+    box-shadow: 0 0 0 #0A0805;
+  }
+
+  .btn-chip-copper {
+    background: #C76A2D;
+    color: #161208;
+    border: 3px solid #0A0805;
+    box-shadow: 4px 4px 0 #0A0805;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 8px 16px;
+    cursor: pointer;
+    display: inline-block;
+    border-radius: 0;
+    transition: transform 120ms cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 120ms cubic-bezier(0.4, 0, 0.2, 1);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .btn-chip-copper:hover {
+    transform: translate(4px, 4px);
+    box-shadow: 0 0 0 #0A0805;
+  }
+
+  /* --- CARDS --- */
+  .sticker-card {
+    background: #1F1A0F;
+    border: 4px solid #0A0805;
+    box-shadow: 6px 6px 0 #0A0805;
+    border-radius: 0;
+    transition: transform 120ms cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .sticker-card:hover {
+    transform: translate(-3px, -3px) rotate(0deg) !important;
+    box-shadow: 9px 9px 0 #0A0805;
+  }
+
+  .stack-chip {
+    background: transparent;
+    border: 2px solid #8A7E64;
+    color: #8A7E64;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    display: inline-block;
+    border-radius: 0;
+  }
+
+  /* --- TYPOGRAPHIC SCULPTURE --- */
+  .typo-sculpture {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+    line-height: 0.88;
+    user-select: none;
+  }
+
+  .typo-word {
+    font-family: 'Space Grotesk', sans-serif;
+    font-weight: 700;
+    text-transform: uppercase;
+    display: block;
+    transition: opacity 300ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .typo-word:hover {
+    opacity: 0.7;
+  }
+
+  /* --- NAV --- */
+  .nav-bar {
+    border-bottom: 4px solid #0A0805;
+    background: #161208;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  /* --- STATS BAND --- */
+  .stats-band {
+    background: #1F1A0F;
+    border-top: 4px solid #0A0805;
+    border-bottom: 4px solid #0A0805;
+  }
+
+  /* --- MANIFESTO --- */
+  .manifesto-block {
+    background: #161208;
+    border-top: 4px solid #0A0805;
+    border-bottom: 4px solid #0A0805;
+  }
+
+  /* --- PROCESS ARROW --- */
+  .process-arrow {
+    color: #C76A2D;
+    font-size: 24px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+    align-self: center;
+    flex-shrink: 0;
+  }
+
+  /* --- SLIDE-IN ANIMATION --- */
+  .slide-in {
+    opacity: 0;
+    transform: translateY(40px);
+    transition: opacity 400ms cubic-bezier(0.4, 0, 0.2, 1),
+                transform 400ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .slide-in.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .slide-in-left {
+    opacity: 0;
+    transform: translateX(-60px);
+    transition: opacity 400ms cubic-bezier(0.4, 0, 0.2, 1),
+                transform 400ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .slide-in-left.visible {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  /* --- NUMBER TABULAR --- */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  /* --- SECTION LABEL --- */
+  .section-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: #8A7E64;
+    border-bottom: 1px solid #2A2316;
+    padding-bottom: 12px;
+    margin-bottom: 32px;
+  }
+
+  /* --- CONTACT BLOCK --- */
+  .contact-block {
+    background: #1F1A0F;
+    border: 4px solid #C76A2D;
+    box-shadow: 8px 8px 0 #0A0805;
+  }
+
+  /* --- FOOTER --- */
+  .footer-band {
+    border-top: 4px solid #0A0805;
+    background: #0A0805;
+  }
+
+  /* --- MOBILE --- */
+  @media (max-width: 768px) {
+    .btn-primary, .btn-secondary {
+      box-shadow: 4px 4px 0 #0A0805;
+      padding: 12px 20px;
+      font-size: 11px;
+    }
+    .btn-primary:hover, .btn-secondary:hover {
+      transform: translate(4px, 4px);
+    }
+    .sticker-card {
+      box-shadow: 4px 4px 0 #0A0805;
+    }
+    .contact-block {
+      box-shadow: 4px 4px 0 #0A0805;
+    }
+  }
+
+  /* --- HORIZONTAL SCROLL PREVENTION --- */
+  .overflow-clip {
+    overflow: hidden;
+  }
+
+  /* --- DIVIDER LINE --- */
+  .divider {
+    border: none;
+    border-top: 2px solid #2A2316;
+    margin: 0;
+  }
+
+  /* Stagger delays */
+  .delay-1 { transition-delay: 80ms; }
+  .delay-2 { transition-delay: 160ms; }
+  .delay-3 { transition-delay: 240ms; }
+  .delay-4 { transition-delay: 320ms; }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="nav-bar">
+  <div style="max-width: 1280px; margin: 0 auto; padding: 0 32px;">
+    <div style="display: flex; align-items: center; justify-content: space-between; height: 72px; gap: 24px;">
+
+      <!-- Logo -->
+      <a href="#" style="font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 22px; color: #C76A2D; letter-spacing: 0.05em; text-decoration: none; text-transform: uppercase; white-space: nowrap; flex-shrink: 0;">
+        STUDIO
+      </a>
+
+      <!-- Nav chips — hidden on mobile -->
+      <div style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap;" class="nav-chips">
+        <a href="#services" class="btn-chip">Services</a>
+        <a href="#work" class="btn-chip">Work</a>
+        <a href="#process" class="btn-chip">Process</a>
+        <a href="#contact" class="btn-chip">Contact</a>
+      </div>
+
+      <!-- CTA -->
+      <a href="#contact" class="btn-primary" style="flex-shrink: 0;">Talk to us</a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section style="min-height: 100vh; display: flex; flex-direction: column; justify-content: center; padding: 80px 32px 64px; max-width: 1280px; margin: 0 auto; overflow: hidden;">
+
+  <!-- Est. chip -->
+  <div style="margin-bottom: 48px;">
+    <span class="btn-chip-copper">[ EST. 2026 &nbsp;&middot;&nbsp; BUILT IN PHUKET &times; BANGKOK ]</span>
+  </div>
+
+  <!-- Typographic Sculpture -->
+  <div class="typo-sculpture" style="margin-bottom: 56px;">
+
+    <!-- WEB — copper, big, slight right offset, -1deg -->
+    <span class="typo-word" style="
+      font-size: clamp(72px, 14vw, 130px);
+      color: #C76A2D;
+      transform: rotate(-1deg) translateX(8px);
+      z-index: 5;
+      position: relative;
+      letter-spacing: -0.03em;
+    ">WEB</span>
+
+    <!-- · AUTOMATION · — cream, medium, +2deg, left pull -->
+    <span class="typo-word" style="
+      font-size: clamp(38px, 7.5vw, 72px);
+      color: #F0E8D5;
+      transform: rotate(2deg) translateX(-16px);
+      z-index: 4;
+      position: relative;
+      letter-spacing: -0.01em;
+      margin-top: -8px;
+    ">· AUTOMATION ·</span>
+
+    <!-- AI — sand, largest, -2deg, right indent -->
+    <span class="typo-word" style="
+      font-size: clamp(90px, 17vw, 160px);
+      color: #D9A057;
+      transform: rotate(-2deg) translateX(48px);
+      z-index: 3;
+      position: relative;
+      letter-spacing: -0.04em;
+      margin-top: -12px;
+    ">AI</span>
+
+    <!-- BUILT — cream, medium-large, +1deg, slight left -->
+    <span class="typo-word" style="
+      font-size: clamp(50px, 9.5vw, 96px);
+      color: #F0E8D5;
+      transform: rotate(1deg) translateX(-8px);
+      z-index: 5;
+      position: relative;
+      letter-spacing: -0.02em;
+      margin-top: -8px;
+    ">BUILT</span>
+
+    <!-- DELIVERED — mute/copper, small-medium, -1.5deg, deep indent -->
+    <span class="typo-word" style="
+      font-size: clamp(28px, 5.5vw, 52px);
+      color: #8A7E64;
+      transform: rotate(-1.5deg) translateX(72px);
+      z-index: 2;
+      position: relative;
+      letter-spacing: 0.02em;
+      margin-top: 4px;
+    ">DELIVERED</span>
+
+    <!-- ALWAYS. — copper, medium, +0.5deg, left edge -->
+    <span class="typo-word" style="
+      font-size: clamp(44px, 8.5vw, 80px);
+      color: #C76A2D;
+      transform: rotate(0.5deg) translateX(-24px);
+      z-index: 6;
+      position: relative;
+      letter-spacing: -0.01em;
+      margin-top: -4px;
+    ">ALWAYS.</span>
+
+  </div>
+
+  <!-- Subtitle mono -->
+  <div style="max-width: 720px; margin-bottom: 48px;">
+    <p style="
+      font-family: 'JetBrains Mono', monospace;
+      font-size: clamp(11px, 1.5vw, 14px);
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      color: #8A7E64;
+      text-transform: uppercase;
+      line-height: 1.7;
+      margin: 0;
+    ">WE BUILD SOFTWARE, AUTOMATE OPS, SHIP AI AGENTS &nbsp;&middot;&nbsp; NO FLUFF &nbsp;&middot;&nbsp; NO PITCHES</p>
+  </div>
+
+  <!-- CTA Row -->
+  <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: center;">
+    <a href="#contact" class="btn-primary" style="font-size: 14px; padding: 18px 36px;">Start a project</a>
+    <a href="#work" class="btn-secondary" style="font-size: 14px; padding: 18px 36px;">See our work</a>
+    <span class="btn-chip-copper" style="font-size: 10px;">без воды</span>
+  </div>
+
+</section>
+
+<!-- STATS BAND -->
+<div class="stats-band">
+  <div style="max-width: 1280px; margin: 0 auto; padding: 0 32px;">
+    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0;">
+
+      <!-- Stat 1 -->
+      <div class="slide-in" style="padding: 48px 32px; border-right: 2px solid #0A0805;">
+        <div class="tabular" style="
+          font-family: 'Space Grotesk', sans-serif;
+          font-weight: 700;
+          font-size: clamp(48px, 8vw, 96px);
+          color: #C76A2D;
+          line-height: 1;
+          letter-spacing: -0.03em;
+        ">12+</div>
+        <div style="
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 10px;
+          font-weight: 500;
+          letter-spacing: 0.15em;
+          color: #8A7E64;
+          text-transform: uppercase;
+          margin-top: 12px;
+        ">Projects</div>
+      </div>
+
+      <!-- Stat 2 -->
+      <div class="slide-in delay-1" style="padding: 48px 32px; border-right: 2px solid #0A0805;">
+        <div class="tabular" style="
+          font-family: 'Space Grotesk', sans-serif;
+          font-weight: 700;
+          font-size: clamp(48px, 8vw, 96px);
+          color: #D9A057;
+          line-height: 1;
+          letter-spacing: -0.03em;
+        ">4yrs</div>
+        <div style="
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 10px;
+          font-weight: 500;
+          letter-spacing: 0.15em;
+          color: #8A7E64;
+          text-transform: uppercase;
+          margin-top: 12px;
+        ">Shipping</div>
+      </div>
+
+      <!-- Stat 3 -->
+      <div class="slide-in delay-2" style="padding: 48px 32px; border-right: 2px solid #0A0805;">
+        <div class="tabular" style="
+          font-family: 'Space Grotesk', sans-serif;
+          font-weight: 700;
+          font-size: clamp(48px, 8vw, 96px);
+          color: #F0E8D5;
+          line-height: 1;
+          letter-spacing: -0.03em;
+        ">&infin;</div>
+        <div style="
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 10px;
+          font-weight: 500;
+          letter-spacing: 0.15em;
+          color: #8A7E64;
+          text-transform: uppercase;
+          margin-top: 12px;
+        ">Coffees</div>
+      </div>
+
+      <!-- Stat 4 -->
+      <div class="slide-in delay-3" style="padding: 48px 32px;">
+        <div class="tabular" style="
+          font-family: 'Space Grotesk', sans-serif;
+          font-weight: 700;
+          font-size: clamp(48px, 8vw, 96px);
+          color: #F0E8D5;
+          line-height: 1;
+          letter-spacing: -0.03em;
+        ">0</div>
+        <div style="
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 10px;
+          font-weight: 500;
+          letter-spacing: 0.15em;
+          color: #8A7E64;
+          text-transform: uppercase;
+          margin-top: 12px;
+        ">BS</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- SERVICES -->
+<section id="services" style="padding: 96px 32px; max-width: 1280px; margin: 0 auto;">
+
+  <div class="section-label">[ 01 ] &mdash; What we forge</div>
+
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 32px; align-items: start;">
+
+    <!-- Card 1 — Web -->
+    <div class="sticker-card slide-in-left" style="padding: 40px; transform: rotate(-2deg);">
+      <div style="
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.15em;
+        color: #C76A2D;
+        text-transform: uppercase;
+        margin-bottom: 16px;
+      ">[01] WEB</div>
+      <div style="
+        font-family: 'Space Grotesk', sans-serif;
+        font-weight: 700;
+        font-size: clamp(28px, 4vw, 40px);
+        color: #F0E8D5;
+        line-height: 1.1;
+        margin-bottom: 20px;
+        text-transform: uppercase;
+      ">Web<br>Development</div>
+      <p style="
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        color: #8A7E64;
+        line-height: 1.7;
+        margin: 0 0 28px;
+        font-weight: 400;
+      ">From landing pages to full-stack platforms. Fast, clean, production-grade. We don't ship prototypes labeled as products.</p>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+        <span class="stack-chip">Next.js</span>
+        <span class="stack-chip">React</span>
+        <span class="stack-chip">Node</span>
+        <span class="stack-chip">PostgreSQL</span>
+        <span class="stack-chip">Tailwind</span>
+      </div>
+    </div>
+
+    <!-- Card 2 — Automation -->
+    <div class="sticker-card slide-in delay-1" style="padding: 40px; transform: rotate(2deg); margin-top: 24px;">
+      <div style="
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.15em;
+        color: #D9A057;
+        text-transform: uppercase;
+        margin-bottom: 16px;
+      ">[02] OPS</div>
+      <div style="
+        font-family: 'Space Grotesk', sans-serif;
+        font-weight: 700;
+        font-size: clamp(28px, 4vw, 40px);
+        color: #F0E8D5;
+        line-height: 1.1;
+        margin-bottom: 20px;
+        text-transform: uppercase;
+      ">Process<br>Automation</div>
+      <p style="
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        color: #8A7E64;
+        line-height: 1.7;
+        margin: 0 0 28px;
+        font-weight: 400;
+      ">We map your ops, kill the manual work, connect the tools. If a human is doing something a machine should do — we fix that.</p>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+        <span class="stack-chip">n8n</span>
+        <span class="stack-chip">Make</span>
+        <span class="stack-chip">Zapier</span>
+        <span class="stack-chip">Python</span>
+        <span class="stack-chip">Webhooks</span>
+      </div>
+    </div>
+
+    <!-- Card 3 — AI -->
+    <div class="sticker-card slide-in delay-2" style="padding: 40px; transform: rotate(-1deg);">
+      <div style="
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.15em;
+        color: #C76A2D;
+        text-transform: uppercase;
+        margin-bottom: 16px;
+      ">[03] AI</div>
+      <div style="
+        font-family: 'Space Grotesk', sans-serif;
+        font-weight: 700;
+        font-size: clamp(28px, 4vw, 40px);
+        color: #F0E8D5;
+        line-height: 1.1;
+        margin-bottom: 20px;
+        text-transform: uppercase;
+      ">AI Agents<br>&amp; Systems</div>
+      <p style="
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        color: #8A7E64;
+        line-height: 1.7;
+        margin: 0 0 28px;
+        font-weight: 400;
+      ">Custom LLM pipelines, RAG systems, AI-powered workflows. Not demos — production systems that run 24/7 without supervision.</p>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+        <span class="stack-chip">Claude</span>
+        <span class="stack-chip">GPT-4o</span>
+        <span class="stack-chip">RAG</span>
+        <span class="stack-chip">LangChain</span>
+        <span class="stack-chip">Vector DB</span>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- SHOWCASE / WORK -->
+<section id="work" style="padding: 96px 32px; background: #1F1A0F; border-top: 4px solid #0A0805; border-bottom: 4px solid #0A0805;">
+  <div style="max-width: 1280px; margin: 0 auto;">
+
+    <div class="section-label">[ 02 ] &mdash; Forged work</div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; align-items: start;">
+
+      <!-- Case 1 -->
+      <div class="sticker-card slide-in" style="padding: 40px; transform: rotate(-1.5deg);">
+        <div style="
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 10px;
+          font-weight: 500;
+          letter-spacing: 0.15em;
+          color: #8A7E64;
+          text-transform: uppercase;
+          margin-bottom: 12px;
+        ">CLIENT &mdash;&mdash; LOGISTICS CO.</div>
+        <div style="
+          font-family: 'Space Grotesk', sans-serif;
+          font-weight: 700;
+          font-size: clamp(18px, 2.5vw, 24px);
+          color: #C76A2D;
+          text-transform: uppercase;
+          margin-bottom: 16px;
+          line-height: 1.2;
+        ">Order Processing<br>Pipeline</div>
+        <p style="
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 11px;
+          color: #8A7E64;
+          line-height: 1.65;
+          margin: 0 0 24px;
+        ">Replaced 3 manual processes with a single automated pipeline. Handles 400+ orders/day with zero human touch.</p>
+        <div style="display: flex; align-items: baseline; gap: 12px; margin-bottom: 24px;">
+          <span class="tabular" style="
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: clamp(36px, 6vw, 56px);
+            font-weight: 700;
+            color: #D9A057;
+            line-height: 1;
+            letter-spacing: -0.03em;
+          ">+32%</span>
+          <span style="
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            color: #8A7E64;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+          ">Throughput</span>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+          <span class="stack-chip">n8n</span>
+          <span class="stack-chip">Postgres</span>
+          <span class="stack-chip">Telegram Bot</span>
+        </div>
+      </div>
+
+      <!-- Case 2 -->
+      <div class="sticker-card slide-in delay-1" style="padding: 40px; transform: rotate(2deg); margin-top: 32px;">
+        <div style="
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 10px;
+          font-weight: 500;
+          letter-spacing: 0.15em;
+          color: #8A7E64;
+          text-transform: uppercase;
+          margin-bottom: 12px;
+        ">CLIENT &mdash;&mdash; REAL ESTATE</div>
+        <div style="
+          font-family: 'Space Grotesk', sans-serif;
+          font-weight: 700;
+          font-size: clamp(18px, 2.5vw, 24px);
+          color: #C76A2D;
+          text-transform: uppercase;
+          margin-bottom: 16px;
+          line-height: 1.2;
+        ">Lead Scoring<br>AI Agent</div>
+        <p style="
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 11px;
+          color: #8A7E64;
+          line-height: 1.65;
+          margin: 0 0 24px;
+        ">GPT-4o powered agent qualifies inbound leads, sends personalized follow-ups, books calls in calendar. Runs 24/7.</p>
+        <div style="display: flex; align-items: baseline; gap: 12px; margin-bottom: 24px;">
+          <span class="tabular" style="
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: clamp(36px, 6vw, 56px);
+            font-weight: 700;
+            color: #D9A057;
+            line-height: 1;
+            letter-spacing: -0.03em;
+          ">-68%</span>
+          <span style="
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            color: #8A7E64;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+          ">Response time</span>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+          <span class="stack-chip">GPT-4o</span>
+          <span class="stack-chip">Make.com</span>
+          <span class="stack-chip">Cal.com</span>
+        </div>
+      </div>
+
+      <!-- Case 3 -->
+      <div class="sticker-card slide-in delay-2" style="padding: 40px; transform: rotate(-0.5deg);">
+        <div style="
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 10px;
+          font-weight: 500;
+          letter-spacing: 0.15em;
+          color: #8A7E64;
+          text-transform: uppercase;
+          margin-bottom: 12px;
+        ">CLIENT &mdash;&mdash; SAAS STARTUP</div>
+        <div style="
+          font-family: 'Space Grotesk', sans-serif;
+          font-weight: 700;
+          font-size: clamp(18px, 2.5vw, 24px);
+          color: #C76A2D;
+          text-transform: uppercase;
+          margin-bottom: 16px;
+          line-height: 1.2;
+        ">Dashboard<br>Platform</div>
+        <p style="
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 11px;
+          color: #8A7E64;
+          line-height: 1.65;
+          margin: 0 0 24px;
+        ">Full-stack analytics platform. Multi-tenant, real-time, deployed from zero. 6 weeks from brief to launch.</p>
+        <div style="display: flex; align-items: baseline; gap: 12px; margin-bottom: 24px;">
+          <span class="tabular" style="
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: clamp(36px, 6vw, 56px);
+            font-weight: 700;
+            color: #D9A057;
+            line-height: 1;
+            letter-spacing: -0.03em;
+          ">6w</span>
+          <span style="
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            color: #8A7E64;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+          ">Brief to launch</span>
+        </div>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+          <span class="stack-chip">Next.js</span>
+          <span class="stack-chip">Supabase</span>
+          <span class="stack-chip">Vercel</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- PROCESS -->
+<section id="process" style="padding: 96px 32px; max-width: 1280px; margin: 0 auto;">
+
+  <div class="section-label">[ 03 ] &mdash; How we work</div>
+
+  <div style="display: flex; flex-wrap: wrap; gap: 0; align-items: stretch;">
+
+    <!-- Step 1 -->
+    <div class="slide-in" style="flex: 1; min-width: 220px; max-width: 280px;">
+      <div style="
+        background: #1F1A0F;
+        border: 4px solid #0A0805;
+        box-shadow: 6px 6px 0 #0A0805;
+        padding: 32px 28px;
+        height: 100%;
+        min-height: 220px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      ">
+        <div>
+          <div style="
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            font-weight: 700;
+            color: #C76A2D;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            margin-bottom: 20px;
+          ">STEP 01</div>
+          <div style="
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 700;
+            font-size: 20px;
+            color: #F0E8D5;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+          ">Brief</div>
+          <p style="
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: #8A7E64;
+            line-height: 1.65;
+            margin: 0;
+          ">One call. We ask the ugly questions. You get clarity.</p>
+        </div>
+        <div style="
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 10px;
+          color: #2A2316;
+          margin-top: 20px;
+          letter-spacing: 0.08em;
+        ">&mdash; 1&ndash;3 DAYS</div>
+      </div>
+    </div>
+
+    <!-- Arrow 1 -->
+    <div class="process-arrow" style="padding: 0 8px; display: flex; align-items: center;">&#9656;&#9656;</div>
+
+    <!-- Step 2 -->
+    <div class="slide-in delay-1" style="flex: 1; min-width: 220px; max-width: 280px;">
+      <div style="
+        background: #1F1A0F;
+        border: 4px solid #0A0805;
+        box-shadow: 6px 6px 0 #0A0805;
+        padding: 32px 28px;
+        height: 100%;
+        min-height: 220px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      ">
+        <div>
+          <div style="
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            font-weight: 700;
+            color: #D9A057;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            margin-bottom: 20px;
+          ">STEP 02</div>
+          <div style="
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 700;
+            font-size: 20px;
+            color: #F0E8D5;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+          ">Plan</div>
+          <p style="
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: #8A7E64;
+            line-height: 1.65;
+            margin: 0;
+          ">Scope, timeline, tech stack. Fixed price. No surprises.</p>
+        </div>
+        <div style="
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 10px;
+          color: #2A2316;
+          margin-top: 20px;
+          letter-spacing: 0.08em;
+        ">&mdash; 2&ndash;4 DAYS</div>
+      </div>
+    </div>
+
+    <!-- Arrow 2 -->
+    <div class="process-arrow" style="padding: 0 8px; display: flex; align-items: center;">&#9656;&#9656;</div>
+
+    <!-- Step 3 -->
+    <div class="slide-in delay-2" style="flex: 1; min-width: 220px; max-width: 280px;">
+      <div style="
+        background: #1F1A0F;
+        border: 4px solid #0A0805;
+        box-shadow: 6px 6px 0 #0A0805;
+        padding: 32px 28px;
+        height: 100%;
+        min-height: 220px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      ">
+        <div>
+          <div style="
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            font-weight: 700;
+            color: #C76A2D;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            margin-bottom: 20px;
+          ">STEP 03</div>
+          <div style="
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 700;
+            font-size: 20px;
+            color: #F0E8D5;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+          ">Build</div>
+          <p style="
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: #8A7E64;
+            line-height: 1.65;
+            margin: 0;
+          ">We forge it. Weekly check-ins. Code is yours from day one.</p>
+        </div>
+        <div style="
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 10px;
+          color: #2A2316;
+          margin-top: 20px;
+          letter-spacing: 0.08em;
+        ">&mdash; UNTIL DONE</div>
+      </div>
+    </div>
+
+    <!-- Arrow 3 -->
+    <div class="process-arrow" style="padding: 0 8px; display: flex; align-items: center;">&#9656;&#9656;</div>
+
+    <!-- Step 4 -->
+    <div class="slide-in delay-3" style="flex: 1; min-width: 220px; max-width: 280px;">
+      <div style="
+        background: #C76A2D;
+        border: 4px solid #0A0805;
+        box-shadow: 6px 6px 0 #0A0805;
+        padding: 32px 28px;
+        height: 100%;
+        min-height: 220px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      ">
+        <div>
+          <div style="
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            font-weight: 700;
+            color: #161208;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            margin-bottom: 20px;
+            opacity: 0.7;
+          ">STEP 04</div>
+          <div style="
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 700;
+            font-size: 20px;
+            color: #161208;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+          ">Ship</div>
+          <p style="
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 11px;
+            color: #161208;
+            line-height: 1.65;
+            margin: 0;
+            opacity: 0.75;
+          ">Deployed, tested, documented. Handoff or ongoing retainer.</p>
+        </div>
+        <div style="
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 10px;
+          color: #161208;
+          margin-top: 20px;
+          letter-spacing: 0.08em;
+          opacity: 0.5;
+        ">&mdash; PRODUCTION</div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- MANIFESTO -->
+<section style="padding: 120px 32px;" class="manifesto-block">
+  <div style="max-width: 1280px; margin: 0 auto;">
+
+    <div class="section-label">[ 04 ] &mdash; What we believe</div>
+
+    <!-- Main headline -->
+    <div class="slide-in" style="margin-bottom: 32px;">
+      <div style="
+        font-family: 'Space Grotesk', sans-serif;
+        font-weight: 700;
+        font-size: clamp(36px, 7vw, 88px);
+        color: #F0E8D5;
+        text-transform: uppercase;
+        line-height: 1.05;
+        letter-spacing: -0.02em;
+      ">WE DON'T PITCH.</div>
+      <div style="
+        font-family: 'Space Grotesk', sans-serif;
+        font-weight: 700;
+        font-size: clamp(36px, 7vw, 88px);
+        text-transform: uppercase;
+        line-height: 1.05;
+        letter-spacing: -0.02em;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0 24px;
+        align-items: baseline;
+      ">
+        <span style="color: #F0E8D5;">WE&nbsp;</span>
+        <span style="color: #B83227;">BUILD.</span>
+      </div>
+    </div>
+
+    <!-- Body text -->
+    <div class="slide-in delay-1" style="max-width: 680px; margin-bottom: 56px;">
+      <p style="
+        font-family: 'JetBrains Mono', monospace;
+        font-size: clamp(12px, 1.5vw, 14px);
+        color: #8A7E64;
+        line-height: 1.8;
+        margin: 0;
+        font-weight: 400;
+      ">
+        Most agencies spend 40% of their time selling you on why they're great.<br>
+        We spend 100% of our time building things that actually work.<br><br>
+        No discovery theater. No 40-slide decks. No "synergy".<br>
+        You come with a problem. We forge a solution. We ship it.
+      </p>
+    </div>
+
+    <!-- Manifesto chips row -->
+    <div class="slide-in delay-2" style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center;">
+      <span class="btn-chip">No fluff</span>
+      <span class="btn-chip">No NDAs on demos</span>
+      <span class="btn-chip">Fixed price</span>
+      <span class="btn-chip">Code is yours</span>
+      <span class="btn-chip-copper">без воды</span>
+    </div>
+
+    <!-- Attribution -->
+    <div class="slide-in delay-3" style="margin-top: 64px; padding-top: 32px; border-top: 2px solid #2A2316;">
+      <div style="
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 10px;
+        color: #8A7E64;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+      ">&mdash; ALEX &amp; NIKOLAY &nbsp;/&nbsp; PHUKET &times; BANGKOK &nbsp;/&nbsp; EST. 2026</div>
+    </div>
+
+  </div>
+</section>
+
+<!-- CONTACT -->
+<section id="contact" style="padding: 96px 32px; max-width: 1280px; margin: 0 auto;">
+
+  <div class="section-label">[ 05 ] &mdash; Let's forge something</div>
+
+  <div class="contact-block slide-in" style="padding: 64px 56px;">
+
+    <div style="display: grid; grid-template-columns: 1fr auto; gap: 48px; align-items: start;">
+
+      <div>
+        <!-- Big question -->
+        <div style="
+          font-family: 'Space Grotesk', sans-serif;
+          font-weight: 700;
+          font-size: clamp(28px, 4.5vw, 52px);
+          color: #F0E8D5;
+          text-transform: uppercase;
+          line-height: 1.1;
+          letter-spacing: -0.02em;
+          margin-bottom: 24px;
+        ">OK BUT HOW<br>DO I REACH YOU?</div>
+
+        <!-- Tagline -->
+        <p style="
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 12px;
+          color: #8A7E64;
+          margin: 0 0 40px;
+          font-weight: 400;
+          line-height: 1.6;
+        ">we reply within 24 hours. promise.</p>
+
+        <!-- CTA buttons -->
+        <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: center;">
+          <a href="mailto:hello@studio.build" class="btn-primary" style="font-size: 13px;">
+            hello@studio.build
+          </a>
+          <a href="https://t.me/studiobuild" class="btn-secondary" style="font-size: 13px;">
+            Telegram
+          </a>
+        </div>
+      </div>
+
+      <!-- Right side decorative number -->
+      <div style="text-align: right; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0;">
+        <div class="tabular" style="
+          font-family: 'JetBrains Mono', monospace;
+          font-size: 11px;
+          color: #C76A2D;
+          letter-spacing: 0.15em;
+          text-transform: uppercase;
+          text-align: right;
+        ">Available</div>
+        <div class="tabular" style="
+          font-family: 'Space Grotesk', sans-serif;
+          font-weight: 700;
+          font-size: clamp(48px, 6vw, 80px);
+          color: #C76A2D;
+          line-height: 1;
+          letter-spacing: -0.04em;
+          opacity: 0.25;
+        ">24h</div>
+      </div>
+
+    </div>
+
+  </div>
+
+</section>
+
+<!-- FOOTER -->
+<footer class="footer-band">
+  <div style="max-width: 1280px; margin: 0 auto; padding: 28px 32px;">
+    <div style="
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      color: #2A2316;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      text-align: center;
+      font-weight: 500;
+    ">
+      &copy; 2026 STUDIO &nbsp;&mdash;&nbsp; FORGED IN PHUKET &times; BANGKOK &nbsp;&mdash;&nbsp; BY ALEX &times; NIKOLAY
+    </div>
+  </div>
+</footer>
+
+<script>
+  // IntersectionObserver for slide-in animations
+  (function() {
+    var targets = document.querySelectorAll('.slide-in, .slide-in-left');
+
+    var observer = new IntersectionObserver(function(entries) {
+      entries.forEach(function(entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+        }
+      });
+    }, {
+      threshold: 0.08,
+      rootMargin: '0px 0px -40px 0px'
+    });
+
+    targets.forEach(function(el) {
+      observer.observe(el);
+    });
+  })();
+
+  // Nav mobile: hide chips on very small screens
+  (function() {
+    var chips = document.querySelector('.nav-chips');
+    function checkWidth() {
+      if (window.innerWidth < 640) {
+        chips.style.display = 'none';
+      } else {
+        chips.style.display = 'flex';
+      }
+    }
+    checkWidth();
+    window.addEventListener('resize', checkWidth);
+  })();
+
+  // Sticker card hover: preserve individual rotation on hover-out
+  (function() {
+    var cards = document.querySelectorAll('.sticker-card');
+    cards.forEach(function(card) {
+      var originalTransform = card.style.transform || '';
+      card.addEventListener('mouseenter', function() {
+        card.style.transform = 'translate(-3px, -3px)';
+        card.style.boxShadow = '9px 9px 0 #0A0805';
+      });
+      card.addEventListener('mouseleave', function() {
+        card.style.transform = originalTransform;
+        card.style.boxShadow = '6px 6px 0 #0A0805';
+      });
+    });
+  })();
+</script>
+
+</body>
+</html>

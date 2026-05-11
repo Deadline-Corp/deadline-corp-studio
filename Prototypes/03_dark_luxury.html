@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Studio — Web, Automation & AI Agents</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Newsreader:ital,wght@0,400;0,600;1,400;1,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink:    '#0A0A0F',
+            surf1:  '#14141C',
+            surf2:  '#1C1C28',
+            line:   '#2A2A36',
+            lineLift:'#3A3A48',
+            snow:   '#E8E8E0',
+            muted:  '#A0A0AC',
+            amber:  '#F0A961',
+            ice:    '#6FB3D2',
+          },
+          fontFamily: {
+            tight:   ['Inter Tight', 'sans-serif'],
+            serif:   ['Newsreader', 'Georgia', 'serif'],
+            mono:    ['JetBrains Mono', 'monospace'],
+          },
+        }
+      }
+    }
+  </script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+    body {
+      background-color: #0A0A0F;
+      color: #E8E8E0;
+      font-family: 'Inter Tight', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Hero halo — single warm navy radial glow, NOT purple */
+    .hero-halo {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(ellipse 80% 60% at 50% 40%, rgba(28, 40, 66, 0.30) 0%, transparent 70%);
+      z-index: 0;
+    }
+
+    /* Subtle cursor-following glow */
+    .cursor-glow {
+      position: fixed;
+      width: 480px;
+      height: 480px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(111, 179, 210, 0.04) 0%, transparent 65%);
+      pointer-events: none;
+      transform: translate(-50%, -50%);
+      transition: transform 0.6s cubic-bezier(0.23, 1, 0.32, 1);
+      z-index: 1;
+    }
+
+    /* Glass nav */
+    .glass-nav {
+      background: rgba(20, 20, 28, 0.70);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(42, 42, 54, 0.8);
+    }
+
+    /* Card surface with inner highlight simulation */
+    .card-surface {
+      background: #14141C;
+      border: 1px solid #2A2A36;
+      border-radius: 14px;
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.06),
+        0 8px 32px rgba(0,0,0,0.4);
+      transition: border-color 0.2s ease-out, box-shadow 0.2s ease-out;
+    }
+    .card-surface:hover {
+      border-color: #3A3A48;
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,0.08),
+        0 12px 48px rgba(0,0,0,0.5);
+    }
+
+    /* Hairline divider */
+    .hairline {
+      border: none;
+      border-top: 1px solid #2A2A36;
+    }
+
+    /* Fade-up animation */
+    .fade-up {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 0.45s ease-out, transform 0.45s ease-out;
+    }
+    .fade-up.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Stagger delays */
+    .delay-1 { transition-delay: 0.05s; }
+    .delay-2 { transition-delay: 0.12s; }
+    .delay-3 { transition-delay: 0.19s; }
+    .delay-4 { transition-delay: 0.26s; }
+
+    /* Stack badge */
+    .stack-badge {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      font-weight: 500;
+      color: #A0A0AC;
+      border: 1px solid #2A2A36;
+      border-radius: 4px;
+      padding: 2px 7px;
+      letter-spacing: 0.02em;
+      display: inline-block;
+    }
+
+    /* Timeline vertical line */
+    .timeline-line {
+      position: absolute;
+      left: 19px;
+      top: 40px;
+      bottom: 0;
+      width: 1px;
+      background: linear-gradient(to bottom, #2A2A36 80%, transparent 100%);
+    }
+
+    /* Metric number serif */
+    .metric-num {
+      font-family: 'Newsreader', serif;
+      font-weight: 600;
+    }
+
+    /* Amber CTA pill */
+    .btn-amber {
+      background: #F0A961;
+      color: #0A0A0F;
+      font-family: 'Inter Tight', sans-serif;
+      font-weight: 600;
+      font-size: 14px;
+      border-radius: 8px;
+      padding: 10px 20px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: background 0.2s ease-out, transform 0.2s ease-out;
+    }
+    .btn-amber:hover {
+      background: #f5ba7a;
+      transform: translateY(-1px);
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: #E8E8E0;
+      font-family: 'Inter Tight', sans-serif;
+      font-weight: 500;
+      font-size: 14px;
+      border: 1px solid #2A2A36;
+      border-radius: 8px;
+      padding: 10px 20px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      transition: border-color 0.2s ease-out, color 0.2s ease-out;
+    }
+    .btn-ghost:hover {
+      border-color: #3A3A48;
+      color: #fff;
+    }
+
+    /* Nav link */
+    .nav-link {
+      font-size: 13px;
+      font-weight: 500;
+      color: #A0A0AC;
+      transition: color 0.15s ease-out;
+    }
+    .nav-link:hover { color: #E8E8E0; }
+
+    /* Availability chip */
+    .avail-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(42, 42, 54, 0.6);
+      border: 1px solid #2A2A36;
+      border-radius: 99px;
+      padding: 5px 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: #A0A0AC;
+      letter-spacing: 0.01em;
+    }
+    .avail-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #6FB3D2;
+      flex-shrink: 0;
+      animation: pulse-dot 2.4s ease-in-out infinite;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.4; }
+    }
+
+    /* Case study gradient previews — teal-amber, navy-ice, charcoal-cream */
+    .preview-1 {
+      background: linear-gradient(135deg, #0D2B2B 0%, #1A3030 40%, #3A2010 80%, #251A0A 100%);
+    }
+    .preview-2 {
+      background: linear-gradient(135deg, #0A1628 0%, #0F2040 45%, #1A304A 75%, #0D1E2E 100%);
+    }
+    .preview-3 {
+      background: linear-gradient(135deg, #1C1C1C 0%, #242424 40%, #2A2820 70%, #221E14 100%);
+    }
+
+    /* Metric chip */
+    .metric-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: rgba(240, 169, 97, 0.10);
+      border: 1px solid rgba(240, 169, 97, 0.25);
+      border-radius: 6px;
+      padding: 3px 9px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: #F0A961;
+      font-weight: 500;
+    }
+
+    /* Status indicator */
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #6FB3D2;
+      display: inline-block;
+      margin-right: 2px;
+    }
+
+    /* Logo dot */
+    .logo-dot {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: #F0A961;
+      display: inline-block;
+      margin-bottom: 2px;
+    }
+
+    /* Manifesto section */
+    .manifesto-quote {
+      font-family: 'Newsreader', serif;
+      font-style: italic;
+      font-weight: 400;
+      font-size: clamp(22px, 2.5vw, 32px);
+      line-height: 1.6;
+      color: #E8E8E0;
+      max-width: 760px;
+      margin: 0 auto;
+      text-align: center;
+    }
+
+    /* Tagline */
+    .tagline-ru {
+      font-family: 'Newsreader', serif;
+      font-style: italic;
+      font-size: 13px;
+      color: #A0A0AC;
+    }
+
+    /* Responsive hero font */
+    .hero-headline {
+      font-size: clamp(40px, 6vw, 88px);
+      line-height: 1.06;
+      font-weight: 600;
+      letter-spacing: -0.03em;
+    }
+
+    /* Timeline stage */
+    .timeline-stage {
+      position: relative;
+      padding-left: 52px;
+      padding-bottom: 40px;
+    }
+    .timeline-number {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 38px;
+      height: 38px;
+      border: 1px solid #2A2A36;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: #A0A0AC;
+      background: #14141C;
+    }
+
+    /* Ice link */
+    a.ice-link {
+      color: #6FB3D2;
+      text-decoration: none;
+      border-bottom: 1px solid rgba(111, 179, 210, 0.3);
+      transition: border-color 0.15s ease-out;
+    }
+    a.ice-link:hover {
+      border-color: #6FB3D2;
+    }
+
+    /* Footer small links */
+    .footer-link {
+      font-size: 12px;
+      color: #A0A0AC;
+      text-decoration: none;
+      transition: color 0.15s ease-out;
+    }
+    .footer-link:hover { color: #E8E8E0; }
+
+    /* Section label */
+    .section-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #A0A0AC;
+    }
+  </style>
+</head>
+
+<body class="min-h-screen">
+
+  <!-- Cursor glow (desktop only) -->
+  <div class="cursor-glow hidden md:block" id="cursorGlow"></div>
+
+  <!-- ======= NAV ======= -->
+  <header class="glass-nav fixed top-0 left-0 right-0 z-50">
+    <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+
+      <!-- Logo -->
+      <div class="flex items-center gap-2">
+        <span class="font-tight font-600 text-snow text-[15px] tracking-tight">STUDIO</span>
+        <span class="logo-dot"></span>
+      </div>
+
+      <!-- Center nav -->
+      <nav class="hidden md:flex items-center gap-7">
+        <a href="#capabilities" class="nav-link">Capabilities</a>
+        <a href="#work" class="nav-link">Work</a>
+        <a href="#process" class="nav-link">Process</a>
+        <a href="#contact" class="nav-link">Contact</a>
+        <span class="flex items-center gap-1.5 text-[11px] font-mono text-[#3A3A48] select-none">
+          <span class="border border-[#2A2A36] rounded px-1.5 py-0.5 text-[10px] text-muted">⌘K</span>
+        </span>
+      </nav>
+
+      <!-- CTA -->
+      <a href="#contact" class="btn-amber text-[13px] py-2 px-4">Start a project →</a>
+    </div>
+  </header>
+
+  <!-- ======= HERO ======= -->
+  <section class="relative min-h-screen flex flex-col justify-center pt-14 overflow-hidden">
+    <div class="hero-halo"></div>
+
+    <div class="relative z-10 max-w-6xl mx-auto px-6 py-24 md:py-32">
+      <!-- Availability chip -->
+      <div class="flex justify-center md:justify-start mb-10 fade-up">
+        <div class="avail-chip">
+          <span class="avail-dot"></span>
+          Available — taking on Q3 work
+        </div>
+      </div>
+
+      <!-- Headline -->
+      <h1 class="hero-headline text-snow mb-6 fade-up delay-1 max-w-5xl">
+        Software, automation<br class="hidden sm:block" />
+        and AI agents —<br class="hidden sm:block" />
+        <span class="text-muted">built like a product,</span><br class="hidden sm:block" />
+        not a project.
+      </h1>
+
+      <!-- Sub-line -->
+      <p class="text-muted text-[17px] leading-relaxed max-w-xl mb-12 fade-up delay-2">
+        We design and ship digital infrastructure for B2B teams — from
+        full-stack web platforms to end-to-end workflow automation and
+        custom AI agents.
+      </p>
+
+      <!-- CTAs -->
+      <div class="flex flex-wrap items-center gap-4 fade-up delay-3">
+        <a href="#contact" class="btn-amber text-[15px] py-3 px-7">Schedule a call →</a>
+        <a href="#work" class="btn-ghost text-[15px] py-3 px-7">View work</a>
+      </div>
+
+      <!-- Tagline sub-note -->
+      <p class="mt-8 tagline-ru fade-up delay-4">сделано вдумчиво</p>
+    </div>
+  </section>
+
+  <!-- ======= CAPABILITIES ======= -->
+  <section id="capabilities" class="py-24 md:py-32">
+    <div class="max-w-6xl mx-auto px-6">
+
+      <div class="mb-14 fade-up">
+        <p class="section-label mb-3">Capabilities</p>
+        <h2 class="font-tight font-semibold text-snow text-3xl md:text-4xl tracking-tight">
+          Three disciplines.<br class="hidden sm:block" /> One coherent delivery.
+        </h2>
+      </div>
+
+      <div class="grid md:grid-cols-3 gap-5">
+
+        <!-- Web -->
+        <div class="card-surface p-7 fade-up delay-1">
+          <!-- Icon: simple web/browser linework -->
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" class="mb-5" stroke="#6FB3D2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2" y="4" width="24" height="18" rx="3"/>
+            <line x1="2" y1="10" x2="26" y2="10"/>
+            <circle cx="6" cy="7" r="1" fill="#6FB3D2" stroke="none"/>
+            <circle cx="10" cy="7" r="1" fill="#6FB3D2" stroke="none"/>
+            <line x1="14" y1="16" x2="22" y2="16"/>
+            <line x1="14" y1="19" x2="20" y2="19"/>
+            <rect x="5" y="13" width="6" height="8" rx="1.5"/>
+          </svg>
+
+          <h3 class="font-tight font-semibold text-snow text-lg mb-2 tracking-tight">Web Development</h3>
+          <p class="text-muted text-[14px] leading-relaxed mb-5">
+            Full-stack products designed for scale — clean architecture,
+            fast load, and a UI that earns trust on first impression.
+          </p>
+          <div class="flex flex-wrap gap-2">
+            <span class="stack-badge">Next.js</span>
+            <span class="stack-badge">TypeScript</span>
+            <span class="stack-badge">Postgres</span>
+            <span class="stack-badge">Tailwind</span>
+            <span class="stack-badge">Vercel</span>
+          </div>
+        </div>
+
+        <!-- Automation -->
+        <div class="card-surface p-7 fade-up delay-2">
+          <!-- Icon: workflow/automation nodes -->
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" class="mb-5" stroke="#6FB3D2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="5" cy="14" r="3"/>
+            <circle cx="23" cy="7" r="3"/>
+            <circle cx="23" cy="21" r="3"/>
+            <line x1="8" y1="14" x2="14" y2="14"/>
+            <polyline points="14,14 20,7"/>
+            <polyline points="14,14 20,21"/>
+            <circle cx="14" cy="14" r="2" fill="#6FB3D2" stroke="none"/>
+          </svg>
+
+          <h3 class="font-tight font-semibold text-snow text-lg mb-2 tracking-tight">Workflow Automation</h3>
+          <p class="text-muted text-[14px] leading-relaxed mb-5">
+            Integrate, orchestrate, and automate business processes —
+            from CRM sync to multi-step approval flows running 24/7.
+          </p>
+          <div class="flex flex-wrap gap-2">
+            <span class="stack-badge">n8n</span>
+            <span class="stack-badge">Make</span>
+            <span class="stack-badge">Zapier</span>
+            <span class="stack-badge">Webhooks</span>
+            <span class="stack-badge">REST APIs</span>
+          </div>
+        </div>
+
+        <!-- AI Agents -->
+        <div class="card-surface p-7 fade-up delay-3">
+          <!-- Icon: neural/agent brain node -->
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" class="mb-5" stroke="#6FB3D2" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="14" cy="14" r="4"/>
+            <line x1="14" y1="2" x2="14" y2="6"/>
+            <line x1="14" y1="22" x2="14" y2="26"/>
+            <line x1="2" y1="14" x2="6" y2="14"/>
+            <line x1="22" y1="14" x2="26" y2="14"/>
+            <line x1="5.5" y1="5.5" x2="8.5" y2="8.5"/>
+            <line x1="19.5" y1="19.5" x2="22.5" y2="22.5"/>
+            <line x1="22.5" y1="5.5" x2="19.5" y2="8.5"/>
+            <line x1="8.5" y1="19.5" x2="5.5" y2="22.5"/>
+          </svg>
+
+          <h3 class="font-tight font-semibold text-snow text-lg mb-2 tracking-tight">AI Agents</h3>
+          <p class="text-muted text-[14px] leading-relaxed mb-5">
+            Custom LLM-powered agents with memory, tools, and
+            guardrails — built to reason, act, and integrate with
+            your existing stack.
+          </p>
+          <div class="flex flex-wrap gap-2">
+            <span class="stack-badge">LangChain</span>
+            <span class="stack-badge">OpenAI</span>
+            <span class="stack-badge">Anthropic</span>
+            <span class="stack-badge">RAG</span>
+            <span class="stack-badge">Vector DB</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <hr class="hairline max-w-6xl mx-auto" />
+
+  <!-- ======= CASE STUDIES ======= -->
+  <section id="work" class="py-24 md:py-32">
+    <div class="max-w-6xl mx-auto px-6">
+
+      <div class="mb-14 fade-up">
+        <p class="section-label mb-3">Case Studies</p>
+        <h2 class="font-tight font-semibold text-snow text-3xl md:text-4xl tracking-tight">
+          Work that ships,<br class="hidden sm:block" /> and numbers that hold.
+        </h2>
+      </div>
+
+      <!-- Non-grid: big + two medium stacked -->
+      <div class="grid md:grid-cols-5 gap-5">
+
+        <!-- Big card -->
+        <div class="card-surface overflow-hidden md:col-span-3 fade-up delay-1">
+          <!-- Abstract gradient preview — teal to amber -->
+          <div class="preview-1 h-48 w-full flex items-end p-5">
+            <div class="flex items-center gap-2">
+              <span class="stack-badge" style="border-color: rgba(111,179,210,0.3); color: #6FB3D2;">E-commerce</span>
+              <span class="stack-badge" style="border-color: rgba(42,42,54,0.8); color:#A0A0AC;">2025</span>
+            </div>
+          </div>
+          <div class="p-6">
+            <div class="flex items-start justify-between mb-3 gap-4">
+              <h3 class="font-tight font-semibold text-snow text-xl tracking-tight leading-snug">
+                Intelligent checkout — personalised recommendations at conversion point
+              </h3>
+              <span class="metric-chip flex-shrink-0 mt-0.5">+32% conv.</span>
+            </div>
+            <p class="text-muted text-[14px] leading-relaxed mb-4">
+              Rebuilt the checkout funnel for a mid-market fashion retailer —
+              embedding a real-time recommendation layer, reducing friction and
+              syncing live inventory signals to the cart.
+            </p>
+            <div class="flex flex-wrap gap-2">
+              <span class="stack-badge">Next.js</span>
+              <span class="stack-badge">LangChain</span>
+              <span class="stack-badge">Postgres</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Two medium cards -->
+        <div class="md:col-span-2 flex flex-col gap-5">
+
+          <!-- Medium card 1 -->
+          <div class="card-surface overflow-hidden fade-up delay-2">
+            <!-- Navy to ice -->
+            <div class="preview-2 h-32 w-full flex items-end p-4">
+              <div class="flex items-center gap-2">
+                <span class="stack-badge" style="border-color: rgba(111,179,210,0.3); color: #6FB3D2;">SaaS / B2B</span>
+                <span class="stack-badge" style="border-color: rgba(42,42,54,0.8); color:#A0A0AC;">2025</span>
+              </div>
+            </div>
+            <div class="p-5">
+              <div class="flex items-start justify-between mb-2 gap-3">
+                <h3 class="font-tight font-semibold text-snow text-[16px] tracking-tight leading-snug">
+                  Automated onboarding for a B2B analytics platform
+                </h3>
+                <span class="metric-chip flex-shrink-0 mt-0.5">−60% ops time</span>
+              </div>
+              <p class="text-muted text-[13px] leading-relaxed">
+                End-to-end n8n pipeline replacing 14 manual handoffs —
+                provisioning, welcome sequences, and CRM updates run without intervention.
+              </p>
+            </div>
+          </div>
+
+          <!-- Medium card 2 -->
+          <div class="card-surface overflow-hidden fade-up delay-3">
+            <!-- Charcoal to cream -->
+            <div class="preview-3 h-32 w-full flex items-end p-4">
+              <div class="flex items-center gap-2">
+                <span class="stack-badge" style="border-color: rgba(111,179,210,0.3); color: #6FB3D2;">PropTech</span>
+                <span class="stack-badge" style="border-color: rgba(42,42,54,0.8); color:#A0A0AC;">2024</span>
+              </div>
+            </div>
+            <div class="p-5">
+              <div class="flex items-start justify-between mb-2 gap-3">
+                <h3 class="font-tight font-semibold text-snow text-[16px] tracking-tight leading-snug">
+                  AI agent for lead qualification & property matching
+                </h3>
+                <span class="metric-chip flex-shrink-0 mt-0.5">4× speed</span>
+              </div>
+              <p class="text-muted text-[13px] leading-relaxed">
+                RAG-based assistant that ingests listing data, qualifies inbound enquiries,
+                and drafts tailored summaries for agents in under 30 seconds.
+              </p>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ======= METRICS BAND ======= -->
+  <section class="py-16 border-t border-b border-[#2A2A36]" style="background: #14141C;">
+    <div class="max-w-6xl mx-auto px-6">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
+
+        <div class="fade-up delay-1">
+          <div class="metric-num text-snow text-5xl md:text-6xl mb-2">12+</div>
+          <p class="text-muted text-[13px]">Projects shipped</p>
+        </div>
+
+        <div class="fade-up delay-2">
+          <div class="metric-num text-snow text-5xl md:text-6xl mb-2">96%</div>
+          <p class="text-muted text-[13px]">On-time delivery</p>
+        </div>
+
+        <div class="fade-up delay-3">
+          <div class="metric-num text-snow text-5xl md:text-6xl mb-2">4</div>
+          <p class="text-muted text-[13px]">Years of practice</p>
+        </div>
+
+        <div class="fade-up delay-4">
+          <div class="metric-num text-snow text-5xl md:text-6xl mb-2">8</div>
+          <p class="text-muted text-[13px]">Industries covered</p>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- ======= PROCESS ======= -->
+  <section id="process" class="py-24 md:py-32">
+    <div class="max-w-6xl mx-auto px-6">
+
+      <div class="mb-14 fade-up">
+        <p class="section-label mb-3">Process</p>
+        <h2 class="font-tight font-semibold text-snow text-3xl md:text-4xl tracking-tight">
+          Four stages.<br class="hidden sm:block" /> No surprises.
+        </h2>
+      </div>
+
+      <div class="max-w-2xl relative">
+        <!-- Vertical hairline -->
+        <div class="absolute left-[19px] top-[40px]" style="bottom: 40px; width: 1px; background: linear-gradient(to bottom, #2A2A36 80%, transparent 100%);"></div>
+
+        <!-- Stage 01 -->
+        <div class="timeline-stage fade-up delay-1">
+          <div class="timeline-number">01</div>
+          <div class="card-surface p-5 ml-2">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="font-tight font-semibold text-snow text-[16px] tracking-tight">Discovery</h3>
+              <span class="stack-badge">1–2 weeks</span>
+            </div>
+            <p class="text-muted text-[13px] leading-relaxed mb-3">
+              We map your current state — systems, integrations, pain points,
+              and what success actually looks like for your team.
+            </p>
+            <p class="text-[12px] text-muted font-mono">
+              Deliverables: brief, technical scope, timeline estimate
+            </p>
+          </div>
+        </div>
+
+        <!-- Stage 02 -->
+        <div class="timeline-stage fade-up delay-2">
+          <div class="timeline-number">02</div>
+          <div class="card-surface p-5 ml-2">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="font-tight font-semibold text-snow text-[16px] tracking-tight">Architecture</h3>
+              <span class="stack-badge">1 week</span>
+            </div>
+            <p class="text-muted text-[13px] leading-relaxed mb-3">
+              Stack selection, system diagrams, and API contracts — written
+              before any code. No ambiguity in implementation.
+            </p>
+            <p class="text-[12px] text-muted font-mono">
+              Deliverables: system diagram, tech decisions doc, approved schema
+            </p>
+          </div>
+        </div>
+
+        <!-- Stage 03 -->
+        <div class="timeline-stage fade-up delay-3">
+          <div class="timeline-number">03</div>
+          <div class="card-surface p-5 ml-2">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="font-tight font-semibold text-snow text-[16px] tracking-tight">Build</h3>
+              <span class="stack-badge">3–8 weeks</span>
+            </div>
+            <p class="text-muted text-[13px] leading-relaxed mb-3">
+              Iterative sprints with weekly demos. You see progress every
+              seven days — not six weeks from now.
+            </p>
+            <p class="text-[12px] text-muted font-mono">
+              Deliverables: working software, staging environment, weekly report
+            </p>
+          </div>
+        </div>
+
+        <!-- Stage 04 -->
+        <div class="timeline-stage fade-up delay-4" style="padding-bottom: 0;">
+          <div class="timeline-number">04</div>
+          <div class="card-surface p-5 ml-2">
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="font-tight font-semibold text-snow text-[16px] tracking-tight">Handoff</h3>
+              <span class="stack-badge">1 week</span>
+            </div>
+            <p class="text-muted text-[13px] leading-relaxed mb-3">
+              Production deploy, walkthrough session, and full documentation.
+              We stay reachable 30 days post-launch.
+            </p>
+            <p class="text-[12px] text-muted font-mono">
+              Deliverables: live system, runbook, 30-day support window
+            </p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <hr class="hairline max-w-6xl mx-auto" />
+
+  <!-- ======= MANIFESTO ======= -->
+  <section class="py-24 md:py-32">
+    <div class="max-w-6xl mx-auto px-6 text-center">
+      <p class="section-label mb-8 fade-up">Manifesto</p>
+      <blockquote class="manifesto-quote fade-up delay-1">
+        "Good software is not what you see — it is what you never
+        have to think about. We build the invisible scaffolding
+        that lets your team move without friction."
+      </blockquote>
+      <p class="mt-6 tagline-ru fade-up delay-2 text-[14px]">
+        — сделано вдумчиво
+      </p>
+    </div>
+  </section>
+
+  <hr class="hairline max-w-6xl mx-auto" />
+
+  <!-- ======= CONTACT ======= -->
+  <section id="contact" class="py-24 md:py-32">
+    <div class="max-w-6xl mx-auto px-6 flex justify-center">
+
+      <div class="card-surface p-10 md:p-14 w-full max-w-xl text-center fade-up">
+        <!-- Status -->
+        <div class="flex items-center justify-center gap-2 mb-8">
+          <span class="status-dot"></span>
+          <span class="text-[12px] font-mono text-muted">We reply within 24 hours</span>
+        </div>
+
+        <h2 class="font-tight font-semibold text-snow text-3xl md:text-4xl tracking-tight mb-4">
+          Let's talk about<br class="hidden sm:block" /> your next project.
+        </h2>
+        <p class="text-muted text-[15px] leading-relaxed mb-10">
+          A 30-minute call is all it takes to understand whether
+          we're the right fit — and what a first sprint looks like.
+        </p>
+
+        <!-- CTAs -->
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-4 mb-8">
+          <a href="mailto:hello@studio.dev" class="btn-amber text-[15px] py-3 px-7">Pick a slot →</a>
+          <a href="https://t.me/studio" class="btn-ghost text-[15px] py-3 px-7">Telegram</a>
+        </div>
+
+        <hr class="hairline my-8" />
+
+        <!-- Contact details -->
+        <div class="flex flex-col sm:flex-row items-center justify-center gap-6 text-[13px]">
+          <a href="mailto:hello@studio.dev" class="ice-link font-mono">hello@studio.dev</a>
+          <a href="https://t.me/studio" class="ice-link font-mono">@studio</a>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ======= FOOTER ======= -->
+  <footer class="border-t border-[#2A2A36]" style="background: #14141C;">
+    <div class="max-w-6xl mx-auto px-6 py-12">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-8 mb-10">
+
+        <!-- Brand -->
+        <div class="col-span-2 md:col-span-1">
+          <div class="flex items-center gap-2 mb-4">
+            <span class="font-tight font-semibold text-snow text-[15px]">STUDIO</span>
+            <span class="logo-dot"></span>
+          </div>
+          <p class="text-muted text-[12px] leading-relaxed max-w-[180px]">
+            Web, automation, and AI agents for teams that ship.
+          </p>
+        </div>
+
+        <!-- Services -->
+        <div>
+          <p class="section-label mb-4">Services</p>
+          <ul class="space-y-2.5">
+            <li><a href="#capabilities" class="footer-link">Web Development</a></li>
+            <li><a href="#capabilities" class="footer-link">Automation</a></li>
+            <li><a href="#capabilities" class="footer-link">AI Agents</a></li>
+            <li><a href="#process" class="footer-link">Our Process</a></li>
+          </ul>
+        </div>
+
+        <!-- Work -->
+        <div>
+          <p class="section-label mb-4">Work</p>
+          <ul class="space-y-2.5">
+            <li><a href="#work" class="footer-link">Case Studies</a></li>
+            <li><a href="#work" class="footer-link">E-commerce</a></li>
+            <li><a href="#work" class="footer-link">SaaS</a></li>
+            <li><a href="#work" class="footer-link">PropTech</a></li>
+          </ul>
+        </div>
+
+        <!-- Contact -->
+        <div>
+          <p class="section-label mb-4">Contact</p>
+          <ul class="space-y-2.5">
+            <li><a href="mailto:hello@studio.dev" class="footer-link">hello@studio.dev</a></li>
+            <li><a href="https://t.me/studio" class="footer-link">Telegram</a></li>
+            <li><a href="#contact" class="footer-link">Book a call</a></li>
+          </ul>
+        </div>
+
+      </div>
+
+      <hr class="hairline mb-6" />
+
+      <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+        <p class="text-[11px] font-mono text-[#3A3A48]">
+          &copy; 2026 Studio. All rights reserved.
+        </p>
+        <p class="text-[11px] font-mono text-[#3A3A48] italic" style="font-family: 'Newsreader', serif; font-size: 12px; color: #3A3A48;">
+          сделано вдумчиво
+        </p>
+      </div>
+
+    </div>
+  </footer>
+
+  <!-- ======= JS ======= -->
+  <script>
+    // Cursor glow follow (desktop)
+    const glow = document.getElementById('cursorGlow');
+    if (glow) {
+      document.addEventListener('mousemove', (e) => {
+        glow.style.left = e.clientX + 'px';
+        glow.style.top  = e.clientY + 'px';
+      });
+    }
+
+    // Fade-up on scroll
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('visible');
+          }
+        });
+      },
+      { threshold: 0.12, rootMargin: '0px 0px -40px 0px' }
+    );
+
+    document.querySelectorAll('.fade-up').forEach((el) => observer.observe(el));
+
+    // Smooth anchor scroll
+    document.querySelectorAll('a[href^="#"]').forEach((link) => {
+      link.addEventListener('click', (e) => {
+        const target = document.querySelector(link.getAttribute('href'));
+        if (target) {
+          e.preventDefault();
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    });
+  </script>
+
+</body>
+</html>

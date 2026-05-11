@@ -1,0 +1,1186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STUDIO — Software, Automation & AI Agents</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cabinet+Grotesk:wght@400;500;700;800;900&family=Inter+Tight:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&family=Newsreader:ital,wght@1,400;1,500&display=swap" rel="stylesheet">
+
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        abyss: '#050B1A',
+        'abyss-2': '#0A1628',
+        'surface': '#0E1727',
+        'surface-2': '#111D2E',
+        'border': '#1F2A3D',
+        'border-2': '#263447',
+        'text-primary': '#F5F1E8',
+        'text-muted': '#8A96A8',
+        'text-dim': '#4A5568',
+        'teal': '#14B8A6',
+        'teal-light': '#2DD4BF',
+        'teal-dim': '#0D8A7C',
+        'amber': '#FBBF24',
+        'amber-dim': '#D97706',
+        'ice': '#67E8F9',
+        'ice-dim': '#22D3EE',
+      },
+      fontFamily: {
+        display: ['Cabinet Grotesk', 'sans-serif'],
+        body: ['Inter Tight', 'sans-serif'],
+        mono: ['JetBrains Mono', 'monospace'],
+        serif: ['Newsreader', 'serif'],
+      },
+    }
+  }
+}
+</script>
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background-color: #050B1A;
+    color: #F5F1E8;
+    font-family: 'Inter Tight', sans-serif;
+    overflow-x: hidden;
+  }
+
+  /* ─── AURORA BLOBS ─── */
+  .aurora-container {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .aurora-blob {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(120px);
+    opacity: 0;
+    animation-timing-function: ease-in-out;
+    animation-iteration-count: infinite;
+    animation-fill-mode: both;
+  }
+
+  .aurora-blob-1 {
+    width: 700px;
+    height: 700px;
+    background: radial-gradient(circle, #14B8A6 0%, transparent 70%);
+    opacity: 0.18;
+    top: -10%;
+    left: -5%;
+    animation: aurora-drift-1 32s ease-in-out infinite;
+  }
+
+  .aurora-blob-2 {
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, #FBBF24 0%, transparent 70%);
+    opacity: 0.12;
+    top: 20%;
+    right: -10%;
+    animation: aurora-drift-2 28s ease-in-out infinite;
+  }
+
+  .aurora-blob-3 {
+    width: 500px;
+    height: 500px;
+    background: radial-gradient(circle, #67E8F9 0%, transparent 70%);
+    opacity: 0.13;
+    bottom: -5%;
+    left: 30%;
+    animation: aurora-drift-3 36s ease-in-out infinite;
+  }
+
+  @keyframes aurora-drift-1 {
+    0%   { transform: translate(0px, 0px) scale(1); }
+    25%  { transform: translate(60px, 40px) scale(1.08); }
+    50%  { transform: translate(20px, 80px) scale(0.95); }
+    75%  { transform: translate(-40px, 30px) scale(1.05); }
+    100% { transform: translate(0px, 0px) scale(1); }
+  }
+
+  @keyframes aurora-drift-2 {
+    0%   { transform: translate(0px, 0px) scale(1); }
+    30%  { transform: translate(-50px, 60px) scale(1.1); }
+    60%  { transform: translate(-80px, -30px) scale(0.92); }
+    80%  { transform: translate(-20px, -60px) scale(1.06); }
+    100% { transform: translate(0px, 0px) scale(1); }
+  }
+
+  @keyframes aurora-drift-3 {
+    0%   { transform: translate(0px, 0px) scale(1); }
+    20%  { transform: translate(40px, -50px) scale(1.05); }
+    50%  { transform: translate(-30px, -80px) scale(0.96); }
+    75%  { transform: translate(60px, -20px) scale(1.08); }
+    100% { transform: translate(0px, 0px) scale(1); }
+  }
+
+  @media (max-width: 768px) {
+    .aurora-blob-3 { display: none; }
+    .aurora-blob-1 { width: 400px; height: 400px; }
+    .aurora-blob-2 { width: 380px; height: 380px; }
+  }
+
+  /* ─── GRID OVERLAY ─── */
+  .grid-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+  }
+
+  /* ─── DOT PATTERN (subtle) ─── */
+  .dot-overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: radial-gradient(circle, rgba(255,255,255,0.04) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+
+  /* ─── NAV ─── */
+  nav {
+    background: rgba(5, 11, 26, 0.6);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border-bottom: 1px solid rgba(31, 42, 61, 0.5);
+    transition: background 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+
+  nav.scrolled {
+    background: rgba(5, 11, 26, 0.88);
+    border-bottom-color: rgba(31, 42, 61, 0.9);
+  }
+
+  /* ─── PULSE DOT ─── */
+  .pulse-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    background: #14B8A6;
+    border-radius: 50%;
+    animation: pulse-ring 2.8s cubic-bezier(0.455, 0.03, 0.515, 0.955) infinite;
+    box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.5);
+  }
+
+  @keyframes pulse-ring {
+    0%   { box-shadow: 0 0 0 0 rgba(20, 184, 166, 0.5); }
+    60%  { box-shadow: 0 0 0 6px rgba(20, 184, 166, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(20, 184, 166, 0); }
+  }
+
+  /* ─── AMBER CTA BUTTON ─── */
+  .btn-amber {
+    border: 1px solid #FBBF24;
+    color: #FBBF24;
+    padding: 8px 20px;
+    font-family: 'Inter Tight', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    border-radius: 6px;
+    transition: background 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                color 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+  }
+
+  .btn-amber:hover {
+    background: rgba(251, 191, 36, 0.1);
+  }
+
+  .btn-amber-solid {
+    background: #FBBF24;
+    color: #050B1A;
+    padding: 13px 28px;
+    font-family: 'Inter Tight', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    border-radius: 8px;
+    transition: background 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                transform 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+  }
+
+  .btn-amber-solid:hover {
+    background: #FCD34D;
+    transform: translateY(-1px);
+  }
+
+  .btn-ghost {
+    border: 1px solid rgba(245, 241, 232, 0.2);
+    color: rgba(245, 241, 232, 0.7);
+    padding: 13px 28px;
+    font-family: 'Inter Tight', sans-serif;
+    font-size: 15px;
+    font-weight: 500;
+    border-radius: 8px;
+    transition: border-color 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                color 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+  }
+
+  .btn-ghost:hover {
+    border-color: rgba(245, 241, 232, 0.5);
+    color: #F5F1E8;
+  }
+
+  /* ─── CARD SURFACE ─── */
+  .card-surface {
+    background: #0E1727;
+    border: 1px solid #1F2A3D;
+    border-radius: 14px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .card-surface::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.07), transparent);
+  }
+
+  /* ─── STATUS BAR ─── */
+  .status-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    background: #14B8A6;
+    border-radius: 50%;
+    animation: pulse-ring 3s ease-in-out infinite;
+    vertical-align: middle;
+    margin-right: 5px;
+  }
+
+  /* ─── FADE UP ANIMATION ─── */
+  .fade-up {
+    opacity: 0;
+    transform: translateY(28px);
+    transition: opacity 0.65s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                transform 0.65s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+
+  .fade-up.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* ─── TERMINAL ─── */
+  .terminal-wrap {
+    background: #030810;
+    border: 1px solid #1F2A3D;
+    border-radius: 14px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .terminal-header {
+    background: #070F1E;
+    padding: 12px 18px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid #1A2435;
+  }
+
+  .terminal-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+  }
+
+  .terminal-body {
+    padding: 20px 22px;
+    min-height: 260px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12.5px;
+    line-height: 1.75;
+  }
+
+  .terminal-cursor {
+    display: inline-block;
+    width: 7px;
+    height: 13px;
+    background: #14B8A6;
+    vertical-align: text-bottom;
+    animation: blink-cursor 1.1s step-end infinite;
+    margin-left: 2px;
+  }
+
+  @keyframes blink-cursor {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+
+  .log-ts { color: #4A6980; }
+  .log-agent { color: #67E8F9; }
+  .log-ok { color: #14B8A6; }
+  .log-warn { color: #FBBF24; }
+  .log-dim { color: #4A5568; }
+
+  /* ─── WORK PANELS ─── */
+  .work-scroll {
+    display: flex;
+    gap: 20px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    scrollbar-width: none;
+    padding-bottom: 4px;
+  }
+
+  .work-scroll::-webkit-scrollbar { display: none; }
+
+  .work-panel {
+    flex: 0 0 calc(85vw);
+    max-width: 640px;
+    scroll-snap-align: start;
+  }
+
+  @media (min-width: 1024px) {
+    .work-panel {
+      flex: 0 0 520px;
+    }
+  }
+
+  /* ─── ABSTRACT ART ─── */
+  .abstract-art {
+    height: 200px;
+    border-radius: 10px 10px 0 0;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .abstract-art-1 {
+    background: linear-gradient(135deg, #0A2420 0%, #0E1727 40%, #1A2A15 100%);
+  }
+  .abstract-art-1::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 60% 40% at 30% 60%, rgba(20, 184, 166, 0.35) 0%, transparent 70%),
+      radial-gradient(ellipse 40% 60% at 75% 30%, rgba(251, 191, 36, 0.2) 0%, transparent 70%);
+  }
+
+  .abstract-art-2 {
+    background: linear-gradient(135deg, #050F1A 0%, #081722 50%, #0A1520 100%);
+  }
+  .abstract-art-2::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 70% 50% at 20% 50%, rgba(103, 232, 249, 0.3) 0%, transparent 70%),
+      radial-gradient(ellipse 50% 70% at 80% 70%, rgba(14, 23, 39, 0.8) 0%, transparent 70%);
+  }
+
+  .abstract-art-3 {
+    background: linear-gradient(135deg, #0F1A14 0%, #0A1520 50%, #12201A 100%);
+  }
+  .abstract-art-3::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 50% 60% at 60% 40%, rgba(20, 184, 166, 0.28) 0%, transparent 70%),
+      radial-gradient(ellipse 60% 40% at 20% 80%, rgba(245, 241, 232, 0.06) 0%, transparent 70%);
+  }
+
+  /* ─── PROCESS TIMELINE ─── */
+  .timeline-line {
+    position: absolute;
+    left: 19px;
+    top: 32px;
+    bottom: 0;
+    width: 1px;
+    background: linear-gradient(to bottom, #1F2A3D 0%, transparent 100%);
+  }
+
+  .timeline-node {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: #0E1727;
+    border: 1px solid #1F2A3D;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #14B8A6;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+  }
+
+  /* ─── SECTION LABELS ─── */
+  .section-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #14B8A6;
+  }
+
+  /* ─── METRICS ─── */
+  .metric-divider {
+    width: 1px;
+    height: 60px;
+    background: #1F2A3D;
+  }
+
+  /* ─── HAIRLINE ─── */
+  .hairline { border-color: #1F2A3D; }
+
+  /* ─── NAV LINKS ─── */
+  .nav-link {
+    font-size: 14px;
+    font-weight: 400;
+    color: rgba(245, 241, 232, 0.6);
+    text-decoration: none;
+    transition: color 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+
+  .nav-link:hover { color: #F5F1E8; }
+
+  /* ─── CAPABILITY ICON ─── */
+  .cap-icon {
+    width: 44px;
+    height: 44px;
+    color: #14B8A6;
+    margin-bottom: 20px;
+  }
+
+  /* ─── FOOTER LINKS ─── */
+  .footer-link {
+    font-size: 13px;
+    color: rgba(245, 241, 232, 0.4);
+    text-decoration: none;
+    transition: color 0.25s ease;
+    line-height: 2;
+  }
+
+  .footer-link:hover { color: rgba(245, 241, 232, 0.8); }
+
+  /* ─── SCROLL HINT ─── */
+  .scroll-hint {
+    display: flex;
+    gap: 6px;
+    margin-top: 24px;
+  }
+
+  .scroll-pip {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #1F2A3D;
+    cursor: pointer;
+    transition: background 0.25s ease;
+  }
+
+  .scroll-pip.active { background: #14B8A6; }
+</style>
+</head>
+
+<body class="antialiased">
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- NAV -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<nav id="main-nav" class="fixed top-0 left-0 right-0 z-50">
+  <div class="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
+
+    <!-- Logo -->
+    <a href="#" class="flex items-center gap-2.5 no-underline">
+      <span class="pulse-dot"></span>
+      <span style="font-family:'Cabinet Grotesk',sans-serif; font-weight:800; font-size:15px; letter-spacing:0.05em; color:#F5F1E8;">STUDIO</span>
+    </a>
+
+    <!-- Center nav -->
+    <div class="hidden md:flex items-center gap-8">
+      <a href="#capabilities" class="nav-link">Capabilities</a>
+      <a href="#work" class="nav-link">Work</a>
+      <a href="#process" class="nav-link">Process</a>
+      <a href="#contact" class="nav-link">Contact</a>
+    </div>
+
+    <!-- CTA -->
+    <a href="#contact" class="btn-amber">Talk to us &rarr;</a>
+  </div>
+</nav>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- HERO -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<section class="relative min-h-screen flex flex-col items-center justify-center pt-14 overflow-hidden">
+
+  <!-- Aurora -->
+  <div class="aurora-container">
+    <div class="aurora-blob aurora-blob-1"></div>
+    <div class="aurora-blob aurora-blob-2"></div>
+    <div class="aurora-blob aurora-blob-3"></div>
+  </div>
+
+  <!-- Grid overlay -->
+  <div class="grid-overlay"></div>
+
+  <!-- Content -->
+  <div class="relative z-10 max-w-5xl mx-auto px-6 text-center flex flex-col items-center">
+
+    <div class="section-label mb-8" style="opacity:0.7;">Web engineering &amp; AI systems</div>
+
+    <h1 style="font-family:'Cabinet Grotesk',sans-serif; font-weight:900; font-size:clamp(42px,7vw,90px); line-height:1.04; letter-spacing:-0.02em; color:#F5F1E8; margin-bottom:28px;">
+      Software, automation,<br>
+      and AI agents &mdash;<br>
+      <span style="color:#14B8A6;">engineered for production.</span>
+    </h1>
+
+    <p style="font-size:clamp(16px,2vw,20px); font-weight:400; color:rgba(245,241,232,0.55); max-width:560px; line-height:1.6; margin-bottom:44px;">
+      We help businesses ship reliable systems instead of demos.
+    </p>
+
+    <div class="flex flex-wrap items-center justify-center gap-4 mb-14">
+      <a href="#contact" class="btn-amber-solid">Schedule intro call &rarr;</a>
+      <a href="#work" class="btn-ghost">View work</a>
+    </div>
+
+    <!-- Status row -->
+    <div style="display:inline-flex; align-items:center; gap:20px; font-family:'JetBrains Mono',monospace; font-size:11px; color:rgba(138,150,168,0.8); background:rgba(14,23,39,0.6); border:1px solid #1F2A3D; border-radius:100px; padding:8px 20px; flex-wrap:wrap; justify-content:center; gap:8px 16px;">
+      <span><span class="status-dot"></span>API operational</span>
+      <span style="color:#1F2A3D;">&#124;</span>
+      <span>99.97% uptime last 90 days</span>
+      <span style="color:#1F2A3D;">&#124;</span>
+      <span>4 agents in production right now</span>
+    </div>
+  </div>
+
+  <!-- Bottom fade -->
+  <div style="position:absolute;bottom:0;left:0;right:0;height:200px;background:linear-gradient(to bottom,transparent,#050B1A);pointer-events:none;"></div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- CAPABILITIES -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<section id="capabilities" class="py-28 px-6 relative">
+  <div class="max-w-6xl mx-auto">
+
+    <div class="flex items-center gap-4 mb-14 fade-up">
+      <span class="section-label">Capabilities</span>
+      <div style="flex:1;height:1px;background:#1F2A3D;"></div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+
+      <!-- Card 1: Web Development -->
+      <div class="card-surface p-8 fade-up" style="transition-delay:0.05s;">
+        <svg class="cap-icon" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- Stacked layers icon -->
+          <rect x="6" y="28" width="32" height="4" rx="1" stroke="currentColor" stroke-width="1.3"/>
+          <rect x="10" y="21" width="24" height="4" rx="1" stroke="currentColor" stroke-width="1.3"/>
+          <rect x="14" y="14" width="16" height="4" rx="1" stroke="currentColor" stroke-width="1.3"/>
+          <line x1="22" y1="32" x2="22" y2="39" stroke="currentColor" stroke-width="1.3" stroke-dasharray="2 2"/>
+          <circle cx="22" cy="40" r="1.5" fill="currentColor"/>
+        </svg>
+
+        <div style="font-family:'Cabinet Grotesk',sans-serif; font-weight:700; font-size:20px; color:#F5F1E8; margin-bottom:12px;">
+          Web Engineering
+        </div>
+        <p style="font-size:14px; color:rgba(138,150,168,0.9); line-height:1.65;">
+          Full-stack applications built for scale. React, Next.js, Node — chosen for fit, not trend. Clean architecture that your team can own after we hand off.
+        </p>
+
+        <div style="margin-top:24px; display:flex; flex-wrap:wrap; gap:6px;">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#4A6980;border:1px solid #1F2A3D;border-radius:4px;padding:3px 8px;">React / Next.js</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#4A6980;border:1px solid #1F2A3D;border-radius:4px;padding:3px 8px;">Node</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#4A6980;border:1px solid #1F2A3D;border-radius:4px;padding:3px 8px;">PostgreSQL</span>
+        </div>
+      </div>
+
+      <!-- Card 2: Automation -->
+      <div class="card-surface p-8 fade-up" style="transition-delay:0.12s;">
+        <svg class="cap-icon" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- Fluxes & nodes icon -->
+          <circle cx="8" cy="22" r="3.5" stroke="currentColor" stroke-width="1.3"/>
+          <circle cx="22" cy="10" r="3.5" stroke="currentColor" stroke-width="1.3"/>
+          <circle cx="36" cy="22" r="3.5" stroke="currentColor" stroke-width="1.3"/>
+          <circle cx="22" cy="34" r="3.5" stroke="currentColor" stroke-width="1.3"/>
+          <path d="M11 19.5 C14 14 18 13.5 18.5 13.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+          <path d="M25.5 13.5 C30 14 33 18 33 19.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+          <path d="M33 24.5 C31 30 26 30.5 25.5 30.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+          <path d="M18.5 30.5 C14 30 11 26 11 24.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+          <circle cx="22" cy="22" r="2.5" fill="currentColor" opacity="0.3"/>
+          <circle cx="22" cy="22" r="1" fill="currentColor"/>
+        </svg>
+
+        <div style="font-family:'Cabinet Grotesk',sans-serif; font-weight:700; font-size:20px; color:#F5F1E8; margin-bottom:12px;">
+          Process Automation
+        </div>
+        <p style="font-size:14px; color:rgba(138,150,168,0.9); line-height:1.65;">
+          Identify the manual friction. Design a reliable pipeline. Integrate across your stack. Reporting, CRM sync, document processing — automated and auditable.
+        </p>
+
+        <div style="margin-top:24px; display:flex; flex-wrap:wrap; gap:6px;">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#4A6980;border:1px solid #1F2A3D;border-radius:4px;padding:3px 8px;">n8n / Make</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#4A6980;border:1px solid #1F2A3D;border-radius:4px;padding:3px 8px;">Webhooks</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#4A6980;border:1px solid #1F2A3D;border-radius:4px;padding:3px 8px;">ETL</span>
+        </div>
+      </div>
+
+      <!-- Card 3: AI Agents -->
+      <div class="card-surface p-8 fade-up" style="transition-delay:0.19s;">
+        <svg class="cap-icon" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- Connected polygons icon -->
+          <polygon points="22,5 30,14 27,24 17,24 14,14" stroke="currentColor" stroke-width="1.3" fill="none"/>
+          <polygon points="22,26 28,32 26,40 18,40 16,32" stroke="currentColor" stroke-width="1.3" fill="none"/>
+          <line x1="22" y1="24" x2="22" y2="26" stroke="currentColor" stroke-width="1.3"/>
+          <circle cx="22" cy="5" r="1.5" fill="currentColor"/>
+          <circle cx="30" cy="14" r="1.5" fill="currentColor"/>
+          <circle cx="14" cy="14" r="1.5" fill="currentColor"/>
+        </svg>
+
+        <div style="font-family:'Cabinet Grotesk',sans-serif; font-weight:700; font-size:20px; color:#F5F1E8; margin-bottom:12px;">
+          AI Agents
+        </div>
+        <p style="font-size:14px; color:rgba(138,150,168,0.9); line-height:1.65;">
+          Purpose-built agents that run in production. Document analysis, customer triage, data enrichment — with deterministic fallbacks, not prompt hope.
+        </p>
+
+        <div style="margin-top:24px; display:flex; flex-wrap:wrap; gap:6px;">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#4A6980;border:1px solid #1F2A3D;border-radius:4px;padding:3px 8px;">Claude API</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#4A6980;border:1px solid #1F2A3D;border-radius:4px;padding:3px 8px;">LangGraph</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#4A6980;border:1px solid #1F2A3D;border-radius:4px;padding:3px 8px;">Evals</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- WORK -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<section id="work" class="py-28 px-6 relative">
+  <div class="max-w-6xl mx-auto">
+
+    <div class="flex items-center gap-4 mb-14 fade-up">
+      <span class="section-label">Selected work</span>
+      <div style="flex:1;height:1px;background:#1F2A3D;"></div>
+      <span style="font-size:12px; color:rgba(138,150,168,0.5);">Scroll to see more &rarr;</span>
+    </div>
+
+    <div class="work-scroll fade-up" id="work-scroll">
+
+      <!-- Case 1 -->
+      <div class="work-panel">
+        <div class="card-surface overflow-hidden">
+          <div class="abstract-art abstract-art-1">
+            <!-- Decorative lines -->
+            <svg style="position:absolute;inset:0;width:100%;height:100%;opacity:0.25;" viewBox="0 0 520 200" preserveAspectRatio="none">
+              <path d="M0 100 Q130 40 260 100 T520 100" stroke="#14B8A6" stroke-width="1" fill="none"/>
+              <path d="M0 130 Q130 70 260 130 T520 130" stroke="#FBBF24" stroke-width="0.7" fill="none"/>
+              <path d="M0 70 Q130 20 260 70 T520 70" stroke="#14B8A6" stroke-width="0.5" fill="none"/>
+            </svg>
+          </div>
+          <div class="p-7">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#14B8A6;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:8px;">Logistics &mdash; 2024</div>
+            <div style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:22px;color:#F5F1E8;margin-bottom:6px;">Order Intelligence Platform</div>
+            <div style="font-size:13px;color:rgba(138,150,168,0.7);margin-bottom:18px;">Regional e-commerce operator, 2.1M annual orders</div>
+            <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:16px;">
+              <span style="font-family:'Cabinet Grotesk',sans-serif;font-weight:800;font-size:38px;color:#14B8A6;">-61%</span>
+              <span style="font-size:13px;color:rgba(245,241,232,0.5);">manual triage time</span>
+            </div>
+            <p style="font-size:14px;color:rgba(138,150,168,0.85);line-height:1.6;">AI agent classifies and routes incoming support requests. Integrated with WMS via webhook pipeline. Zero downtime since launch.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Case 2 -->
+      <div class="work-panel">
+        <div class="card-surface overflow-hidden">
+          <div class="abstract-art abstract-art-2">
+            <svg style="position:absolute;inset:0;width:100%;height:100%;opacity:0.2;" viewBox="0 0 520 200" preserveAspectRatio="none">
+              <circle cx="260" cy="100" r="80" stroke="#67E8F9" stroke-width="1" fill="none"/>
+              <circle cx="260" cy="100" r="50" stroke="#67E8F9" stroke-width="0.6" fill="none"/>
+              <line x1="100" y1="100" x2="420" y2="100" stroke="#67E8F9" stroke-width="0.7"/>
+              <line x1="260" y1="20" x2="260" y2="180" stroke="#67E8F9" stroke-width="0.7"/>
+            </svg>
+          </div>
+          <div class="p-7">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#67E8F9;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:8px;">Finance &mdash; 2025</div>
+            <div style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:22px;color:#F5F1E8;margin-bottom:6px;">Compliance Document Processor</div>
+            <div style="font-size:13px;color:rgba(138,150,168,0.7);margin-bottom:18px;">B2B lending platform, 400+ documents/week</div>
+            <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:16px;">
+              <span style="font-family:'Cabinet Grotesk',sans-serif;font-weight:800;font-size:38px;color:#67E8F9;">8hrs</span>
+              <span style="font-size:13px;color:rgba(245,241,232,0.5);">saved per analyst per week</span>
+            </div>
+            <p style="font-size:14px;color:rgba(138,150,168,0.85);line-height:1.6;">Extraction pipeline parses incoming PDFs, validates fields against ruleset, and generates structured JSON for the underwriting system.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Case 3 -->
+      <div class="work-panel">
+        <div class="card-surface overflow-hidden">
+          <div class="abstract-art abstract-art-3">
+            <svg style="position:absolute;inset:0;width:100%;height:100%;opacity:0.22;" viewBox="0 0 520 200" preserveAspectRatio="none">
+              <polyline points="40,160 120,80 200,120 300,50 400,110 480,60" stroke="#14B8A6" stroke-width="1.2" fill="none"/>
+              <polyline points="40,170 120,100 200,135 300,70 400,125 480,80" stroke="#F5F1E8" stroke-width="0.5" fill="none"/>
+              <circle cx="120" cy="80" r="4" fill="#14B8A6" opacity="0.6"/>
+              <circle cx="300" cy="50" r="4" fill="#14B8A6" opacity="0.6"/>
+              <circle cx="480" cy="60" r="4" fill="#14B8A6" opacity="0.6"/>
+            </svg>
+          </div>
+          <div class="p-7">
+            <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#FBBF24;letter-spacing:0.1em;text-transform:uppercase;margin-bottom:8px;">SaaS &mdash; 2025</div>
+            <div style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:22px;color:#F5F1E8;margin-bottom:6px;">Customer Health Dashboard</div>
+            <div style="font-size:13px;color:rgba(138,150,168,0.7);margin-bottom:18px;">B2B SaaS, 340 enterprise accounts</div>
+            <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:16px;">
+              <span style="font-family:'Cabinet Grotesk',sans-serif;font-weight:800;font-size:38px;color:#FBBF24;">+23%</span>
+              <span style="font-size:13px;color:rgba(245,241,232,0.5);">retention improvement</span>
+            </div>
+            <p style="font-size:14px;color:rgba(138,150,168,0.85);line-height:1.6;">Real-time account scoring from 12 data sources. At-risk accounts surfaced to CS team 3 weeks earlier than before. Built on Next.js + Postgres.</p>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Scroll pips -->
+    <div class="scroll-hint" id="scroll-pips">
+      <div class="scroll-pip active" data-idx="0"></div>
+      <div class="scroll-pip" data-idx="1"></div>
+      <div class="scroll-pip" data-idx="2"></div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- METRICS BAND -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<section class="py-20 px-6 relative overflow-hidden" style="background:#080F1E;">
+  <div class="dot-overlay" style="opacity:0.5;"></div>
+  <div class="max-w-5xl mx-auto relative z-10">
+    <div class="flex flex-wrap items-center justify-center gap-0 fade-up">
+
+      <div class="flex flex-col items-center px-10 py-6">
+        <span style="font-family:'Cabinet Grotesk',sans-serif;font-weight:900;font-size:clamp(44px,5vw,68px);color:#F5F1E8;line-height:1;">12</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#4A6980;letter-spacing:0.1em;text-transform:uppercase;margin-top:8px;">projects shipped</span>
+      </div>
+
+      <div class="metric-divider hidden md:block"></div>
+
+      <div class="flex flex-col items-center px-10 py-6">
+        <span style="font-family:'Cabinet Grotesk',sans-serif;font-weight:900;font-size:clamp(44px,5vw,68px);color:#14B8A6;line-height:1;">96%</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#4A6980;letter-spacing:0.1em;text-transform:uppercase;margin-top:8px;">on-time delivery</span>
+      </div>
+
+      <div class="metric-divider hidden md:block"></div>
+
+      <div class="flex flex-col items-center px-10 py-6">
+        <span style="font-family:'Cabinet Grotesk',sans-serif;font-weight:900;font-size:clamp(44px,5vw,68px);color:#F5F1E8;line-height:1;">4yrs</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#4A6980;letter-spacing:0.1em;text-transform:uppercase;margin-top:8px;">shipping</span>
+      </div>
+
+      <div class="metric-divider hidden md:block"></div>
+
+      <div class="flex flex-col items-center px-10 py-6">
+        <span style="font-family:'Cabinet Grotesk',sans-serif;font-weight:900;font-size:clamp(44px,5vw,68px);color:#FBBF24;line-height:1;">8</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#4A6980;letter-spacing:0.1em;text-transform:uppercase;margin-top:8px;">industries served</span>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- PROCESS -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<section id="process" class="py-28 px-6">
+  <div class="max-w-3xl mx-auto">
+
+    <div class="flex items-center gap-4 mb-16 fade-up">
+      <span class="section-label">How we work</span>
+      <div style="flex:1;height:1px;background:#1F2A3D;"></div>
+    </div>
+
+    <div class="relative pl-14">
+      <div class="timeline-line"></div>
+
+      <!-- Step 1 -->
+      <div class="flex gap-5 mb-10 fade-up" style="transition-delay:0.05s;">
+        <div class="timeline-node" style="position:absolute;left:0;">01</div>
+        <div class="card-surface p-6 w-full" style="margin-left:0;">
+          <div style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:17px;color:#F5F1E8;margin-bottom:8px;">Discovery call</div>
+          <p style="font-size:14px;color:rgba(138,150,168,0.85);line-height:1.6;">30 minutes. We ask about your process, not your budget. Outcome: a clear statement of the problem and whether we can help.</p>
+        </div>
+      </div>
+
+      <!-- Step 2 -->
+      <div class="flex gap-5 mb-10 fade-up" style="transition-delay:0.12s;">
+        <div class="timeline-node" style="position:absolute;left:0;">02</div>
+        <div class="card-surface p-6 w-full">
+          <div style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:17px;color:#F5F1E8;margin-bottom:8px;">Scoped proposal</div>
+          <p style="font-size:14px;color:rgba(138,150,168,0.85);line-height:1.6;">Fixed-scope, fixed-price. You know what you're getting. Milestones are weekly. Payment tied to delivery, not time.</p>
+        </div>
+      </div>
+
+      <!-- Step 3 -->
+      <div class="flex gap-5 mb-10 fade-up" style="transition-delay:0.19s;">
+        <div class="timeline-node" style="position:absolute;left:0;">03</div>
+        <div class="card-surface p-6 w-full">
+          <div style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:17px;color:#F5F1E8;margin-bottom:8px;">Build &amp; iterate</div>
+          <p style="font-size:14px;color:rgba(138,150,168,0.85);line-height:1.6;">Async collaboration by default. Weekly demo calls available. You see working code at each milestone, not slides.</p>
+        </div>
+      </div>
+
+      <!-- Step 4 -->
+      <div class="flex gap-5 fade-up" style="transition-delay:0.26s;">
+        <div class="timeline-node" style="position:absolute;left:0;border-color:#14B8A6;">04</div>
+        <div class="card-surface p-6 w-full" style="border-color:#1F3828;">
+          <div style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:17px;color:#F5F1E8;margin-bottom:8px;">Handoff &amp; support</div>
+          <p style="font-size:14px;color:rgba(138,150,168,0.85);line-height:1.6;">Full documentation. Runbook for your team. 60-day support window included. We want your team to own the system, not depend on us.</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- AGENT IN PRODUCTION — TERMINAL -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<section class="py-28 px-6" style="background:#040A17;">
+  <div class="max-w-4xl mx-auto">
+
+    <div class="flex items-center gap-4 mb-6 fade-up">
+      <span class="section-label">Agent in production</span>
+      <div style="flex:1;height:1px;background:#1F2A3D;"></div>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#14B8A6;letter-spacing:0.08em;">LIVE</span>
+      <span class="status-dot" style="margin-left:-2px;"></span>
+    </div>
+
+    <p class="fade-up" style="font-size:14px;color:rgba(138,150,168,0.7);margin-bottom:20px;max-width:520px;">Real output from our order-triage agent. Log lines stream every few seconds. This is what &ldquo;production AI&rdquo; looks like.</p>
+
+    <div class="terminal-wrap fade-up">
+      <div class="terminal-header">
+        <div class="terminal-dot" style="background:#2D3748;"></div>
+        <div class="terminal-dot" style="background:#2D3748;"></div>
+        <div class="terminal-dot" style="background:#2D3748;"></div>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#4A6980;margin-left:8px;">agent://order-triage &mdash; worker-3 &mdash; connected</span>
+      </div>
+      <div class="terminal-body" id="terminal-log">
+        <!-- Lines injected by JS -->
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- MANIFESTO -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<section class="py-28 px-6 relative overflow-hidden">
+  <div class="aurora-container" style="opacity:0.4;">
+    <div class="aurora-blob aurora-blob-1" style="opacity:0.1;"></div>
+  </div>
+  <div class="grid-overlay" style="opacity:0.5;"></div>
+
+  <div class="max-w-3xl mx-auto text-center relative z-10 fade-up">
+    <div style="width:1px;height:48px;background:linear-gradient(to bottom,transparent,#1F2A3D);margin:0 auto 32px;"></div>
+    <blockquote style="font-family:'Newsreader',serif;font-style:italic;font-weight:400;font-size:clamp(22px,3vw,38px);color:rgba(245,241,232,0.85);line-height:1.4;margin:0;">
+      &ldquo;A demo that runs once is a proof of concept.<br>
+      A system that runs ten thousand times is a product.<br>
+      We build the second kind.&rdquo;
+    </blockquote>
+    <p style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#4A6980;margin-top:28px;letter-spacing:0.1em;">Работаем на результат, не на отчёт.</p>
+    <div style="width:1px;height:48px;background:linear-gradient(to bottom,#1F2A3D,transparent);margin:32px auto 0;"></div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- CONTACT -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<section id="contact" class="py-28 px-6">
+  <div class="max-w-xl mx-auto">
+
+    <div class="card-surface p-10 text-center fade-up" style="border-color:#263447;">
+      <div class="section-label mb-5" style="display:block;">Let&rsquo;s talk</div>
+
+      <h2 style="font-family:'Cabinet Grotesk',sans-serif;font-weight:800;font-size:clamp(28px,4vw,40px);color:#F5F1E8;line-height:1.1;margin-bottom:14px;">
+        Ready to ship<br>something real?
+      </h2>
+
+      <p style="font-size:15px;color:rgba(138,150,168,0.8);line-height:1.6;margin-bottom:36px;">
+        30-minute discovery call. No sales pitch. We&rsquo;ll tell you honestly if we&rsquo;re the right fit.
+      </p>
+
+      <div class="flex flex-col items-center gap-4">
+        <a href="#" class="btn-amber-solid" style="width:100%;text-align:center;">Pick a slot &rarr;</a>
+
+        <div style="display:flex;align-items:center;gap:20px;margin-top:4px;">
+          <a href="mailto:hello@studio.dev" style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#4A6980;text-decoration:none;transition:color 0.25s ease;" onmouseover="this.style.color='#F5F1E8'" onmouseout="this.style.color='#4A6980'">hello@studio.dev</a>
+          <span style="color:#1F2A3D;">&#124;</span>
+          <a href="#" style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#4A6980;text-decoration:none;transition:color 0.25s ease;" onmouseover="this.style.color='#F5F1E8'" onmouseout="this.style.color='#4A6980'">@studio_dev</a>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- FOOTER -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<footer class="px-6 pb-12">
+  <div class="max-w-6xl mx-auto">
+    <div class="hairline border-t mb-10"></div>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-10 mb-12">
+
+      <div class="col-span-2 md:col-span-1">
+        <div class="flex items-center gap-2 mb-4">
+          <span class="pulse-dot"></span>
+          <span style="font-family:'Cabinet Grotesk',sans-serif;font-weight:800;font-size:14px;letter-spacing:0.05em;color:#F5F1E8;">STUDIO</span>
+        </div>
+        <p style="font-size:12px;color:rgba(138,150,168,0.5);line-height:1.6;max-width:200px;">Software, automation, and AI agents — engineered for production.</p>
+      </div>
+
+      <div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#14B8A6;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:14px;">Services</div>
+        <div class="flex flex-col">
+          <a href="#" class="footer-link">Web Engineering</a>
+          <a href="#" class="footer-link">Process Automation</a>
+          <a href="#" class="footer-link">AI Agents</a>
+          <a href="#" class="footer-link">Consulting</a>
+        </div>
+      </div>
+
+      <div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#14B8A6;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:14px;">Company</div>
+        <div class="flex flex-col">
+          <a href="#" class="footer-link">Work</a>
+          <a href="#" class="footer-link">Process</a>
+          <a href="#" class="footer-link">Manifesto</a>
+          <a href="#" class="footer-link">Contact</a>
+        </div>
+      </div>
+
+      <div>
+        <div style="font-family:'JetBrains Mono',monospace;font-size:10px;color:#14B8A6;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:14px;">Connect</div>
+        <div class="flex flex-col">
+          <a href="#" class="footer-link">Telegram</a>
+          <a href="#" class="footer-link">GitHub</a>
+          <a href="#" class="footer-link">LinkedIn</a>
+          <a href="#" class="footer-link">Email us</a>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="hairline border-t pt-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:rgba(138,150,168,0.3);">&copy; 2025 Studio. All rights reserved.</span>
+      <div style="display:flex;gap:20px;">
+        <a href="#" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:rgba(138,150,168,0.3);text-decoration:none;">Privacy</a>
+        <a href="#" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:rgba(138,150,168,0.3);text-decoration:none;">Terms</a>
+      </div>
+    </div>
+
+  </div>
+</footer>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<!-- JAVASCRIPT -->
+<!-- ══════════════════════════════════════════════════════════════ -->
+<script>
+// ─── NAV SCROLL BLUR ───
+const nav = document.getElementById('main-nav');
+window.addEventListener('scroll', () => {
+  if (window.scrollY > 20) {
+    nav.classList.add('scrolled');
+  } else {
+    nav.classList.remove('scrolled');
+  }
+}, { passive: true });
+
+// ─── FADE UP OBSERVER ───
+const fadeEls = document.querySelectorAll('.fade-up');
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(entry => {
+    if (entry.isIntersecting) {
+      entry.target.classList.add('visible');
+      observer.unobserve(entry.target);
+    }
+  });
+}, { threshold: 0.12 });
+
+fadeEls.forEach(el => observer.observe(el));
+
+// ─── TERMINAL LOG STREAMER ───
+const terminalLog = document.getElementById('terminal-log');
+
+const logLines = [
+  { ts: '09:14:03.112', type: 'dim',   text: 'worker-3 ready, polling queue order-triage-prod' },
+  { ts: '09:14:05.308', type: 'ok',    text: 'agent.dispatch(task="classify_order", order_id=882341) → 287ms ✓' },
+  { ts: '09:14:05.310', type: 'dim',   text: '  category=DAMAGED_GOODS  confidence=0.97  action=REFUND_QUEUE' },
+  { ts: '09:14:08.741', type: 'ok',    text: 'agent.dispatch(task="classify_order", order_id=882342) → 241ms ✓' },
+  { ts: '09:14:08.743', type: 'dim',   text: '  category=WRONG_ITEM     confidence=0.91  action=RESEND_QUEUE' },
+  { ts: '09:14:11.056', type: 'ok',    text: 'agent.summarize(thread=order_id=882339) → success ✓' },
+  { ts: '09:14:11.058', type: 'dim',   text: '  summary_tokens=312  context_used=1.4k  latency=312ms' },
+  { ts: '09:14:14.200', type: 'warn',  text: 'agent.dispatch(task="classify_order", order_id=882343) → retry 1/3' },
+  { ts: '09:14:14.890', type: 'ok',    text: 'agent.dispatch(task="classify_order", order_id=882343) → 510ms ✓' },
+  { ts: '09:14:14.892', type: 'dim',   text: '  category=DELIVERY_DELAY confidence=0.84  action=NOTIFY_CUSTOMER' },
+  { ts: '09:14:17.003', type: 'ok',    text: 'agent.enrich(order_id=882340, source="crm") → 198ms ✓' },
+  { ts: '09:14:17.005', type: 'dim',   text: '  fields_added=["customer_tier","lifetime_value"]' },
+  { ts: '09:14:20.411', type: 'ok',    text: 'agent.dispatch(task="classify_order", order_id=882344) → 265ms ✓' },
+  { ts: '09:14:20.413', type: 'dim',   text: '  category=MISSING_ITEM   confidence=0.99  action=REFUND_QUEUE' },
+  { ts: '09:14:23.700', type: 'dim',   text: 'heartbeat: queue_depth=14  processed_last_min=22  error_rate=0.0%' },
+  { ts: '09:14:26.004', type: 'ok',    text: 'agent.dispatch(task="classify_order", order_id=882345) → 291ms ✓' },
+  { ts: '09:14:26.006', type: 'dim',   text: '  category=CANCEL_REQUEST confidence=0.95  action=CANCEL_QUEUE' },
+  { ts: '09:14:29.330', type: 'ok',    text: 'agent.summarize(thread=order_id=882341) → success ✓' },
+  { ts: '09:14:29.332', type: 'dim',   text: '  summary_tokens=278  context_used=1.1k  latency=289ms' },
+  { ts: '09:14:32.100', type: 'ok',    text: 'agent.dispatch(task="classify_order", order_id=882346) → 244ms ✓' },
+  { ts: '09:14:32.102', type: 'dim',   text: '  category=DAMAGED_GOODS  confidence=0.93  action=REFUND_QUEUE' },
+];
+
+let lineIdx = 0;
+const maxVisible = 12;
+const visibleLines = [];
+
+function makeLineEl(line) {
+  const el = document.createElement('div');
+  el.style.display = 'flex';
+  el.style.gap = '12px';
+  el.style.opacity = '0';
+  el.style.transform = 'translateY(4px)';
+  el.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+
+  const tsEl = document.createElement('span');
+  tsEl.className = 'log-ts';
+  tsEl.textContent = line.ts;
+
+  const textEl = document.createElement('span');
+  if (line.type === 'ok') textEl.className = 'log-ok';
+  else if (line.type === 'warn') textEl.className = 'log-warn';
+  else if (line.type === 'agent') textEl.className = 'log-agent';
+  else textEl.className = 'log-dim';
+  textEl.textContent = line.text;
+
+  el.appendChild(tsEl);
+  el.appendChild(textEl);
+  return el;
+}
+
+// Initial render
+function initTerminal() {
+  const initialCount = 6;
+  for (let i = 0; i < initialCount; i++) {
+    const line = logLines[lineIdx % logLines.length];
+    const el = makeLineEl(line);
+    terminalLog.appendChild(el);
+    visibleLines.push(el);
+    lineIdx++;
+    // Immediately visible
+    requestAnimationFrame(() => {
+      el.style.opacity = '1';
+      el.style.transform = 'translateY(0)';
+    });
+  }
+
+  // Add cursor
+  const cursorEl = document.createElement('span');
+  cursorEl.className = 'terminal-cursor';
+  terminalLog.appendChild(cursorEl);
+}
+
+function tickTerminal() {
+  const cursorEl = terminalLog.querySelector('.terminal-cursor');
+  const line = logLines[lineIdx % logLines.length];
+  const el = makeLineEl(line);
+
+  if (cursorEl) {
+    terminalLog.insertBefore(el, cursorEl);
+  } else {
+    terminalLog.appendChild(el);
+  }
+  visibleLines.push(el);
+  lineIdx++;
+
+  requestAnimationFrame(() => {
+    el.style.opacity = '1';
+    el.style.transform = 'translateY(0)';
+  });
+
+  // Remove oldest line if too many
+  if (visibleLines.length > maxVisible) {
+    const oldest = visibleLines.shift();
+    oldest.style.opacity = '0';
+    oldest.style.transform = 'translateY(-4px)';
+    setTimeout(() => {
+      if (oldest.parentNode) oldest.parentNode.removeChild(oldest);
+    }, 300);
+  }
+}
+
+initTerminal();
+
+// Vary tick timing for realism
+function scheduleTick() {
+  const delay = 1800 + Math.random() * 1400;
+  setTimeout(() => {
+    tickTerminal();
+    scheduleTick();
+  }, delay);
+}
+
+scheduleTick();
+
+// ─── WORK SCROLL PIPS ───
+const workScroll = document.getElementById('work-scroll');
+const pips = document.querySelectorAll('.scroll-pip');
+
+workScroll.addEventListener('scroll', () => {
+  const panels = workScroll.querySelectorAll('.work-panel');
+  const scrollLeft = workScroll.scrollLeft;
+  const panelWidth = panels[0] ? panels[0].offsetWidth + 20 : 1;
+  const idx = Math.round(scrollLeft / panelWidth);
+  pips.forEach((pip, i) => {
+    pip.classList.toggle('active', i === idx);
+  });
+}, { passive: true });
+
+pips.forEach(pip => {
+  pip.addEventListener('click', () => {
+    const idx = parseInt(pip.dataset.idx);
+    const panels = workScroll.querySelectorAll('.work-panel');
+    const panelWidth = panels[0] ? panels[0].offsetWidth + 20 : 0;
+    workScroll.scrollTo({ left: idx * panelWidth, behavior: 'smooth' });
+  });
+});
+</script>
+
+</body>
+</html>

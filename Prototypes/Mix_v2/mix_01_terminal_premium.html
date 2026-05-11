@@ -1,0 +1,1029 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>~/agency — Web Dev & AI Automation Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Cabinet+Grotesk:wght@700;800;900&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            bg:        '#0F0F12',
+            surface:   '#16161B',
+            border:    '#2A2A30',
+            text:      '#F5F1E8',
+            muted:     '#9A958A',
+            accent:    '#E67E2C',
+            amber:     '#F0A961',
+          },
+          fontFamily: {
+            mono:    ['"JetBrains Mono"', 'monospace'],
+            display: ['"Cabinet Grotesk"', 'sans-serif'],
+          },
+        },
+      },
+    };
+  </script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background-color: #0F0F12;
+      color: #F5F1E8;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px;
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    /* ── CURSOR BLINK ── */
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0; }
+    }
+    .cursor::after {
+      content: '▮';
+      display: inline-block;
+      margin-left: 2px;
+      animation: blink 1.1s step-end infinite;
+      color: #E67E2C;
+    }
+
+    /* ── BUTTONS ── */
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #E67E2C;
+      color: #0F0F12;
+      border: 3px solid #2A2A30;
+      box-shadow: 4px 4px 0 #2A2A30;
+      padding: 10px 20px;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      text-decoration: none;
+      transition: box-shadow 120ms cubic-bezier(0.4, 0, 0.2, 1),
+                  transform   120ms cubic-bezier(0.4, 0, 0.2, 1);
+      white-space: nowrap;
+    }
+    .btn-primary:hover {
+      box-shadow: 0 0 0 #2A2A30;
+      transform: translate(4px, 4px);
+    }
+
+    .btn-ghost {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: transparent;
+      color: #F5F1E8;
+      border: 2px solid #F5F1E8;
+      box-shadow: 4px 4px 0 #F5F1E8;
+      padding: 10px 20px;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      cursor: pointer;
+      text-decoration: none;
+      transition: box-shadow 120ms cubic-bezier(0.4, 0, 0.2, 1),
+                  transform   120ms cubic-bezier(0.4, 0, 0.2, 1);
+      white-space: nowrap;
+    }
+    .btn-ghost:hover {
+      box-shadow: 0 0 0 #F5F1E8;
+      transform: translate(4px, 4px);
+    }
+
+    /* ── HAIRLINE BORDER ── */
+    .border-hairline { border: 1px solid #2A2A30; }
+
+    /* ── PANEL ── */
+    .panel {
+      background: #16161B;
+      border: 1px solid #2A2A30;
+    }
+
+    /* ── NAV LINK ── */
+    .nav-link {
+      color: #9A958A;
+      text-decoration: none;
+      font-size: 13px;
+      letter-spacing: 0.04em;
+      transition: color 200ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+    .nav-link:hover { color: #F5F1E8; }
+
+    /* ── STATUS STRIP SCROLL ── */
+    @keyframes marquee {
+      0%   { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+    .marquee-track {
+      display: flex;
+      animation: marquee 28s linear infinite;
+      width: max-content;
+    }
+    .marquee-track:hover { animation-play-state: paused; }
+
+    /* ── CASES TABLE ROW HOVER ── */
+    .case-row {
+      transition: background 150ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+    .case-row:hover {
+      background: #1C1C23;
+    }
+    .case-row:hover td:first-child {
+      border-left: 3px solid #E67E2C;
+    }
+
+    /* ── PROCESS STAGES ── */
+    .stage-line {
+      position: absolute;
+      top: 22px;
+      right: -50%;
+      width: 100%;
+      height: 1px;
+      background: #2A2A30;
+    }
+
+    /* ── FADE-IN ANIMATION ── */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .fade-up {
+      opacity: 0;
+      animation: fadeUp 600ms cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+    }
+
+    /* ── CANVAS WRAPPER ── */
+    #hero-canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* ── SCROLL REVEAL ── */
+    .reveal {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 600ms cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                  transform 600ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    }
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* ── ASCII CONTACT BLOCK ── */
+    .ascii-box {
+      font-family: 'JetBrains Mono', monospace;
+      color: #9A958A;
+      font-size: 13px;
+      line-height: 1.5;
+      white-space: pre;
+    }
+
+    /* ── CHIP ── */
+    .tech-chip {
+      display: inline-flex;
+      align-items: center;
+      color: #9A958A;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      border: 1px solid #2A2A30;
+      padding: 3px 8px;
+      background: #0F0F12;
+    }
+
+    /* ── AVAILABLE CHIP ── */
+    .avail-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #F0A961;
+      border: 1px solid #F0A961;
+      padding: 4px 10px;
+    }
+    .avail-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #F0A961;
+      animation: blink 2s ease-in-out infinite;
+    }
+
+    /* ── SECTION HEADING ACCENT ── */
+    .section-label {
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: #E67E2C;
+    }
+
+    /* ── STATS NUMBER ── */
+    .stat-number {
+      font-family: 'Cabinet Grotesk', sans-serif;
+      font-weight: 800;
+      font-size: clamp(48px, 5vw, 72px);
+      color: #F5F1E8;
+      line-height: 1;
+    }
+
+    /* ── MANIFESTO QUOTE ── */
+    .manifesto-quote {
+      font-family: 'Cabinet Grotesk', sans-serif;
+      font-weight: 700;
+      font-style: italic;
+      font-size: clamp(24px, 3vw, 40px);
+      color: #F5F1E8;
+      line-height: 1.3;
+    }
+
+    /* ── AMBER TABLE HEADER ── */
+    .table-header-amber {
+      background: #F0A961;
+      color: #0F0F12;
+    }
+
+    /* ── MOBILE ADJUSTMENTS ── */
+    @media (max-width: 768px) {
+      #hero-3d {
+        height: 280px;
+        width: 100%;
+      }
+      .hero-grid {
+        grid-template-columns: 1fr !important;
+      }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ╔══════════════════════════════════════╗ -->
+<!-- ║  01 · TOP BAR                        ║ -->
+<!-- ╚══════════════════════════════════════╝ -->
+<header class="border-b border-border sticky top-0 z-50" style="background:#0F0F12;">
+  <div class="max-w-7xl mx-auto px-6 h-14 flex items-center justify-between gap-8">
+
+    <!-- LEFT: prompt logo -->
+    <a href="#" class="font-mono font-bold text-sm text-text tracking-tight whitespace-nowrap" style="color:#F5F1E8;">
+      studio@<span style="color:#E67E2C;">~/agency</span> $
+    </a>
+
+    <!-- CENTER: nav links -->
+    <nav class="hidden md:flex items-center gap-6">
+      <a href="#services"  class="nav-link">--services</a>
+      <a href="#cases"     class="nav-link">--cases</a>
+      <a href="#process"   class="nav-link">--process</a>
+      <a href="#contact"   class="nav-link">--contact</a>
+    </nav>
+
+    <!-- RIGHT: CTA -->
+    <a href="#contact" class="btn-primary text-xs">TALK TO US <span style="font-size:10px;">▸</span></a>
+  </div>
+</header>
+
+
+<!-- ╔══════════════════════════════════════╗ -->
+<!-- ║  02 · HERO                           ║ -->
+<!-- ╚══════════════════════════════════════╝ -->
+<section id="hero" class="min-h-screen relative border-b border-border" style="background:#0F0F12;">
+  <div class="max-w-7xl mx-auto px-6 py-24 hero-grid" style="display:grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items:center; min-height: calc(100vh - 56px);">
+
+    <!-- LEFT: copy -->
+    <div class="flex flex-col gap-8 fade-up" style="animation-delay:100ms;">
+
+      <!-- availability chip -->
+      <div>
+        <span class="avail-chip">
+          <span class="avail-dot"></span>
+          AVAILABLE — Q3 '26
+        </span>
+      </div>
+
+      <!-- headline -->
+      <div>
+        <h1 style="font-family:'Cabinet Grotesk',sans-serif; font-weight:800; font-size:clamp(40px,5.5vw,88px); line-height:1.05; letter-spacing:-0.02em; color:#F5F1E8;">
+          We build<br/>
+          software,<br/>
+          automation<br/>
+          &amp; AI&nbsp;agents<span style="color:#E67E2C;">.</span>
+        </h1>
+      </div>
+
+      <!-- sub-line in mono -->
+      <p style="color:#9A958A; font-size:14px; line-height:1.7; max-width:440px;">
+        // like a product, not a project.<br/>
+        // без воды — только то, что работает в продакшне.
+      </p>
+
+      <!-- CTAs -->
+      <div class="flex flex-wrap gap-4 items-center">
+        <a href="#contact" class="btn-primary">
+          SCHEDULE A CALL <span style="font-size:10px;">▸</span>
+        </a>
+        <a href="#cases" class="btn-ghost">
+          SEE CASES
+        </a>
+      </div>
+
+      <!-- small meta line -->
+      <p style="font-size:12px; color:#2A2A30; letter-spacing:0.06em;">
+        <span style="color:#9A958A;">// v2.4.1 · shipped 2026 · </span>
+        <span class="cursor" style="color:#9A958A;">node=production</span>
+      </p>
+    </div>
+
+    <!-- RIGHT: Three.js canvas -->
+    <div id="hero-3d" class="relative fade-up" style="animation-delay:300ms; height:520px; min-height:340px;">
+      <canvas id="hero-canvas"></canvas>
+    </div>
+  </div>
+</section>
+
+
+<!-- ╔══════════════════════════════════════╗ -->
+<!-- ║  03 · STATUS STRIP                   ║ -->
+<!-- ╚══════════════════════════════════════╝ -->
+<div class="border-b border-border overflow-hidden" style="background:#16161B; height:40px; display:flex; align-items:center;">
+  <div style="overflow:hidden; width:100%;">
+    <div class="marquee-track" style="gap:0;">
+      <!-- content repeated 2× for seamless loop -->
+      <span style="white-space:nowrap; padding:0 32px; font-size:12px; color:#9A958A; letter-spacing:0.06em;">
+        <span style="color:#F0A961;">●</span>&nbsp;API operational
+        &nbsp;·&nbsp;99.97% uptime
+        &nbsp;·&nbsp;4 agents in production
+        &nbsp;·&nbsp;last deploy 2h ago
+        &nbsp;·&nbsp;stack: Next.js · LangChain · n8n · Postgres
+        &nbsp;·&nbsp;12 projects shipped
+        &nbsp;·&nbsp;<span style="color:#E67E2C;">//</span> сделано вдумчиво
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+      </span>
+      <span style="white-space:nowrap; padding:0 32px; font-size:12px; color:#9A958A; letter-spacing:0.06em;">
+        <span style="color:#F0A961;">●</span>&nbsp;API operational
+        &nbsp;·&nbsp;99.97% uptime
+        &nbsp;·&nbsp;4 agents in production
+        &nbsp;·&nbsp;last deploy 2h ago
+        &nbsp;·&nbsp;stack: Next.js · LangChain · n8n · Postgres
+        &nbsp;·&nbsp;12 projects shipped
+        &nbsp;·&nbsp;<span style="color:#E67E2C;">//</span> сделано вдумчиво
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+      </span>
+    </div>
+  </div>
+</div>
+
+
+<!-- ╔══════════════════════════════════════╗ -->
+<!-- ║  04 · SERVICES                       ║ -->
+<!-- ╚══════════════════════════════════════╝ -->
+<section id="services" class="py-24 border-b border-border">
+  <div class="max-w-7xl mx-auto px-6">
+
+    <!-- section header -->
+    <div class="flex items-baseline gap-6 mb-16 reveal">
+      <span class="section-label">// services</span>
+      <h2 style="font-family:'Cabinet Grotesk',sans-serif; font-weight:800; font-size:clamp(28px,3vw,42px); color:#F5F1E8; line-height:1.1;">What we ship</h2>
+    </div>
+
+    <!-- 3-column grid -->
+    <div class="grid gap-px" style="grid-template-columns: repeat(3, 1fr); border: 1px solid #2A2A30;">
+
+      <!-- SERVICE 01 -->
+      <div class="panel p-8 flex flex-col gap-6 reveal" style="animation-delay:0ms;">
+        <div>
+          <p style="font-size:11px; color:#E67E2C; letter-spacing:0.1em; margin-bottom:10px;">// 01 · WEB</p>
+          <h3 style="font-family:'Cabinet Grotesk',sans-serif; font-weight:800; font-size:32px; color:#F5F1E8; line-height:1.1;">Product Engineering</h3>
+        </div>
+        <p style="font-size:13px; color:#9A958A; line-height:1.75; flex:1;">
+          Full-stack web products built for scale —<br/>
+          from MVP to Series A infrastructure.<br/>
+          We own the architecture decision,<br/>
+          not just the ticket queue.
+        </p>
+        <div class="flex flex-wrap gap-2">
+          <span class="tech-chip">[next.js]</span>
+          <span class="tech-chip">[postgres]</span>
+          <span class="tech-chip">[prisma]</span>
+          <span class="tech-chip">[vercel]</span>
+        </div>
+        <div>
+          <a href="#contact" class="btn-ghost" style="font-size:11px; padding:8px 14px;">SCOPE PROJECT ▸</a>
+        </div>
+      </div>
+
+      <!-- SERVICE 02 -->
+      <div class="panel p-8 flex flex-col gap-6 reveal" style="animation-delay:80ms;">
+        <div>
+          <p style="font-size:11px; color:#E67E2C; letter-spacing:0.1em; margin-bottom:10px;">// 02 · AUTO</p>
+          <h3 style="font-family:'Cabinet Grotesk',sans-serif; font-weight:800; font-size:32px; color:#F5F1E8; line-height:1.1;">Workflow Automation</h3>
+        </div>
+        <p style="font-size:13px; color:#9A958A; line-height:1.75; flex:1;">
+          Replace repetitive ops with autonomous<br/>
+          pipelines. CRM syncs, email sequencing,<br/>
+          document processing, Slack bots —<br/>
+          anything that runs on a schedule.
+        </p>
+        <div class="flex flex-wrap gap-2">
+          <span class="tech-chip">[n8n]</span>
+          <span class="tech-chip">[make]</span>
+          <span class="tech-chip">[zapier]</span>
+          <span class="tech-chip">[airtable]</span>
+        </div>
+        <div>
+          <a href="#contact" class="btn-ghost" style="font-size:11px; padding:8px 14px;">SCOPE PROJECT ▸</a>
+        </div>
+      </div>
+
+      <!-- SERVICE 03 -->
+      <div class="panel p-8 flex flex-col gap-6 reveal" style="animation-delay:160ms;">
+        <div>
+          <p style="font-size:11px; color:#E67E2C; letter-spacing:0.1em; margin-bottom:10px;">// 03 · AI</p>
+          <h3 style="font-family:'Cabinet Grotesk',sans-serif; font-weight:800; font-size:32px; color:#F5F1E8; line-height:1.1;">AI Agent Systems</h3>
+        </div>
+        <p style="font-size:13px; color:#9A958A; line-height:1.75; flex:1;">
+          LLM-powered agents that take actions,<br/>
+          not just generate text. RAG pipelines,<br/>
+          tool-calling agents, evaluation loops —<br/>
+          production-grade, not proof-of-concept.
+        </p>
+        <div class="flex flex-wrap gap-2">
+          <span class="tech-chip">[langchain]</span>
+          <span class="tech-chip">[openai]</span>
+          <span class="tech-chip">[anthropic]</span>
+          <span class="tech-chip">[rag]</span>
+        </div>
+        <div>
+          <a href="#contact" class="btn-ghost" style="font-size:11px; padding:8px 14px;">SCOPE PROJECT ▸</a>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+<!-- ╔══════════════════════════════════════╗ -->
+<!-- ║  05 · CASES                          ║ -->
+<!-- ╚══════════════════════════════════════╝ -->
+<section id="cases" class="py-24 border-b border-border">
+  <div class="max-w-7xl mx-auto px-6">
+
+    <!-- section header -->
+    <div class="flex items-baseline gap-6 mb-16 reveal">
+      <span class="section-label">// cases</span>
+      <h2 style="font-family:'Cabinet Grotesk',sans-serif; font-weight:800; font-size:clamp(28px,3vw,42px); color:#F5F1E8; line-height:1.1;">Shipped work</h2>
+    </div>
+
+    <!-- terminal table -->
+    <div class="panel reveal" style="overflow-x:auto;">
+      <table style="width:100%; border-collapse:collapse; font-size:13px;">
+        <!-- header -->
+        <thead>
+          <tr class="table-header-amber">
+            <th style="padding:12px 16px; text-align:left; font-weight:700; letter-spacing:0.08em; border-right:2px solid #0F0F12; font-size:11px;">ID</th>
+            <th style="padding:12px 16px; text-align:left; font-weight:700; letter-spacing:0.08em; border-right:2px solid #0F0F12; font-size:11px;">CLIENT</th>
+            <th style="padding:12px 16px; text-align:left; font-weight:700; letter-spacing:0.08em; border-right:2px solid #0F0F12; font-size:11px;">STACK</th>
+            <th style="padding:12px 16px; text-align:left; font-weight:700; letter-spacing:0.08em; font-size:11px;">RESULT</th>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- ROW 1 -->
+          <tr class="case-row" style="border-top:1px solid #2A2A30;">
+            <td style="padding:16px; border-right:1px solid #2A2A30; color:#E67E2C; font-weight:700; font-size:12px; letter-spacing:0.06em; white-space:nowrap;">#VIP_001</td>
+            <td style="padding:16px; border-right:1px solid #2A2A30; color:#F5F1E8;">
+              VIP_RENTAL_PHUKET<br/>
+              <span style="font-size:11px; color:#9A958A;">Luxury Villa Rental Platform · Thailand</span>
+            </td>
+            <td style="padding:16px; border-right:1px solid #2A2A30; color:#9A958A; font-size:12px;">
+              <div class="flex flex-wrap gap-1">
+                <span class="tech-chip">[next.js]</span>
+                <span class="tech-chip">[stripe]</span>
+                <span class="tech-chip">[sanity]</span>
+              </div>
+            </td>
+            <td style="padding:16px; color:#F5F1E8;">
+              +340% organic traffic<br/>
+              <span style="font-size:11px; color:#9A958A;">// booking conversion up from 1.2% → 4.8%</span>
+            </td>
+          </tr>
+          <!-- ROW 2 -->
+          <tr class="case-row" style="border-top:1px solid #2A2A30;">
+            <td style="padding:16px; border-right:1px solid #2A2A30; color:#E67E2C; font-weight:700; font-size:12px; letter-spacing:0.06em; white-space:nowrap;">#BD_002</td>
+            <td style="padding:16px; border-right:1px solid #2A2A30; color:#F5F1E8;">
+              BACKDOOR_STORE<br/>
+              <span style="font-size:11px; color:#9A958A;">Streetwear E-Commerce · Russia/EU</span>
+            </td>
+            <td style="padding:16px; border-right:1px solid #2A2A30; color:#9A958A; font-size:12px;">
+              <div class="flex flex-wrap gap-1">
+                <span class="tech-chip">[shopify]</span>
+                <span class="tech-chip">[n8n]</span>
+                <span class="tech-chip">[telegram]</span>
+              </div>
+            </td>
+            <td style="padding:16px; color:#F5F1E8;">
+              Auto-fulfillment pipeline<br/>
+              <span style="font-size:11px; color:#9A958A;">// 0 manual ops on 200+ orders/day</span>
+            </td>
+          </tr>
+          <!-- ROW 3 -->
+          <tr class="case-row" style="border-top:1px solid #2A2A30;">
+            <td style="padding:16px; border-right:1px solid #2A2A30; color:#E67E2C; font-weight:700; font-size:12px; letter-spacing:0.06em; white-space:nowrap;">#RA_003</td>
+            <td style="padding:16px; border-right:1px solid #2A2A30; color:#F5F1E8;">
+              RA_PROJECT<br/>
+              <span style="font-size:11px; color:#9A958A;">AI Research &amp; Analytics Platform · B2B</span>
+            </td>
+            <td style="padding:16px; border-right:1px solid #2A2A30; color:#9A958A; font-size:12px;">
+              <div class="flex flex-wrap gap-1">
+                <span class="tech-chip">[langchain]</span>
+                <span class="tech-chip">[rag]</span>
+                <span class="tech-chip">[postgres]</span>
+              </div>
+            </td>
+            <td style="padding:16px; color:#F5F1E8;">
+              Custom AI research agent<br/>
+              <span style="font-size:11px; color:#9A958A;">// 60% time-to-insight reduction</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</section>
+
+
+<!-- ╔══════════════════════════════════════╗ -->
+<!-- ║  06 · PROCESS                        ║ -->
+<!-- ╚══════════════════════════════════════╝ -->
+<section id="process" class="py-24 border-b border-border">
+  <div class="max-w-7xl mx-auto px-6">
+
+    <!-- section header -->
+    <div class="flex items-baseline gap-6 mb-20 reveal">
+      <span class="section-label">// process</span>
+      <h2 style="font-family:'Cabinet Grotesk',sans-serif; font-weight:800; font-size:clamp(28px,3vw,42px); color:#F5F1E8; line-height:1.1;">How we work</h2>
+    </div>
+
+    <!-- 4-stage horizontal -->
+    <div class="grid gap-8" style="grid-template-columns: repeat(4, 1fr); position:relative;">
+
+      <!-- connecting line -->
+      <div style="position:absolute; top:20px; left:10%; right:10%; height:1px; background:linear-gradient(90deg, #2A2A30 0%, #E67E2C 50%, #2A2A30 100%); z-index:0;"></div>
+
+      <!-- STAGE 01 -->
+      <div class="reveal" style="animation-delay:0ms; position:relative; z-index:1;">
+        <div style="width:44px; height:44px; border:1px solid #2A2A30; background:#0F0F12; display:flex; align-items:center; justify-content:center; margin-bottom:20px;">
+          <span style="color:#E67E2C; font-size:11px; font-weight:700; letter-spacing:0.08em;">[01]</span>
+        </div>
+        <h4 style="font-family:'Cabinet Grotesk',sans-serif; font-weight:700; font-size:18px; color:#F5F1E8; margin-bottom:10px;">Discovery</h4>
+        <p style="font-size:12px; color:#9A958A; line-height:1.75;">
+          72h deep-dive into your stack, goals, and constraints. We write a technical brief before any proposal.
+        </p>
+        <p style="font-size:11px; color:#2A2A30; margin-top:12px; letter-spacing:0.04em;">// duration: 1-3 days</p>
+      </div>
+
+      <!-- STAGE 02 -->
+      <div class="reveal" style="animation-delay:80ms; position:relative; z-index:1;">
+        <div style="width:44px; height:44px; border:1px solid #2A2A30; background:#0F0F12; display:flex; align-items:center; justify-content:center; margin-bottom:20px;">
+          <span style="color:#E67E2C; font-size:11px; font-weight:700; letter-spacing:0.08em;">[02]</span>
+        </div>
+        <h4 style="font-family:'Cabinet Grotesk',sans-serif; font-weight:700; font-size:18px; color:#F5F1E8; margin-bottom:10px;">Architecture</h4>
+        <p style="font-size:12px; color:#9A958A; line-height:1.75;">
+          System design, stack selection, and phased delivery plan. No sprints for sprints' sake.
+        </p>
+        <p style="font-size:11px; color:#2A2A30; margin-top:12px; letter-spacing:0.04em;">// duration: 3-5 days</p>
+      </div>
+
+      <!-- STAGE 03 -->
+      <div class="reveal" style="animation-delay:160ms; position:relative; z-index:1;">
+        <div style="width:44px; height:44px; border:1px solid #2A2A30; background:#0F0F12; display:flex; align-items:center; justify-content:center; margin-bottom:20px;">
+          <span style="color:#E67E2C; font-size:11px; font-weight:700; letter-spacing:0.08em;">[03]</span>
+        </div>
+        <h4 style="font-family:'Cabinet Grotesk',sans-serif; font-weight:700; font-size:18px; color:#F5F1E8; margin-bottom:10px;">Build</h4>
+        <p style="font-size:12px; color:#9A958A; line-height:1.75;">
+          Weekly deploys to staging. You review running software, not slide decks. Async-first communication.
+        </p>
+        <p style="font-size:11px; color:#2A2A30; margin-top:12px; letter-spacing:0.04em;">// duration: 2-8 weeks</p>
+      </div>
+
+      <!-- STAGE 04 -->
+      <div class="reveal" style="animation-delay:240ms; position:relative; z-index:1;">
+        <div style="width:44px; height:44px; border:1px solid #2A2A30; background:#0F0F12; display:flex; align-items:center; justify-content:center; margin-bottom:20px;">
+          <span style="color:#E67E2C; font-size:11px; font-weight:700; letter-spacing:0.08em;">[04]</span>
+        </div>
+        <h4 style="font-family:'Cabinet Grotesk',sans-serif; font-weight:700; font-size:18px; color:#F5F1E8; margin-bottom:10px;">Handoff</h4>
+        <p style="font-size:12px; color:#9A958A; line-height:1.75;">
+          Full documentation, runbooks, and optional retainer for ongoing ops. You own the code, always.
+        </p>
+        <p style="font-size:11px; color:#2A2A30; margin-top:12px; letter-spacing:0.04em;">// duration: 1-2 days</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+<!-- ╔══════════════════════════════════════╗ -->
+<!-- ║  07 · STATS                          ║ -->
+<!-- ╚══════════════════════════════════════╝ -->
+<section class="py-24 border-b border-border" style="background:#16161B;">
+  <div class="max-w-7xl mx-auto px-6">
+    <div class="grid gap-0" style="grid-template-columns: repeat(4, 1fr); border: 1px solid #2A2A30;">
+
+      <div class="p-10 flex flex-col gap-3 reveal" style="border-right:1px solid #2A2A30;">
+        <div class="stat-number">12<span style="color:#E67E2C;">+</span></div>
+        <div style="font-size:11px; color:#9A958A; letter-spacing:0.12em; text-transform:uppercase;">Products shipped</div>
+        <div style="font-size:11px; color:#2A2A30;">// since 2022</div>
+      </div>
+
+      <div class="p-10 flex flex-col gap-3 reveal" style="border-right:1px solid #2A2A30; animation-delay:80ms;">
+        <div class="stat-number">96<span style="color:#E67E2C;">%</span></div>
+        <div style="font-size:11px; color:#9A958A; letter-spacing:0.12em; text-transform:uppercase;">On-time delivery</div>
+        <div style="font-size:11px; color:#2A2A30;">// measured across all projects</div>
+      </div>
+
+      <div class="p-10 flex flex-col gap-3 reveal" style="border-right:1px solid #2A2A30; animation-delay:160ms;">
+        <div class="stat-number">4<span style="color:#E67E2C;">yrs</span></div>
+        <div style="font-size:11px; color:#9A958A; letter-spacing:0.12em; text-transform:uppercase;">Focused practice</div>
+        <div style="font-size:11px; color:#2A2A30;">// web + automation + AI</div>
+      </div>
+
+      <div class="p-10 flex flex-col gap-3 reveal" style="animation-delay:240ms;">
+        <div class="stat-number">2<span style="color:#E67E2C; font-size:40px; vertical-align:middle;">*</span></div>
+        <div style="font-size:11px; color:#9A958A; letter-spacing:0.12em; text-transform:uppercase;">Revision rounds</div>
+        <div style="font-size:11px; color:#2A2A30;">// *we stop counting at clarity</div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+<!-- ╔══════════════════════════════════════╗ -->
+<!-- ║  08 · MANIFESTO                      ║ -->
+<!-- ╚══════════════════════════════════════╝ -->
+<section class="py-32 border-b border-border">
+  <div class="max-w-4xl mx-auto px-6 text-center reveal">
+    <p style="font-size:11px; color:#E67E2C; letter-spacing:0.14em; text-transform:uppercase; margin-bottom:32px;">// manifesto</p>
+    <blockquote class="manifesto-quote">
+      "Most agencies sell hours.<br/>
+      We sell outcomes —<br/>
+      and we stay until it ships."
+    </blockquote>
+    <div style="margin-top:24px; display:flex; align-items:center; justify-content:center; gap:12px;">
+      <div style="width:32px; height:1px; background:#2A2A30;"></div>
+      <span style="font-size:12px; color:#9A958A; letter-spacing:0.08em; text-transform:uppercase;">The Studio · 2026</span>
+      <div style="width:32px; height:1px; background:#2A2A30;"></div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ╔══════════════════════════════════════╗ -->
+<!-- ║  09 · CONTACT                        ║ -->
+<!-- ╚══════════════════════════════════════╝ -->
+<section id="contact" class="py-24 border-b border-border">
+  <div class="max-w-3xl mx-auto px-6">
+
+    <!-- section header -->
+    <div class="flex items-baseline gap-6 mb-16 reveal">
+      <span class="section-label">// contact</span>
+      <h2 style="font-family:'Cabinet Grotesk',sans-serif; font-weight:800; font-size:clamp(28px,3vw,42px); color:#F5F1E8; line-height:1.1;">Start a project</h2>
+    </div>
+
+    <!-- ASCII frame -->
+    <div class="panel reveal" style="padding:0;">
+      <!-- ASCII top border -->
+      <div style="padding:32px 32px 0; color:#2A2A30; font-size:13px; white-space:pre; overflow-x:auto;">┌──────────────────────────────────────────────────────────────────────┐</div>
+
+      <!-- content -->
+      <div style="padding:24px 40px 32px;">
+
+        <!-- title inside frame -->
+        <div style="font-size:11px; color:#E67E2C; letter-spacing:0.1em; margin-bottom:24px;">
+          studio@~/agency $ ./contact --open-channel
+        </div>
+
+        <!-- email -->
+        <div style="margin-bottom:20px;">
+          <span style="font-size:11px; color:#9A958A; letter-spacing:0.06em;">EMAIL</span><br/>
+          <a href="mailto:hello@theagency.dev" style="font-size:clamp(18px,2.5vw,28px); color:#F5F1E8; text-decoration:none; letter-spacing:-0.01em; font-weight:500; transition:color 200ms cubic-bezier(0.25,0.46,0.45,0.94);" onmouseover="this.style.color='#E67E2C'" onmouseout="this.style.color='#F5F1E8'">
+            hello@theagency.dev
+          </a>
+        </div>
+
+        <!-- telegram -->
+        <div style="margin-bottom:32px;">
+          <span style="font-size:11px; color:#9A958A; letter-spacing:0.06em;">TELEGRAM</span><br/>
+          <a href="https://t.me/studio_agency" style="font-size:clamp(16px,2vw,22px); color:#9A958A; text-decoration:none; letter-spacing:-0.01em; transition:color 200ms cubic-bezier(0.25,0.46,0.45,0.94);" onmouseover="this.style.color='#F0A961'" onmouseout="this.style.color='#9A958A'">
+            @studio_agency
+          </a>
+        </div>
+
+        <!-- response time note -->
+        <div style="margin-bottom:32px; font-size:12px; color:#2A2A30; border-left:2px solid #2A2A30; padding-left:12px;">
+          // typical response: &lt;4h during CET business hours<br/>
+          // discovery call: 45 min, no sales pitch
+        </div>
+
+        <!-- big primary CTA -->
+        <a href="mailto:hello@theagency.dev" class="btn-primary" style="font-size:13px; padding:14px 28px;">
+          SCHEDULE A CALL <span style="font-size:11px;">▸</span>
+        </a>
+      </div>
+
+      <!-- ASCII bottom border -->
+      <div style="padding:0 32px 32px; color:#2A2A30; font-size:13px; white-space:pre; overflow-x:auto;">└──────────────────────────────────────────────────────────────────────┘</div>
+    </div>
+
+  </div>
+</section>
+
+
+<!-- ╔══════════════════════════════════════╗ -->
+<!-- ║  10 · FOOTER                         ║ -->
+<!-- ╚══════════════════════════════════════╝ -->
+<footer class="py-6" style="border-top:1px solid #2A2A30;">
+  <div class="max-w-7xl mx-auto px-6">
+    <p style="font-size:11px; color:#2A2A30; letter-spacing:0.06em; text-align:center;">
+      studio@~/agency
+      &nbsp;·&nbsp; web development
+      &nbsp;·&nbsp; AI automation
+      &nbsp;·&nbsp; agent systems
+      &nbsp;·&nbsp; <span style="color:#9A958A;">hello@theagency.dev</span>
+      &nbsp;·&nbsp; © 2026
+      &nbsp;·&nbsp; <span style="color:#E67E2C;">// shipped</span>
+    </p>
+  </div>
+</footer>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!--  THREE.JS POINT CLOUD — ES MODULE                                  -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<script type="module">
+  import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js';
+
+  const container = document.getElementById('hero-3d');
+  const canvas    = document.getElementById('hero-canvas');
+
+  if (!container || !canvas) {
+    console.warn('Three.js: hero container not found');
+  } else {
+
+    // ── RENDERER ──────────────────────────────────────────────────────
+    const dpr      = Math.min(window.devicePixelRatio, 2);
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: false });
+    renderer.setPixelRatio(dpr);
+    renderer.setClearColor(0x000000, 0);
+
+    // ── SCENE + CAMERA ────────────────────────────────────────────────
+    const scene  = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 100);
+    camera.position.set(0, 0, 6);
+
+    // Fog matching bg color
+    scene.fog = new THREE.FogExp2(0x0F0F12, 0.12);
+
+    // ── POINT GRID 16x16 ──────────────────────────────────────────────
+    const GRID   = 16;
+    const SPREAD = 4.2;
+    const COUNT  = GRID * GRID; // 256
+
+    // Separate geometry for the central accent point
+    const positions = new Float32Array(COUNT * 3);
+    let idx = 0;
+    for (let iy = 0; iy < GRID; iy++) {
+      for (let ix = 0; ix < GRID; ix++) {
+        positions[idx++] = (ix / (GRID - 1) - 0.5) * SPREAD;
+        positions[idx++] = (iy / (GRID - 1) - 0.5) * SPREAD;
+        positions[idx++] = 0;
+      }
+    }
+
+    // Store original positions for cursor displacement
+    const origPositions = new Float32Array(positions);
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+    const material = new THREE.PointsMaterial({
+      color: 0xF5F1E8,
+      size: 0.045,
+      sizeAttenuation: true,
+      transparent: true,
+      opacity: 0.75,
+    });
+
+    const points = new THREE.Points(geometry, material);
+    scene.add(points);
+
+    // ── CENTRAL ACCENT POINT ──────────────────────────────────────────
+    const accentGeo = new THREE.BufferGeometry();
+    accentGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0]), 3));
+    const accentMat = new THREE.PointsMaterial({
+      color: 0xE67E2C,
+      size: 0.09,
+      sizeAttenuation: true,
+      transparent: true,
+      opacity: 0.95,
+    });
+    const accentPoint = new THREE.Points(accentGeo, accentMat);
+    scene.add(accentPoint);
+
+    // ── SIZE RENDERER TO CONTAINER ────────────────────────────────────
+    function resize() {
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    resize();
+    const ro = new ResizeObserver(resize);
+    ro.observe(container);
+
+    // ── CURSOR TRACKING ───────────────────────────────────────────────
+    let mouseNDC = new THREE.Vector2(9999, 9999); // offscreen default
+
+    function onMouseMove(e) {
+      const rect = canvas.getBoundingClientRect();
+      // NDC in range [-1, 1]
+      mouseNDC.x = ((e.clientX - rect.left) / rect.width)  * 2 - 1;
+      mouseNDC.y = -((e.clientY - rect.top)  / rect.height) * 2 + 1;
+    }
+    window.addEventListener('mousemove', onMouseMove, { passive: true });
+
+    // Raycaster plane at z=0
+    const raycaster  = new THREE.Raycaster();
+    const planeNormal = new THREE.Vector3(0, 0, 1);
+    const plane       = new THREE.Plane(planeNormal, 0);
+    const mouseWorld  = new THREE.Vector3();
+    const RADIUS      = 1.4;   // world-space radius of cursor influence
+    const STRENGTH    = 0.08;  // 8% max displacement
+
+    // ── INTERSECTION OBSERVER: PAUSE OFFSCREEN ────────────────────────
+    let isVisible = true;
+    const io = new IntersectionObserver(entries => {
+      isVisible = entries[0].isIntersecting;
+    }, { threshold: 0.05 });
+    io.observe(container);
+
+    // ── ANIMATION LOOP ────────────────────────────────────────────────
+    let frameId = null;
+    const clock = new THREE.Clock();
+
+    function animate() {
+      frameId = requestAnimationFrame(animate);
+      if (!isVisible) return;
+
+      const elapsed = clock.getElapsedTime();
+
+      // Slow Y rotation (0.04 rad/s)
+      points.rotation.y = elapsed * 0.04;
+      accentPoint.rotation.y = elapsed * 0.04;
+
+      // Cursor displacement on grid points
+      raycaster.setFromCamera(mouseNDC, camera);
+      raycaster.ray.intersectPlane(plane, mouseWorld);
+
+      const pos = geometry.attributes.position.array;
+      for (let i = 0; i < COUNT; i++) {
+        const baseX = origPositions[i * 3];
+        const baseY = origPositions[i * 3 + 1];
+
+        const dx = baseX - mouseWorld.x;
+        const dy = baseY - mouseWorld.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+
+        if (dist < RADIUS && dist > 0.001) {
+          const falloff = 1 - dist / RADIUS;
+          const push = falloff * STRENGTH;
+          pos[i * 3]     = baseX + (dx / dist) * push;
+          pos[i * 3 + 1] = baseY + (dy / dist) * push;
+        } else {
+          pos[i * 3]     = baseX;
+          pos[i * 3 + 1] = baseY;
+        }
+      }
+      geometry.attributes.position.needsUpdate = true;
+
+      renderer.render(scene, camera);
+    }
+
+    // ── MOBILE: reduce density ────────────────────────────────────────
+    if (window.innerWidth < 768) {
+      // Simply scale down the scene on mobile
+      points.scale.set(0.75, 0.75, 0.75);
+      accentPoint.scale.set(0.75, 0.75, 0.75);
+    }
+
+    animate();
+
+    // ── CLEANUP ───────────────────────────────────────────────────────
+    window.addEventListener('beforeunload', () => {
+      if (frameId) cancelAnimationFrame(frameId);
+      renderer.dispose();
+      geometry.dispose();
+      material.dispose();
+      accentGeo.dispose();
+      accentMat.dispose();
+      ro.disconnect();
+      io.disconnect();
+    });
+  }
+</script>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!--  SCROLL REVEAL — IntersectionObserver                              -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<script>
+  (function() {
+    const reveals = document.querySelectorAll('.reveal');
+
+    const observer = new IntersectionObserver(function(entries) {
+      entries.forEach(function(entry) {
+        if (entry.isIntersecting) {
+          // stagger by data-delay or sequential index
+          const delay = entry.target.dataset.delay || 0;
+          setTimeout(function() {
+            entry.target.classList.add('visible');
+          }, parseInt(delay, 10));
+          observer.unobserve(entry.target);
+        }
+      });
+    }, {
+      threshold: 0.12,
+      rootMargin: '0px 0px -40px 0px',
+    });
+
+    reveals.forEach(function(el) { observer.observe(el); });
+  })();
+</script>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<!--  MOBILE: STACK HERO GRID                                           -->
+<!-- ═══════════════════════════════════════════════════════════════════ -->
+<script>
+  (function() {
+    function applyMobileHero() {
+      const heroGrid = document.querySelector('.hero-grid');
+      if (!heroGrid) return;
+      if (window.innerWidth < 768) {
+        heroGrid.style.gridTemplateColumns = '1fr';
+        heroGrid.style.gap = '32px';
+      } else {
+        heroGrid.style.gridTemplateColumns = '1fr 1fr';
+        heroGrid.style.gap = '64px';
+      }
+
+      // Also stack services grid
+      const servicesGrid = document.querySelector('#services .grid');
+      if (servicesGrid) {
+        if (window.innerWidth < 768) {
+          servicesGrid.style.gridTemplateColumns = '1fr';
+        } else if (window.innerWidth < 1024) {
+          servicesGrid.style.gridTemplateColumns = 'repeat(2, 1fr)';
+        } else {
+          servicesGrid.style.gridTemplateColumns = 'repeat(3, 1fr)';
+        }
+      }
+
+      // Stack stats grid
+      const statsGrid = document.querySelector('.py-24 .grid[style*="repeat(4"]');
+      const allGrids = document.querySelectorAll('.grid');
+      allGrids.forEach(function(g) {
+        const style = g.getAttribute('style') || '';
+        if (style.includes('repeat(4, 1fr)') && window.innerWidth < 768) {
+          g.style.gridTemplateColumns = 'repeat(2, 1fr)';
+        }
+      });
+    }
+
+    applyMobileHero();
+    window.addEventListener('resize', applyMobileHero);
+  })();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STUDIO — Web · Automation · AI Agents</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cabinet+Grotesk:wght@400;500;700;800;900&family=Inter:wght@400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          charcoal: '#0F0F12',
+          'charcoal-warm': '#1A1814',
+          'off-white': '#F5F1E8',
+          'off-white-dim': '#D4D2CC',
+          'burnt-orange': '#E67E2C',
+          'cool-grey': '#8A8A93',
+          'hairline': '#1E1E22',
+        },
+        fontFamily: {
+          display: ['"Cabinet Grotesk"', 'sans-serif'],
+          body: ['Inter', 'sans-serif'],
+          mono: ['"JetBrains Mono"', 'monospace'],
+        },
+      }
+    }
+  }
+</script>
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html {
+    scroll-behavior: smooth;
+    background-color: #0F0F12;
+  }
+
+  body {
+    background-color: #0F0F12;
+    color: #F5F1E8;
+    font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+
+  /* Hero canvas container */
+  #hero-canvas-container {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+  }
+
+  #three-canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  /* Hero warm dust radial */
+  .hero-dust {
+    background: radial-gradient(ellipse 80% 70% at 50% 50%, rgba(26,24,20,0.30) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  /* Hero bottom fade */
+  .hero-fade-bottom {
+    background: linear-gradient(to bottom, transparent 70%, #0F0F12 100%);
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  /* Hairline divider */
+  .divider {
+    border-top: 1px solid #1E1E22;
+  }
+
+  /* Cabinet Grotesk hero text */
+  .hero-headline {
+    font-family: 'Cabinet Grotesk', sans-serif;
+    font-weight: 800;
+    line-height: 1.02;
+    letter-spacing: -0.03em;
+  }
+
+  /* CTA pill */
+  .cta-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    background: #E67E2C;
+    color: #0F0F12;
+    font-family: 'Inter', sans-serif;
+    font-weight: 500;
+    font-size: 0.875rem;
+    letter-spacing: 0.01em;
+    padding: 0.55em 1.25em;
+    border-radius: 100px;
+    cursor: pointer;
+    text-decoration: none;
+    transition: opacity 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    white-space: nowrap;
+  }
+  .cta-pill:hover {
+    opacity: 0.88;
+    transform: translateY(-1px);
+  }
+
+  /* Ghost CTA */
+  .cta-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35em;
+    background: transparent;
+    color: #E67E2C;
+    font-family: 'Inter', sans-serif;
+    font-weight: 500;
+    font-size: 0.875rem;
+    letter-spacing: 0.01em;
+    padding: 0.55em 1.25em;
+    border-radius: 100px;
+    border: 1px solid rgba(230,126,44,0.4);
+    cursor: pointer;
+    text-decoration: none;
+    transition: border-color 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                background 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+  .cta-ghost:hover {
+    border-color: rgba(230,126,44,0.8);
+    background: rgba(230,126,44,0.06);
+    transform: translateY(-1px);
+  }
+
+  /* Nav link */
+  .nav-link {
+    color: #8A8A93;
+    font-family: 'Inter', sans-serif;
+    font-weight: 400;
+    font-size: 0.875rem;
+    text-decoration: none;
+    transition: color 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+  .nav-link:hover { color: #F5F1E8; }
+
+  /* Work case hover */
+  .work-case {
+    transition: opacity 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+  .work-case:hover { opacity: 0.88; }
+
+  /* Process connector line */
+  .process-connector {
+    position: absolute;
+    top: 12px;
+    left: calc(100% + 0px);
+    width: calc(100% - 0px);
+    height: 1px;
+    background: #1E1E22;
+  }
+
+  /* Metric chip */
+  .metric-chip {
+    display: inline-block;
+    background: rgba(230,126,44,0.12);
+    color: #E67E2C;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    font-weight: 500;
+    padding: 0.3em 0.85em;
+    border-radius: 4px;
+    border: 1px solid rgba(230,126,44,0.2);
+    letter-spacing: 0.02em;
+  }
+
+  /* CSS art previews */
+  .case-art-01 {
+    background: #141414;
+    position: relative;
+    overflow: hidden;
+  }
+  .case-art-01::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 60% 80% at 30% 60%, rgba(230,126,44,0.08) 0%, transparent 60%),
+                radial-gradient(ellipse 40% 50% at 75% 30%, rgba(212,210,204,0.04) 0%, transparent 55%);
+  }
+  .case-art-01-grid {
+    position: absolute;
+    inset: 0;
+    background-image: linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+  .case-art-01-bar {
+    position: absolute;
+    bottom: 40px;
+    left: 48px;
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+  }
+
+  .case-art-02 {
+    background: #111110;
+    position: relative;
+    overflow: hidden;
+  }
+  .case-art-02::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 70% 60% at 60% 40%, rgba(230,126,44,0.06) 0%, transparent 60%);
+  }
+
+  .case-art-03 {
+    background: #0D0D0F;
+    position: relative;
+    overflow: hidden;
+  }
+  .case-art-03::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 50% 70% at 40% 50%, rgba(230,126,44,0.07) 0%, transparent 55%),
+                linear-gradient(135deg, rgba(245,241,232,0.02) 0%, transparent 40%);
+  }
+
+  /* Section fade-in */
+  .fade-in {
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.7s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                transform 0.7s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+  .fade-in.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* Hero hero-text transitions */
+  .hero-text-wrap { position: relative; z-index: 10; }
+
+  /* Capability icon line */
+  .cap-icon-line {
+    width: 28px;
+    height: 1px;
+    background: #E67E2C;
+    display: block;
+    margin-bottom: 20px;
+    transition: width 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+  .capability-item:hover .cap-icon-line { width: 44px; }
+
+  /* Footer nav links */
+  .footer-link {
+    color: #8A8A93;
+    font-size: 0.8125rem;
+    text-decoration: none;
+    transition: color 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+  .footer-link:hover { color: #F5F1E8; }
+
+  /* Contact email hover */
+  .contact-email {
+    color: #F5F1E8;
+    text-decoration: none;
+    font-family: 'Cabinet Grotesk', sans-serif;
+    font-weight: 500;
+    font-size: 1.125rem;
+    letter-spacing: -0.01em;
+    border-bottom: 1px solid rgba(245,241,232,0.15);
+    padding-bottom: 2px;
+    transition: border-color 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                color 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+  .contact-email:hover {
+    color: #E67E2C;
+    border-color: rgba(230,126,44,0.4);
+  }
+
+  /* Responsive hero text */
+  @media (max-width: 768px) {
+    .hero-headline { font-size: clamp(2.25rem, 8vw, 5rem); }
+  }
+  @media (min-width: 769px) {
+    .hero-headline { font-size: clamp(4rem, 6vw, 6.5rem); }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     NAV
+============================================================ -->
+<nav style="position:fixed;top:0;left:0;right:0;z-index:100;padding:20px 48px;display:flex;align-items:center;justify-content:space-between;background:linear-gradient(to bottom, rgba(15,15,18,0.92) 0%, transparent 100%);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);">
+  <a href="#" style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:1rem;letter-spacing:0.08em;color:#F5F1E8;text-decoration:none;text-transform:uppercase;opacity:0.95;">
+    STUDIO
+  </a>
+  <div style="display:flex;align-items:center;gap:32px;">
+    <a href="#capabilities" class="nav-link">Work</a>
+    <a href="#process" class="nav-link">Process</a>
+    <a href="#contact" class="nav-link">Contact</a>
+    <a href="#contact" class="cta-pill" style="font-size:0.8125rem;padding:0.45em 1.1em;">Start a project &rarr;</a>
+  </div>
+</nav>
+
+<!-- ============================================================
+     HERO
+============================================================ -->
+<section id="hero" style="position:relative;width:100%;height:100vh;min-height:600px;display:flex;align-items:center;justify-content:center;overflow:hidden;">
+
+  <!-- Three.js canvas -->
+  <div id="hero-canvas-container">
+    <canvas id="three-canvas"></canvas>
+  </div>
+
+  <!-- Warm dust overlay -->
+  <div class="hero-dust" style="position:absolute;inset:0;"></div>
+
+  <!-- Bottom fade to page bg -->
+  <div class="hero-fade-bottom" style="position:absolute;inset:0;"></div>
+
+  <!-- Hero text -->
+  <div class="hero-text-wrap" style="text-align:center;padding:0 24px;max-width:960px;margin:0 auto;">
+    <h1 class="hero-headline" style="color:#F5F1E8;margin:0 0 20px;text-shadow:0 2px 40px rgba(0,0,0,0.5);">
+      We design, code,<br>and ship complete<br>digital systems.
+    </h1>
+    <p style="font-family:'Cabinet Grotesk',sans-serif;font-weight:400;font-size:1.125rem;color:#8A8A93;letter-spacing:0.12em;text-transform:uppercase;margin:0 0 36px;font-size:0.9375rem;">
+      Web &nbsp;&middot;&nbsp; Automation &nbsp;&middot;&nbsp; AI Agents
+    </p>
+    <a href="#contact" class="cta-pill" style="font-size:0.9375rem;padding:0.7em 1.6em;">
+      Start a project &nbsp;&rarr;
+    </a>
+    <p style="font-family:'JetBrains Mono',monospace;font-size:0.6875rem;color:#8A8A93;margin:40px auto 0;letter-spacing:0.04em;opacity:0.7;">
+      &larr; move your cursor &mdash; that&rsquo;s the kind of detail that lives in our work
+    </p>
+  </div>
+
+  <!-- Scroll cue -->
+  <div style="position:absolute;bottom:32px;left:50%;transform:translateX(-50%);z-index:10;display:flex;flex-direction:column;align-items:center;gap:6px;">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:0.625rem;color:#8A8A93;letter-spacing:0.08em;text-transform:uppercase;opacity:0.5;">Scroll</span>
+    <div style="width:1px;height:32px;background:linear-gradient(to bottom,rgba(138,138,147,0.4),transparent);"></div>
+  </div>
+</section>
+
+<!-- ============================================================
+     CAPABILITIES
+============================================================ -->
+<section id="capabilities" style="padding:120px 48px 100px;">
+  <div style="max-width:1200px;margin:0 auto;">
+    <div class="fade-in" style="margin-bottom:64px;">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:0.6875rem;color:#8A8A93;letter-spacing:0.1em;text-transform:uppercase;">Capabilities</span>
+    </div>
+    <div class="fade-in" style="display:flex;gap:0;border-top:1px solid #1E1E22;">
+
+      <!-- Web -->
+      <div class="capability-item" style="flex:1;padding:48px 48px 48px 0;border-right:1px solid #1E1E22;">
+        <span class="cap-icon-line"></span>
+        <h3 style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:1.5rem;color:#F5F1E8;margin:0 0 12px;letter-spacing:-0.02em;">Web Platforms</h3>
+        <p style="font-family:'Inter',sans-serif;font-size:0.9375rem;color:#8A8A93;line-height:1.65;margin:0;">Production-grade applications built on modern stacks. From architecture to deployment, end-to-end ownership.</p>
+      </div>
+
+      <!-- Automation -->
+      <div class="capability-item" style="flex:1;padding:48px 48px 48px 48px;border-right:1px solid #1E1E22;">
+        <span class="cap-icon-line"></span>
+        <h3 style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:1.5rem;color:#F5F1E8;margin:0 0 12px;letter-spacing:-0.02em;">Automation</h3>
+        <p style="font-family:'Inter',sans-serif;font-size:0.9375rem;color:#8A8A93;line-height:1.65;margin:0;">Process automation that eliminates repetitive work. Integrations, pipelines, and orchestration systems that scale.</p>
+      </div>
+
+      <!-- AI Agents -->
+      <div class="capability-item" style="flex:1;padding:48px 0 48px 48px;">
+        <span class="cap-icon-line"></span>
+        <h3 style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:1.5rem;color:#F5F1E8;margin:0 0 12px;letter-spacing:-0.02em;">AI Agents</h3>
+        <p style="font-family:'Inter',sans-serif;font-size:0.9375rem;color:#8A8A93;line-height:1.65;margin:0;">Intelligent agents that perform complex tasks autonomously. LLM-powered systems built for real business outcomes.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     WORK
+============================================================ -->
+<section id="work" style="padding:40px 48px 120px;">
+  <div style="max-width:1200px;margin:0 auto;">
+    <div class="fade-in" style="margin-bottom:64px;display:flex;align-items:baseline;justify-content:space-between;">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:0.6875rem;color:#8A8A93;letter-spacing:0.1em;text-transform:uppercase;">Selected Work</span>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:0.6875rem;color:#8A8A93;letter-spacing:0.06em;opacity:0.6;">2022 &ndash; 2026</span>
+    </div>
+
+    <!-- Case 01 -->
+    <div class="work-case fade-in divider" style="padding:56px 0;display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:center;">
+      <div>
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:0.6875rem;color:#8A8A93;letter-spacing:0.1em;">01</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:0.6875rem;color:#8A8A93;letter-spacing:0.06em;text-transform:uppercase;">Finance</span>
+        </div>
+        <h3 style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:2.25rem;color:#F5F1E8;margin:0 0 10px;letter-spacing:-0.025em;line-height:1.08;">Fintech Analytics Platform</h3>
+        <p style="font-family:'Inter',sans-serif;font-size:0.9375rem;color:#8A8A93;margin:0 0 24px;line-height:1.65;">Full-stack rebuild of a transaction intelligence dashboard. Real-time data pipeline with sub-second query performance across 40M records.</p>
+        <span class="metric-chip">+340% reporting speed</span>
+      </div>
+      <div class="case-art-01" style="height:280px;border-radius:6px;">
+        <div class="case-art-01-grid"></div>
+        <div class="case-art-01-bar">
+          <div style="width:8px;height:60px;background:rgba(230,126,44,0.15);border-radius:2px;border-top:2px solid rgba(230,126,44,0.6);"></div>
+          <div style="width:8px;height:95px;background:rgba(230,126,44,0.15);border-radius:2px;border-top:2px solid rgba(230,126,44,0.6);"></div>
+          <div style="width:8px;height:44px;background:rgba(230,126,44,0.15);border-radius:2px;border-top:2px solid rgba(230,126,44,0.6);"></div>
+          <div style="width:8px;height:115px;background:rgba(230,126,44,0.3);border-radius:2px;border-top:2px solid #E67E2C;"></div>
+          <div style="width:8px;height:78px;background:rgba(230,126,44,0.15);border-radius:2px;border-top:2px solid rgba(230,126,44,0.6);"></div>
+          <div style="width:8px;height:52px;background:rgba(230,126,44,0.15);border-radius:2px;border-top:2px solid rgba(230,126,44,0.6);"></div>
+          <div style="width:8px;height:88px;background:rgba(230,126,44,0.15);border-radius:2px;border-top:2px solid rgba(230,126,44,0.6);"></div>
+          <div style="width:8px;height:130px;background:rgba(230,126,44,0.2);border-radius:2px;border-top:2px solid rgba(230,126,44,0.8);"></div>
+        </div>
+        <!-- Axis line -->
+        <div style="position:absolute;bottom:38px;left:48px;right:48px;height:1px;background:rgba(255,255,255,0.06);"></div>
+      </div>
+    </div>
+
+    <!-- Case 02 -->
+    <div class="work-case fade-in divider" style="padding:56px 0;display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:center;">
+      <div class="case-art-02" style="height:280px;border-radius:6px;order:1;">
+        <!-- Flow nodes -->
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">
+          <svg width="100%" height="100%" viewBox="0 0 400 280" fill="none" xmlns="http://www.w3.org/2000/svg" style="position:absolute;inset:0;">
+            <!-- Connecting lines -->
+            <line x1="100" y1="140" x2="180" y2="100" stroke="rgba(230,126,44,0.2)" stroke-width="1"/>
+            <line x1="100" y1="140" x2="180" y2="180" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+            <line x1="220" y1="100" x2="300" y2="140" stroke="rgba(230,126,44,0.2)" stroke-width="1"/>
+            <line x1="220" y1="180" x2="300" y2="140" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>
+            <!-- Nodes -->
+            <circle cx="100" cy="140" r="14" fill="rgba(230,126,44,0.1)" stroke="rgba(230,126,44,0.5)" stroke-width="1"/>
+            <circle cx="200" cy="100" r="10" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+            <circle cx="200" cy="180" r="10" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+            <circle cx="300" cy="140" r="14" fill="rgba(230,126,44,0.06)" stroke="rgba(230,126,44,0.3)" stroke-width="1"/>
+            <!-- Small satellites -->
+            <circle cx="155" cy="70" r="5" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+            <circle cx="255" cy="70" r="5" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+            <circle cx="155" cy="210" r="5" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+            <circle cx="255" cy="210" r="5" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+          </svg>
+        </div>
+      </div>
+      <div style="order:2;">
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:0.6875rem;color:#8A8A93;letter-spacing:0.1em;">02</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:0.6875rem;color:#8A8A93;letter-spacing:0.06em;text-transform:uppercase;">Operations</span>
+        </div>
+        <h3 style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:2.25rem;color:#F5F1E8;margin:0 0 10px;letter-spacing:-0.025em;line-height:1.08;">Document Intelligence Agent</h3>
+        <p style="font-family:'Inter',sans-serif;font-size:0.9375rem;color:#8A8A93;margin:0 0 24px;line-height:1.65;">Autonomous agent that processes, classifies, and routes inbound documents across a legal operations team. Zero human review for routine cases.</p>
+        <span class="metric-chip">82% manual work eliminated</span>
+      </div>
+    </div>
+
+    <!-- Case 03 -->
+    <div class="work-case fade-in divider" style="padding:56px 0;display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:center;">
+      <div>
+        <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:0.6875rem;color:#8A8A93;letter-spacing:0.1em;">03</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:0.6875rem;color:#8A8A93;letter-spacing:0.06em;text-transform:uppercase;">E-commerce</span>
+        </div>
+        <h3 style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:2.25rem;color:#F5F1E8;margin:0 0 10px;letter-spacing:-0.025em;line-height:1.08;">Headless Commerce Engine</h3>
+        <p style="font-family:'Inter',sans-serif;font-size:0.9375rem;color:#8A8A93;margin:0 0 24px;line-height:1.65;">Custom headless storefront with real-time inventory sync across 6 warehouses. Built for 50k concurrent sessions with zero downtime deploys.</p>
+        <span class="metric-chip">4.1s &rarr; 0.8s page load</span>
+      </div>
+      <div class="case-art-03" style="height:280px;border-radius:6px;">
+        <!-- Geometric composition -->
+        <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;">
+          <svg width="100%" height="100%" viewBox="0 0 400 280" fill="none" xmlns="http://www.w3.org/2000/svg" style="position:absolute;inset:0;">
+            <!-- Grid lines -->
+            <line x1="0" y1="93" x2="400" y2="93" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+            <line x1="0" y1="140" x2="400" y2="140" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+            <line x1="0" y1="187" x2="400" y2="187" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+            <line x1="133" y1="0" x2="133" y2="280" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+            <line x1="200" y1="0" x2="200" y2="280" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+            <line x1="267" y1="0" x2="267" y2="280" stroke="rgba(255,255,255,0.04)" stroke-width="1"/>
+            <!-- Rectangle accent -->
+            <rect x="140" y="100" width="120" height="80" rx="2" fill="rgba(230,126,44,0.04)" stroke="rgba(230,126,44,0.25)" stroke-width="1"/>
+            <rect x="155" y="115" width="90" height="50" rx="1" fill="rgba(255,255,255,0.02)" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>
+            <!-- Corner marks -->
+            <path d="M140 110 L140 100 L150 100" stroke="rgba(230,126,44,0.6)" stroke-width="1" fill="none"/>
+            <path d="M250 110 L260 100 L260 110" stroke="rgba(230,126,44,0.6)" stroke-width="1" fill="none"/>
+            <path d="M140 170 L140 180 L150 180" stroke="rgba(230,126,44,0.6)" stroke-width="1" fill="none"/>
+            <path d="M250 170 L260 180 L260 170" stroke="rgba(230,126,44,0.6)" stroke-width="1" fill="none"/>
+            <!-- Dot -->
+            <circle cx="200" cy="140" r="3" fill="#E67E2C" opacity="0.7"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============================================================
+     PROCESS
+============================================================ -->
+<section id="process" style="padding:80px 48px 120px;background:rgba(255,255,255,0.01);">
+  <div style="max-width:1200px;margin:0 auto;">
+    <div class="fade-in" style="margin-bottom:72px;">
+      <span style="font-family:'JetBrains Mono',monospace;font-size:0.6875rem;color:#8A8A93;letter-spacing:0.1em;text-transform:uppercase;">How we work</span>
+    </div>
+    <div class="fade-in" style="display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid #1E1E22;">
+
+      <!-- Stage 1 -->
+      <div style="padding:40px 40px 40px 0;border-right:1px solid #1E1E22;">
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:24px;">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:0.6875rem;color:#E67E2C;letter-spacing:0.08em;">01</span>
+          <div style="flex:1;height:1px;background:#1E1E22;"></div>
+        </div>
+        <h4 style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:1.125rem;color:#F5F1E8;margin:0 0 10px;letter-spacing:-0.015em;">Discover</h4>
+        <p style="font-family:'Inter',sans-serif;font-size:0.875rem;color:#8A8A93;line-height:1.65;margin:0;">Scope the system. Identify constraints, integration points, and success metrics before writing a line of code.</p>
+      </div>
+
+      <!-- Stage 2 -->
+      <div style="padding:40px 40px 40px 40px;border-right:1px solid #1E1E22;">
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:24px;">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:0.6875rem;color:#E67E2C;letter-spacing:0.08em;">02</span>
+          <div style="flex:1;height:1px;background:#1E1E22;"></div>
+        </div>
+        <h4 style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:1.125rem;color:#F5F1E8;margin:0 0 10px;letter-spacing:-0.015em;">Architect</h4>
+        <p style="font-family:'Inter',sans-serif;font-size:0.875rem;color:#8A8A93;line-height:1.65;margin:0;">Design the technical architecture. Data models, service boundaries, and deployment topology documented and agreed.</p>
+      </div>
+
+      <!-- Stage 3 -->
+      <div style="padding:40px 40px 40px 40px;border-right:1px solid #1E1E22;">
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:24px;">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:0.6875rem;color:#E67E2C;letter-spacing:0.08em;">03</span>
+          <div style="flex:1;height:1px;background:#1E1E22;"></div>
+        </div>
+        <h4 style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:1.125rem;color:#F5F1E8;margin:0 0 10px;letter-spacing:-0.015em;">Build</h4>
+        <p style="font-family:'Inter',sans-serif;font-size:0.875rem;color:#8A8A93;line-height:1.65;margin:0;">Iterative, test-driven development. Weekly shipped increments, observable progress, no black-box dev cycles.</p>
+      </div>
+
+      <!-- Stage 4 -->
+      <div style="padding:40px 0 40px 40px;">
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:24px;">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:0.6875rem;color:#E67E2C;letter-spacing:0.08em;">04</span>
+          <div style="flex:1;height:1px;background:#1E1E22;"></div>
+        </div>
+        <h4 style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:1.125rem;color:#F5F1E8;margin:0 0 10px;letter-spacing:-0.015em;">Ship &amp; Sustain</h4>
+        <p style="font-family:'Inter',sans-serif;font-size:0.875rem;color:#8A8A93;line-height:1.65;margin:0;">Production deploy, monitoring setup, and post-launch support. We stay until it runs exactly as designed.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     STATS STRIP
+============================================================ -->
+<section style="padding:48px 48px;border-top:1px solid #1E1E22;border-bottom:1px solid #1E1E22;">
+  <div style="max-width:1200px;margin:0 auto;display:flex;align-items:center;justify-content:center;">
+    <p style="font-family:'JetBrains Mono',monospace;font-size:0.8125rem;color:#8A8A93;letter-spacing:0.06em;margin:0;text-align:center;">
+      12&nbsp;projects &nbsp;&nbsp;&middot;&nbsp;&nbsp; 96%&nbsp;on-time &nbsp;&nbsp;&middot;&nbsp;&nbsp; 4&nbsp;years&nbsp;active &nbsp;&nbsp;&middot;&nbsp;&nbsp; 8&nbsp;industries
+    </p>
+  </div>
+</section>
+
+<!-- ============================================================
+     CONTACT
+============================================================ -->
+<section id="contact" style="padding:160px 48px 140px;">
+  <div style="max-width:960px;margin:0 auto;text-align:center;">
+    <div class="fade-in">
+      <p style="font-family:'JetBrains Mono',monospace;font-size:0.6875rem;color:#8A8A93;letter-spacing:0.1em;text-transform:uppercase;margin:0 0 32px;">Get in touch</p>
+      <h2 style="font-family:'Cabinet Grotesk',sans-serif;font-weight:800;font-size:clamp(2.5rem,5vw,4.5rem);color:#F5F1E8;margin:0 0 48px;letter-spacing:-0.03em;line-height:1.0;">
+        Let&rsquo;s build<br>something.
+      </h2>
+      <div style="display:flex;align-items:center;justify-content:center;gap:40px;margin-bottom:32px;flex-wrap:wrap;">
+        <a href="mailto:hello@studio.dev" class="contact-email">hello@studio.dev</a>
+        <span style="color:#1E1E22;font-size:1.25rem;display:none;"></span>
+        <a href="https://t.me/studio_dev" class="contact-email" style="font-size:1.125rem;">@studio_dev</a>
+      </div>
+      <p style="font-family:'JetBrains Mono',monospace;font-size:0.6875rem;color:#8A8A93;letter-spacing:0.06em;margin:0;opacity:0.7;">
+        Reply &le;&nbsp;24h &nbsp;&middot;&nbsp; Работаем по всему миру
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     FOOTER
+============================================================ -->
+<footer style="padding:24px 48px;border-top:1px solid #1E1E22;">
+  <div style="max-width:1200px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;">
+    <span style="font-family:'Cabinet Grotesk',sans-serif;font-weight:700;font-size:0.875rem;letter-spacing:0.08em;color:#8A8A93;text-transform:uppercase;">STUDIO</span>
+    <div style="display:flex;align-items:center;gap:28px;">
+      <a href="#" class="footer-link">Privacy</a>
+      <a href="#" class="footer-link">Terms</a>
+      <span style="font-family:'JetBrains Mono',monospace;font-size:0.6875rem;color:#8A8A93;letter-spacing:0.04em;opacity:0.5;">&copy; 2026</span>
+    </div>
+  </div>
+</footer>
+
+<!-- ============================================================
+     THREE.JS SCENE
+============================================================ -->
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.min.js';
+
+const canvas = document.getElementById('three-canvas');
+const container = document.getElementById('hero-canvas-container');
+
+// ---- Renderer ----
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  antialias: true,
+  alpha: true
+});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setClearColor(0x000000, 0);
+
+// ---- Scene / Camera ----
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 100);
+camera.position.set(2.5, 1.8, 12);
+camera.lookAt(0, 0, 0);
+
+// ---- Fog (pseudo-DOF) ----
+scene.fog = new THREE.Fog(0x0F0F12, 5, 30);
+
+// ---- Grid parameters ----
+const isMobile = window.innerWidth < 768;
+const GRID = isMobile ? 12 : 24;
+const SPACING = isMobile ? 0.55 : 0.44;
+const TOTAL = GRID * GRID;
+
+// Accent point index — near center
+const accentIndex = Math.floor(TOTAL / 2) + Math.floor(GRID / 2);
+
+// Original positions (flat Float32Arrays)
+const origPositions = new Float32Array(TOTAL * 3);
+const currentPositions = new Float32Array(TOTAL * 3);
+
+const HALF = (GRID - 1) * SPACING * 0.5;
+
+for (let i = 0; i < GRID; i++) {
+  for (let j = 0; j < GRID; j++) {
+    const idx = (i * GRID + j) * 3;
+    origPositions[idx]     = j * SPACING - HALF;
+    origPositions[idx + 1] = i * SPACING - HALF;
+    origPositions[idx + 2] = 0;
+  }
+}
+currentPositions.set(origPositions);
+
+// ---- Geometry ----
+const geometry = new THREE.BufferGeometry();
+geometry.setAttribute('position', new THREE.BufferAttribute(currentPositions, 3));
+
+// ---- Materials / Points ----
+// Normal points
+const normalGeom = new THREE.BufferGeometry();
+const accentGeom = new THREE.BufferGeometry();
+
+const normalPositions = new Float32Array((TOTAL - 1) * 3);
+const accentPosition  = new Float32Array(3);
+
+let nIdx = 0;
+for (let i = 0; i < TOTAL; i++) {
+  if (i === accentIndex) {
+    accentPosition[0] = origPositions[i * 3];
+    accentPosition[1] = origPositions[i * 3 + 1];
+    accentPosition[2] = origPositions[i * 3 + 2];
+  } else {
+    normalPositions[nIdx++] = origPositions[i * 3];
+    normalPositions[nIdx++] = origPositions[i * 3 + 1];
+    normalPositions[nIdx++] = origPositions[i * 3 + 2];
+  }
+}
+
+const currentNormalPos = new Float32Array(normalPositions);
+const currentAccentPos = new Float32Array(accentPosition);
+
+normalGeom.setAttribute('position', new THREE.BufferAttribute(currentNormalPos, 3));
+accentGeom.setAttribute('position', new THREE.BufferAttribute(currentAccentPos, 3));
+
+const normalMat = new THREE.PointsMaterial({
+  color: 0xD4D2CC,
+  size: isMobile ? 0.065 : 0.055,
+  sizeAttenuation: true,
+  transparent: true,
+  opacity: 0.75
+});
+const accentMat = new THREE.PointsMaterial({
+  color: 0xE67E2C,
+  size: isMobile ? 0.14 : 0.13,
+  sizeAttenuation: true,
+  transparent: true,
+  opacity: 1.0
+});
+
+const normalPoints = new THREE.Points(normalGeom, normalMat);
+const accentPoints = new THREE.Points(accentGeom, accentMat);
+
+const group = new THREE.Group();
+group.add(normalPoints);
+group.add(accentPoints);
+scene.add(group);
+
+// ---- Cursor tracking ----
+const mouse = { x: 0, y: 0 };
+const targetMouse = { x: 0, y: 0 };
+
+if (!isMobile) {
+  window.addEventListener('mousemove', e => {
+    targetMouse.x = (e.clientX / window.innerWidth)  * 2 - 1;
+    targetMouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+  });
+}
+
+// ---- Resize ----
+function resize() {
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ---- IntersectionObserver — pause when offscreen ----
+let isVisible = true;
+const heroSection = document.getElementById('hero');
+const observer = new IntersectionObserver(entries => {
+  isVisible = entries[0].isIntersecting;
+}, { threshold: 0 });
+observer.observe(heroSection);
+
+// ---- Animation ----
+let frameId = null;
+const ROTATION_SPEED = 0.05;  // rad/s
+const CURSOR_RADIUS  = 0.55;   // in grid-local space
+const CURSOR_FORCE   = 0.08;   // 8% max displacement
+const EASE_SPEED     = 0.06;
+
+let lastTime = performance.now();
+
+function animate() {
+  frameId = requestAnimationFrame(animate);
+  if (!isVisible) return;
+
+  const now = performance.now();
+  const dt  = Math.min((now - lastTime) / 1000, 0.05);
+  lastTime = now;
+
+  // Smooth mouse
+  mouse.x += (targetMouse.x - mouse.x) * 0.06;
+  mouse.y += (targetMouse.y - mouse.y) * 0.06;
+
+  // Rotate group
+  group.rotation.y += ROTATION_SPEED * dt;
+
+  // Cursor warp — in local grid space (before group rotation)
+  if (!isMobile) {
+    // Approximate cursor position in grid space
+    // Project camera → grid plane z=0, account for group.rotation.y
+    const ry = group.rotation.y;
+    const cosR = Math.cos(-ry);
+    const sinR = Math.sin(-ry);
+
+    // Approximate cursor world pos via simple unproject
+    const cursorWorld = new THREE.Vector3(
+      mouse.x * Math.tan(THREE.MathUtils.degToRad(35 * 0.5)) * camera.position.z,
+      mouse.y * Math.tan(THREE.MathUtils.degToRad(35 * 0.5)) * camera.position.z,
+      0
+    );
+    // Rotate to group local
+    const cursorLocal = new THREE.Vector2(
+      cursorWorld.x * cosR + cursorWorld.z * sinR,
+      cursorWorld.y
+    );
+
+    // Update normal positions
+    const nPos = normalGeom.attributes.position;
+    let ni = 0;
+    for (let i = 0; i < TOTAL; i++) {
+      const ox = origPositions[i * 3];
+      const oy = origPositions[i * 3 + 1];
+
+      const dx = ox - cursorLocal.x;
+      const dy = oy - cursorLocal.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      let tx = ox, ty = oy;
+      if (dist < CURSOR_RADIUS && dist > 0.001) {
+        const influence = (1 - dist / CURSOR_RADIUS);
+        const pushX = -dx / dist * influence * CURSOR_FORCE * CURSOR_RADIUS;
+        const pushY = -dy / dist * influence * CURSOR_FORCE * CURSOR_RADIUS;
+        tx = ox + pushX;
+        ty = oy + pushY;
+      }
+
+      if (i === accentIndex) {
+        const aPos = accentGeom.attributes.position;
+        aPos.array[0] += (tx - aPos.array[0]) * EASE_SPEED;
+        aPos.array[1] += (ty - aPos.array[1]) * EASE_SPEED;
+        aPos.needsUpdate = true;
+      } else {
+        const cx = nPos.array[ni * 3];
+        const cy = nPos.array[ni * 3 + 1];
+        nPos.array[ni * 3]     += (tx - cx) * EASE_SPEED;
+        nPos.array[ni * 3 + 1] += (ty - cy) * EASE_SPEED;
+        ni++;
+      }
+    }
+    nPos.needsUpdate = true;
+  }
+
+  renderer.render(scene, camera);
+}
+
+animate();
+</script>
+
+<!-- ============================================================
+     SCROLL FADE-IN
+============================================================ -->
+<script>
+const fadeEls = document.querySelectorAll('.fade-in');
+const fadeObs = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.classList.add('visible');
+      fadeObs.unobserve(e.target);
+    }
+  });
+}, { threshold: 0.12 });
+fadeEls.forEach(el => fadeObs.observe(el));
+</script>
+
+</body>
+</html>

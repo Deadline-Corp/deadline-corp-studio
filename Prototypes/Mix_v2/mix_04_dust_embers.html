@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STUDIO — Dust & Embers</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cabinet+Grotesk:wght@700;800;900&family=JetBrains+Mono:wght@400;500&family=Newsreader:ital,wght@1,400&display=swap" rel="stylesheet">
+
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        tar: '#0E0B07',
+        surface: '#15110B',
+        'border-warm': '#2A1F14',
+        cream: '#F0E8D5',
+        muted: '#8A7E64',
+        ember: '#D26339',
+        gold: '#B8956A',
+        halo: '#4A2818',
+      },
+      fontFamily: {
+        display: ['"Cabinet Grotesk"', 'sans-serif'],
+        mono: ['"JetBrains Mono"', 'monospace'],
+        editorial: ['"Newsreader"', 'serif'],
+      },
+    }
+  }
+}
+</script>
+
+<style>
+  * { box-sizing: border-box; }
+
+  html, body {
+    background-color: #0E0B07;
+    color: #F0E8D5;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+  }
+
+  /* Ember halo breathing animation */
+  @keyframes halo-breathe {
+    0%, 100% { transform: scale(1.0); opacity: 0.38; }
+    50% { transform: scale(1.05); opacity: 0.44; }
+  }
+
+  .ember-halo {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(1.0);
+    width: 900px;
+    height: 700px;
+    background: radial-gradient(ellipse at center, #4A2818 0%, transparent 72%);
+    filter: blur(80px);
+    opacity: 0.40;
+    pointer-events: none;
+    animation: halo-breathe 12s ease-in-out infinite;
+    z-index: 1;
+  }
+
+  /* Canvas behind everything in hero */
+  #three-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+  }
+
+  /* Primary button */
+  .btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #D26339;
+    color: #0E0B07;
+    border: 3px solid #0E0B07;
+    box-shadow: 6px 6px 0 #B8956A;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 500;
+    font-size: 13px;
+    letter-spacing: 0.05em;
+    padding: 14px 28px;
+    text-transform: uppercase;
+    transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1);
+    cursor: pointer;
+    text-decoration: none;
+    user-select: none;
+  }
+  .btn-primary:hover {
+    transform: translate(6px, 6px);
+    box-shadow: 0 0 0 #B8956A;
+  }
+
+  /* Secondary button */
+  .btn-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: transparent;
+    color: #F0E8D5;
+    border: 2px solid #B8956A;
+    box-shadow: 4px 4px 0 #B8956A;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 400;
+    font-size: 13px;
+    letter-spacing: 0.05em;
+    padding: 13px 26px;
+    text-transform: uppercase;
+    transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1);
+    cursor: pointer;
+    text-decoration: none;
+    user-select: none;
+  }
+  .btn-secondary:hover {
+    transform: translate(4px, 4px);
+    box-shadow: 0 0 0 #B8956A;
+  }
+
+  /* Hairline border utility */
+  .hairline { border: 1px solid #2A1F14; }
+
+  /* Section panels */
+  .service-panel {
+    background: #15110B;
+    border: 1px solid #2A1F14;
+    padding: 36px;
+    transition: border-color 300ms ease;
+  }
+  .service-panel:hover {
+    border-color: #4A3020;
+  }
+
+  /* Cases scroll */
+  .cases-track {
+    display: flex;
+    gap: 24px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .cases-track::-webkit-scrollbar { display: none; }
+
+  .case-card {
+    flex: 0 0 380px;
+    scroll-snap-align: start;
+    background: #15110B;
+    border: 1px solid #2A1F14;
+    overflow: hidden;
+  }
+
+  /* Timeline line */
+  .timeline-line {
+    width: 1px;
+    background: linear-gradient(to bottom, transparent, #B8956A 20%, #B8956A 80%, transparent);
+    position: absolute;
+    left: 27px;
+    top: 0;
+    bottom: 0;
+  }
+
+  /* Chip */
+  .chip {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    padding: 4px 10px;
+    border: 1px solid #2A1F14;
+    color: #8A7E64;
+  }
+
+  .chip-ember {
+    border-color: #D26339;
+    color: #D26339;
+  }
+
+  /* Metric big numbers */
+  .metric-num {
+    font-family: 'Cabinet Grotesk', sans-serif;
+    font-weight: 800;
+    font-size: 72px;
+    line-height: 1;
+    color: #F0E8D5;
+  }
+
+  /* Nav backdrop */
+  nav {
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    background: rgba(14, 11, 7, 0.72);
+    border-bottom: 1px solid #2A1F14;
+  }
+
+  /* Scroll reveal */
+  .reveal {
+    opacity: 0;
+    transform: translateY(28px);
+    transition: opacity 600ms cubic-bezier(0.16, 1, 0.3, 1), transform 600ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .reveal.in-view {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* Ember art block in case cards */
+  .case-art {
+    height: 180px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Process card */
+  .process-card {
+    background: #15110B;
+    border: 1px solid #2A1F14;
+    padding: 32px;
+    margin-left: 64px;
+  }
+
+  /* Gold bracket manifesto */
+  .manifesto-bracket {
+    width: 60px;
+    height: 2px;
+    background: #B8956A;
+    display: block;
+    margin: 0 auto 32px;
+  }
+
+  /* Dot pulse for status */
+  @keyframes pulse-dot {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .dot-pulse {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #D26339;
+    animation: pulse-dot 3s ease-in-out infinite;
+  }
+
+  /* Mobile tweaks */
+  @media (max-width: 768px) {
+    .ember-halo {
+      width: 480px;
+      height: 380px;
+    }
+    .metric-num { font-size: 52px; }
+    .case-card { flex: 0 0 300px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════
+  NAV
+═══════════════════════════════════════════ -->
+<nav class="fixed top-0 left-0 right-0 z-50 px-6 py-4">
+  <div class="max-w-6xl mx-auto flex items-center justify-between">
+    <div class="flex items-center gap-2">
+      <span class="font-mono font-500 text-cream tracking-widest text-sm uppercase">STUDIO</span>
+      <span class="dot-pulse"></span>
+    </div>
+    <div class="hidden md:flex items-center gap-8">
+      <a href="#services" class="font-mono text-xs text-muted hover:text-cream transition-colors duration-200 tracking-wider">--services</a>
+      <a href="#cases" class="font-mono text-xs text-muted hover:text-cream transition-colors duration-200 tracking-wider">--cases</a>
+      <a href="#process" class="font-mono text-xs text-muted hover:text-cream transition-colors duration-200 tracking-wider">--process</a>
+      <a href="#contact" class="font-mono text-xs text-muted hover:text-cream transition-colors duration-200 tracking-wider">--contact</a>
+    </div>
+    <a href="#contact" class="btn-primary text-xs py-3 px-5" style="font-size:11px; padding: 10px 20px; box-shadow: 4px 4px 0 #B8956A;">
+      talk to us &#9658;
+    </a>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════════════════════
+  HERO
+═══════════════════════════════════════════ -->
+<section id="hero" class="relative min-h-screen flex items-center justify-center overflow-hidden">
+
+  <!-- Three.js canvas -->
+  <canvas id="three-canvas"></canvas>
+
+  <!-- Ember halo -->
+  <div class="ember-halo"></div>
+
+  <!-- Content -->
+  <div class="relative z-10 max-w-5xl mx-auto px-6 text-center">
+
+    <!-- Status chip -->
+    <div class="inline-flex items-center gap-3 hairline px-4 py-2 mb-10">
+      <span class="dot-pulse"></span>
+      <span class="font-mono text-xs text-muted tracking-widest">low light &nbsp;&middot;&nbsp; slow craft</span>
+    </div>
+
+    <!-- Headline -->
+    <h1 class="font-display font-800 text-cream leading-none mb-8" style="font-size: clamp(52px, 8vw, 108px); letter-spacing: -0.02em;">
+      We build software<br>
+      <span style="color: #D26339;">in the time</span><br>
+      it takes to do it right.
+    </h1>
+
+    <!-- Sub-line -->
+    <p class="font-mono text-muted text-sm md:text-base tracking-wide mb-12 max-w-xl mx-auto" style="line-height: 1.7;">
+      Web &nbsp;&middot;&nbsp; Automation &nbsp;&middot;&nbsp; AI agents<br>
+      <span style="color: #8A7E64;">engineered for production.</span>
+    </p>
+
+    <!-- CTAs -->
+    <div class="flex flex-col sm:flex-row items-center justify-center gap-5">
+      <a href="#contact" class="btn-primary">start a project &#9658;</a>
+      <a href="#cases" class="btn-secondary">see our work</a>
+    </div>
+
+    <!-- Bottom label -->
+    <p class="font-mono text-xs text-muted mt-16 tracking-widest opacity-60">
+      сделано в темноте, при свете углей
+    </p>
+  </div>
+
+  <!-- Gradient floor fade -->
+  <div class="absolute bottom-0 left-0 right-0 h-32 pointer-events-none" style="background: linear-gradient(to top, #0E0B07, transparent); z-index: 2;"></div>
+</section>
+
+<!-- ═══════════════════════════════════════════
+  SERVICES
+═══════════════════════════════════════════ -->
+<section id="services" class="py-28 px-6">
+  <div class="max-w-6xl mx-auto">
+
+    <div class="mb-16 reveal">
+      <span class="font-mono text-xs text-muted tracking-widest uppercase">// what we build</span>
+      <h2 class="font-display font-700 text-cream mt-3" style="font-size: 48px; letter-spacing: -0.01em;">Three disciplines,<br>one commitment.</h2>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-px" style="border: 1px solid #2A1F14; background: #2A1F14;">
+
+      <!-- Service 01 -->
+      <div class="service-panel reveal" style="animation-delay: 0ms;">
+        <div class="font-mono text-xs text-muted tracking-widest mb-6">// 01 &nbsp;&middot;&nbsp; WEB</div>
+        <h3 class="font-display font-700 text-cream mb-4" style="font-size: 32px;">Web Engineering</h3>
+        <p class="font-mono text-sm text-muted mb-8" style="line-height: 1.7;">
+          From architecture to deploy. We write systems that hold under load, age without rot, and open instantly.
+        </p>
+        <div class="flex flex-wrap gap-2">
+          <span class="chip">Next.js</span>
+          <span class="chip">TypeScript</span>
+          <span class="chip">PostgreSQL</span>
+          <span class="chip chip-ember">production</span>
+        </div>
+      </div>
+
+      <!-- Service 02 -->
+      <div class="service-panel reveal" style="animation-delay: 80ms;">
+        <div class="font-mono text-xs text-muted tracking-widest mb-6">// 02 &nbsp;&middot;&nbsp; AUTOMATION</div>
+        <h3 class="font-display font-700 text-cream mb-4" style="font-size: 32px;">Process Automation</h3>
+        <p class="font-mono text-sm text-muted mb-8" style="line-height: 1.7;">
+          Tedious, repeating, error-prone work — automated quietly. Integrations that actually run in production.
+        </p>
+        <div class="flex flex-wrap gap-2">
+          <span class="chip">Python</span>
+          <span class="chip">n8n</span>
+          <span class="chip">REST / webhooks</span>
+          <span class="chip chip-ember">reliable</span>
+        </div>
+      </div>
+
+      <!-- Service 03 -->
+      <div class="service-panel reveal" style="animation-delay: 160ms;">
+        <div class="font-mono text-xs text-muted tracking-widest mb-6">// 03 &nbsp;&middot;&nbsp; AI</div>
+        <h3 class="font-display font-700 text-cream mb-4" style="font-size: 32px;">AI Agents</h3>
+        <p class="font-mono text-sm text-muted mb-8" style="line-height: 1.7;">
+          Agents that retrieve, reason, and act. RAG pipelines built for real documents, not demo notebooks.
+        </p>
+        <div class="flex flex-wrap gap-2">
+          <span class="chip">Claude API</span>
+          <span class="chip">LangChain</span>
+          <span class="chip">vector stores</span>
+          <span class="chip chip-ember">grounded</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════
+  CASES
+═══════════════════════════════════════════ -->
+<section id="cases" class="py-28 px-6" style="border-top: 1px solid #2A1F14;">
+  <div class="max-w-6xl mx-auto">
+
+    <div class="mb-12 reveal">
+      <span class="font-mono text-xs text-muted tracking-widest uppercase">// selected work</span>
+      <h2 class="font-display font-700 text-cream mt-3" style="font-size: 48px; letter-spacing: -0.01em;">Cases we're<br>not tired of.</h2>
+      <p class="font-mono text-xs text-muted mt-4 tracking-wide">drag to scroll &rarr;</p>
+    </div>
+
+    <div class="cases-track reveal">
+
+      <!-- Case 01 -->
+      <div class="case-card">
+        <div class="case-art" style="background: radial-gradient(ellipse at 30% 60%, #4A2818 0%, #1A1208 60%, #15110B 100%);">
+          <div class="absolute bottom-4 left-5 font-mono text-xs text-muted tracking-widest">// logistics</div>
+        </div>
+        <div class="p-8">
+          <div class="font-mono text-xs text-muted tracking-widest mb-3">01 &nbsp;&middot;&nbsp; cargo routing platform</div>
+          <h3 class="font-display font-700 text-cream mb-2" style="font-size: 26px;">FreightPath</h3>
+          <p class="font-mono text-sm text-muted mb-6" style="line-height: 1.7;">
+            Real-time route optimization with dynamic tariff calculation. Replaced three legacy tools.
+          </p>
+          <div class="flex items-center gap-3">
+            <span class="chip chip-ember">-41% ops time</span>
+            <span class="chip">12 months live</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Case 02 -->
+      <div class="case-card">
+        <div class="case-art" style="background: radial-gradient(ellipse at 70% 40%, #3A2010 0%, #1A1208 55%, #15110B 100%);">
+          <div class="absolute bottom-4 left-5 font-mono text-xs text-muted tracking-widest">// finance</div>
+        </div>
+        <div class="p-8">
+          <div class="font-mono text-xs text-muted tracking-widest mb-3">02 &nbsp;&middot;&nbsp; reporting automation</div>
+          <h3 class="font-display font-700 text-cream mb-2" style="font-size: 26px;">OakLedger</h3>
+          <p class="font-mono text-sm text-muted mb-6" style="line-height: 1.7;">
+            Month-end reporting went from 3 days to 40 minutes. Python pipelines pulling from 5 sources.
+          </p>
+          <div class="flex items-center gap-3">
+            <span class="chip chip-ember">97% faster</span>
+            <span class="chip">zero errors since launch</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Case 03 -->
+      <div class="case-card">
+        <div class="case-art" style="background: radial-gradient(ellipse at 50% 70%, #2A1A0A 0%, #1A1208 50%, #15110B 100%);">
+          <div class="absolute bottom-4 left-5 font-mono text-xs text-muted tracking-widest">// legal tech</div>
+        </div>
+        <div class="p-8">
+          <div class="font-mono text-xs text-muted tracking-widest mb-3">03 &nbsp;&middot;&nbsp; document AI agent</div>
+          <h3 class="font-display font-700 text-cream mb-2" style="font-size: 26px;">ClauseRead</h3>
+          <p class="font-mono text-sm text-muted mb-6" style="line-height: 1.7;">
+            RAG agent over 40,000 contracts. Answers questions in plain language with paragraph citations.
+          </p>
+          <div class="flex items-center gap-3">
+            <span class="chip chip-ember">40k docs indexed</span>
+            <span class="chip">sub-2s response</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════
+  METRICS
+═══════════════════════════════════════════ -->
+<section class="py-28 px-6" style="border-top: 1px solid #2A1F14;">
+  <div class="max-w-6xl mx-auto">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-px" style="border: 1px solid #2A1F14; background: #2A1F14;">
+
+      <div class="reveal px-10 py-12" style="background: #0E0B07;">
+        <div class="metric-num">7</div>
+        <div class="font-mono text-xs text-muted tracking-widest mt-3 uppercase">years building</div>
+      </div>
+
+      <div class="reveal px-10 py-12" style="background: #0E0B07;">
+        <div class="metric-num">34</div>
+        <div class="font-mono text-xs text-muted tracking-widest mt-3 uppercase">projects shipped</div>
+      </div>
+
+      <div class="reveal px-10 py-12" style="background: #0E0B07;">
+        <div class="metric-num">4</div>
+        <div class="font-mono text-xs text-muted tracking-widest mt-3 uppercase">people, always</div>
+      </div>
+
+      <div class="reveal px-10 py-12" style="background: #0E0B07;">
+        <div class="metric-num" style="color: #D26339;">0</div>
+        <div class="font-mono text-xs text-muted tracking-widest mt-3 uppercase">projects abandoned</div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════
+  PROCESS
+═══════════════════════════════════════════ -->
+<section id="process" class="py-28 px-6" style="border-top: 1px solid #2A1F14;">
+  <div class="max-w-6xl mx-auto">
+
+    <div class="mb-16 reveal">
+      <span class="font-mono text-xs text-muted tracking-widest uppercase">// how it happens</span>
+      <h2 class="font-display font-700 text-cream mt-3" style="font-size: 48px; letter-spacing: -0.01em;">Four phases.<br>No shortcuts.</h2>
+    </div>
+
+    <div class="relative">
+      <div class="timeline-line hidden md:block"></div>
+
+      <div class="space-y-6">
+
+        <!-- Phase 01 -->
+        <div class="flex items-start gap-6 reveal">
+          <div class="flex-shrink-0 w-14 h-14 border border-warm flex items-center justify-center font-mono text-xs text-muted" style="border-color: #B8956A;">
+            01
+          </div>
+          <div class="process-card flex-1">
+            <div class="font-mono text-xs text-muted tracking-widest mb-2">// discovery</div>
+            <h3 class="font-display font-700 text-cream mb-3" style="font-size: 24px;">Listen first.</h3>
+            <p class="font-mono text-sm text-muted" style="line-height: 1.7;">
+              We spend the first sessions understanding the actual problem — not the assumed solution. We ask uncomfortable questions. We map what already exists and what should be thrown out.
+            </p>
+          </div>
+        </div>
+
+        <!-- Phase 02 -->
+        <div class="flex items-start gap-6 reveal">
+          <div class="flex-shrink-0 w-14 h-14 border border-warm flex items-center justify-center font-mono text-xs text-muted" style="border-color: #B8956A;">
+            02
+          </div>
+          <div class="process-card flex-1">
+            <div class="font-mono text-xs text-muted tracking-widest mb-2">// architecture</div>
+            <h3 class="font-display font-700 text-cream mb-3" style="font-size: 24px;">Design the bones.</h3>
+            <p class="font-mono text-sm text-muted" style="line-height: 1.7;">
+              Schema, data model, API shape — decided before any UI or module is written. Changing this later is expensive. We do the expensive thinking at the cheap moment.
+            </p>
+          </div>
+        </div>
+
+        <!-- Phase 03 -->
+        <div class="flex items-start gap-6 reveal">
+          <div class="flex-shrink-0 w-14 h-14 border border-warm flex items-center justify-center font-mono text-xs text-muted" style="border-color: #B8956A;">
+            03
+          </div>
+          <div class="process-card flex-1">
+            <div class="font-mono text-xs text-muted tracking-widest mb-2">// build</div>
+            <h3 class="font-display font-700 text-cream mb-3" style="font-size: 24px;">Build in the dark.</h3>
+            <p class="font-mono text-sm text-muted" style="line-height: 1.7;">
+              We work in focused, uninterrupted sprints. Weekly async updates. No standups. We ship working increments — not feature flags and WIP screens.
+            </p>
+          </div>
+        </div>
+
+        <!-- Phase 04 -->
+        <div class="flex items-start gap-6 reveal">
+          <div class="flex-shrink-0 w-14 h-14 border border-warm flex items-center justify-center font-mono text-xs text-muted" style="border-color: #B8956A;">
+            04
+          </div>
+          <div class="process-card flex-1">
+            <div class="font-mono text-xs text-muted tracking-widest mb-2">// handoff</div>
+            <h3 class="font-display font-700 text-cream mb-3" style="font-size: 24px;">Leave no orphans.</h3>
+            <p class="font-mono text-sm text-muted" style="line-height: 1.7;">
+              Every deploy comes with docs, runbooks, and a recorded walkthrough. We stay available for 30 days post-launch. After that: your system, fully yours.
+            </p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════
+  MANIFESTO
+═══════════════════════════════════════════ -->
+<section class="py-28 px-6" style="border-top: 1px solid #2A1F14;">
+  <div class="max-w-3xl mx-auto text-center reveal">
+    <span class="manifesto-bracket"></span>
+    <blockquote class="font-editorial text-cream" style="font-size: 36px; line-height: 1.5; font-style: italic;">
+      "Software built in a hurry<br>
+      is debt with a pretty face.<br>
+      We are patient.<br>
+      Patience is a feature."
+    </blockquote>
+    <span class="manifesto-bracket" style="margin-top: 32px;"></span>
+    <p class="font-mono text-xs text-muted mt-8 tracking-widest">— the studio, somewhere after midnight</p>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════
+  CONTACT
+═══════════════════════════════════════════ -->
+<section id="contact" class="py-28 px-6" style="border-top: 1px solid #2A1F14;">
+  <div class="max-w-2xl mx-auto">
+    <div class="hairline p-12 reveal" style="background: #15110B;">
+
+      <span class="font-mono text-xs text-muted tracking-widest uppercase">// reach us</span>
+
+      <h2 class="font-display font-700 text-cream mt-4 mb-4" style="font-size: 44px; letter-spacing: -0.01em;">
+        Ready when<br>you are.
+      </h2>
+
+      <p class="font-mono text-sm text-muted mb-10" style="line-height: 1.7;">
+        We answer within a day, sometimes two.<br>
+        We're not in a hurry — but your project might be.
+      </p>
+
+      <div class="flex flex-col sm:flex-row gap-4 mb-10">
+        <a href="mailto:hello@studio.dev" class="btn-primary">start a conversation &#9658;</a>
+      </div>
+
+      <div style="border-top: 1px solid #2A1F14; padding-top: 32px;">
+        <div class="space-y-3">
+          <div class="flex items-center gap-4">
+            <span class="font-mono text-xs text-muted tracking-widest w-20">email</span>
+            <span class="font-mono text-sm text-cream">hello@studio.dev</span>
+          </div>
+          <div class="flex items-center gap-4">
+            <span class="font-mono text-xs text-muted tracking-widest w-20">telegram</span>
+            <span class="font-mono text-sm text-cream">@studio_dev</span>
+          </div>
+          <div class="flex items-center gap-4">
+            <span class="font-mono text-xs text-muted tracking-widest w-20">timezone</span>
+            <span class="font-mono text-sm" style="color: #8A7E64;">UTC+3 — but we keep odd hours</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-8 flex items-center gap-3">
+        <span class="dot-pulse"></span>
+        <span class="font-mono text-xs text-muted tracking-widest">accepting new projects &nbsp;&middot;&nbsp; Q3 2026</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════
+  FOOTER
+═══════════════════════════════════════════ -->
+<footer style="border-top: 1px solid #2A1F14; padding: 60px 24px 40px;">
+  <div class="max-w-6xl mx-auto">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-12 mb-12">
+
+      <div>
+        <div class="flex items-center gap-2 mb-5">
+          <span class="font-mono text-sm text-cream tracking-widest uppercase">STUDIO</span>
+          <span class="dot-pulse"></span>
+        </div>
+        <p class="font-mono text-xs text-muted" style="line-height: 1.8;">
+          Small team.<br>
+          Deliberate work.<br>
+          Long relationships.
+        </p>
+      </div>
+
+      <div>
+        <div class="font-mono text-xs text-muted tracking-widest uppercase mb-5">// navigation</div>
+        <div class="space-y-3">
+          <a href="#services" class="block font-mono text-xs text-muted hover:text-cream transition-colors duration-200">--services</a>
+          <a href="#cases" class="block font-mono text-xs text-muted hover:text-cream transition-colors duration-200">--cases</a>
+          <a href="#process" class="block font-mono text-xs text-muted hover:text-cream transition-colors duration-200">--process</a>
+          <a href="#contact" class="block font-mono text-xs text-muted hover:text-cream transition-colors duration-200">--contact</a>
+        </div>
+      </div>
+
+      <div>
+        <div class="font-mono text-xs text-muted tracking-widest uppercase mb-5">// current status</div>
+        <div class="space-y-3">
+          <div class="font-mono text-xs text-muted">availability: open</div>
+          <div class="font-mono text-xs text-muted">min. engagement: 6 weeks</div>
+          <div class="font-mono text-xs text-muted">preferred: long-term</div>
+          <div class="font-mono text-xs" style="color: #D26339;">response: &lt; 24h</div>
+        </div>
+      </div>
+
+    </div>
+
+    <div style="border-top: 1px solid #2A1F14; padding-top: 32px; display: flex; justify-content: space-between; align-items: center; flex-wrap: gap-4;">
+      <span class="font-mono text-xs text-muted">&copy; 2026 STUDIO. All rights reserved.</span>
+      <span class="font-mono text-xs" style="color: #4A3020;">сделано в темноте, при свете углей</span>
+    </div>
+  </div>
+</footer>
+
+<!-- ═══════════════════════════════════════════
+  THREE.JS — DUST PARTICLES
+═══════════════════════════════════════════ -->
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js';
+
+const canvas = document.getElementById('three-canvas');
+const isMobile = window.innerWidth <= 768;
+
+const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: false });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+renderer.setClearColor(0x000000, 0);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(60, canvas.clientWidth / canvas.clientHeight, 0.1, 200);
+camera.position.z = 50;
+
+// Resize
+function resize() {
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- Particles ---
+const PARTICLE_COUNT = isMobile ? 50 : 110;
+const STAR_COUNT = isMobile ? 20 : 40;
+
+// Ember dust — small orange motes
+const dustGeo = new THREE.BufferGeometry();
+const dustPos = new Float32Array(PARTICLE_COUNT * 3);
+const dustVel = new Float32Array(PARTICLE_COUNT * 3); // drift velocity
+
+for (let i = 0; i < PARTICLE_COUNT; i++) {
+  dustPos[i * 3]     = (Math.random() - 0.5) * 120;
+  dustPos[i * 3 + 1] = (Math.random() - 0.5) * 80;
+  dustPos[i * 3 + 2] = (Math.random() - 0.5) * 60;
+  dustVel[i * 3]     = (Math.random() - 0.5) * 0.008;
+  dustVel[i * 3 + 1] = 0.006 + Math.random() * 0.010; // drift upward
+  dustVel[i * 3 + 2] = (Math.random() - 0.5) * 0.005;
+}
+
+dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
+
+const dustMat = new THREE.PointsMaterial({
+  color: 0xD26339,
+  size: isMobile ? 0.28 : 0.22,
+  transparent: true,
+  opacity: 0.18,
+  sizeAttenuation: true,
+  depthWrite: false,
+});
+
+const dustPoints = new THREE.Points(dustGeo, dustMat);
+scene.add(dustPoints);
+
+// Warm cream stars — slightly larger, very faint
+const starGeo = new THREE.BufferGeometry();
+const starPos = new Float32Array(STAR_COUNT * 3);
+
+for (let i = 0; i < STAR_COUNT; i++) {
+  starPos[i * 3]     = (Math.random() - 0.5) * 130;
+  starPos[i * 3 + 1] = (Math.random() - 0.5) * 90;
+  starPos[i * 3 + 2] = (Math.random() - 0.5) * 70;
+}
+
+starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+
+const starMat = new THREE.PointsMaterial({
+  color: 0xF0E8D5,
+  size: isMobile ? 0.35 : 0.30,
+  transparent: true,
+  opacity: 0.12,
+  sizeAttenuation: true,
+  depthWrite: false,
+});
+
+const starPoints = new THREE.Points(starGeo, starMat);
+scene.add(starPoints);
+
+// --- Animation ---
+let animActive = true;
+let rafId = null;
+const clock = new THREE.Clock();
+
+function animate() {
+  if (!animActive) return;
+  rafId = requestAnimationFrame(animate);
+
+  const delta = clock.getDelta();
+  const t = clock.getElapsedTime();
+
+  // Drift dust upward — wrap around when too high
+  const pos = dustGeo.attributes.position.array;
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    pos[i * 3]     += dustVel[i * 3];
+    pos[i * 3 + 1] += dustVel[i * 3 + 1];
+    pos[i * 3 + 2] += dustVel[i * 3 + 2];
+
+    // wrap Y
+    if (pos[i * 3 + 1] > 42) {
+      pos[i * 3 + 1] = -42;
+      pos[i * 3]     = (Math.random() - 0.5) * 120;
+    }
+    // very slow X/Z boundary wrap
+    if (pos[i * 3] > 62) pos[i * 3] = -62;
+    if (pos[i * 3] < -62) pos[i * 3] = 62;
+  }
+  dustGeo.attributes.position.needsUpdate = true;
+
+  // Very slow cloud rotation
+  dustPoints.rotation.y = t * 0.006;
+  starPoints.rotation.y = -t * 0.003;
+
+  renderer.render(scene, camera);
+}
+
+// IntersectionObserver — pause when hero not visible
+const heroSection = document.getElementById('hero');
+const observer = new IntersectionObserver(
+  ([entry]) => {
+    animActive = entry.isIntersecting;
+    if (animActive && !rafId) animate();
+  },
+  { threshold: 0.01 }
+);
+observer.observe(heroSection);
+
+animate();
+</script>
+
+<!-- ═══════════════════════════════════════════
+  SCROLL REVEAL
+═══════════════════════════════════════════ -->
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const elements = document.querySelectorAll('.reveal');
+
+  const revealObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('in-view');
+        }
+      });
+    },
+    { threshold: 0.08, rootMargin: '0px 0px -40px 0px' }
+  );
+
+  elements.forEach(el => revealObserver.observe(el));
+});
+</script>
+
+</body>
+</html>

@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STUDIO — Web · Automation · AI Agents</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,200..800&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: {
+        'bricolage': ['Bricolage Grotesque', 'sans-serif'],
+        'instrument': ['Instrument Serif', 'serif'],
+        'mono': ['JetBrains Mono', 'monospace'],
+      },
+      colors: {
+        'cloud': '#F5F0EA',
+        'mocha': '#A07855',
+        'clay': '#C46B3C',
+        'sage': '#8B9F7E',
+        'cherry': '#6B2737',
+        'ink': '#1A1A1A',
+        'ink-50': '#1A1A1A80',
+      }
+    }
+  }
+}
+</script>
+<style>
+  :root {
+    --cloud: #F5F0EA;
+    --mocha: #A07855;
+    --clay: #C46B3C;
+    --sage: #8B9F7E;
+    --cherry: #6B2737;
+    --ink: #1A1A1A;
+    --ease-out-smooth: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  html {
+    scroll-behavior: auto;
+  }
+
+  body {
+    background-color: var(--cloud);
+    color: var(--ink);
+    font-family: 'JetBrains Mono', monospace;
+    overflow-x: hidden;
+  }
+
+  /* Smooth scroll implementation */
+  .scroll-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    will-change: transform;
+  }
+
+  /* Variable font animations */
+  .kinetic-word {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-variation-settings: 'wght' 200;
+    transition: font-variation-settings 0.6s var(--ease-out-smooth),
+                letter-spacing 0.6s var(--ease-out-smooth);
+    display: block;
+    line-height: 0.88;
+    color: var(--ink);
+  }
+
+  .kinetic-word.in-view {
+    font-variation-settings: 'wght' 700;
+  }
+
+  /* Hero specific */
+  .hero-line {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-variation-settings: 'wght' 200;
+    font-size: clamp(10vw, 18vw, 22vw);
+    line-height: 0.85;
+    letter-spacing: -0.03em;
+    transition: font-variation-settings 0.8s var(--ease-out-smooth);
+    will-change: font-variation-settings;
+    display: block;
+  }
+
+  .hero-line.active {
+    font-variation-settings: 'wght' 740;
+  }
+
+  /* Service title */
+  .service-title {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-variation-settings: 'wght' 200;
+    font-size: clamp(15vw, 22vw, 28vw);
+    line-height: 0.82;
+    letter-spacing: -0.04em;
+    transition: font-variation-settings 0.9s var(--ease-out-smooth);
+    will-change: font-variation-settings;
+  }
+
+  .service-title.in-view {
+    font-variation-settings: 'wght' 760;
+  }
+
+  /* Letter-by-letter service titles */
+  .service-title .letter {
+    display: inline-block;
+    font-variation-settings: 'wght' 200;
+    transition: font-variation-settings 0.5s var(--ease-out-smooth);
+  }
+
+  .letter-stagger-0 { transition-delay: 0ms; }
+  .letter-stagger-1 { transition-delay: 60ms; }
+  .letter-stagger-2 { transition-delay: 120ms; }
+  .letter-stagger-3 { transition-delay: 180ms; }
+  .letter-stagger-4 { transition-delay: 240ms; }
+  .letter-stagger-5 { transition-delay: 300ms; }
+  .letter-stagger-6 { transition-delay: 360ms; }
+  .letter-stagger-7 { transition-delay: 420ms; }
+  .letter-stagger-8 { transition-delay: 480ms; }
+  .letter-stagger-9 { transition-delay: 540ms; }
+
+  .letter.in-view {
+    font-variation-settings: 'wght' 760;
+  }
+
+  /* Process reveal */
+  .process-line {
+    font-family: 'Bricolage Grotesque', sans-serif;
+    font-variation-settings: 'wght' 200;
+    opacity: 0;
+    transform: translateY(40px);
+    transition: opacity 0.7s var(--ease-out-smooth),
+                transform 0.7s var(--ease-out-smooth),
+                font-variation-settings 0.8s var(--ease-out-smooth);
+  }
+
+  .process-line.revealed {
+    opacity: 1;
+    transform: translateY(0);
+    font-variation-settings: 'wght' 680;
+  }
+
+  /* Word reveal for manifesto */
+  .word-reveal {
+    display: inline-block;
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.5s var(--ease-out-smooth),
+                transform 0.5s var(--ease-out-smooth);
+  }
+
+  .word-reveal.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* Instrument Serif breathing animation */
+  .serif-breathe {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    letter-spacing: -0.02em;
+    transition: letter-spacing 0.9s var(--ease-out-smooth);
+  }
+
+  .serif-breathe.in-view {
+    letter-spacing: 0.01em;
+  }
+
+  /* Pulse circle */
+  @keyframes pulse-ring {
+    0% { transform: scale(1); opacity: 0.6; }
+    50% { transform: scale(1.08); opacity: 1; }
+    100% { transform: scale(1); opacity: 0.6; }
+  }
+
+  .pulse-circle {
+    animation: pulse-ring 3s ease-in-out infinite;
+  }
+
+  /* Horizontal cases scroll */
+  .cases-track {
+    display: flex;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 0;
+  }
+
+  .cases-track::-webkit-scrollbar {
+    display: none;
+  }
+
+  .case-panel {
+    flex: 0 0 100vw;
+    scroll-snap-align: start;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: 6vw;
+    position: relative;
+    border-right: 1px solid rgba(26,26,26,0.12);
+  }
+
+  /* Top nav */
+  .top-nav {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 100;
+    padding: 1.5rem 3rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    mix-blend-mode: multiply;
+  }
+
+  /* Divider line */
+  .divider {
+    height: 1px;
+    background-color: var(--sage);
+    opacity: 0.35;
+  }
+
+  /* Badge mono */
+  .tech-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border: 1px solid rgba(160, 120, 85, 0.4);
+    color: var(--mocha);
+    padding: 0.3rem 0.7rem;
+    display: inline-block;
+  }
+
+  /* Pull quote */
+  .pull-quote-text {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    color: var(--cherry);
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+
+  /* Contact link */
+  .contact-link {
+    font-family: 'Instrument Serif', serif;
+    color: var(--mocha);
+    text-decoration: none;
+    border-bottom: 1px solid rgba(160, 120, 85, 0.3);
+    transition: border-color 0.4s var(--ease-out-smooth),
+                color 0.4s var(--ease-out-smooth);
+  }
+
+  .contact-link:hover {
+    color: var(--clay);
+    border-color: var(--clay);
+  }
+
+  /* Section number label */
+  .section-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--mocha);
+    opacity: 0.7;
+  }
+
+  /* Manifesto two-column */
+  .manifesto-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 5vw;
+    align-items: start;
+  }
+
+  @media (max-width: 768px) {
+    .hero-line {
+      font-size: clamp(14vw, 20vw, 28vw);
+    }
+    .service-title {
+      font-size: clamp(18vw, 28vw, 36vw);
+    }
+    .manifesto-grid {
+      grid-template-columns: 1fr;
+    }
+    .top-nav {
+      padding: 1rem 1.5rem;
+    }
+    .case-panel {
+      padding: 8vw;
+    }
+  }
+
+  /* Smooth scroll feel via JS */
+  body.no-smooth {
+    overflow: auto;
+  }
+
+  /* AGENTS letter variation */
+  #letter-A1 { transition-delay: 0ms; }
+  #letter-G { transition-delay: 80ms; }
+  #letter-E { transition-delay: 160ms; }
+  #letter-N { transition-delay: 240ms; }
+  #letter-T { transition-delay: 320ms; }
+  #letter-S { transition-delay: 400ms; }
+
+  /* Thin/thick contrast for AGENTS */
+  .agents-odd {
+    font-variation-settings: 'wght' 200;
+    transition: font-variation-settings 0.6s var(--ease-out-smooth);
+  }
+  .agents-even {
+    font-variation-settings: 'wght' 800;
+    transition: font-variation-settings 0.6s var(--ease-out-smooth);
+  }
+  .agents-odd.scrolled {
+    font-variation-settings: 'wght' 800;
+  }
+  .agents-even.scrolled {
+    font-variation-settings: 'wght' 200;
+  }
+
+  /* Underline link for nav */
+  .nav-link {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink);
+    text-decoration: none;
+    opacity: 0.55;
+    transition: opacity 0.3s var(--ease-out-smooth);
+  }
+
+  .nav-link:hover {
+    opacity: 1;
+  }
+
+  section {
+    position: relative;
+  }
+
+  /* Available pill */
+  .available-pill {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .available-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background-color: var(--sage);
+    animation: pulse-ring 2.5s ease-in-out infinite;
+  }
+
+</style>
+</head>
+<body class="bg-cloud">
+
+<!-- TOP NAV -->
+<nav class="top-nav">
+  <span class="font-mono text-xs tracking-widest uppercase text-ink opacity-80" style="font-size:0.7rem; letter-spacing:0.18em;">STUDIO</span>
+  <div class="flex items-center gap-8">
+    <a href="#services" class="nav-link">Work</a>
+    <a href="#cases" class="nav-link">Cases</a>
+    <a href="#process" class="nav-link">Process</a>
+    <a href="#contact" class="nav-link">Contact</a>
+  </div>
+</nav>
+
+<!-- HERO SECTION -->
+<section id="hero" class="relative flex flex-col justify-center" style="min-height:100vh; padding: 0 6vw; padding-top: 12vh;">
+  <div class="mb-6">
+    <span class="section-num">Est. 2026</span>
+  </div>
+
+  <div class="mb-4">
+    <span class="hero-line" id="hero-line-1">We make</span>
+    <span class="hero-line" id="hero-line-2" style="color: var(--mocha);">things</span>
+    <span class="hero-line" id="hero-line-3">that move.</span>
+  </div>
+
+  <div class="mt-10 flex items-end justify-between">
+    <span class="font-mono text-xs tracking-widest" style="color: var(--ink); opacity:0.45; font-size:0.68rem; letter-spacing:0.2em; text-transform:uppercase;">Web · Automation · AI Agents · since 2026</span>
+  </div>
+
+  <!-- Terracotta pulse bottom-right -->
+  <div class="absolute bottom-12 right-12 flex flex-col items-center gap-2">
+    <div class="pulse-circle" style="width:54px; height:54px; border-radius:50%; background-color: var(--clay); opacity:0.85;"></div>
+    <span class="font-mono text-center" style="font-size:0.6rem; letter-spacing:0.12em; text-transform:uppercase; color:var(--clay); opacity:0.7;">Available<br>Q3 2026</span>
+  </div>
+</section>
+
+<div class="divider mx-12"></div>
+
+<!-- MANIFESTO / SUBHEAD -->
+<section id="manifesto" class="relative" style="min-height:100vh; padding: 12vh 6vw; display:flex; flex-direction:column; justify-content:center;">
+  <div class="mb-12">
+    <span class="section-num">/ Studio</span>
+  </div>
+
+  <div class="manifesto-grid" id="manifesto-text">
+    <div>
+      <p class="serif-breathe" style="font-size: clamp(1.5rem, 3.5vw, 2.6rem); color: var(--ink); line-height:1.35;" id="manifesto-p1">
+        An independent practice working at the intersection of design systems, web engineering, and intelligent automation.
+      </p>
+    </div>
+    <div class="flex flex-col justify-between gap-10">
+      <p class="serif-breathe" style="font-size: clamp(1.1rem, 2.2vw, 1.7rem); color: var(--ink); opacity:0.65; line-height:1.5; font-style:normal;" id="manifesto-p2">
+        We take on projects that require both craft and computation — where the interface must feel inevitable, and the system must be able to grow without breaking.
+      </p>
+      <div class="divider" style="width:60%"></div>
+      <span class="font-mono" style="font-size:0.65rem; letter-spacing:0.15em; text-transform:uppercase; color:var(--mocha); opacity:0.6;">Two founders · Two cities · One standard</span>
+    </div>
+  </div>
+</section>
+
+<div class="divider mx-12"></div>
+
+<!-- SERVICES -->
+<section id="services">
+
+  <!-- 01 WEB -->
+  <div id="service-web" class="relative" style="min-height:100vh; padding: 10vh 6vw; display:flex; flex-direction:column; justify-content:center;">
+    <span class="section-num mb-8 block">01 / Web</span>
+    <div class="overflow-hidden mb-10">
+      <div class="service-title" id="web-title">WEB</div>
+    </div>
+    <div class="grid gap-12" style="grid-template-columns: 1fr 1fr; max-width: 72vw;">
+      <p class="font-instrument" style="font-family:'Instrument Serif',serif; font-size:clamp(1rem,1.6vw,1.3rem); line-height:1.65; color:var(--ink); opacity:0.75;">
+        Fast, considered interfaces built for longevity. We design from content out — not template in. Every layout earns its whitespace.
+      </p>
+      <div class="flex flex-col gap-4">
+        <p class="font-instrument" style="font-family:'Instrument Serif',serif; font-size:clamp(1rem,1.6vw,1.3rem); line-height:1.65; color:var(--ink); opacity:0.6;">
+          Production-grade engineering: type-safe, tested, deployed. No boilerplate left behind.
+        </p>
+        <div class="flex flex-wrap gap-2 mt-2">
+          <span class="tech-badge">Next.js</span>
+          <span class="tech-badge">Vue 3</span>
+          <span class="tech-badge">TypeScript</span>
+          <span class="tech-badge">PostgreSQL</span>
+          <span class="tech-badge">Tailwind</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider mx-12"></div>
+
+  <!-- 02 AUTOMATION -->
+  <div id="service-automation" class="relative" style="min-height:100vh; padding: 10vh 6vw; display:flex; flex-direction:column; justify-content:center; background-color:#F0EBE3;">
+    <span class="section-num mb-8 block">02 / Automation</span>
+    <div class="overflow-hidden mb-10">
+      <div class="service-title" id="automation-title" style="white-space:nowrap; overflow:visible;">
+        <span class="letter letter-stagger-0" data-weight-target="760">A</span><span class="letter letter-stagger-1" data-weight-target="760">U</span><span class="letter letter-stagger-2" data-weight-target="760">T</span><span class="letter letter-stagger-3" data-weight-target="760">O</span><span class="letter letter-stagger-4" data-weight-target="760">M</span><span class="letter letter-stagger-5" data-weight-target="760">A</span><span class="letter letter-stagger-6" data-weight-target="760">T</span><span class="letter letter-stagger-7" data-weight-target="760">I</span><span class="letter letter-stagger-8" data-weight-target="760">O</span><span class="letter letter-stagger-9" data-weight-target="760">N</span>
+      </div>
+    </div>
+    <div class="grid gap-12" style="grid-template-columns: 1fr 1fr; max-width: 72vw;">
+      <p style="font-family:'Instrument Serif',serif; font-size:clamp(1rem,1.6vw,1.3rem); line-height:1.65; color:var(--ink); opacity:0.75;">
+        Business logic freed from manual repetition. From CRM sync to multi-step workflows — systems that run while your team focuses on what matters.
+      </p>
+      <div class="flex flex-col gap-4">
+        <p style="font-family:'Instrument Serif',serif; font-size:clamp(1rem,1.6vw,1.3rem); line-height:1.65; color:var(--ink); opacity:0.6;">
+          Built on n8n, Make, and custom Node services. Observable, restartable, documented.
+        </p>
+        <div class="flex flex-wrap gap-2 mt-2">
+          <span class="tech-badge">n8n</span>
+          <span class="tech-badge">Make</span>
+          <span class="tech-badge">Webhooks</span>
+          <span class="tech-badge">Node.js</span>
+          <span class="tech-badge">Zapier</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="divider mx-12"></div>
+
+  <!-- 03 AI AGENTS -->
+  <div id="service-ai" class="relative" style="min-height:100vh; padding: 10vh 6vw; display:flex; flex-direction:column; justify-content:center;">
+    <span class="section-num mb-8 block">03 / AI</span>
+    <div class="overflow-hidden mb-10">
+      <div class="service-title" id="agents-title" style="font-size: clamp(14vw, 22vw, 28vw);">
+        <span class="agents-odd" id="letter-A1" style="font-family:'Bricolage Grotesque',sans-serif; font-variation-settings:'wght' 200; font-size:inherit; line-height:0.82; letter-spacing:-0.04em;">A</span><span class="agents-even" id="letter-G" style="font-family:'Bricolage Grotesque',sans-serif; font-variation-settings:'wght' 800; font-size:inherit; line-height:0.82; letter-spacing:-0.04em;">G</span><span class="agents-odd" id="letter-E" style="font-family:'Bricolage Grotesque',sans-serif; font-variation-settings:'wght' 200; font-size:inherit; line-height:0.82; letter-spacing:-0.04em;">E</span><span class="agents-even" id="letter-N" style="font-family:'Bricolage Grotesque',sans-serif; font-variation-settings:'wght' 800; font-size:inherit; line-height:0.82; letter-spacing:-0.04em;">N</span><span class="agents-odd" id="letter-T" style="font-family:'Bricolage Grotesque',sans-serif; font-variation-settings:'wght' 200; font-size:inherit; line-height:0.82; letter-spacing:-0.04em;">T</span><span class="agents-even" id="letter-S" style="font-family:'Bricolage Grotesque',sans-serif; font-variation-settings:'wght' 800; font-size:inherit; line-height:0.82; letter-spacing:-0.04em;">S</span>
+      </div>
+    </div>
+    <div class="grid gap-12" style="grid-template-columns: 1fr 1fr; max-width: 72vw;">
+      <p style="font-family:'Instrument Serif',serif; font-size:clamp(1rem,1.6vw,1.3rem); line-height:1.65; color:var(--ink); opacity:0.75;">
+        Custom AI systems trained on your context. Not chatbots — agents that research, decide, and take action within guardrails you define.
+      </p>
+      <div class="flex flex-col gap-4">
+        <p style="font-family:'Instrument Serif',serif; font-size:clamp(1rem,1.6vw,1.3rem); line-height:1.65; color:var(--ink); opacity:0.6;">
+          Claude, GPT-4o, Gemini — model-agnostic architecture. Prompt engineering, RAG pipelines, evaluation loops.
+        </p>
+        <div class="flex flex-wrap gap-2 mt-2">
+          <span class="tech-badge">Claude API</span>
+          <span class="tech-badge">RAG</span>
+          <span class="tech-badge">LangChain</span>
+          <span class="tech-badge">Vector DB</span>
+          <span class="tech-badge">Evals</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</section>
+
+<!-- CASES -->
+<section id="cases" style="height:100vh; overflow:hidden; position:relative; background-color:#EDE8E0;">
+  <div style="padding: 4vh 6vw 2vh; display:flex; justify-content:space-between; align-items:center;">
+    <span class="section-num">/ Selected work</span>
+    <span class="font-mono" style="font-size:0.6rem; letter-spacing:0.15em; text-transform:uppercase; opacity:0.45;">Scroll horizontally</span>
+  </div>
+  <div class="cases-track" style="height: calc(100vh - 80px);">
+
+    <!-- Case 01 -->
+    <div class="case-panel" style="background-color:#EDE8E0;">
+      <div style="position:absolute; top: 4vh; left:6vw;">
+        <span class="font-mono" style="font-size:0.62rem; letter-spacing:0.18em; text-transform:uppercase; opacity:0.4;">01 — Hospitality</span>
+      </div>
+      <div>
+        <div style="font-family:'Bricolage Grotesque',sans-serif; font-variation-settings:'wght' 720; font-size: clamp(3.5rem, 8vw, 8rem); line-height:0.9; letter-spacing:-0.03em; color:var(--ink); margin-bottom:1.5rem;">VIP Rental<br>Phuket</div>
+        <p style="font-family:'Instrument Serif',serif; font-size:clamp(0.95rem,1.5vw,1.2rem); line-height:1.6; color:var(--ink); opacity:0.65; max-width:38ch; margin-bottom:1.5rem;">
+          Premium villa booking platform for discerning travelers. Full-stack build: multilingual, calendar-synced, integrated with local concierge network.
+        </p>
+        <div class="flex items-end gap-8">
+          <div>
+            <div style="font-family:'Bricolage Grotesque',sans-serif; font-variation-settings:'wght' 680; font-size: clamp(2.5rem,5vw,4.5rem); color:var(--mocha); line-height:1; letter-spacing:-0.02em;">+340%</div>
+            <span class="font-mono" style="font-size:0.6rem; letter-spacing:0.12em; text-transform:uppercase; opacity:0.5;">Organic traffic · 6 months</span>
+          </div>
+          <div>
+            <div style="font-family:'Bricolage Grotesque',sans-serif; font-variation-settings:'wght' 680; font-size: clamp(2.5rem,5vw,4.5rem); color:var(--mocha); line-height:1; letter-spacing:-0.02em;">3 wks</div>
+            <span class="font-mono" style="font-size:0.6rem; letter-spacing:0.12em; text-transform:uppercase; opacity:0.5;">Delivery timeline</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Case 02 -->
+    <div class="case-panel" style="background-color:#E8E0D5;">
+      <div style="position:absolute; top: 4vh; left:6vw;">
+        <span class="font-mono" style="font-size:0.62rem; letter-spacing:0.18em; text-transform:uppercase; opacity:0.4;">02 — Retail</span>
+      </div>
+      <div>
+        <div style="font-family:'Bricolage Grotesque',sans-serif; font-variation-settings:'wght' 720; font-size: clamp(3.5rem, 8vw, 8rem); line-height:0.9; letter-spacing:-0.03em; color:var(--ink); margin-bottom:1.5rem;">Backdoor<br>Store</div>
+        <p style="font-family:'Instrument Serif',serif; font-size:clamp(0.95rem,1.5vw,1.2rem); line-height:1.6; color:var(--ink); opacity:0.65; max-width:38ch; margin-bottom:1.5rem;">
+          Streetwear drop-culture e-commerce. Real-time inventory, waitlists, instant checkout. Designed for scarcity psychology — the page is the experience.
+        </p>
+        <div class="flex items-end gap-8">
+          <div>
+            <div style="font-family:'Bricolage Grotesque',sans-serif; font-variation-settings:'wght' 680; font-size: clamp(2.5rem,5vw,4.5rem); color:var(--clay); line-height:1; letter-spacing:-0.02em;">12 min</div>
+            <span class="font-mono" style="font-size:0.6rem; letter-spacing:0.12em; text-transform:uppercase; opacity:0.5;">Avg. sell-out time per drop</span>
+          </div>
+          <div>
+            <div style="font-family:'Bricolage Grotesque',sans-serif; font-variation-settings:'wght' 680; font-size: clamp(2.5rem,5vw,4.5rem); color:var(--clay); line-height:1; letter-spacing:-0.02em;">98%</div>
+            <span class="font-mono" style="font-size:0.6rem; letter-spacing:0.12em; text-transform:uppercase; opacity:0.5;">Mobile conversion rate</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Case 03 -->
+    <div class="case-panel" style="background-color:#E3DDD5; border-right:none;">
+      <div style="position:absolute; top: 4vh; left:6vw;">
+        <span class="font-mono" style="font-size:0.62rem; letter-spacing:0.18em; text-transform:uppercase; opacity:0.4;">03 — Platform</span>
+      </div>
+      <div>
+        <div style="font-family:'Bricolage Grotesque',sans-serif; font-variation-settings:'wght' 720; font-size: clamp(3.5rem, 8vw, 8rem); line-height:0.9; letter-spacing:-0.03em; color:var(--ink); margin-bottom:1.5rem;">RA<br>Project</div>
+        <p style="font-family:'Instrument Serif',serif; font-size:clamp(0.95rem,1.5vw,1.2rem); line-height:1.6; color:var(--ink); opacity:0.65; max-width:38ch; margin-bottom:1.5rem;">
+          Real estate analytics platform. AI-powered property valuation, automated lead qualification, CRM pipeline sync. Built with Claude API at its core.
+        </p>
+        <div class="flex items-end gap-8">
+          <div>
+            <div style="font-family:'Bricolage Grotesque',sans-serif; font-variation-settings:'wght' 680; font-size: clamp(2.5rem,5vw,4.5rem); color:var(--mocha); line-height:1; letter-spacing:-0.02em;">8×</div>
+            <span class="font-mono" style="font-size:0.6rem; letter-spacing:0.12em; text-transform:uppercase; opacity:0.5;">Faster lead processing</span>
+          </div>
+          <div>
+            <div style="font-family:'Bricolage Grotesque',sans-serif; font-variation-settings:'wght' 680; font-size: clamp(2.5rem,5vw,4.5rem); color:var(--mocha); line-height:1; letter-spacing:-0.02em;">AI</div>
+            <span class="font-mono" style="font-size:0.6rem; letter-spacing:0.12em; text-transform:uppercase; opacity:0.5;">Claude-powered valuation</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- PROCESS -->
+<section id="process" style="min-height:100vh; padding: 12vh 6vw; display:flex; flex-direction:column; justify-content:center;">
+  <div class="mb-14">
+    <span class="section-num">/ How we work</span>
+  </div>
+  <div class="flex flex-col" style="gap: 3vh;">
+    <div class="process-line" id="proc-1" style="border-top: 1px solid rgba(139,159,126,0.3); padding-top: 2.5vh;">
+      <span style="font-family:'Bricolage Grotesque',sans-serif; font-size:clamp(2.5rem,6vw,6.5rem); line-height:0.9; letter-spacing:-0.025em; color:var(--ink);">01 · DISCOVERY</span>
+      <span class="font-mono" style="display:block; font-size:0.65rem; letter-spacing:0.12em; text-transform:uppercase; opacity:0.45; margin-top:0.5rem;">Deep listening · context mapping · constraint inventory</span>
+    </div>
+    <div class="process-line" id="proc-2" style="border-top: 1px solid rgba(139,159,126,0.3); padding-top: 2.5vh;">
+      <span style="font-family:'Bricolage Grotesque',sans-serif; font-size:clamp(2.5rem,6vw,6.5rem); line-height:0.9; letter-spacing:-0.025em; color:var(--ink);">02 · ARCHITECTURE</span>
+      <span class="font-mono" style="display:block; font-size:0.65rem; letter-spacing:0.12em; text-transform:uppercase; opacity:0.45; margin-top:0.5rem;">Stack decisions · design system · technical blueprint</span>
+    </div>
+    <div class="process-line" id="proc-3" style="border-top: 1px solid rgba(139,159,126,0.3); padding-top: 2.5vh;">
+      <span style="font-family:'Bricolage Grotesque',sans-serif; font-size:clamp(2.5rem,6vw,6.5rem); line-height:0.9; letter-spacing:-0.025em; color:var(--mocha);">03 · SPRINT BUILD</span>
+      <span class="font-mono" style="display:block; font-size:0.65rem; letter-spacing:0.12em; text-transform:uppercase; opacity:0.45; margin-top:0.5rem;">2-week sprints · daily async updates · live staging</span>
+    </div>
+    <div class="process-line" id="proc-4" style="border-top: 1px solid rgba(139,159,126,0.3); padding-top: 2.5vh;">
+      <span style="font-family:'Bricolage Grotesque',sans-serif; font-size:clamp(2.5rem,6vw,6.5rem); line-height:0.9; letter-spacing:-0.025em; color:var(--ink);">04 · HANDOFF</span>
+      <span class="font-mono" style="display:block; font-size:0.65rem; letter-spacing:0.12em; text-transform:uppercase; opacity:0.45; margin-top:0.5rem;">Documentation · training · 30-day support window</span>
+    </div>
+  </div>
+</section>
+
+<div class="divider mx-12"></div>
+
+<!-- PULL QUOTE -->
+<section id="quote" style="min-height:100vh; display:flex; flex-direction:column; justify-content:center; align-items:flex-start; padding: 10vh 6vw; background-color:#EDE8E0;">
+  <div class="mb-8">
+    <span class="section-num">/ Manifesto</span>
+  </div>
+  <blockquote style="max-width:85vw;">
+    <p class="pull-quote-text" style="font-size:clamp(2.8rem, 6.5vw, 7rem); line-height:1.05; letter-spacing:-0.025em;" id="pull-quote-text">
+      Мы строим инструменты,<br>а не сайты.
+    </p>
+  </blockquote>
+  <div class="mt-10" style="display:flex; align-items:center; gap: 1.5rem;">
+    <div class="divider" style="width: 3rem;"></div>
+    <span class="font-mono" style="font-size:0.62rem; letter-spacing:0.18em; text-transform:uppercase; opacity:0.5;">Alex × Nikolay · Founders · STUDIO · 2026</span>
+  </div>
+</section>
+
+<div class="divider mx-12"></div>
+
+<!-- CONTACT -->
+<section id="contact" style="min-height:100vh; padding: 12vh 6vw; display:flex; flex-direction:column; justify-content:center;">
+  <div class="mb-12">
+    <span class="section-num">/ Let's begin</span>
+  </div>
+
+  <div style="font-family:'Bricolage Grotesque',sans-serif; font-variation-settings:'wght' 680; font-size:clamp(5rem,12vw,13rem); line-height:0.85; letter-spacing:-0.035em; color:var(--mocha); margin-bottom:6vh;" id="contact-headline">
+    Let's talk.
+  </div>
+
+  <div class="flex flex-col gap-4 mb-12">
+    <a href="mailto:nikolaybelikov23@gmail.com" class="contact-link" style="font-size:clamp(1.4rem, 3.2vw, 3.2rem); line-height:1.2; letter-spacing:-0.01em;">
+      nikolaybelikov23@gmail.com
+    </a>
+    <a href="https://t.me/studio" class="contact-link" style="font-size:clamp(1.1rem, 2.2vw, 2.2rem); line-height:1.2; letter-spacing:-0.01em; opacity:0.65;">
+      Telegram · @studio_ax
+    </a>
+  </div>
+
+  <div class="flex items-center gap-3">
+    <div class="available-dot"></div>
+    <span class="font-mono" style="font-size:0.65rem; letter-spacing:0.15em; text-transform:uppercase; opacity:0.5;">We reply within 24h · Taking projects from Q3 2026</span>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer style="padding: 4vh 6vw; border-top: 1px solid rgba(139,159,126,0.3);">
+  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+    <span class="font-mono" style="font-size:0.62rem; letter-spacing:0.12em; text-transform:uppercase; font-variant:small-caps; opacity:0.45;">
+      &copy; 2026 Studio
+    </span>
+    <span class="font-mono" style="font-size:0.62rem; letter-spacing:0.12em; text-transform:uppercase; font-variant:small-caps; opacity:0.45;">
+      Made in Phuket &times; Bangkok
+    </span>
+    <span class="font-mono" style="font-size:0.62rem; letter-spacing:0.12em; text-transform:uppercase; font-variant:small-caps; opacity:0.45;">
+      Crafted by Alex &times; Nikolay
+    </span>
+  </div>
+</footer>
+
+<script>
+(function() {
+  'use strict';
+
+  // ─── SMOOTH SCROLL ───────────────────────────────────────────────────────────
+  let currentY = 0;
+  let targetY = 0;
+  let rafId = null;
+  const lerpFactor = 0.085;
+
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  function onWheel(e) {
+    e.preventDefault();
+    targetY += e.deltaY * 0.85;
+    targetY = Math.max(0, Math.min(targetY, document.body.scrollHeight - window.innerHeight));
+  }
+
+  function smoothLoop() {
+    currentY = lerp(currentY, targetY, lerpFactor);
+    if (Math.abs(currentY - targetY) < 0.1) {
+      currentY = targetY;
+    }
+    window.scrollTo(0, currentY);
+    rafId = requestAnimationFrame(smoothLoop);
+  }
+
+  // Only enable smooth scroll on desktop
+  if (window.innerWidth > 768) {
+    window.addEventListener('wheel', onWheel, { passive: false });
+    smoothLoop();
+  }
+
+  // ─── HERO LINE WEIGHT ON SCROLL ──────────────────────────────────────────────
+  const heroLines = [
+    document.getElementById('hero-line-1'),
+    document.getElementById('hero-line-2'),
+    document.getElementById('hero-line-3')
+  ];
+
+  function updateHeroLines() {
+    const scrollY = window.scrollY;
+    const vh = window.innerHeight;
+
+    heroLines.forEach((line, i) => {
+      if (!line) return;
+      const rect = line.getBoundingClientRect();
+      const center = rect.top + rect.height / 2;
+      const distFromCenter = Math.abs(center - vh / 2);
+      const maxDist = vh * 0.6;
+      const progress = Math.max(0, 1 - distFromCenter / maxDist);
+      const weight = 200 + Math.round(progress * 540);
+      line.style.fontVariationSettings = `'wght' ${weight}`;
+
+      // Slight letter-spacing tighten as weight increases
+      const spacing = -0.01 - (progress * 0.025);
+      line.style.letterSpacing = `${spacing}em`;
+    });
+  }
+
+  // ─── INTERSECTION OBSERVER SETUP ─────────────────────────────────────────────
+  const observerOptions = {
+    threshold: 0.25,
+    rootMargin: '0px 0px -10% 0px'
+  };
+
+  // Service titles
+  const serviceObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const el = entry.target;
+        el.classList.add('in-view');
+        // Also animate any .letter children
+        const letters = el.querySelectorAll('.letter');
+        letters.forEach(letter => letter.classList.add('in-view'));
+        serviceObserver.unobserve(el);
+      }
+    });
+  }, observerOptions);
+
+  const webTitle = document.getElementById('web-title');
+  if (webTitle) serviceObserver.observe(webTitle);
+
+  const automationTitle = document.getElementById('automation-title');
+  if (automationTitle) serviceObserver.observe(automationTitle);
+
+  // Agents section — toggle contrast weights on scroll
+  const agentsSection = document.getElementById('service-ai');
+  const agentsObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      const odds = agentsSection.querySelectorAll('.agents-odd');
+      const evens = agentsSection.querySelectorAll('.agents-even');
+      if (entry.isIntersecting) {
+        odds.forEach(el => el.classList.add('scrolled'));
+        evens.forEach(el => el.classList.add('scrolled'));
+      } else {
+        odds.forEach(el => el.classList.remove('scrolled'));
+        evens.forEach(el => el.classList.remove('scrolled'));
+      }
+    });
+  }, { threshold: 0.3 });
+  if (agentsSection) agentsObserver.observe(agentsSection);
+
+  // Process lines stagger
+  const processLines = document.querySelectorAll('.process-line');
+  const processObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry, idx) => {
+      if (entry.isIntersecting) {
+        const el = entry.target;
+        const delay = Array.from(processLines).indexOf(el) * 120;
+        setTimeout(() => {
+          el.classList.add('revealed');
+        }, delay);
+        processObserver.unobserve(el);
+      }
+    });
+  }, { threshold: 0.15 });
+  processLines.forEach(line => processObserver.observe(line));
+
+  // Manifesto serif breathe
+  const serifBreathes = document.querySelectorAll('.serif-breathe');
+  const serifObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('in-view');
+      } else {
+        entry.target.classList.remove('in-view');
+      }
+    });
+  }, { threshold: 0.4 });
+  serifBreathes.forEach(el => serifObserver.observe(el));
+
+  // Pull quote reveal
+  const pullQuote = document.getElementById('pull-quote-text');
+  if (pullQuote) {
+    const pullObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          pullQuote.style.opacity = '0';
+          pullQuote.style.transform = 'translateY(30px)';
+          pullQuote.style.transition = 'opacity 0.9s cubic-bezier(0.25,0.46,0.45,0.94), transform 0.9s cubic-bezier(0.25,0.46,0.45,0.94)';
+          requestAnimationFrame(() => {
+            setTimeout(() => {
+              pullQuote.style.opacity = '1';
+              pullQuote.style.transform = 'translateY(0)';
+            }, 50);
+          });
+          pullObserver.unobserve(pullQuote);
+        }
+      });
+    }, { threshold: 0.3 });
+    pullObserver.observe(pullQuote);
+  }
+
+  // Contact headline weight
+  const contactHeadline = document.getElementById('contact-headline');
+  if (contactHeadline) {
+    const contactObserver = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          contactHeadline.style.transition = 'font-variation-settings 1s cubic-bezier(0.25,0.46,0.45,0.94)';
+          contactHeadline.style.fontVariationSettings = "'wght' 760";
+        }
+      });
+    }, { threshold: 0.3 });
+    contactObserver.observe(contactHeadline);
+  }
+
+  // ─── SCROLL LISTENER FOR HERO WEIGHT ─────────────────────────────────────────
+  let ticking = false;
+  window.addEventListener('scroll', () => {
+    if (!ticking) {
+      requestAnimationFrame(() => {
+        updateHeroLines();
+        ticking = false;
+      });
+      ticking = true;
+    }
+  }, { passive: true });
+
+  // Initial call
+  updateHeroLines();
+
+  // ─── NAV ACTIVE STATE ─────────────────────────────────────────────────────────
+  const sections = document.querySelectorAll('section[id]');
+  const navLinks = document.querySelectorAll('.nav-link');
+
+  const navObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        const id = entry.target.getAttribute('id');
+        navLinks.forEach(link => {
+          link.style.opacity = link.getAttribute('href') === `#${id}` ? '1' : '0.45';
+        });
+      }
+    });
+  }, { threshold: 0.5 });
+
+  sections.forEach(section => navObserver.observe(section));
+
+  // ─── LETTER STAGGER FOR SERVICE TITLES ───────────────────────────────────────
+  // Automation title letter-by-letter
+  const automationLetters = document.querySelectorAll('#automation-title .letter');
+  const autoLetterObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        automationLetters.forEach((letter, i) => {
+          setTimeout(() => {
+            letter.classList.add('in-view');
+          }, i * 80);
+        });
+        autoLetterObserver.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.2 });
+  if (automationTitle) autoLetterObserver.observe(automationTitle);
+
+})();
+</script>
+
+</body>
+</html>

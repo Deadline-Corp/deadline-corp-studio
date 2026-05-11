@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>STUDIO — Web. Automation. AI Agents.</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&family=Inter+Tight:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            paper: '#FAFAF7',
+            ink: '#111111',
+            accent: '#C8102E',
+            rule: 'rgba(17,17,17,0.25)',
+          },
+          fontFamily: {
+            display: ['Newsreader', 'Georgia', 'serif'],
+            body: ['Inter Tight', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+        }
+      }
+    }
+  </script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background-color: #FAFAF7;
+      color: #111111;
+      font-family: 'Inter Tight', system-ui, sans-serif;
+      font-size: 16px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Typography fine-tuning */
+    .display-headline {
+      font-family: 'Newsreader', Georgia, serif;
+      font-optical-sizing: auto;
+      font-feature-settings: "kern" 1, "liga" 1, "onum" 1;
+      letter-spacing: -0.02em;
+      line-height: 1.05;
+    }
+
+    .body-text {
+      font-family: 'Inter Tight', system-ui, sans-serif;
+      font-feature-settings: "kern" 1, "ss01" 1;
+      line-height: 1.65;
+    }
+
+    .label-mono {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      font-feature-settings: "c2sc" 1, "smcp" 1;
+    }
+
+    /* Grid container */
+    .grid-container {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      column-gap: 24px;
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 0 40px;
+    }
+
+    @media (max-width: 768px) {
+      .grid-container {
+        grid-template-columns: repeat(4, 1fr);
+        padding: 0 20px;
+        column-gap: 16px;
+      }
+    }
+
+    /* Hairline rules */
+    .rule-h {
+      border: none;
+      border-top: 1px solid rgba(17, 17, 17, 0.25);
+    }
+
+    .rule-v {
+      border-left: 1px solid rgba(17, 17, 17, 0.25);
+    }
+
+    /* Nav */
+    nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background-color: #FAFAF7;
+      border-bottom: 1px solid rgba(17, 17, 17, 0.2);
+    }
+
+    .nav-inner {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 0 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 52px;
+    }
+
+    .nav-logo {
+      font-family: 'Inter Tight', sans-serif;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: #111111;
+      text-decoration: none;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 36px;
+      list-style: none;
+    }
+
+    .nav-links a {
+      font-family: 'Inter Tight', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #111111;
+      text-decoration: none;
+      position: relative;
+    }
+
+    .nav-links a::after {
+      content: '';
+      position: absolute;
+      bottom: -2px;
+      left: 0;
+      width: 0;
+      height: 1px;
+      background-color: #C8102E;
+      transition: width 200ms ease-out;
+    }
+
+    .nav-links a:hover::after {
+      width: 100%;
+    }
+
+    .nav-links a:hover {
+      color: #C8102E;
+    }
+
+    /* Hero section */
+    .hero-section {
+      padding: 80px 0 100px;
+      border-bottom: 1px solid rgba(17, 17, 17, 0.25);
+    }
+
+    .hero-headline {
+      font-family: 'Newsreader', Georgia, serif;
+      font-size: clamp(52px, 7.5vw, 108px);
+      font-weight: 400;
+      font-optical-sizing: auto;
+      letter-spacing: -0.03em;
+      line-height: 1.0;
+      color: #111111;
+    }
+
+    .hero-headline-ru {
+      font-family: 'Newsreader', Georgia, serif;
+      font-size: clamp(18px, 2.2vw, 30px);
+      font-weight: 400;
+      font-style: italic;
+      letter-spacing: -0.01em;
+      line-height: 1.3;
+      color: rgba(17, 17, 17, 0.55);
+      margin-top: 20px;
+    }
+
+    /* Section label */
+    .section-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: rgba(17, 17, 17, 0.5);
+      margin-bottom: 40px;
+      display: block;
+    }
+
+    /* Services */
+    .service-entry {
+      padding: 48px 0;
+      border-bottom: 1px solid rgba(17, 17, 17, 0.18);
+    }
+
+    .service-entry:first-of-type {
+      border-top: 1px solid rgba(17, 17, 17, 0.18);
+    }
+
+    .service-number {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      color: rgba(17, 17, 17, 0.4);
+    }
+
+    .service-title {
+      font-family: 'Newsreader', Georgia, serif;
+      font-size: clamp(32px, 4vw, 56px);
+      font-weight: 400;
+      font-optical-sizing: auto;
+      letter-spacing: -0.025em;
+      line-height: 1.1;
+      color: #111111;
+    }
+
+    .read-more {
+      font-family: 'Inter Tight', sans-serif;
+      font-size: 12px;
+      font-weight: 500;
+      color: #C8102E;
+      text-decoration: none;
+      letter-spacing: 0.04em;
+      border-bottom: 1px solid transparent;
+      transition: border-color 220ms ease-out;
+    }
+
+    .read-more:hover {
+      border-bottom-color: #C8102E;
+    }
+
+    /* Work table */
+    .work-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .work-table th {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+      color: rgba(17, 17, 17, 0.45);
+      font-weight: 400;
+      text-align: left;
+      padding: 0 0 16px 0;
+      border-bottom: 1px solid rgba(17, 17, 17, 0.22);
+    }
+
+    .work-table td {
+      font-family: 'Inter Tight', sans-serif;
+      font-size: 14px;
+      font-weight: 400;
+      color: #111111;
+      padding: 20px 0;
+      border-bottom: 1px solid rgba(17, 17, 17, 0.12);
+      vertical-align: top;
+    }
+
+    .work-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .work-table tr:hover td {
+      color: #C8102E;
+      transition: color 180ms ease-out;
+    }
+
+    .work-table td.num {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: rgba(17, 17, 17, 0.4);
+      width: 40px;
+    }
+
+    .work-table td.result {
+      font-family: 'Inter Tight', sans-serif;
+      font-size: 13px;
+      color: rgba(17, 17, 17, 0.65);
+    }
+
+    /* Process */
+    .process-entry {
+      padding: 36px 0;
+      border-bottom: 1px solid rgba(17, 17, 17, 0.15);
+    }
+
+    .process-entry:first-of-type {
+      border-top: 1px solid rgba(17, 17, 17, 0.15);
+    }
+
+    .process-num {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      color: rgba(17, 17, 17, 0.4);
+    }
+
+    .process-title {
+      font-family: 'Newsreader', Georgia, serif;
+      font-size: clamp(22px, 2.5vw, 34px);
+      font-weight: 400;
+      font-optical-sizing: auto;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+    }
+
+    /* Manifesto */
+    .manifesto-quote {
+      font-family: 'Newsreader', Georgia, serif;
+      font-size: clamp(28px, 4.5vw, 64px);
+      font-weight: 400;
+      font-optical-sizing: auto;
+      font-style: italic;
+      letter-spacing: -0.025em;
+      line-height: 1.15;
+      color: #111111;
+    }
+
+    /* Contact */
+    .contact-headline {
+      font-family: 'Newsreader', Georgia, serif;
+      font-size: clamp(44px, 7vw, 96px);
+      font-weight: 400;
+      font-optical-sizing: auto;
+      letter-spacing: -0.03em;
+      line-height: 1.0;
+    }
+
+    .contact-email {
+      font-family: 'Newsreader', Georgia, serif;
+      font-size: clamp(18px, 2.5vw, 32px);
+      font-weight: 400;
+      color: #111111;
+      text-decoration: none;
+      border-bottom: 1px solid rgba(17, 17, 17, 0.3);
+      transition: border-color 200ms ease-out, color 200ms ease-out;
+    }
+
+    .contact-email:hover {
+      color: #C8102E;
+      border-bottom-color: #C8102E;
+    }
+
+    .contact-tg {
+      font-family: 'Inter Tight', sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      color: rgba(17, 17, 17, 0.6);
+      text-decoration: none;
+      letter-spacing: 0.04em;
+      border-bottom: 1px solid transparent;
+      transition: color 180ms ease-out, border-color 180ms ease-out;
+    }
+
+    .contact-tg:hover {
+      color: #C8102E;
+      border-bottom-color: #C8102E;
+    }
+
+    /* Footer */
+    footer {
+      border-top: 1px solid rgba(17, 17, 17, 0.22);
+      padding: 28px 0;
+    }
+
+    /* Fade-up animation */
+    .fade-up {
+      opacity: 0;
+      transform: translateY(18px);
+      transition: opacity 350ms ease-out, transform 350ms ease-out;
+    }
+
+    .fade-up.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* Accent marker */
+    .accent-marker {
+      display: inline-block;
+      width: 6px;
+      height: 6px;
+      background-color: #C8102E;
+      margin-right: 8px;
+      vertical-align: middle;
+      flex-shrink: 0;
+    }
+
+    /* Mobile responsive */
+    @media (max-width: 768px) {
+      .nav-links {
+        display: none;
+      }
+
+      .nav-inner {
+        padding: 0 20px;
+      }
+
+      .hero-section {
+        padding: 48px 0 60px;
+      }
+
+      .grid-container {
+        column-gap: 16px;
+      }
+    }
+
+    /* Section spacing */
+    .section-pad {
+      padding: 80px 0;
+    }
+
+    @media (max-width: 768px) {
+      .section-pad {
+        padding: 48px 0;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- NAV -->
+  <nav>
+    <div class="nav-inner">
+      <a href="#" class="nav-logo">Studio</a>
+      <ul class="nav-links">
+        <li><a href="#services">Services</a></li>
+        <li><a href="#work">Cases</a></li>
+        <li><a href="#process">Process</a></li>
+        <li><a href="#contact">Contact</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero-section">
+    <div class="grid-container">
+      <!-- Headline spans full width -->
+      <div style="grid-column: 1 / -1; margin-bottom: 60px;">
+        <h1 class="hero-headline">
+          Web.<br />
+          Automation.<br />
+          AI agents.<br />
+          Built<br />
+          deliberately.
+        </h1>
+        <p class="hero-headline-ru">
+          Веб. Автоматизация. ИИ-агенты.<br />
+          Построено осознанно.
+        </p>
+      </div>
+
+      <!-- 2-column intro -->
+      <div style="grid-column: 1 / 7;" class="fade-up">
+        <span class="section-label">— Manifesto</span>
+        <p class="body-text" style="font-size: 15px; line-height: 1.75; color: rgba(17,17,17,0.85); max-width: 540px;">
+          We are not a vendor. We do not sell templates or run generic Wordpress installs. We study the business first — the economics, the conversion points, the bottlenecks — and then we build tools that directly address those problems. Every project starts with a question: what metric changes after we ship? If no one can answer that, we do not start building.
+          <br /><br />
+          We work with a short roster of clients at a time, which means you get real attention, not a project manager relay. If the timeline is tight we say so. If the scope is unclear we ask. We believe that clarity before execution saves more time than any agile ceremony.
+        </p>
+      </div>
+
+      <div style="grid-column: 8 / 13; border-left: 1px solid rgba(17,17,17,0.2); padding-left: 32px;" class="fade-up">
+        <dl style="display: flex; flex-direction: column; gap: 20px;">
+          <div>
+            <dt class="label-mono" style="color: rgba(17,17,17,0.42); margin-bottom: 4px;">Founded</dt>
+            <dd style="font-family: 'Inter Tight', sans-serif; font-size: 15px; font-weight: 500; color: #111;">2026</dd>
+          </div>
+          <div>
+            <dt class="label-mono" style="color: rgba(17,17,17,0.42); margin-bottom: 4px;">Studio</dt>
+            <dd style="font-family: 'Inter Tight', sans-serif; font-size: 15px; color: #111;">Alex × Nikolay</dd>
+          </div>
+          <div>
+            <dt class="label-mono" style="color: rgba(17,17,17,0.42); margin-bottom: 4px;">Location</dt>
+            <dd style="font-family: 'Inter Tight', sans-serif; font-size: 15px; color: #111;">Phuket · Bangkok</dd>
+          </div>
+          <div>
+            <dt class="label-mono" style="color: rgba(17,17,17,0.42); margin-bottom: 4px;">Availability</dt>
+            <dd style="font-family: 'Inter Tight', sans-serif; font-size: 15px; color: #111;">
+              Available for Q3&nbsp;'26 work
+            </dd>
+          </div>
+          <div style="margin-top: 8px;">
+            <a href="#contact" class="read-more" style="font-size: 13px;">Write us →</a>
+          </div>
+        </dl>
+      </div>
+
+      <!-- Mobile: meta block stacks below manifesto -->
+      <style>
+        @media (max-width: 768px) {
+          .hero-meta-col { grid-column: 1 / -1 !important; border-left: none !important; padding-left: 0 !important; border-top: 1px solid rgba(17,17,17,0.2); padding-top: 28px !important; margin-top: 8px; }
+          .hero-manifesto-col { grid-column: 1 / -1 !important; }
+        }
+      </style>
+    </div>
+  </section>
+
+  <!-- SERVICES -->
+  <section id="services" class="section-pad">
+    <div class="grid-container">
+      <div style="grid-column: 1 / -1;">
+        <span class="section-label">01 — Services</span>
+      </div>
+
+      <!-- Service 01 -->
+      <div class="service-entry fade-up" style="grid-column: 1 / -1;">
+        <div style="display: grid; grid-template-columns: repeat(12, 1fr); column-gap: 24px; align-items: start;">
+          <div style="grid-column: 1 / 2; padding-top: 6px;">
+            <span class="service-number">01</span>
+          </div>
+          <div style="grid-column: 2 / 7;">
+            <h2 class="service-title">Web<br />Development</h2>
+          </div>
+          <div style="grid-column: 8 / 12; padding-top: 8px;">
+            <p class="body-text" style="font-size: 14px; color: rgba(17,17,17,0.72); line-height: 1.7; margin-bottom: 20px;">
+              Production-grade web applications built on modern stacks. We work primarily in Next.js, React, and Vue with TypeScript across the board. Performance-first architecture, semantic markup, and real accessibility — not audits as an afterthought.
+            </p>
+            <div class="label-mono" style="color: rgba(17,17,17,0.4); margin-bottom: 12px; font-size: 10px;">Stack</div>
+            <p style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: rgba(17,17,17,0.55); line-height: 1.8;">
+              Next.js · React · Vue · TypeScript<br />Tailwind · Prisma · PostgreSQL
+            </p>
+            <div style="margin-top: 20px;">
+              <a href="#contact" class="read-more">Read more →</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Service 02 -->
+      <div class="service-entry fade-up" style="grid-column: 1 / -1;">
+        <div style="display: grid; grid-template-columns: repeat(12, 1fr); column-gap: 24px; align-items: start;">
+          <div style="grid-column: 1 / 2; padding-top: 6px;">
+            <span class="service-number">02</span>
+          </div>
+          <div style="grid-column: 2 / 7;">
+            <h2 class="service-title">Automation<br />Engineering</h2>
+          </div>
+          <div style="grid-column: 8 / 12; padding-top: 8px;">
+            <p class="body-text" style="font-size: 14px; color: rgba(17,17,17,0.72); line-height: 1.7; margin-bottom: 20px;">
+              Business processes that run themselves. From n8n and Make flows to custom Python/Node pipelines, we eliminate the manual bottlenecks that slow your team down. CRM sync, Telegram bots, invoice processing, lead qualification — automated once, reliable forever.
+            </p>
+            <div class="label-mono" style="color: rgba(17,17,17,0.4); margin-bottom: 12px; font-size: 10px;">Stack</div>
+            <p style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: rgba(17,17,17,0.55); line-height: 1.8;">
+              n8n · Make · Python · Node.js<br />Telegram API · CRM Integrations
+            </p>
+            <div style="margin-top: 20px;">
+              <a href="#contact" class="read-more">Read more →</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Service 03 -->
+      <div class="service-entry fade-up" style="grid-column: 1 / -1;">
+        <div style="display: grid; grid-template-columns: repeat(12, 1fr); column-gap: 24px; align-items: start;">
+          <div style="grid-column: 1 / 2; padding-top: 6px;">
+            <span class="service-number">03</span>
+          </div>
+          <div style="grid-column: 2 / 7;">
+            <h2 class="service-title">AI Agents<br />& Systems</h2>
+          </div>
+          <div style="grid-column: 8 / 12; padding-top: 8px;">
+            <p class="body-text" style="font-size: 14px; color: rgba(17,17,17,0.72); line-height: 1.7; margin-bottom: 20px;">
+              Purpose-built AI that operates inside your workflow. RAG pipelines over proprietary knowledge, voice assistants for client-facing interactions, autonomous agents that complete multi-step tasks without supervision. LLM wrappers are not AI strategy — we build systems with measurable output.
+            </p>
+            <div class="label-mono" style="color: rgba(17,17,17,0.4); margin-bottom: 12px; font-size: 10px;">Stack</div>
+            <p style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: rgba(17,17,17,0.55); line-height: 1.8;">
+              OpenAI · Anthropic · RAG · LangChain<br />Voice AI · Autonomous Agents
+            </p>
+            <div style="margin-top: 20px;">
+              <a href="#contact" class="read-more">Read more →</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SELECTED WORK -->
+  <section id="work" class="section-pad" style="border-top: 1px solid rgba(17,17,17,0.22);">
+    <div class="grid-container">
+      <div style="grid-column: 1 / -1; margin-bottom: 48px;">
+        <span class="section-label">02 — Selected Work</span>
+        <h2 style="font-family: 'Newsreader', Georgia, serif; font-size: clamp(28px, 4vw, 48px); font-weight: 400; letter-spacing: -0.02em; line-height: 1.15;">
+          Three projects.<br />Measurable results.
+        </h2>
+      </div>
+
+      <div style="grid-column: 1 / -1;" class="fade-up">
+        <table class="work-table">
+          <thead>
+            <tr>
+              <th style="width: 40px;">#</th>
+              <th style="min-width: 160px;">Client</th>
+              <th style="min-width: 200px;">Discipline</th>
+              <th style="width: 60px;">Year</th>
+              <th>Result</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="num">01</td>
+              <td style="font-weight: 500;">VIP Rental Phuket</td>
+              <td style="color: rgba(17,17,17,0.65);">Web + AI Concierge</td>
+              <td style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: rgba(17,17,17,0.5);">2025</td>
+              <td class="result">+32% conversion rate after AI concierge deployment. Reduced manual inquiry processing by 70%.</td>
+            </tr>
+            <tr>
+              <td class="num">02</td>
+              <td style="font-weight: 500;">Backdoor Store</td>
+              <td style="color: rgba(17,17,17,0.65);">Telegram Bot + Automation</td>
+              <td style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: rgba(17,17,17,0.5);">2025</td>
+              <td class="result">Full order processing pipeline automated via Telegram. Zero human intervention on standard orders.</td>
+            </tr>
+            <tr>
+              <td class="num">03</td>
+              <td style="font-weight: 500;">RA Project</td>
+              <td style="color: rgba(17,17,17,0.65);">On-Chain Analytics</td>
+              <td style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: rgba(17,17,17,0.5);">2026</td>
+              <td class="result">Cross-chain analytics platform spanning 12 chains. Real-time indexing, custom dashboards, alerting.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- PROCESS -->
+  <section id="process" class="section-pad" style="border-top: 1px solid rgba(17,17,17,0.22);">
+    <div class="grid-container">
+      <div style="grid-column: 1 / 4; padding-right: 24px;" class="fade-up">
+        <span class="section-label">03 — Process</span>
+        <p style="font-family: 'Inter Tight', sans-serif; font-size: 13px; color: rgba(17,17,17,0.5); line-height: 1.6; margin-top: 8px; max-width: 200px;">
+          How we move from first call to shipped product.
+        </p>
+      </div>
+
+      <div style="grid-column: 5 / -1;" class="fade-up">
+
+        <div class="process-entry">
+          <div style="display: flex; gap: 28px; align-items: baseline;">
+            <span class="process-num">01</span>
+            <div>
+              <h3 class="process-title">Discovery</h3>
+              <p style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: rgba(17,17,17,0.4); margin: 4px 0 12px; text-transform: uppercase;">2 – 3 days</p>
+              <p class="body-text" style="font-size: 14px; color: rgba(17,17,17,0.7); max-width: 520px; line-height: 1.7;">
+                We interview stakeholders, review analytics, and map the revenue model. The output is a one-page brief: what we build, why, and what success looks like numerically. If we cannot agree on that brief, we do not proceed.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="process-entry">
+          <div style="display: flex; gap: 28px; align-items: baseline;">
+            <span class="process-num">02</span>
+            <div>
+              <h3 class="process-title">Architecture</h3>
+              <p style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: rgba(17,17,17,0.4); margin: 4px 0 12px; text-transform: uppercase;">3 – 5 days</p>
+              <p class="body-text" style="font-size: 14px; color: rgba(17,17,17,0.7); max-width: 520px; line-height: 1.7;">
+                System design, stack selection, data model, integration map. We choose the simplest architecture that meets the requirements — not the most impressive one. Complexity is a cost, not a feature.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="process-entry">
+          <div style="display: flex; gap: 28px; align-items: baseline;">
+            <span class="process-num">03</span>
+            <div>
+              <h3 class="process-title">Sprint Build</h3>
+              <p style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: rgba(17,17,17,0.4); margin: 4px 0 12px; text-transform: uppercase;">1 – 4 weeks</p>
+              <p class="body-text" style="font-size: 14px; color: rgba(17,17,17,0.7); max-width: 520px; line-height: 1.7;">
+                Execution in focused sprints with weekly check-ins. Working software at the end of every sprint — no month-long silences followed by a demo. You see progress continuously.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="process-entry">
+          <div style="display: flex; gap: 28px; align-items: baseline;">
+            <span class="process-num">04</span>
+            <div>
+              <h3 class="process-title">Handoff</h3>
+              <p style="font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.1em; color: rgba(17,17,17,0.4); margin: 4px 0 12px; text-transform: uppercase;">2 – 3 days</p>
+              <p class="body-text" style="font-size: 14px; color: rgba(17,17,17,0.7); max-width: 520px; line-height: 1.7;">
+                Documentation, runbooks, recorded walkthroughs. Your team owns it completely. We remain available for questions for 30 days post-launch at no additional charge.
+              </p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- MANIFESTO PULL-QUOTE -->
+  <section style="border-top: 1px solid rgba(17,17,17,0.22); border-bottom: 1px solid rgba(17,17,17,0.22); padding: 100px 0;">
+    <div class="grid-container">
+      <div style="grid-column: 2 / 12;" class="fade-up">
+        <div style="display: flex; align-items: flex-start; gap: 0;">
+          <span style="font-family: 'Newsreader', Georgia, serif; font-size: 96px; line-height: 0.7; color: #C8102E; margin-right: 4px; margin-top: 8px; flex-shrink: 0;">"</span>
+          <div>
+            <p class="manifesto-quote">
+              Мы не делаем «сайты». Мы строим инструменты, которые приносят бизнесу деньги.
+            </p>
+            <div style="margin-top: 36px; display: flex; align-items: center; gap: 16px;">
+              <div style="width: 32px; height: 1px; background: rgba(17,17,17,0.35);"></div>
+              <span style="font-family: 'Inter Tight', sans-serif; font-size: 13px; color: rgba(17,17,17,0.5); letter-spacing: 0.06em;">Alex &amp; Nikolay, STUDIO, 2026</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CONTACT -->
+  <section id="contact" class="section-pad" style="padding: 120px 0 100px;">
+    <div class="grid-container">
+      <div style="grid-column: 1 / -1; margin-bottom: 64px;" class="fade-up">
+        <span class="section-label">04 — Contact</span>
+        <h2 class="contact-headline">Got a<br />project?</h2>
+      </div>
+
+      <div style="grid-column: 1 / 7;" class="fade-up">
+        <div style="margin-bottom: 32px;">
+          <div class="label-mono" style="color: rgba(17,17,17,0.42); margin-bottom: 10px;">Email</div>
+          <a href="mailto:hello@studio.dev" class="contact-email">hello@studio.dev</a>
+        </div>
+        <div style="margin-bottom: 48px;">
+          <div class="label-mono" style="color: rgba(17,17,17,0.42); margin-bottom: 10px;">Telegram</div>
+          <a href="https://t.me/studio_dev" class="contact-tg">@studio_dev →</a>
+        </div>
+        <p style="font-family: 'Inter Tight', sans-serif; font-size: 13px; color: rgba(17,17,17,0.5); line-height: 1.7; max-width: 360px;">
+          Tell us briefly what you are building and what problem it needs to solve. We respond within one business day. No pitch deck required.
+        </p>
+      </div>
+
+      <div style="grid-column: 9 / -1; border-left: 1px solid rgba(17,17,17,0.18); padding-left: 32px;" class="fade-up">
+        <div style="display: flex; flex-direction: column; gap: 24px;">
+          <div>
+            <div class="label-mono" style="color: rgba(17,17,17,0.42); margin-bottom: 6px;">Current availability</div>
+            <p style="font-family: 'Inter Tight', sans-serif; font-size: 15px; font-weight: 500; color: #111;">
+              <span style="display: inline-flex; align-items: center; gap: 8px;">
+                <span style="width: 7px; height: 7px; background: #111; border-radius: 50%; display: inline-block; flex-shrink: 0;"></span>
+                Open for Q3 2026
+              </span>
+            </p>
+          </div>
+          <div>
+            <div class="label-mono" style="color: rgba(17,17,17,0.42); margin-bottom: 6px;">Typical project size</div>
+            <p style="font-family: 'Inter Tight', sans-serif; font-size: 14px; color: rgba(17,17,17,0.7);">$3,000 – $25,000 USD</p>
+          </div>
+          <div>
+            <div class="label-mono" style="color: rgba(17,17,17,0.42); margin-bottom: 6px;">Typical timeline</div>
+            <p style="font-family: 'Inter Tight', sans-serif; font-size: 14px; color: rgba(17,17,17,0.7);">2 – 8 weeks from first call</p>
+          </div>
+          <div>
+            <div class="label-mono" style="color: rgba(17,17,17,0.42); margin-bottom: 6px;">Working languages</div>
+            <p style="font-family: 'Inter Tight', sans-serif; font-size: 14px; color: rgba(17,17,17,0.7);">English · Russian</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="grid-container">
+      <div style="grid-column: 1 / 5;">
+        <p style="font-family: 'Inter Tight', sans-serif; font-size: 12px; color: rgba(17,17,17,0.45); letter-spacing: 0.04em;">
+          &copy; 2026 STUDIO
+        </p>
+      </div>
+      <div style="grid-column: 5 / 9; text-align: center;">
+        <p style="font-family: 'Inter Tight', sans-serif; font-size: 12px; color: rgba(17,17,17,0.45); letter-spacing: 0.04em;">
+          Made in transit — Phuket &times; Bangkok
+        </p>
+      </div>
+      <div style="grid-column: 9 / -1; text-align: right;">
+        <p style="font-family: 'Inter Tight', sans-serif; font-size: 12px; color: rgba(17,17,17,0.45); letter-spacing: 0.04em;">
+          Crafted by Alex &times; Nikolay
+        </p>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Scroll fade-up observer -->
+  <script>
+    (function () {
+      var els = document.querySelectorAll('.fade-up');
+      if (!('IntersectionObserver' in window)) {
+        els.forEach(function (el) { el.classList.add('visible'); });
+        return;
+      }
+      var observer = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('visible');
+            observer.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.08, rootMargin: '0px 0px -32px 0px' });
+      els.forEach(function (el) { observer.observe(el); });
+    })();
+  </script>
+
+</body>
+</html>

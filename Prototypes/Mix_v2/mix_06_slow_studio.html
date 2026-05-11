@@ -1,0 +1,836 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STUDIO — Slow Craft, Since 2026</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cabinet+Grotesk:wght@400;500;600;700;800&family=Newsreader:ital,wght@0,400;0,500;1,400;1,500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          'ink':       '#14110D',
+          'surface':   '#1B1812',
+          'border':    '#2D2A23',
+          'text':      '#F0EBDB',
+          'muted':     '#95897A',
+          'accent':    '#E67E2C',
+          'gold':      '#B8956A',
+        },
+        fontFamily: {
+          display: ['"Cabinet Grotesk"', 'sans-serif'],
+          editorial: ['"Newsreader"', 'serif'],
+          mono: ['"JetBrains Mono"', 'monospace'],
+        },
+      }
+    }
+  }
+</script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background-color: #14110D;
+    color: #F0EBDB;
+    font-family: 'JetBrains Mono', monospace;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+
+  /* Ghost button system */
+  .btn-ghost {
+    display: inline-block;
+    padding: 10px 24px;
+    border: 1.5px solid #2D2A23;
+    color: #F0EBDB;
+    background: transparent;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    text-decoration: none;
+    transition: border-color 140ms cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 140ms cubic-bezier(0.4, 0, 0.2, 1),
+                transform 140ms cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+
+  .btn-ghost:hover {
+    border-color: #E67E2C;
+    box-shadow: 4px 4px 0 #E67E2C;
+    transform: translate(-4px, -4px);
+  }
+
+  .btn-ghost-primary {
+    display: inline-block;
+    padding: 10px 24px;
+    border: 1.5px solid #2D2A23;
+    color: #E67E2C;
+    background: transparent;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    letter-spacing: 0.04em;
+    text-decoration: none;
+    transition: border-color 140ms cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 140ms cubic-bezier(0.4, 0, 0.2, 1),
+                transform 140ms cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+  }
+
+  .btn-ghost-primary:hover {
+    border-color: #E67E2C;
+    box-shadow: 4px 4px 0 #E67E2C;
+    transform: translate(-4px, -4px);
+  }
+
+  /* Drop cap */
+  .editorial-body p:first-of-type::first-letter {
+    font-family: 'Cabinet Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 4.5rem;
+    line-height: 0.8;
+    float: left;
+    margin-right: 10px;
+    margin-top: 6px;
+    color: #F0EBDB;
+  }
+
+  /* Hairline dividers */
+  .gold-hairline {
+    border: none;
+    border-top: 1px solid #B8956A;
+    opacity: 0.35;
+  }
+
+  /* Fade-up animation */
+  .fade-up {
+    opacity: 0;
+    transform: translateY(28px);
+    transition: opacity 700ms cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                transform 700ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+  .fade-up.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* Staggered children */
+  .stagger > * { transition-delay: calc(var(--i, 0) * 100ms); }
+
+  /* Editorial link */
+  .editorial-link {
+    color: #F0EBDB;
+    text-decoration: underline;
+    text-decoration-color: #B8956A;
+    text-underline-offset: 3px;
+    transition: color 200ms cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                text-decoration-color 200ms cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+  .editorial-link:hover {
+    color: #E67E2C;
+    text-decoration-color: #E67E2C;
+  }
+
+  /* Three.js canvas container */
+  #sculpture-container {
+    width: 100%;
+    height: 100%;
+    min-height: 340px;
+  }
+  #sculpture-container canvas {
+    display: block;
+    width: 100% !important;
+    height: 100% !important;
+  }
+
+  /* Manifesto brackets */
+  .manifesto-bracket {
+    position: absolute;
+    width: 32px;
+    height: 32px;
+    border-color: #B8956A;
+    opacity: 0.5;
+  }
+  .bracket-tl { top: 0; left: 0; border-top: 1px solid; border-left: 1px solid; }
+  .bracket-tr { top: 0; right: 0; border-top: 1px solid; border-right: 1px solid; }
+  .bracket-bl { bottom: 0; left: 0; border-bottom: 1px solid; border-left: 1px solid; }
+  .bracket-br { bottom: 0; right: 0; border-bottom: 1px solid; border-right: 1px solid; }
+
+  /* Metric chip */
+  .metric-chip {
+    display: inline-block;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    padding: 3px 10px;
+    border: 1px solid #E67E2C;
+    color: #E67E2C;
+  }
+
+  /* Gold chip */
+  .gold-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: #B8956A;
+    border: 1px solid #B8956A;
+    padding: 4px 12px;
+    opacity: 0.85;
+  }
+
+  /* Work case gradient previews */
+  .case-preview-1 {
+    background: linear-gradient(135deg, #2A1F14 0%, #3D2910 35%, #1E1A14 70%, #2D2218 100%);
+  }
+  .case-preview-2 {
+    background: linear-gradient(135deg, #1A1F18 0%, #2C3320 35%, #1D2217 70%, #252B1E 100%);
+  }
+  .case-preview-3 {
+    background: linear-gradient(135deg, #201A0E 0%, #352915 35%, #2A2010 70%, #1C1810 100%);
+  }
+
+  /* Responsive adjustments */
+  @media (max-width: 768px) {
+    #sculpture-container { min-height: 260px; }
+    .editorial-body p:first-of-type::first-letter {
+      font-size: 3.5rem;
+    }
+  }
+
+  /* Nav backdrop */
+  nav {
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  /* Section number prefix */
+  .section-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: #B8956A;
+    letter-spacing: 0.12em;
+  }
+
+  /* Stat number style */
+  .stat-num {
+    font-family: 'Cabinet Grotesk', sans-serif;
+    font-weight: 600;
+    font-size: clamp(52px, 6vw, 80px);
+    color: #F0EBDB;
+    line-height: 1;
+    letter-spacing: -0.02em;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: #14110D; }
+  ::-webkit-scrollbar-thumb { background: #2D2A23; }
+  ::-webkit-scrollbar-thumb:hover { background: #B8956A; }
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="fixed top-0 left-0 right-0 z-50 border-b border-border bg-ink/90">
+  <div class="max-w-7xl mx-auto px-6 md:px-10 h-14 flex items-center justify-between">
+    <a href="#" class="font-display font-700 text-base tracking-widest text-text uppercase">
+      Studio
+    </a>
+    <div class="hidden md:flex items-center gap-8">
+      <a href="#about" class="font-mono text-xs text-muted hover:text-text transition-colors duration-200 tracking-wider">about</a>
+      <a href="#capabilities" class="font-mono text-xs text-muted hover:text-text transition-colors duration-200 tracking-wider">work</a>
+      <a href="#process" class="font-mono text-xs text-muted hover:text-text transition-colors duration-200 tracking-wider">process</a>
+    </div>
+    <a href="#contact" class="btn-ghost text-xs">talk to us</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section id="hero" class="min-h-screen pt-14 flex items-center">
+  <div class="max-w-7xl mx-auto px-6 md:px-10 w-full py-20 md:py-28">
+    <div class="flex flex-col md:flex-row gap-12 md:gap-8 items-center">
+
+      <!-- Left 60% -->
+      <div class="w-full md:w-[58%] fade-up">
+        <div class="gold-chip mb-10">
+          <span style="color:#E67E2C; font-size:8px;">&#9711;</span>
+          slow craft, since 2026
+        </div>
+
+        <h1 class="font-display font-700 text-text leading-none tracking-tight mb-8"
+            style="font-size: clamp(48px, 6.5vw, 96px); letter-spacing: -0.025em; line-height: 1.0;">
+          We make software the way a luthier makes&nbsp;a&nbsp;violin.
+        </h1>
+
+        <p class="font-editorial italic text-muted mb-10"
+           style="font-size: 18px; line-height: 1.65; max-width: 480px;">
+          Each project is a singular object. We think before we type, we finish before we ship, and we stand behind what we build long after the invoice is paid.
+        </p>
+
+        <div class="flex flex-wrap gap-4">
+          <a href="#capabilities" class="btn-ghost">our work</a>
+          <a href="#contact" class="btn-ghost">start a project</a>
+        </div>
+      </div>
+
+      <!-- Right 40% — 3D sculpture -->
+      <div class="w-full md:w-[42%] flex items-center justify-center fade-up" style="transition-delay: 200ms;">
+        <div id="sculpture-container" class="relative"
+             style="width: 100%; max-width: 480px; height: clamp(280px, 40vh, 460px);">
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- HAIRLINE -->
+<div class="max-w-7xl mx-auto px-6 md:px-10"><hr class="gold-hairline"></div>
+
+<!-- ABOUT LETTER -->
+<section id="about" class="py-20 md:py-28">
+  <div class="max-w-7xl mx-auto px-6 md:px-10">
+    <div class="fade-up mb-10">
+      <span class="section-num">00 / About</span>
+    </div>
+    <div class="editorial-body grid grid-cols-1 md:grid-cols-2 gap-10 md:gap-16 fade-up" style="transition-delay: 100ms;">
+      <div>
+        <p class="font-editorial text-text mb-5" style="font-size: 18px; line-height: 1.65; text-align: justify;">
+          We are a small studio — two people, no middlemen, no handoffs. Alex architects systems that last. Nikolay shapes interfaces that think. Together we take on work that demands both precision and patience: platforms for founders who understand that software is infrastructure, not decoration.
+        </p>
+        <p class="font-editorial text-text mb-5" style="font-size: 18px; line-height: 1.65; text-align: justify;">
+          We do not rush. We have watched too many beautiful projects erode under deadline panic and feature creep. Every engagement starts with a listening period — we call it the quiet phase — where we ask questions other studios never think to ask.
+        </p>
+      </div>
+      <div>
+        <p class="font-editorial text-text mb-5" style="font-size: 18px; line-height: 1.65; text-align: justify;">
+          Our interest is in AI automation as a craftsman's tool, not a replacement for thought. We build pipelines that augment teams, interfaces that make complex data legible, and web systems that hold up under scrutiny. We do not sell templates or off-the-shelf solutions. We build things that are specific to your problem.
+        </p>
+        <p class="font-editorial text-text mb-5" style="font-size: 18px; line-height: 1.65; text-align: justify;">
+          Сделано вдумчиво. We are not in a hurry, and we believe the work shows it. If you have read this far, we are probably a good match.
+        </p>
+        <p class="font-editorial italic text-muted mt-8" style="font-size: 16px;">
+          &mdash; Alex &times; Nikolay
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- HAIRLINE -->
+<div class="max-w-7xl mx-auto px-6 md:px-10"><hr class="gold-hairline"></div>
+
+<!-- CAPABILITIES -->
+<section id="capabilities" class="py-20 md:py-28">
+  <div class="max-w-7xl mx-auto px-6 md:px-10">
+
+    <div class="fade-up mb-14">
+      <span class="section-num block mb-3">disciplines</span>
+      <h2 class="font-display font-700 text-text" style="font-size: clamp(28px, 3vw, 40px); letter-spacing: -0.02em;">
+        What we actually do.
+      </h2>
+    </div>
+
+    <!-- Capability 01 -->
+    <div class="fade-up py-10 border-t border-border" style="transition-delay: 0ms;">
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-6">
+        <div class="md:col-span-1">
+          <span class="section-num">01</span>
+        </div>
+        <div class="md:col-span-3">
+          <h3 class="font-display font-700 text-text" style="font-size: 28px; letter-spacing: -0.015em;">
+            Web Engineering
+          </h3>
+        </div>
+        <div class="md:col-span-5">
+          <p class="font-editorial text-muted" style="font-size: 17px; line-height: 1.65;">
+            Bespoke web applications and platforms. We favour server-rendered architecture with progressive enhancement — fast by default, accessible by construction, maintainable by discipline. From data-heavy dashboards to customer-facing products.
+          </p>
+        </div>
+        <div class="md:col-span-3 flex flex-wrap content-start gap-2 pt-1">
+          <span class="font-mono text-xs text-muted border border-border px-2 py-1">Next.js</span>
+          <span class="font-mono text-xs text-muted border border-border px-2 py-1">TypeScript</span>
+          <span class="font-mono text-xs text-muted border border-border px-2 py-1">PostgreSQL</span>
+          <span class="font-mono text-xs text-muted border border-border px-2 py-1">Supabase</span>
+          <span class="font-mono text-xs text-muted border border-border px-2 py-1">Tailwind</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Capability 02 -->
+    <div class="fade-up py-10 border-t border-border" style="transition-delay: 100ms;">
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-6">
+        <div class="md:col-span-1">
+          <span class="section-num">02</span>
+        </div>
+        <div class="md:col-span-3">
+          <h3 class="font-display font-700 text-text" style="font-size: 28px; letter-spacing: -0.015em;">
+            AI Automation
+          </h3>
+        </div>
+        <div class="md:col-span-5">
+          <p class="font-editorial text-muted" style="font-size: 17px; line-height: 1.65;">
+            Intelligent pipelines that do the work no one should be doing manually. Document processing, content generation, research agents, CRM enrichment, internal tooling powered by language models. Built to integrate with what you already have.
+          </p>
+        </div>
+        <div class="md:col-span-3 flex flex-wrap content-start gap-2 pt-1">
+          <span class="font-mono text-xs text-muted border border-border px-2 py-1">Claude API</span>
+          <span class="font-mono text-xs text-muted border border-border px-2 py-1">LangChain</span>
+          <span class="font-mono text-xs text-muted border border-border px-2 py-1">n8n</span>
+          <span class="font-mono text-xs text-muted border border-border px-2 py-1">Python</span>
+          <span class="font-mono text-xs text-muted border border-border px-2 py-1">RAG</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Capability 03 -->
+    <div class="fade-up py-10 border-t border-b border-border" style="transition-delay: 200ms;">
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-6">
+        <div class="md:col-span-1">
+          <span class="section-num">03</span>
+        </div>
+        <div class="md:col-span-3">
+          <h3 class="font-display font-700 text-text" style="font-size: 28px; letter-spacing: -0.015em;">
+            Product Design
+          </h3>
+        </div>
+        <div class="md:col-span-5">
+          <p class="font-editorial text-muted" style="font-size: 17px; line-height: 1.65;">
+            Interfaces that respect the intelligence of their users. We design for clarity first, aesthetic second. Every decision traces back to a task someone needs to complete. No decoration without function. Figma systems that developers can actually build from.
+          </p>
+        </div>
+        <div class="md:col-span-3 flex flex-wrap content-start gap-2 pt-1">
+          <span class="font-mono text-xs text-muted border border-border px-2 py-1">Figma</span>
+          <span class="font-mono text-xs text-muted border border-border px-2 py-1">Design Systems</span>
+          <span class="font-mono text-xs text-muted border border-border px-2 py-1">Prototyping</span>
+          <span class="font-mono text-xs text-muted border border-border px-2 py-1">UX Audit</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- WORK -->
+<section id="work" class="py-20 md:py-28 bg-surface">
+  <div class="max-w-7xl mx-auto px-6 md:px-10">
+
+    <div class="fade-up mb-14">
+      <span class="section-num block mb-3">selected work</span>
+      <h2 class="font-display font-700 text-text" style="font-size: clamp(28px, 3vw, 40px); letter-spacing: -0.02em;">
+        Things we finished.
+      </h2>
+    </div>
+
+    <!-- Case 01 -->
+    <div class="fade-up mb-16 pb-16 border-b border-border">
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-8">
+        <div class="md:col-span-5">
+          <div class="case-preview-1 w-full aspect-video mb-0 relative overflow-hidden"
+               style="border: 1px solid #2D2A23;">
+            <div class="absolute inset-0 flex items-end p-6">
+              <div>
+                <span class="font-mono text-xs" style="color:#B8956A; letter-spacing:0.1em;">TRADING INFRASTRUCTURE</span>
+              </div>
+            </div>
+            <!-- Decorative lines suggesting an interface -->
+            <svg class="absolute inset-0 w-full h-full opacity-20" viewBox="0 0 400 225" preserveAspectRatio="none">
+              <line x1="0" y1="80" x2="400" y2="80" stroke="#B8956A" stroke-width="0.5"/>
+              <line x1="0" y1="140" x2="400" y2="140" stroke="#B8956A" stroke-width="0.5"/>
+              <polyline points="0,160 60,130 120,145 180,100 240,120 300,90 360,105 400,95" fill="none" stroke="#E67E2C" stroke-width="1.5"/>
+              <line x1="40" y1="40" x2="40" y2="185" stroke="#2D2A23" stroke-width="0.5"/>
+              <line x1="120" y1="40" x2="120" y2="185" stroke="#2D2A23" stroke-width="0.5"/>
+              <line x1="200" y1="40" x2="200" y2="185" stroke="#2D2A23" stroke-width="0.5"/>
+              <line x1="280" y1="40" x2="280" y2="185" stroke="#2D2A23" stroke-width="0.5"/>
+              <line x1="360" y1="40" x2="360" y2="185" stroke="#2D2A23" stroke-width="0.5"/>
+            </svg>
+          </div>
+        </div>
+        <div class="md:col-span-7 flex flex-col justify-center">
+          <span class="font-mono text-xs text-muted mb-3 tracking-wider">Quantara — 2025</span>
+          <h3 class="font-display font-700 text-text mb-4" style="font-size: clamp(22px, 2.5vw, 34px); letter-spacing: -0.015em; line-height: 1.1;">
+            Algorithmic Trading Platform with Real-Time Risk Dashboard
+          </h3>
+          <p class="font-editorial text-muted mb-5" style="font-size: 17px; line-height: 1.6;">
+            A full-stack web platform for a proprietary trading desk. Complex instrument hierarchies, live P&L aggregation, and a position management interface that replaces six spreadsheets and two legacy systems.
+          </p>
+          <div class="flex flex-wrap gap-3">
+            <span class="metric-chip">+40% decision speed</span>
+            <span class="metric-chip">real-time at 500ms</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Case 02 -->
+    <div class="fade-up mb-16 pb-16 border-b border-border" style="transition-delay: 100ms;">
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-8">
+        <div class="md:col-span-5">
+          <div class="case-preview-2 w-full aspect-video relative overflow-hidden"
+               style="border: 1px solid #2D2A23;">
+            <div class="absolute inset-0 flex items-end p-6">
+              <span class="font-mono text-xs" style="color:#B8956A; letter-spacing:0.1em;">AI DOCUMENT PIPELINE</span>
+            </div>
+            <svg class="absolute inset-0 w-full h-full opacity-20" viewBox="0 0 400 225" preserveAspectRatio="none">
+              <rect x="30" y="30" width="100" height="130" rx="2" fill="none" stroke="#B8956A" stroke-width="0.75"/>
+              <line x1="45" y1="60" x2="115" y2="60" stroke="#2D2A23" stroke-width="0.5"/>
+              <line x1="45" y1="75" x2="115" y2="75" stroke="#2D2A23" stroke-width="0.5"/>
+              <line x1="45" y1="90" x2="95" y2="90" stroke="#2D2A23" stroke-width="0.5"/>
+              <line x1="45" y1="105" x2="115" y2="105" stroke="#2D2A23" stroke-width="0.5"/>
+              <line x1="45" y1="120" x2="80" y2="120" stroke="#2D2A23" stroke-width="0.5"/>
+              <path d="M 145 95 L 175 95" stroke="#E67E2C" stroke-width="1" marker-end="url(#arr)"/>
+              <rect x="190" y="60" width="80" height="70" rx="2" fill="none" stroke="#E67E2C" stroke-width="0.75"/>
+              <text x="230" y="100" text-anchor="middle" fill="#E67E2C" font-size="9" font-family="monospace">AI</text>
+              <path d="M 285 95 L 315 95" stroke="#E67E2C" stroke-width="1"/>
+              <rect x="315" y="70" width="60" height="50" rx="2" fill="none" stroke="#B8956A" stroke-width="0.75"/>
+              <line x1="323" y1="88" x2="367" y2="88" stroke="#2D2A23" stroke-width="0.5"/>
+              <line x1="323" y1="98" x2="355" y2="98" stroke="#2D2A23" stroke-width="0.5"/>
+              <line x1="323" y1="108" x2="367" y2="108" stroke="#2D2A23" stroke-width="0.5"/>
+            </svg>
+          </div>
+        </div>
+        <div class="md:col-span-7 flex flex-col justify-center">
+          <span class="font-mono text-xs text-muted mb-3 tracking-wider">LexCore — 2025</span>
+          <h3 class="font-display font-700 text-text mb-4" style="font-size: clamp(22px, 2.5vw, 34px); letter-spacing: -0.015em; line-height: 1.1;">
+            Contract Intelligence Automation for a Legal Operations Team
+          </h3>
+          <p class="font-editorial text-muted mb-5" style="font-size: 17px; line-height: 1.6;">
+            An AI pipeline that reads, classifies, and extracts structured data from legal documents at scale. Integrated into their existing workflow without disrupting a single paralegal. Клиент назвал это «тихой революцией».
+          </p>
+          <div class="flex flex-wrap gap-3">
+            <span class="metric-chip">12 min &rarr; 45 sec</span>
+            <span class="metric-chip">94% extraction accuracy</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Case 03 -->
+    <div class="fade-up" style="transition-delay: 200ms;">
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-8">
+        <div class="md:col-span-5">
+          <div class="case-preview-3 w-full aspect-video relative overflow-hidden"
+               style="border: 1px solid #2D2A23;">
+            <div class="absolute inset-0 flex items-end p-6">
+              <span class="font-mono text-xs" style="color:#B8956A; letter-spacing:0.1em;">FOUNDER TOOL</span>
+            </div>
+            <svg class="absolute inset-0 w-full h-full opacity-20" viewBox="0 0 400 225" preserveAspectRatio="none">
+              <circle cx="200" cy="112" r="60" fill="none" stroke="#B8956A" stroke-width="0.75"/>
+              <circle cx="200" cy="112" r="40" fill="none" stroke="#2D2A23" stroke-width="0.5"/>
+              <circle cx="200" cy="112" r="20" fill="none" stroke="#E67E2C" stroke-width="0.75"/>
+              <line x1="200" y1="52" x2="200" y2="172" stroke="#2D2A23" stroke-width="0.5"/>
+              <line x1="140" y1="112" x2="260" y2="112" stroke="#2D2A23" stroke-width="0.5"/>
+              <circle cx="200" cy="70" r="3" fill="#E67E2C"/>
+              <circle cx="238" cy="98" r="3" fill="#B8956A"/>
+              <circle cx="162" cy="130" r="3" fill="#B8956A"/>
+              <circle cx="228" cy="140" r="3" fill="#E67E2C"/>
+            </svg>
+          </div>
+        </div>
+        <div class="md:col-span-7 flex flex-col justify-center">
+          <span class="font-mono text-xs text-muted mb-3 tracking-wider">Meridian — 2026</span>
+          <h3 class="font-display font-700 text-text mb-4" style="font-size: clamp(22px, 2.5vw, 34px); letter-spacing: -0.015em; line-height: 1.1;">
+            Market Research Platform for Early-Stage Founders
+          </h3>
+          <p class="font-editorial text-muted mb-5" style="font-size: 17px; line-height: 1.6;">
+            A tool that aggregates signals from news, regulatory filings, and competitor activity, and surfaces them in a weekly digest. Built in eight weeks. Shipped without a single post-launch bug report in the first month.
+          </p>
+          <div class="flex flex-wrap gap-3">
+            <span class="metric-chip">8 weeks to launch</span>
+            <span class="metric-chip">zero P0 bugs</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- PROCESS -->
+<section id="process" class="py-20 md:py-28">
+  <div class="max-w-7xl mx-auto px-6 md:px-10">
+
+    <div class="fade-up mb-14">
+      <span class="section-num block mb-3">how we work</span>
+      <h2 class="font-display font-700 text-text" style="font-size: clamp(28px, 3vw, 40px); letter-spacing: -0.02em;">
+        Не торопимся.
+      </h2>
+    </div>
+
+    <div class="max-w-3xl">
+
+      <div class="fade-up py-10 border-t border-border" style="transition-delay: 0ms;">
+        <span class="section-num block mb-4">01</span>
+        <p class="font-editorial text-text" style="font-size: 18px; line-height: 1.7;">
+          We begin by listening. Before the first line of code, we spend time understanding the problem as it actually exists — not the brief version, not the optimistic version, but the version with all its constraints and contradictions. This phase takes as long as it takes.
+        </p>
+      </div>
+
+      <div class="fade-up py-10 border-t border-border" style="transition-delay: 100ms;">
+        <span class="section-num block mb-4">02</span>
+        <p class="font-editorial text-text" style="font-size: 18px; line-height: 1.7;">
+          We write a specification. Not a proposal, not a feature list — a document that describes the system's intended behaviour in plain language. You can read it, question it, and sign off on it. We do not start building until this document is settled.
+        </p>
+      </div>
+
+      <div class="fade-up py-10 border-t border-border" style="transition-delay: 200ms;">
+        <span class="section-num block mb-4">03</span>
+        <p class="font-editorial text-text" style="font-size: 18px; line-height: 1.7;">
+          We build in short, demonstrable increments. Every week, you see working software. Not screenshots, not mockups — the actual thing, running. You give us feedback in the context of real use, not imagination. This produces better outcomes than long silences punctuated by big reveals.
+        </p>
+      </div>
+
+      <div class="fade-up py-10 border-t border-b border-border" style="transition-delay: 300ms;">
+        <span class="section-num block mb-4">04</span>
+        <p class="font-editorial text-text" style="font-size: 18px; line-height: 1.7;">
+          We hand over ownership. Documentation, source code, infrastructure access — everything that belongs to you is yours, fully and without caveat. We do not build dependencies on our tools or our goodwill. The relationship continues because it is valuable, not because you are locked in.
+        </p>
+      </div>
+
+    </div>
+
+  </div>
+</section>
+
+<!-- STATS -->
+<section class="py-20 md:py-28 bg-surface border-t border-b border-border">
+  <div class="max-w-7xl mx-auto px-6 md:px-10">
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-10 md:gap-6">
+
+      <div class="fade-up text-center" style="transition-delay: 0ms;">
+        <div class="stat-num">12</div>
+        <div class="font-mono text-xs text-muted mt-3 tracking-wider">projects shipped</div>
+      </div>
+
+      <div class="fade-up text-center" style="transition-delay: 100ms;">
+        <div class="stat-num">100%</div>
+        <div class="font-mono text-xs text-muted mt-3 tracking-wider">on-time delivery</div>
+      </div>
+
+      <div class="fade-up text-center" style="transition-delay: 200ms;">
+        <div class="stat-num">8</div>
+        <div class="font-mono text-xs text-muted mt-3 tracking-wider">returning clients</div>
+      </div>
+
+      <div class="fade-up text-center" style="transition-delay: 300ms;">
+        <div class="stat-num">0</div>
+        <div class="font-mono text-xs text-muted mt-3 tracking-wider">vendor lock-ins</div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<!-- MANIFESTO -->
+<section class="py-24 md:py-36 relative overflow-hidden">
+  <div class="max-w-4xl mx-auto px-6 md:px-10 relative">
+    <div class="relative fade-up px-12 py-14 md:px-20 md:py-20">
+      <div class="manifesto-bracket bracket-tl"></div>
+      <div class="manifesto-bracket bracket-tr"></div>
+      <div class="manifesto-bracket bracket-bl"></div>
+      <div class="manifesto-bracket bracket-br"></div>
+      <p class="font-editorial italic text-text text-center" style="font-size: clamp(22px, 3.5vw, 40px); line-height: 1.55;">
+        "We work patiently. We finish what we start. We do not pitch — we build. Good software is a slow conversation between a problem and a solution, and we are in no hurry to end it."
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- CONTACT -->
+<section id="contact" class="py-20 md:py-28 bg-surface border-t border-border">
+  <div class="max-w-7xl mx-auto px-6 md:px-10">
+    <div class="max-w-2xl fade-up">
+      <span class="section-num block mb-6">contact</span>
+      <h2 class="font-editorial font-400 text-text mb-8" style="font-size: clamp(28px, 3vw, 44px); line-height: 1.25;">
+        Let's start a conversation.
+      </h2>
+      <p class="font-editorial text-muted mb-10" style="font-size: 18px; line-height: 1.65;">
+        We take on a small number of new projects each quarter. If what you have read here resonates with the kind of work you need done, we would like to hear from you. No intake form, no discovery call with a sales person. Write to us directly.
+      </p>
+      <p class="font-editorial text-text mb-10" style="font-size: 17px; line-height: 1.7;">
+        Reach us by email at
+        <a href="mailto:hello@studio.build" class="editorial-link">hello@studio.build</a>,
+        or find us on Telegram at
+        <a href="https://t.me/studio_build" class="editorial-link">@studio_build</a>.
+        We respond to every message personally, usually within one working day.
+      </p>
+      <a href="mailto:hello@studio.build" class="btn-ghost-primary">begin here &rarr;</a>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer class="py-14 border-t border-border">
+  <div class="max-w-7xl mx-auto px-6 md:px-10">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-10">
+
+      <div>
+        <div class="font-display font-700 text-text text-sm tracking-widest uppercase mb-5">Studio</div>
+        <p class="font-mono text-xs text-muted leading-relaxed">
+          Web engineering<br>
+          AI automation<br>
+          Product design
+        </p>
+        <p class="font-mono text-xs mt-4" style="color:#B8956A;">сделано вдумчиво</p>
+      </div>
+
+      <div>
+        <div class="font-mono text-xs text-muted tracking-wider uppercase mb-5">Links</div>
+        <div class="space-y-2">
+          <div><a href="#about" class="font-mono text-xs text-muted hover:text-text transition-colors duration-200">about the studio</a></div>
+          <div><a href="#capabilities" class="font-mono text-xs text-muted hover:text-text transition-colors duration-200">our disciplines</a></div>
+          <div><a href="#work" class="font-mono text-xs text-muted hover:text-text transition-colors duration-200">selected work</a></div>
+          <div><a href="#process" class="font-mono text-xs text-muted hover:text-text transition-colors duration-200">how we work</a></div>
+          <div><a href="#contact" class="font-mono text-xs text-muted hover:text-text transition-colors duration-200">contact</a></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="font-mono text-xs text-muted tracking-wider uppercase mb-5">Contact</div>
+        <div class="space-y-2">
+          <div><a href="mailto:hello@studio.build" class="font-mono text-xs text-muted hover:text-text transition-colors duration-200">hello@studio.build</a></div>
+          <div><a href="https://t.me/studio_build" class="font-mono text-xs text-muted hover:text-text transition-colors duration-200">@studio_build</a></div>
+        </div>
+        <div class="mt-8">
+          <div class="font-mono text-xs text-muted tracking-wider uppercase mb-2">Location</div>
+          <div class="font-mono text-xs text-muted">Remote. Everywhere.</div>
+        </div>
+        <div class="mt-6">
+          <div class="font-mono text-xs" style="color:#2D2A23;">&copy; 2026 Studio</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</footer>
+
+<!-- THREE.JS WIREFRAME SCULPTURE -->
+<script type="module">
+  import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js';
+
+  const container = document.getElementById('sculpture-container');
+  if (!container) throw new Error('no container');
+
+  // Scene setup
+  const scene = new THREE.Scene();
+  scene.background = null;
+
+  const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 100);
+  camera.position.set(0, 0, 4.5);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(container.clientWidth, container.clientHeight);
+  renderer.setClearColor(0x000000, 0);
+  container.appendChild(renderer.domElement);
+
+  // Single wireframe icosahedron — the sculpture
+  const geometry = new THREE.IcosahedronGeometry(1.35, 0);
+
+  // Create wireframe edges from the geometry
+  const edges = new THREE.EdgesGeometry(geometry);
+  const material = new THREE.LineBasicMaterial({
+    color: 0xE67E2C,
+    transparent: true,
+    opacity: 0.85,
+  });
+  const sculpture = new THREE.LineSegments(edges, material);
+  scene.add(sculpture);
+
+  // Inner smaller icosahedron for depth
+  const innerEdges = new THREE.EdgesGeometry(new THREE.IcosahedronGeometry(0.75, 0));
+  const innerMaterial = new THREE.LineBasicMaterial({
+    color: 0xB8956A,
+    transparent: true,
+    opacity: 0.35,
+  });
+  const innerSculpture = new THREE.LineSegments(innerEdges, innerMaterial);
+  scene.add(innerSculpture);
+
+  // Animation state
+  let animating = true;
+  let rafId = null;
+
+  function animate(time) {
+    rafId = requestAnimationFrame(animate);
+
+    // Slow, meditative rotation — different speeds on Y and X
+    sculpture.rotation.y = time * 0.00004;
+    sculpture.rotation.x = time * 0.00002;
+
+    // Inner rotates opposite direction, slightly faster
+    innerSculpture.rotation.y = -time * 0.00006;
+    innerSculpture.rotation.x = time * 0.000025;
+
+    renderer.render(scene, camera);
+  }
+
+  animate(0);
+
+  // Resize handler
+  function onResize() {
+    if (!container) return;
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  }
+
+  window.addEventListener('resize', onResize);
+
+  // IntersectionObserver — pause when not visible
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        if (!animating) {
+          animating = true;
+          animate(performance.now());
+        }
+      } else {
+        animating = false;
+        if (rafId) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+      }
+    });
+  }, { threshold: 0.1 });
+
+  observer.observe(container);
+</script>
+
+<!-- INTERSECTION OBSERVER for fade-up sections -->
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const elements = document.querySelectorAll('.fade-up');
+
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+        }
+      });
+    }, {
+      threshold: 0.1,
+      rootMargin: '0px 0px -40px 0px'
+    });
+
+    elements.forEach(el => io.observe(el));
+  });
+</script>
+
+</body>
+</html>

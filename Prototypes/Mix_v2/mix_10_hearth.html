@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HEARTH STUDIO — Web Development & AI Automation</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cabinet+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;1,400&family=Newsreader:ital,wght@0,400;0,600;1,400;1,600&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            bg:        '#0E0807',
+            surface:   '#14100C',
+            hairline:  '#2A1F18',
+            cream:     '#F0E8D5',
+            mute:      '#9A8A75',
+            ember:     '#C44A35',
+            amber:     '#D9A057',
+            sage:      '#4A6B5C',
+            walnut:    '#1C140F',
+            tar:       '#080504',
+          },
+          fontFamily: {
+            cabinet: ['"Cabinet Grotesk"', 'sans-serif'],
+            mono:    ['"JetBrains Mono"', 'monospace'],
+            news:    ['"Newsreader"', 'serif'],
+          },
+        }
+      }
+    }
+  </script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background-color: #0E0807;
+      color: #F0E8D5;
+      font-family: '"JetBrains Mono"', monospace;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    /* ── Typography ── */
+    .font-cabinet { font-family: 'Cabinet Grotesk', sans-serif; }
+    .font-mono-jetb { font-family: 'JetBrains Mono', monospace; }
+    .font-news { font-family: 'Newsreader', serif; }
+
+    /* ── Canvas ── */
+    #ember-canvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+    }
+
+    /* ── Buttons ── */
+    .btn-primary {
+      display: inline-block;
+      padding: 14px 28px;
+      background: #F0E8D5;
+      color: #0E0807;
+      border: 3px solid #0E0807;
+      box-shadow: 5px 5px 0 #C44A35;
+      font-family: 'Cabinet Grotesk', sans-serif;
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1);
+      text-decoration: none;
+    }
+    .btn-primary:hover {
+      transform: translate(5px, 5px);
+      box-shadow: 0 0 0 #C44A35;
+    }
+
+    .btn-secondary {
+      display: inline-block;
+      padding: 13px 27px;
+      background: transparent;
+      color: #F0E8D5;
+      border: 2px solid #D9A057;
+      box-shadow: 4px 4px 0 #D9A057;
+      font-family: 'Cabinet Grotesk', sans-serif;
+      font-weight: 600;
+      font-size: 15px;
+      letter-spacing: 0.02em;
+      cursor: pointer;
+      transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1);
+      text-decoration: none;
+    }
+    .btn-secondary:hover {
+      transform: translate(4px, 4px);
+      box-shadow: 0 0 0 #D9A057;
+    }
+
+    .btn-nav {
+      display: inline-block;
+      padding: 10px 22px;
+      background: #F0E8D5;
+      color: #0E0807;
+      border: 2.5px solid #0E0807;
+      box-shadow: 4px 4px 0 #C44A35;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 600;
+      font-size: 12px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 220ms cubic-bezier(0.16, 1, 0.3, 1);
+      text-decoration: none;
+    }
+    .btn-nav:hover {
+      transform: translate(4px, 4px);
+      box-shadow: 0 0 0 #C44A35;
+    }
+
+    /* ── Capability hover underline ── */
+    .cap-title {
+      position: relative;
+      display: inline-block;
+    }
+    .cap-title::after {
+      content: '';
+      position: absolute;
+      left: 0;
+      bottom: -3px;
+      width: 0;
+      height: 2px;
+      background: #C44A35;
+      transition: width 320ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .cap-row:hover .cap-title::after {
+      width: 100%;
+    }
+
+    /* ── Drop cap ── */
+    .drop-cap::first-letter {
+      font-family: 'Cabinet Grotesk', sans-serif;
+      font-size: 4.5em;
+      font-weight: 700;
+      float: left;
+      line-height: 0.82;
+      margin-right: 10px;
+      margin-top: 6px;
+      color: #D9A057;
+    }
+
+    /* ── Fade up animation ── */
+    .fade-up {
+      opacity: 0;
+      transform: translateY(28px);
+      transition: opacity 600ms cubic-bezier(0.16, 1, 0.3, 1), transform 600ms cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .fade-up.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* ── Hairline ── */
+    .hl { border-color: #2A1F18; }
+    .hl-amber { border-color: #D9A057; }
+
+    /* ── Metric number ── */
+    .metric-num {
+      font-family: 'Cabinet Grotesk', sans-serif;
+      font-size: clamp(52px, 7vw, 72px);
+      font-weight: 600;
+      line-height: 1;
+      color: #F0E8D5;
+    }
+
+    /* ── Nav ember dot pulse ── */
+    @keyframes ember-pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.55; transform: scale(0.7); }
+    }
+    .ember-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #C44A35;
+      animation: ember-pulse 2.4s ease-in-out infinite;
+      display: inline-block;
+    }
+
+    /* ── Work case CSS art ── */
+    .case-art {
+      width: 100%;
+      height: 260px;
+      border: 1px solid #2A1F18;
+    }
+
+    /* ── Manifesto bracket ── */
+    .manifesto-bracket {
+      width: 60px;
+      height: 2px;
+      background: #D9A057;
+      display: inline-block;
+      vertical-align: middle;
+      margin: 0 20px;
+    }
+
+    /* ── Process paragraph ── */
+    .process-item + .process-item {
+      border-top: 1px solid #2A1F18;
+    }
+
+    /* ── Footer warm gradient ── */
+    .footer-gradient {
+      background: linear-gradient(90deg, #D9A057 0%, #1C140F 40%, #080504 100%);
+    }
+
+    /* ── Scrollbar ── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #0E0807; }
+    ::-webkit-scrollbar-thumb { background: #2A1F18; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #C44A35; }
+
+    /* ── Mobile adjustments ── */
+    @media (max-width: 768px) {
+      #ember-canvas { opacity: 0.6; }
+    }
+
+    /* ── Chip ── */
+    .chip {
+      display: inline-block;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      padding: 5px 12px;
+      border: 1px solid #2A1F18;
+      color: #9A8A75;
+      background: rgba(20,16,12,0.8);
+    }
+
+    .chip-ember {
+      display: inline-block;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      padding: 4px 10px;
+      border: 1px solid #C44A35;
+      color: #C44A35;
+      background: rgba(196,74,53,0.08);
+    }
+
+    .tag-mono {
+      display: inline-block;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      font-weight: 500;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      border: 1px solid #2A1F18;
+      color: #9A8A75;
+      margin: 3px 2px;
+    }
+
+  </style>
+</head>
+
+<body class="bg-bg text-cream">
+
+  <!-- ═══════════════════════════════════════════ NAV ═══ -->
+  <nav style="border-bottom: 1px solid #2A1F18; position: sticky; top: 0; z-index: 100; background: rgba(14,8,7,0.95); backdrop-filter: blur(12px);">
+    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+
+      <!-- Logo -->
+      <div class="flex items-center gap-3">
+        <span class="font-cabinet font-bold text-xl text-cream tracking-tight">HEARTH STUDIO</span>
+        <span class="ember-dot"></span>
+      </div>
+
+      <!-- Nav links (desktop) -->
+      <div class="hidden md:flex items-center gap-8">
+        <a href="#about" class="font-mono-jetb text-xs uppercase tracking-widest text-mute hover:text-cream transition-colors duration-200">About</a>
+        <a href="#capabilities" class="font-mono-jetb text-xs uppercase tracking-widest text-mute hover:text-cream transition-colors duration-200">Services</a>
+        <a href="#work" class="font-mono-jetb text-xs uppercase tracking-widest text-mute hover:text-cream transition-colors duration-200">Work</a>
+        <a href="#process" class="font-mono-jetb text-xs uppercase tracking-widest text-mute hover:text-cream transition-colors duration-200">Process</a>
+      </div>
+
+      <!-- CTA -->
+      <a href="#contact" class="btn-nav">talk to us &#9656;</a>
+    </div>
+  </nav>
+
+
+  <!-- ═══════════════════════════════════════════ HERO ═══ -->
+  <section id="hero" style="position: relative; min-height: 100vh; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+
+    <!-- Three.js canvas -->
+    <canvas id="ember-canvas"></canvas>
+
+    <!-- Gradient overlay bottom — legibility -->
+    <div style="position: absolute; bottom: 0; left: 0; right: 0; height: 50%; background: linear-gradient(to top, #0E0807, transparent); z-index: 1;"></div>
+    <!-- Subtle radial dim center -->
+    <div style="position: absolute; inset: 0; background: radial-gradient(ellipse 80% 60% at 50% 50%, rgba(14,8,7,0.3) 0%, rgba(14,8,7,0.6) 100%); z-index: 1;"></div>
+
+    <!-- Hero content -->
+    <div class="relative z-10 max-w-5xl mx-auto px-6 text-center">
+
+      <!-- Chip -->
+      <div class="chip mb-10 fade-up">
+        [ open for thoughtful work, Q3 '26 ]
+      </div>
+
+      <!-- Headline -->
+      <h1 class="font-cabinet fade-up" style="font-size: clamp(48px, 8.5vw, 108px); font-weight: 700; line-height: 1.02; letter-spacing: -0.02em; color: #F0E8D5; margin-bottom: 28px; transition-delay: 80ms;">
+        Software, automation,<br />and AI agents —<br />
+        <span style="color: #D9A057;">built by people</span><br />
+        who finish what they start.
+      </h1>
+
+      <!-- Sub-line -->
+      <p class="font-mono-jetb fade-up" style="font-size: clamp(12px, 1.3vw, 14px); letter-spacing: 0.14em; text-transform: uppercase; color: #9A8A75; margin-bottom: 44px; transition-delay: 160ms;">
+        WEB DEVELOPMENT &nbsp;/&nbsp; AI AUTOMATION &nbsp;/&nbsp; CUSTOM AGENTS
+      </p>
+
+      <!-- Buttons -->
+      <div class="fade-up flex flex-wrap gap-4 justify-center" style="transition-delay: 240ms;">
+        <a href="#contact" class="btn-primary">start a conversation</a>
+        <a href="#work" class="btn-secondary">see our work</a>
+      </div>
+
+    </div>
+  </section>
+
+
+  <!-- ═══════════════════════════════════════════ ABOUT ═══ -->
+  <section id="about" style="padding: 112px 0; border-top: 1px solid #2A1F18;">
+    <div class="max-w-6xl mx-auto px-6">
+
+      <div class="grid md:grid-cols-2 gap-16 items-start">
+
+        <!-- Left: editorial -->
+        <div class="fade-up">
+          <p class="font-mono-jetb text-xs uppercase tracking-widest mb-8" style="color: #9A8A75;">About the studio</p>
+
+          <p class="font-news drop-cap" style="font-size: 18px; line-height: 1.72; color: #F0E8D5; font-style: italic; margin-bottom: 24px;">
+            We build things that hold together. Not because we work fast, but because we work carefully — reviewing what matters, removing what doesn't, staying with the problem until the answer is quiet and obvious.
+          </p>
+
+          <p class="font-news" style="font-size: 17px; line-height: 1.72; color: #9A8A75; font-style: italic;">
+            We are a two-person studio. One of us builds systems that don't break. The other shapes the experience of using them. When both of those things converge, the result is a product you forget to question — it simply works.
+          </p>
+
+          <p class="font-news mt-8" style="font-size: 15px; color: #D9A057; font-style: italic;">
+            — Alex &times; Nikolay, since 2026
+          </p>
+        </div>
+
+        <!-- Right: values list -->
+        <div class="fade-up" style="transition-delay: 80ms;">
+          <div style="border-top: 1px solid #2A1F18; padding-top: 24px;">
+            <div style="border-bottom: 1px solid #2A1F18; padding: 20px 0; display: flex; justify-content: space-between; align-items: baseline;">
+              <span class="font-mono-jetb text-xs uppercase tracking-widest" style="color: #9A8A75;">Philosophy</span>
+              <span class="font-news" style="font-style: italic; color: #F0E8D5; font-size: 15px;">Patient work</span>
+            </div>
+            <div style="border-bottom: 1px solid #2A1F18; padding: 20px 0; display: flex; justify-content: space-between; align-items: baseline;">
+              <span class="font-mono-jetb text-xs uppercase tracking-widest" style="color: #9A8A75;">Scale</span>
+              <span class="font-news" style="font-style: italic; color: #F0E8D5; font-size: 15px;">Small by choice</span>
+            </div>
+            <div style="border-bottom: 1px solid #2A1F18; padding: 20px 0; display: flex; justify-content: space-between; align-items: baseline;">
+              <span class="font-mono-jetb text-xs uppercase tracking-widest" style="color: #9A8A75;">Approach</span>
+              <span class="font-news" style="font-style: italic; color: #F0E8D5; font-size: 15px;">Finish, then reflect</span>
+            </div>
+            <div style="padding: 20px 0; display: flex; justify-content: space-between; align-items: baseline;">
+              <span class="font-mono-jetb text-xs uppercase tracking-widest" style="color: #9A8A75;">Language</span>
+              <span class="font-news" style="font-style: italic; color: #F0E8D5; font-size: 15px;">у&nbsp;очага&nbsp;— by the fire</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ═══════════════════════════════════════════ CAPABILITIES ═══ -->
+  <section id="capabilities" style="padding: 112px 0; border-top: 1px solid #2A1F18; background: #14100C;">
+    <div class="max-w-6xl mx-auto px-6">
+
+      <div class="fade-up mb-16">
+        <p class="font-mono-jetb text-xs uppercase tracking-widest mb-4" style="color: #9A8A75;">What we do</p>
+        <h2 class="font-cabinet" style="font-size: clamp(32px, 5vw, 52px); font-weight: 700; line-height: 1.1; letter-spacing: -0.02em;">Capabilities</h2>
+      </div>
+
+      <!-- 01 Web -->
+      <div class="cap-row fade-up" style="border-top: 2px solid #D9A057; padding: 40px 0; cursor: default; transition-delay: 60ms;">
+        <div class="grid md:grid-cols-12 gap-8 items-start">
+          <div class="md:col-span-1">
+            <span class="font-mono-jetb text-xs" style="color: #C44A35; letter-spacing: 0.1em;">01</span>
+          </div>
+          <div class="md:col-span-3">
+            <h3 class="font-cabinet cap-title" style="font-size: 28px; font-weight: 700; letter-spacing: -0.01em;">Web Development</h3>
+          </div>
+          <div class="md:col-span-5">
+            <p class="font-news" style="font-size: 16px; line-height: 1.75; color: #9A8A75; font-style: italic;">
+              Full-stack products built to last. We work from concept to deployment without hand-offs. The interface responds quickly; the backend holds steady under load.
+            </p>
+          </div>
+          <div class="md:col-span-3">
+            <div class="flex flex-wrap">
+              <span class="tag-mono">Next.js</span>
+              <span class="tag-mono">TypeScript</span>
+              <span class="tag-mono">PostgreSQL</span>
+              <span class="tag-mono">Docker</span>
+              <span class="tag-mono">Vercel</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 02 AI Automation -->
+      <div class="cap-row fade-up" style="border-top: 2px solid #D9A057; padding: 40px 0; cursor: default; transition-delay: 120ms;">
+        <div class="grid md:grid-cols-12 gap-8 items-start">
+          <div class="md:col-span-1">
+            <span class="font-mono-jetb text-xs" style="color: #C44A35; letter-spacing: 0.1em;">02</span>
+          </div>
+          <div class="md:col-span-3">
+            <h3 class="font-cabinet cap-title" style="font-size: 28px; font-weight: 700; letter-spacing: -0.01em;">AI Automation</h3>
+          </div>
+          <div class="md:col-span-5">
+            <p class="font-news" style="font-size: 16px; line-height: 1.75; color: #9A8A75; font-style: italic;">
+              Repetitive decisions become quiet pipelines. We identify the processes that drain attention without requiring judgment, then automate them — carefully, without over-engineering.
+            </p>
+          </div>
+          <div class="md:col-span-3">
+            <div class="flex flex-wrap">
+              <span class="tag-mono">LangChain</span>
+              <span class="tag-mono">OpenAI</span>
+              <span class="tag-mono">n8n</span>
+              <span class="tag-mono">Python</span>
+              <span class="tag-mono">Webhooks</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 03 AI Agents -->
+      <div class="cap-row fade-up" style="border-top: 2px solid #D9A057; border-bottom: 2px solid #D9A057; padding: 40px 0; cursor: default; transition-delay: 180ms;">
+        <div class="grid md:grid-cols-12 gap-8 items-start">
+          <div class="md:col-span-1">
+            <span class="font-mono-jetb text-xs" style="color: #C44A35; letter-spacing: 0.1em;">03</span>
+          </div>
+          <div class="md:col-span-3">
+            <h3 class="font-cabinet cap-title" style="font-size: 28px; font-weight: 700; letter-spacing: -0.01em;">AI Agents</h3>
+          </div>
+          <div class="md:col-span-5">
+            <p class="font-news" style="font-size: 16px; line-height: 1.75; color: #9A8A75; font-style: italic;">
+              Custom agents that reason, retrieve, and act on your behalf. Not a chatbot bolted to a form — a proper reasoning loop grounded in your business context and connected to your actual systems.
+            </p>
+          </div>
+          <div class="md:col-span-3">
+            <div class="flex flex-wrap">
+              <span class="tag-mono">Claude API</span>
+              <span class="tag-mono">RAG</span>
+              <span class="tag-mono">Embeddings</span>
+              <span class="tag-mono">Tools</span>
+              <span class="tag-mono">Evals</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+
+  <!-- ═══════════════════════════════════════════ WORK ═══ -->
+  <section id="work" style="padding: 112px 0; border-top: 1px solid #2A1F18;">
+    <div class="max-w-6xl mx-auto px-6">
+
+      <div class="fade-up mb-16">
+        <p class="font-mono-jetb text-xs uppercase tracking-widest mb-4" style="color: #9A8A75;">Selected cases</p>
+        <h2 class="font-cabinet" style="font-size: clamp(32px, 5vw, 52px); font-weight: 700; line-height: 1.1; letter-spacing: -0.02em;">Recent work</h2>
+      </div>
+
+      <!-- Case 01 — image left -->
+      <div class="fade-up" style="margin-bottom: 80px; border-top: 1px solid #2A1F18; padding-top: 48px; transition-delay: 60ms;">
+        <div class="grid md:grid-cols-2 gap-12 items-center">
+          <div>
+            <!-- CSS art: cream-to-walnut -->
+            <div class="case-art" style="background: linear-gradient(135deg, #F0E8D5 0%, #9A8A75 35%, #1C140F 70%, #0E0807 100%); position: relative; overflow: hidden;">
+              <div style="position: absolute; top: 40%; left: 15%; width: 60%; height: 1px; background: rgba(240,232,213,0.15);"></div>
+              <div style="position: absolute; top: 0; left: 50%; width: 1px; height: 100%; background: rgba(240,232,213,0.06);"></div>
+              <div style="position: absolute; bottom: 28px; left: 24px; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.12em; color: rgba(240,232,213,0.35); text-transform: uppercase;">logistics — platform</div>
+            </div>
+          </div>
+          <div>
+            <span class="font-mono-jetb" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; color: #9A8A75;">FreightOS Ltd.</span>
+            <h3 class="font-cabinet mt-3 mb-4" style="font-size: 30px; font-weight: 700; letter-spacing: -0.01em;">Logistics SaaS Platform</h3>
+            <p class="font-news" style="font-size: 16px; line-height: 1.75; color: #9A8A75; font-style: italic;">
+              Full-stack rebuild of a legacy Rails system. New event-sourced backend, redesigned operator interface, and a custom AI routing assistant that reduced manual intervention by half.
+            </p>
+            <div class="mt-5 flex gap-3 items-center">
+              <span class="chip-ember">-48% manual ops</span>
+              <span style="display: flex; align-items: center; gap: 5px;"><span class="sage" style="width: 6px; height: 6px; background: #4A6B5C; border-radius: 50%; display: inline-block;"></span><span class="font-mono-jetb text-xs" style="color: #9A8A75;">live 2025</span></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Case 02 — image right -->
+      <div class="fade-up" style="margin-bottom: 80px; border-top: 1px solid #2A1F18; padding-top: 48px; transition-delay: 100ms;">
+        <div class="grid md:grid-cols-2 gap-12 items-center">
+          <div class="md:order-2">
+            <!-- CSS art: ember-to-tar -->
+            <div class="case-art" style="background: linear-gradient(160deg, #C44A35 0%, #6B2418 40%, #1C0E0A 70%, #080504 100%); position: relative; overflow: hidden;">
+              <div style="position: absolute; inset: 0; background: repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(196,74,53,0.07) 40px);"></div>
+              <div style="position: absolute; bottom: 28px; left: 24px; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.12em; color: rgba(240,232,213,0.35); text-transform: uppercase;">research — agent</div>
+            </div>
+          </div>
+          <div class="md:order-1">
+            <span class="font-mono-jetb" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; color: #9A8A75;">Meridian Research Group</span>
+            <h3 class="font-cabinet mt-3 mb-4" style="font-size: 30px; font-weight: 700; letter-spacing: -0.01em;">Market Intelligence Agent</h3>
+            <p class="font-news" style="font-size: 16px; line-height: 1.75; color: #9A8A75; font-style: italic;">
+              An autonomous research assistant that monitors 80+ data sources, composes structured briefs every morning, and flags anomalies before the analyst's coffee is cold.
+            </p>
+            <div class="mt-5 flex gap-3 items-center">
+              <span class="chip-ember">80+ sources / daily</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Case 03 — image left -->
+      <div class="fade-up" style="border-top: 1px solid #2A1F18; padding-top: 48px; transition-delay: 140ms;">
+        <div class="grid md:grid-cols-2 gap-12 items-center">
+          <div>
+            <!-- CSS art: sand-to-walnut -->
+            <div class="case-art" style="background: linear-gradient(120deg, #D9A057 0%, #8B5E2A 35%, #2A1A0E 65%, #0E0807 100%); position: relative; overflow: hidden;">
+              <div style="position: absolute; top: 30%; right: 20%; width: 40%; height: 40%; border: 1px solid rgba(217,160,87,0.15); border-radius: 2px;"></div>
+              <div style="position: absolute; bottom: 28px; left: 24px; font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.12em; color: rgba(240,232,213,0.35); text-transform: uppercase;">e-commerce — automation</div>
+            </div>
+          </div>
+          <div>
+            <span class="font-mono-jetb" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em; color: #9A8A75;">Larder & Co.</span>
+            <h3 class="font-cabinet mt-3 mb-4" style="font-size: 30px; font-weight: 700; letter-spacing: -0.01em;">Commerce Ops Automation</h3>
+            <p class="font-news" style="font-size: 16px; line-height: 1.75; color: #9A8A75; font-style: italic;">
+              Inventory sync, supplier communication, and reorder prediction — stitched into a calm dashboard that surfaces only what needs attention. The rest runs without noise.
+            </p>
+            <div class="mt-5 flex gap-3 items-center">
+              <span class="chip-ember">-31hrs / week saved</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+
+  <!-- ═══════════════════════════════════════════ METRICS ═══ -->
+  <section id="metrics" style="padding: 96px 0; background: #14100C; border-top: 1px solid #D9A057; border-bottom: 1px solid #D9A057;">
+    <div class="max-w-6xl mx-auto px-6">
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-12 fade-up">
+
+        <div class="text-center">
+          <div class="metric-num">18</div>
+          <div class="font-mono-jetb mt-3" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; color: #9A8A75;">Projects shipped</div>
+        </div>
+
+        <div class="text-center">
+          <div class="metric-num">4.8k</div>
+          <div class="font-mono-jetb mt-3" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; color: #9A8A75;">Hours logged</div>
+        </div>
+
+        <div class="text-center">
+          <div class="metric-num">100%</div>
+          <div class="font-mono-jetb mt-3" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; color: #9A8A75;">On-time delivery</div>
+        </div>
+
+        <div class="text-center">
+          <div class="metric-num">2</div>
+          <div class="font-mono-jetb mt-3" style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.16em; color: #9A8A75;">People. Intentionally.</div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ═══════════════════════════════════════════ PROCESS ═══ -->
+  <section id="process" style="padding: 112px 0; border-top: 1px solid #2A1F18;">
+    <div class="max-w-6xl mx-auto px-6">
+
+      <div class="fade-up mb-16">
+        <p class="font-mono-jetb text-xs uppercase tracking-widest mb-4" style="color: #9A8A75;">How we work</p>
+        <h2 class="font-cabinet" style="font-size: clamp(32px, 5vw, 52px); font-weight: 700; line-height: 1.1; letter-spacing: -0.02em;">The process</h2>
+      </div>
+
+      <div class="max-w-3xl">
+
+        <div class="process-item fade-up" style="padding: 40px 0; transition-delay: 60ms;">
+          <div class="flex gap-6 items-start">
+            <span class="font-mono-jetb font-600 flex-shrink-0" style="color: #C44A35; font-size: 13px; letter-spacing: 0.08em; margin-top: 4px;">01</span>
+            <div>
+              <h3 class="font-cabinet mb-4" style="font-size: 22px; font-weight: 700;">Listen before defining</h3>
+              <p class="font-news" style="font-size: 17px; line-height: 1.8; color: #9A8A75; font-style: italic;">
+                We start with one conversation, and we listen for what isn't said. The scope document that comes after is short — three pages, no more. It describes what we're building and, more importantly, what we're not.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="process-item fade-up" style="padding: 40px 0; transition-delay: 120ms;">
+          <div class="flex gap-6 items-start">
+            <span class="font-mono-jetb font-600 flex-shrink-0" style="color: #C44A35; font-size: 13px; letter-spacing: 0.08em; margin-top: 4px;">02</span>
+            <div>
+              <h3 class="font-cabinet mb-4" style="font-size: 22px; font-weight: 700;">Build in the open</h3>
+              <p class="font-news" style="font-size: 17px; line-height: 1.8; color: #9A8A75; font-style: italic;">
+                Weekly working demos, not progress reports. You see the thing running, you give us your reaction, and we adjust. No surprises at handover. No big-bang reveals that leave no room for honest feedback.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="process-item fade-up" style="padding: 40px 0; transition-delay: 180ms;">
+          <div class="flex gap-6 items-start">
+            <span class="font-mono-jetb font-600 flex-shrink-0" style="color: #C44A35; font-size: 13px; letter-spacing: 0.08em; margin-top: 4px;">03</span>
+            <div>
+              <h3 class="font-cabinet mb-4" style="font-size: 22px; font-weight: 700;">Finish properly</h3>
+              <p class="font-news" style="font-size: 17px; line-height: 1.8; color: #9A8A75; font-style: italic;">
+                Deployment is not the end. We stay for a week after launch — watching logs, fixing edge cases that only appear in production, answering questions from real users. Не торопимся. We are not in a hurry.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="process-item fade-up" style="padding: 40px 0; transition-delay: 240ms;">
+          <div class="flex gap-6 items-start">
+            <span class="font-mono-jetb font-600 flex-shrink-0" style="color: #C44A35; font-size: 13px; letter-spacing: 0.08em; margin-top: 4px;">04</span>
+            <div>
+              <h3 class="font-cabinet mb-4" style="font-size: 22px; font-weight: 700;">Return when needed</h3>
+              <p class="font-news" style="font-size: 17px; line-height: 1.8; color: #9A8A75; font-style: italic;">
+                We keep working relationships, not support tickets. If something needs changing in six months, you write to us and we reply. No contracts to re-negotiate. We remember the project because we cared about it.
+              </p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ═══════════════════════════════════════════ MANIFESTO ═══ -->
+  <section id="manifesto" style="padding: 120px 0; background: #14100C; border-top: 1px solid #2A1F18; border-bottom: 1px solid #2A1F18;">
+    <div class="max-w-4xl mx-auto px-6 text-center fade-up">
+
+      <div class="mb-8 flex items-center justify-center">
+        <span class="manifesto-bracket"></span>
+        <span class="font-mono-jetb text-xs uppercase tracking-widest" style="color: #9A8A75;">Studio manifesto</span>
+        <span class="manifesto-bracket"></span>
+      </div>
+
+      <p class="font-news" style="font-size: clamp(22px, 3.5vw, 40px); line-height: 1.55; font-style: italic; color: #F0E8D5;">
+        "We don't believe in speed as a virtue.<br />
+        We believe in work that <span style="color: #C44A35;">lasts</span> —<br />
+        built slowly, by hand, у очага,<br />
+        in the warmth of something worth making."
+      </p>
+
+    </div>
+  </section>
+
+
+  <!-- ═══════════════════════════════════════════ CONTACT ═══ -->
+  <section id="contact" style="padding: 120px 0; border-top: 1px solid #2A1F18;">
+    <div class="max-w-4xl mx-auto px-6">
+
+      <div class="fade-up">
+        <h2 class="font-news mb-6" style="font-size: clamp(28px, 4.5vw, 52px); font-style: italic; font-weight: 400; line-height: 1.25; letter-spacing: -0.01em;">
+          Let's start a conversation<br />by the fire.
+        </h2>
+
+        <p class="font-news mb-12" style="font-size: 18px; line-height: 1.8; color: #9A8A75; font-style: italic; max-width: 560px;">
+          We take on two or three projects at a time. If the fit is right, we'll know within the first exchange. Write to us honestly — tell us what you're trying to build and why it matters.
+        </p>
+
+        <div class="flex flex-wrap gap-8 mb-12 items-center">
+          <a href="mailto:hello@hearthstudio.dev" class="font-mono-jetb" style="font-size: 14px; color: #D9A057; letter-spacing: 0.04em; text-decoration: none; border-bottom: 1px solid rgba(217,160,87,0.3); padding-bottom: 2px; transition: border-color 250ms ease;">
+            hello@hearthstudio.dev
+          </a>
+          <a href="https://t.me/hearthstudio" class="font-mono-jetb" style="font-size: 14px; color: #D9A057; letter-spacing: 0.04em; text-decoration: none; border-bottom: 1px solid rgba(217,160,87,0.3); padding-bottom: 2px; transition: border-color 250ms ease;">
+            @hearthstudio
+          </a>
+        </div>
+
+        <a href="mailto:hello@hearthstudio.dev" class="btn-primary">begin the conversation</a>
+      </div>
+
+    </div>
+  </section>
+
+
+  <!-- ═══════════════════════════════════════════ FOOTER ═══ -->
+  <footer style="border-top: 1px solid #2A1F18;">
+    <div class="footer-gradient" style="padding: 24px 0;">
+      <div class="max-w-6xl mx-auto px-6 flex flex-wrap items-center justify-between gap-4">
+        <span class="font-mono-jetb text-xs" style="color: rgba(14,8,7,0.55); letter-spacing: 0.1em; text-transform: uppercase;">
+          Hearth Studio &nbsp;/&nbsp; Web &bull; AI &bull; Agents &nbsp;/&nbsp; Est. 2026
+        </span>
+        <span class="font-mono-jetb text-xs" style="color: rgba(14,8,7,0.45); letter-spacing: 0.08em;">
+          Built in low light. With patience.
+        </span>
+      </div>
+    </div>
+  </section>
+
+
+  <!-- ═══════════════════════════════════════════ THREE.JS EMBER ORBS ═══ -->
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js';
+
+    const canvas = document.getElementById('ember-canvas');
+    const section = document.getElementById('hero');
+
+    // Renderer
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+    const dpr = Math.min(window.devicePixelRatio, 2);
+    renderer.setPixelRatio(dpr);
+    renderer.setClearColor(0x000000, 0);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 500);
+    camera.position.z = 120;
+
+    // Resize helper
+    function resize() {
+      const w = section.offsetWidth;
+      const h = section.offsetHeight;
+      renderer.setSize(w, h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    // Particle data
+    const TOTAL  = window.innerWidth < 768 ? 80 : 130;
+    const positions = [];
+    const velocities = [];
+    const sizes_arr = [];
+    const colors_arr = [];
+
+    // Colors
+    const colorPalette = [
+      new THREE.Color(0xC44A35), // ember red — majority
+      new THREE.Color(0xC44A35),
+      new THREE.Color(0xC44A35),
+      new THREE.Color(0xC44A35),
+      new THREE.Color(0xD9A057), // amber sand — some
+      new THREE.Color(0xD9A057),
+      new THREE.Color(0xF0E8D5), // cream — rare
+    ];
+
+    const geom = new THREE.BufferGeometry();
+    const posArr   = new Float32Array(TOTAL * 3);
+    const colArr   = new Float32Array(TOTAL * 3);
+    const sizeArr  = new Float32Array(TOTAL);
+
+    for (let i = 0; i < TOTAL; i++) {
+      const x = (Math.random() - 0.5) * 200;
+      const y = (Math.random() - 0.5) * 160;
+      const z = (Math.random() - 0.5) * 80;
+
+      posArr[i * 3]     = x;
+      posArr[i * 3 + 1] = y;
+      posArr[i * 3 + 2] = z;
+
+      positions.push(x, y, z);
+
+      // Drift velocity — slow upward float, tiny horizontal sway
+      velocities.push(
+        (Math.random() - 0.5) * 0.015,  // vx
+        Math.random() * 0.04 + 0.018,   // vy (upward)
+        (Math.random() - 0.5) * 0.008   // vz
+      );
+
+      // Color pick
+      const col = colorPalette[Math.floor(Math.random() * colorPalette.length)];
+      colArr[i * 3]     = col.r;
+      colArr[i * 3 + 1] = col.g;
+      colArr[i * 3 + 2] = col.b;
+
+      // Size: small embers, medium amber, large cream
+      const brightness = col.r; // proxy
+      let sz = 2.5 + Math.random() * 1.5;
+      if (brightness > 0.9) sz = 4.5 + Math.random() * 2; // cream — bigger
+      sizeArr[i] = sz;
+    }
+
+    geom.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+    geom.setAttribute('color',    new THREE.BufferAttribute(colArr, 3));
+    geom.setAttribute('size',     new THREE.BufferAttribute(sizeArr, 1));
+
+    // Shader material for glow effect — additive blending for ember feel
+    const mat = new THREE.PointsMaterial({
+      size: 3,
+      sizeAttenuation: true,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.88,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+
+    const points = new THREE.Points(geom, mat);
+    scene.add(points);
+
+    // Animation state
+    let running = true;
+    let raf;
+    const posAttr = geom.attributes.position;
+
+    function animate() {
+      if (!running) return;
+      raf = requestAnimationFrame(animate);
+
+      const time = Date.now() * 0.0003;
+      for (let i = 0; i < TOTAL; i++) {
+        const vi = i * 3;
+        posArr[vi]     += velocities[vi]     + Math.sin(time + i * 0.7) * 0.006;
+        posArr[vi + 1] += velocities[vi + 1];
+        posArr[vi + 2] += velocities[vi + 2] + Math.cos(time + i * 0.5) * 0.004;
+
+        // Reset if drifted too high
+        if (posArr[vi + 1] > 90) {
+          posArr[vi + 1] = -90;
+          posArr[vi]     = (Math.random() - 0.5) * 200;
+          posArr[vi + 2] = (Math.random() - 0.5) * 80;
+        }
+      }
+      posAttr.needsUpdate = true;
+
+      // Gentle scene drift
+      points.rotation.y = Math.sin(time * 0.12) * 0.04;
+      points.rotation.x = Math.cos(time * 0.09) * 0.02;
+
+      renderer.render(scene, camera);
+    }
+
+    // IntersectionObserver pause
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting && !running) {
+          running = true;
+          animate();
+        } else if (!e.isIntersecting && running) {
+          running = false;
+          cancelAnimationFrame(raf);
+        }
+      });
+    }, { threshold: 0.05 });
+
+    io.observe(section);
+    animate();
+  </script>
+
+
+  <!-- ═══════════════════════════════════════════ INTERSECTION OBSERVER (fade-up) ═══ -->
+  <script>
+    const fadeEls = document.querySelectorAll('.fade-up');
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          e.target.classList.add('visible');
+          obs.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.12 });
+
+    fadeEls.forEach(el => obs.observe(el));
+  </script>
+
+</body>
+</html>

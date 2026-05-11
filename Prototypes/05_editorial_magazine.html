@@ -1,0 +1,1103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STUDIO — Issue 01 Vol. 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Newsreader:ital,opsz,wght@0,6..72,300;0,6..72,400;0,6..72,500;1,6..72,300;1,6..72,400&family=JetBrains+Mono:ital,wght@0,400;1,400&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        ivory: '#F5F1E8',
+        ink: '#1B1B19',
+        'ink-light': '#3D3D39',
+        'ink-muted': '#7A7A72',
+        red: '#B83227',
+        gold: '#B8956A',
+        'gold-light': '#D4B08A',
+        'paper-dark': '#EBE6D8',
+      },
+      fontFamily: {
+        serif: ['"DM Serif Display"', 'Georgia', 'serif'],
+        body: ['Newsreader', 'Georgia', 'serif'],
+        mono: ['"JetBrains Mono"', 'monospace'],
+      },
+    }
+  }
+}
+</script>
+<style>
+  /* Paper grain noise */
+  :root {
+    --grain-opacity: 0.035;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: #F5F1E8;
+    color: #1B1B19;
+    font-family: 'Newsreader', Georgia, serif;
+    position: relative;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23noise)' opacity='0.08'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 1000;
+    opacity: 0.6;
+    mix-blend-mode: multiply;
+  }
+
+  /* Gold hairline utility */
+  .hairline {
+    border-top: 1px solid #B8956A;
+  }
+
+  .hairline-b {
+    border-bottom: 1px solid #B8956A;
+  }
+
+  .hairline-ink {
+    border-top: 1px solid #1B1B19;
+  }
+
+  .hairline-ink-b {
+    border-bottom: 1px solid #1B1B19;
+  }
+
+  /* Drop cap */
+  .drop-cap::first-letter {
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-size: 5.2em;
+    line-height: 0.82;
+    float: left;
+    padding-right: 0.08em;
+    padding-top: 0.05em;
+    color: #1B1B19;
+    font-weight: 400;
+  }
+
+  /* Multi-column body */
+  .columns-2-editorial {
+    column-count: 2;
+    column-gap: 3rem;
+    text-align: justify;
+    hyphens: auto;
+    -webkit-hyphens: auto;
+  }
+
+  .columns-3-editorial {
+    column-count: 3;
+    column-gap: 2.5rem;
+    text-align: justify;
+    hyphens: auto;
+    -webkit-hyphens: auto;
+  }
+
+  @media (max-width: 768px) {
+    .columns-2-editorial,
+    .columns-3-editorial {
+      column-count: 1;
+    }
+  }
+
+  /* Pull quote overflow */
+  .pull-quote-overflow {
+    position: relative;
+    margin-left: -4rem;
+    margin-right: -4rem;
+    padding: 2.5rem 4rem;
+  }
+
+  @media (max-width: 768px) {
+    .pull-quote-overflow {
+      margin-left: -1.5rem;
+      margin-right: -1.5rem;
+      padding: 2rem 1.5rem;
+    }
+  }
+
+  /* Hero parallax container */
+  #hero-title {
+    will-change: transform;
+    transition: transform 0.05s linear;
+  }
+
+  /* Fade in sections */
+  .fade-section {
+    opacity: 0;
+    transform: translateY(24px);
+    transition: opacity 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94), transform 0.8s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+
+  .fade-section.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* CSS Art: Photo placeholders */
+  .photo-cover {
+    background: linear-gradient(135deg, #2C2C28 0%, #4A4438 25%, #3D3530 50%, #1B1B19 75%, #2E2A24 100%);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .photo-cover::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 60% 50% at 65% 40%, #6B5A4E 0%, transparent 60%),
+                radial-gradient(ellipse 30% 40% at 30% 70%, #4A3F34 0%, transparent 50%);
+  }
+
+  .photo-cover::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to bottom, transparent 50%, #F5F1E8 100%);
+  }
+
+  .photo-feature-1 {
+    background: linear-gradient(160deg, #E8D5B7 0%, #C4A882 30%, #8B7355 60%, #4A3728 100%);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .photo-feature-1::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 80% 60% at 50% 50%, transparent 30%, rgba(27,27,25,0.3) 100%),
+                repeating-linear-gradient(90deg, transparent 0px, transparent 48px, rgba(184,149,106,0.06) 48px, rgba(184,149,106,0.06) 49px);
+  }
+
+  .photo-feature-2 {
+    background: linear-gradient(145deg, #1B1B19 0%, #2D2926 40%, #3E3529 70%, #5C4A38 100%);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .photo-feature-2::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 50% 70% at 75% 30%, #4A4038 0%, transparent 55%),
+                radial-gradient(ellipse 40% 40% at 20% 80%, #2E2820 0%, transparent 50%);
+  }
+
+  .photo-feature-3 {
+    background: linear-gradient(120deg, #E2DDD5 0%, #C8C0B4 25%, #A89880 50%, #7A6B5A 75%, #3C3228 100%);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .photo-feature-3::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(45deg, transparent 0px, transparent 8px, rgba(27,27,25,0.025) 8px, rgba(27,27,25,0.025) 9px);
+  }
+
+  .photo-case-1 {
+    background: linear-gradient(175deg, #0D1F2D 0%, #1A3A4F 30%, #2E5F7A 55%, #4A8FA8 80%, #6DB4C8 100%);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .photo-case-1::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 60% 40% at 50% 50%, rgba(74,143,168,0.4) 0%, transparent 70%),
+                linear-gradient(to bottom, transparent 40%, rgba(13,31,45,0.6) 100%);
+  }
+
+  .photo-case-2 {
+    background: linear-gradient(135deg, #1A1A1A 0%, #2D2D2D 40%, #404040 70%, #595959 100%);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .photo-case-2::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(0deg, transparent 0px, transparent 3px, rgba(184,149,106,0.04) 3px, rgba(184,149,106,0.04) 4px),
+                radial-gradient(ellipse 50% 50% at 50% 50%, rgba(80,60,40,0.3) 0%, transparent 70%);
+  }
+
+  .photo-case-3 {
+    background: linear-gradient(150deg, #2A1F3D 0%, #3D2E5A 30%, #5A4278 60%, #7A5A9A 85%, #9A7ABB 100%);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .photo-case-3::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 70% 60% at 40% 40%, rgba(122,90,154,0.5) 0%, transparent 60%),
+                linear-gradient(to bottom right, transparent 50%, rgba(42,31,61,0.5) 100%);
+  }
+
+  /* Editorial decorative line */
+  .gold-bracket {
+    display: inline-block;
+    border-left: 2px solid #B8956A;
+    border-right: 2px solid #B8956A;
+    padding: 1.5rem 2.5rem;
+  }
+
+  /* Oversized serif headline */
+  .display-xl {
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-size: clamp(4rem, 10vw, 10rem);
+    line-height: 0.9;
+    letter-spacing: -0.02em;
+    color: #1B1B19;
+  }
+
+  .display-lg {
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-size: clamp(2.5rem, 6vw, 5rem);
+    line-height: 0.95;
+    letter-spacing: -0.015em;
+    color: #1B1B19;
+  }
+
+  .display-md {
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-size: clamp(1.8rem, 4vw, 3rem);
+    line-height: 1.05;
+    letter-spacing: -0.01em;
+    color: #1B1B19;
+  }
+
+  /* Body text */
+  .body-editorial {
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 1.0625rem;
+    line-height: 1.72;
+    font-weight: 400;
+    color: #1B1B19;
+  }
+
+  .body-editorial-lg {
+    font-family: 'Newsreader', Georgia, serif;
+    font-size: 1.1875rem;
+    line-height: 1.68;
+    font-weight: 400;
+    color: #1B1B19;
+  }
+
+  /* Caption mono */
+  .caption {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6875rem;
+    line-height: 1.5;
+    letter-spacing: 0.03em;
+    color: #7A7A72;
+    font-style: italic;
+  }
+
+  .label-mono {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6875rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #7A7A72;
+  }
+
+  /* Issue number in red */
+  .issue-red {
+    color: #B83227;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.6875rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  /* Feature number */
+  .feature-number {
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-size: clamp(1rem, 2vw, 1.5rem);
+    color: #B8956A;
+    font-style: italic;
+  }
+
+  /* Page rule styling */
+  .page-rule {
+    border: none;
+    border-top: 1px solid #1B1B19;
+    margin: 0;
+  }
+
+  .page-rule-gold {
+    border: none;
+    border-top: 1px solid #B8956A;
+    margin: 0;
+  }
+
+  /* Running head */
+  .running-head {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.625rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #7A7A72;
+  }
+
+  /* Pull quote text */
+  .pull-quote {
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-size: clamp(1.5rem, 3.5vw, 2.5rem);
+    line-height: 1.2;
+    font-style: italic;
+    color: #1B1B19;
+    letter-spacing: -0.01em;
+  }
+
+  /* Signature */
+  .signature {
+    font-family: 'Newsreader', Georgia, serif;
+    font-style: italic;
+    font-size: 1.125rem;
+    color: #1B1B19;
+  }
+
+  /* Process step number */
+  .step-number {
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-size: clamp(3rem, 7vw, 6rem);
+    line-height: 1;
+    color: #EBE6D8;
+    font-weight: 400;
+  }
+
+  /* Manifesto section */
+  .manifesto-quote {
+    font-family: 'DM Serif Display', Georgia, serif;
+    font-size: clamp(2.2rem, 5vw, 4.5rem);
+    line-height: 1.12;
+    font-style: italic;
+    color: #1B1B19;
+    text-align: center;
+    letter-spacing: -0.015em;
+  }
+
+  /* Contact links */
+  a.editorial-link {
+    color: #1B1B19;
+    text-decoration: underline;
+    text-decoration-color: #B8956A;
+    text-underline-offset: 4px;
+    text-decoration-thickness: 1px;
+    transition: text-decoration-color 0.25s ease;
+  }
+
+  a.editorial-link:hover {
+    text-decoration-color: #B83227;
+  }
+
+  /* Masthead grid */
+  .masthead-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+    gap: 0;
+  }
+
+  @media (max-width: 640px) {
+    .masthead-grid {
+      grid-template-columns: 1fr;
+      gap: 1rem;
+    }
+  }
+
+  /* Alternating spread */
+  .spread-left {
+    display: grid;
+    grid-template-columns: 55% 45%;
+    gap: 0;
+    align-items: stretch;
+  }
+
+  .spread-right {
+    display: grid;
+    grid-template-columns: 45% 55%;
+    gap: 0;
+    align-items: stretch;
+  }
+
+  @media (max-width: 768px) {
+    .spread-left, .spread-right {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* Print-like section separator */
+  .folio {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 0;
+  }
+
+  /* Text justified */
+  .text-justify-editorial {
+    text-align: justify;
+    hyphens: auto;
+    -webkit-hyphens: auto;
+  }
+</style>
+</head>
+<body class="min-h-screen" style="background-color: #F5F1E8;">
+
+<!-- MASTHEAD -->
+<header class="border-b border-ink" style="background-color: #F5F1E8;">
+  <div class="px-8 md:px-16 lg:px-24 pt-8 pb-6">
+    <div class="folio mb-4">
+      <span class="running-head">Digital Craft — Studio Practice</span>
+      <span class="running-head">2026</span>
+    </div>
+    <hr class="page-rule mb-6">
+    <div class="masthead-grid">
+      <div>
+        <h1 class="font-serif" style="font-family: 'DM Serif Display', Georgia, serif; font-size: clamp(3.5rem, 8vw, 7rem); line-height: 0.88; letter-spacing: -0.025em; color: #1B1B19;">STUDIO</h1>
+        <p class="mt-3 body-editorial" style="font-style: italic; font-size: 0.9375rem;">An independent practice for digital craft.</p>
+      </div>
+      <div class="flex flex-col justify-between items-end">
+        <div class="text-right">
+          <span class="issue-red">Issue 01 — Vol. 2026</span>
+          <div class="mt-2">
+            <span class="label-mono block">Web. Automation. AI Agents.</span>
+          </div>
+        </div>
+        <div class="mt-8 text-right">
+          <nav class="flex gap-6 justify-end flex-wrap">
+            <a href="#letter" class="label-mono hover:text-ink transition-colors" style="text-decoration: none; color: #7A7A72;">Letter</a>
+            <a href="#services" class="label-mono hover:text-ink transition-colors" style="text-decoration: none; color: #7A7A72;">Features</a>
+            <a href="#cases" class="label-mono hover:text-ink transition-colors" style="text-decoration: none; color: #7A7A72;">Portfolio</a>
+            <a href="#process" class="label-mono hover:text-ink transition-colors" style="text-decoration: none; color: #7A7A72;">Process</a>
+            <a href="#contact" class="label-mono hover:text-ink transition-colors" style="text-decoration: none; color: #7A7A72;">Contact</a>
+          </nav>
+        </div>
+      </div>
+    </div>
+  </div>
+  <hr class="page-rule">
+  <div class="px-8 md:px-16 lg:px-24 py-2">
+    <div class="folio">
+      <span class="running-head">Features: Web Development — Automation Pipelines — AI Agents</span>
+      <span class="running-head">Phuket / Bangkok</span>
+    </div>
+  </div>
+</header>
+
+<!-- HERO — MAGAZINE COVER -->
+<section id="hero" class="relative overflow-hidden" style="min-height: 100vh; background-color: #F5F1E8;">
+  <div class="absolute inset-0 photo-cover" style="height: 70%;"></div>
+
+  <div class="relative z-10 px-8 md:px-16 lg:px-24 flex flex-col" style="min-height: 100vh;">
+    <!-- Top band -->
+    <div class="flex justify-between items-center pt-6 pb-4">
+      <span class="caption" style="color: #D4B08A; font-style: normal;">Photography by the data itself</span>
+      <span class="caption" style="color: #D4B08A; font-style: normal;">Spread I of VII</span>
+    </div>
+
+    <!-- Main hero title -->
+    <div class="flex-1 flex flex-col justify-center" style="padding-top: 8vh; padding-bottom: 4vh;">
+      <div id="hero-title">
+        <div class="mb-2">
+          <span class="label-mono" style="color: #B8956A;">The Annual Review</span>
+        </div>
+        <h2 class="display-xl mb-6" style="max-width: 14ch;">
+          Web.<br>
+          Auto&shy;mation.<br>
+          AI.
+        </h2>
+        <div style="max-width: 52ch;" class="md:ml-24 lg:ml-40">
+          <hr class="page-rule-gold mb-5">
+          <p class="body-editorial-lg text-justify-editorial">
+            An independent studio building deliberate software, automation pipelines, and AI agents for businesses tired of waiting.
+          </p>
+          <hr class="page-rule-gold mt-5">
+        </div>
+      </div>
+    </div>
+
+    <!-- Hero bottom info -->
+    <div class="grid grid-cols-3 gap-4 py-8 border-t border-gold" style="border-color: rgba(184,149,106,0.4);">
+      <div>
+        <span class="label-mono block mb-1">Founded</span>
+        <span class="body-editorial" style="font-size: 0.9375rem;">2024, Phuket</span>
+      </div>
+      <div>
+        <span class="label-mono block mb-1">Practice</span>
+        <span class="body-editorial" style="font-size: 0.9375rem;">Digital craft studio</span>
+      </div>
+      <div class="text-right">
+        <span class="label-mono block mb-1">This issue</span>
+        <span class="issue-red">No. 01 — 2026</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- EDITOR'S LETTER -->
+<section id="letter" class="fade-section" style="background-color: #F5F1E8;">
+  <div class="px-8 md:px-16 lg:px-24 py-20 md:py-28">
+    <div class="mb-12">
+      <div class="folio">
+        <span class="running-head">Editor's Letter</span>
+        <span class="running-head">Page 04</span>
+      </div>
+      <hr class="page-rule mt-2 mb-10">
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-8 mb-12">
+      <div class="md:col-span-3">
+        <span class="display-md" style="color: #B8956A;">To Our<br>Readers</span>
+      </div>
+      <div class="md:col-span-9 md:col-start-4">
+        <p class="label-mono mb-3" style="color: #7A7A72;">A letter from the founders — Spring 2026</p>
+        <div class="columns-3-editorial body-editorial drop-cap" style="font-size: 1rem; line-height: 1.75;">
+          <p style="margin-bottom: 1.2em;">
+          Something changed when we started working together. Not just the work itself — though that changed too — but our relationship to the tools, the process, the whole idea of what software can feel like when it's built with intention.
+          </p>
+          <p style="margin-bottom: 1.2em;">
+          We began this studio with a simple conviction: that most digital work is done too fast, under too little consideration, and delivered without the care it deserves. We had seen the results. Projects launched and immediately abandoned. Automation built to impress rather than to function. AI integrations that created more confusion than they resolved.
+          </p>
+          <p style="margin-bottom: 1.2em;">
+          What we offer instead is a slower, more deliberate kind of practice. We design and build web presences that reflect the genuine character of the businesses behind them — not templates dressed up, but actual thinking made visible. We build automation that earns its place, reducing friction where friction doesn't belong. And we work with AI not as a novelty, but as a craft material: something to be shaped, tested, and trusted only after it proves itself.
+          </p>
+          <p style="margin-bottom: 1.2em;">
+          This issue — our first, and we hope the beginning of a longer conversation — contains examples of that work, reflections on process, and an open invitation to anyone who believes their digital infrastructure deserves the same attention they give to everything else they care about.
+          </p>
+          <p>
+          We are grateful you found your way here.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex justify-end mt-10">
+      <div class="text-right">
+        <hr class="page-rule-gold mb-4" style="width: 120px; margin-left: auto;">
+        <p class="signature">— Alex &times; Nikolay, Founders</p>
+        <p class="caption mt-1">Studio, Phuket — Bangkok, 2026</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SERVICES — FEATURE TABLE OF CONTENTS -->
+<section id="services" style="background-color: #EBE6D8;">
+  <div class="px-8 md:px-16 lg:px-24 pt-8 pb-2">
+    <div class="folio">
+      <span class="running-head">Features</span>
+      <span class="running-head">Pages 08 – 22</span>
+    </div>
+    <hr class="page-rule mt-2">
+  </div>
+
+  <div class="px-8 md:px-16 lg:px-24 pt-12 pb-4">
+    <div class="mb-14">
+      <span class="issue-red">In this issue</span>
+      <h2 class="display-lg mt-2" style="max-width: 18ch;">Three Features on the Work We Do</h2>
+    </div>
+  </div>
+
+  <!-- Feature 01: Web Development — Image Left -->
+  <article class="fade-section mb-0 border-t border-ink">
+    <div class="spread-left">
+      <div class="photo-feature-1 relative" style="min-height: 520px;">
+        <div class="absolute bottom-0 left-0 right-0 p-6 z-10">
+          <p class="caption" style="color: rgba(245,241,232,0.7);">Fig. 01 — Interface detail study, 2026</p>
+        </div>
+      </div>
+      <div class="px-8 md:px-12 py-14" style="background-color: #EBE6D8;">
+        <div class="mb-6">
+          <span class="feature-number">Feature 01</span>
+          <hr class="page-rule-gold mt-3 mb-5" style="width: 60px;">
+          <h3 class="display-md" style="max-width: 14ch;">Web Development</h3>
+        </div>
+        <div class="body-editorial text-justify-editorial" style="font-size: 0.9375rem; line-height: 1.78;">
+          <p class="mb-4">We build websites the way a furniture maker builds a table: with attention to how it will be used, who will use it, and whether it will still hold its shape in ten years. This means starting from structure before aesthetics, thinking in systems before components, and writing code that a future developer can read without needing to ask questions.</p>
+          <p>Our web work ranges from editorial platforms to e-commerce to bespoke business applications. The common thread is that every project begins with a conversation about what the work is actually for — and ends only when we are satisfied the answer is visible in the result.</p>
+        </div>
+        <div class="mt-8 pt-6 border-t border-gold" style="border-color: rgba(184,149,106,0.4);">
+          <span class="label-mono">Next.js — React — TypeScript — Tailwind</span>
+        </div>
+      </div>
+    </div>
+  </article>
+
+  <!-- Feature 02: Automation — Image Right -->
+  <article class="fade-section mb-0 border-t border-ink">
+    <div class="spread-right">
+      <div class="px-8 md:px-12 py-14" style="background-color: #F5F1E8;">
+        <div class="mb-6">
+          <span class="feature-number">Feature 02</span>
+          <hr class="page-rule-gold mt-3 mb-5" style="width: 60px;">
+          <h3 class="display-md" style="max-width: 14ch;">Automation Pipelines</h3>
+        </div>
+        <div class="body-editorial text-justify-editorial" style="font-size: 0.9375rem; line-height: 1.78;">
+          <p class="mb-4">Most businesses carry invisible weight — manual processes that consume hours every week, data that lives in three different systems and has to be reconciled by hand, reports that require a dedicated person to produce. Automation work is, at its core, the practice of finding that weight and removing it.</p>
+          <p>We map workflows before we build anything. We question whether automation is the right solution, or whether the process itself needs redesign first. When we do build, we build things that run quietly, notify you when something needs attention, and are comprehensible enough to be maintained by someone who wasn't in the room when they were created.</p>
+        </div>
+        <div class="mt-8 pt-6 border-t border-gold" style="border-color: rgba(184,149,106,0.4);">
+          <span class="label-mono">Python — n8n — Make — Zapier — APIs</span>
+        </div>
+      </div>
+      <div class="photo-feature-2 relative" style="min-height: 520px;">
+        <div class="absolute bottom-0 left-0 right-0 p-6 z-10">
+          <p class="caption" style="color: rgba(245,241,232,0.7);">Fig. 02 — Pipeline architecture diagram, 2026</p>
+        </div>
+      </div>
+    </div>
+  </article>
+
+  <!-- Feature 03: AI Agents — Image Left -->
+  <article class="fade-section mb-0 border-t border-ink">
+    <div class="spread-left">
+      <div class="photo-feature-3 relative" style="min-height: 520px;">
+        <div class="absolute bottom-0 left-0 right-0 p-6 z-10">
+          <p class="caption" style="color: rgba(27,27,25,0.7);">Fig. 03 — Inference trace visualisation, 2026</p>
+        </div>
+      </div>
+      <div class="px-8 md:px-12 py-14" style="background-color: #EBE6D8;">
+        <div class="mb-6">
+          <span class="feature-number">Feature 03</span>
+          <hr class="page-rule-gold mt-3 mb-5" style="width: 60px;">
+          <h3 class="display-md" style="max-width: 14ch;">AI Agents</h3>
+        </div>
+        <div class="body-editorial text-justify-editorial" style="font-size: 0.9375rem; line-height: 1.78;">
+          <p class="mb-4">We use the word agent carefully. An agent is not a chatbot with a prompt. It is a system that reasons, plans, and acts — calling tools, managing context, deciding what to do next without someone telling it at every step. Building a good one requires understanding what it is trying to accomplish, what information it needs to do that, and where the boundaries of its authority should be.</p>
+          <p>We build agents for specific, well-defined tasks: research and synthesis, document processing, customer interaction routing, data extraction from unstructured sources. We do not build agents that are meant to do everything — we build agents that do one thing well enough to trust.</p>
+        </div>
+        <div class="mt-8 pt-6 border-t border-gold" style="border-color: rgba(184,149,106,0.4);">
+          <span class="label-mono">Claude API — OpenAI — LangGraph — MCP</span>
+        </div>
+      </div>
+    </div>
+  </article>
+
+  <!-- Pull quote between features and cases -->
+  <div class="fade-section px-8 md:px-16 lg:px-24 py-20 border-t border-ink" style="background-color: #F5F1E8;">
+    <div class="pull-quote-overflow" style="background-color: #EBE6D8; border-left: 3px solid #B8956A;">
+      <p class="pull-quote">
+        "We don't build products for their own sake. We build things that make a particular kind of sense — in a particular context, for a particular business, at a particular moment."
+      </p>
+      <p class="caption mt-4">— From the studio brief, 2024</p>
+    </div>
+  </div>
+</section>
+
+<!-- CASES — PHOTO ESSAY PORTFOLIO -->
+<section id="cases" style="background-color: #F5F1E8;">
+  <div class="px-8 md:px-16 lg:px-24 pt-8 pb-2">
+    <div class="folio">
+      <span class="running-head">Portfolio — Selected Work</span>
+      <span class="running-head">Pages 24 – 38</span>
+    </div>
+    <hr class="page-rule mt-2">
+  </div>
+
+  <div class="px-8 md:px-16 lg:px-24 pt-12 pb-8">
+    <span class="issue-red">Photo Essay</span>
+    <h2 class="display-lg mt-2 mb-0" style="max-width: 20ch;">Selected Projects from the Studio Archive</h2>
+  </div>
+
+  <!-- Case 01: VIP Rental Phuket — Full Width -->
+  <article class="fade-section border-t border-ink">
+    <div class="photo-case-1 relative" style="height: 460px; width: 100%;">
+      <div class="absolute inset-0 flex items-end p-8 md:p-16 z-10">
+        <div>
+          <span class="label-mono" style="color: rgba(245,241,232,0.6);">Project 01 — Full Spread</span>
+          <h3 class="font-serif mt-2" style="font-family: 'DM Serif Display', Georgia, serif; font-size: clamp(2rem, 5vw, 4rem); line-height: 1; color: #F5F1E8; letter-spacing: -0.02em; max-width: 16ch;">VIP Rental Phuket</h3>
+        </div>
+      </div>
+    </div>
+    <div class="px-8 md:px-16 lg:px-24 py-3 border-b border-ink" style="background-color: #EBE6D8;">
+      <p class="caption">Fig. 04 — VIP Rental Phuket, property portal, 2025 — Art direction and full-stack development</p>
+    </div>
+    <div class="px-8 md:px-16 lg:px-24 py-14" style="background-color: #EBE6D8;">
+      <div class="columns-2-editorial body-editorial text-justify-editorial" style="max-width: 900px;">
+        <p class="mb-4">
+          A premium property rental platform for a Phuket-based real estate company operating at the high end of the short-term rental market. The brief was specific: create something that felt as considered as the properties themselves — and that would not embarrass the agent when shown to a client at the level they were accustomed to dealing with.
+        </p>
+        <p>
+          We designed and built the platform from scratch: property listings with high-resolution photography management, availability calendars integrated with the booking backend, an enquiry system that routes and qualifies leads automatically, and a CMS that the team could operate without technical assistance. The result is used daily and has not required a developer call since launch.
+        </p>
+      </div>
+      <div class="mt-8 pt-4 border-t" style="border-color: rgba(184,149,106,0.4);">
+        <div class="flex flex-wrap gap-8">
+          <div>
+            <span class="label-mono block mb-1">Delivered</span>
+            <span class="body-editorial" style="font-size: 0.875rem;">2025</span>
+          </div>
+          <div>
+            <span class="label-mono block mb-1">Scope</span>
+            <span class="body-editorial" style="font-size: 0.875rem;">Design, frontend, backend, CMS</span>
+          </div>
+          <div>
+            <span class="label-mono block mb-1">Stack</span>
+            <span class="body-editorial" style="font-size: 0.875rem;">Next.js, Supabase, Sanity</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </article>
+
+  <!-- Case 02: Backdoor Store — Half Spread -->
+  <article class="fade-section border-t border-ink">
+    <div class="spread-right">
+      <div class="px-8 md:px-12 py-14" style="background-color: #F5F1E8;">
+        <span class="label-mono block mb-4" style="color: #7A7A72;">Project 02 — Half Spread</span>
+        <h3 class="display-md mb-8" style="max-width: 14ch;">Backdoor Store</h3>
+        <div class="body-editorial text-justify-editorial" style="font-size: 0.9375rem; line-height: 1.75;">
+          <p class="mb-4">An e-commerce build for an independent streetwear and sneaker retailer with a considered aesthetic and a customer base that notices when something is off. The store had outgrown its template and needed something built to its own proportions.</p>
+          <p>We rebuilt the storefront with attention to product photography presentation, a checkout flow reduced to the minimum number of steps, and an inventory management layer that connected to the physical stock system without duplication of effort. Launch day conversion was above projection.</p>
+        </div>
+        <div class="mt-10 pt-4" style="border-top: 1px solid rgba(184,149,106,0.4);">
+          <span class="label-mono block mb-1">Delivered</span>
+          <span class="body-editorial" style="font-size: 0.875rem;">2024 — E-commerce, design, integration</span>
+        </div>
+      </div>
+      <div class="photo-case-2 relative" style="min-height: 480px;">
+        <div class="absolute bottom-0 left-0 right-0 p-6 z-10">
+          <p class="caption" style="color: rgba(245,241,232,0.6);">Fig. 05 — Backdoor Store, e-commerce platform, 2024</p>
+        </div>
+      </div>
+    </div>
+  </article>
+
+  <!-- Case 03: RA Project — Full Width -->
+  <article class="fade-section border-t border-ink">
+    <div class="photo-case-3 relative" style="height: 420px; width: 100%;">
+      <div class="absolute inset-0 flex items-end p-8 md:p-16 z-10">
+        <div>
+          <span class="label-mono" style="color: rgba(245,241,232,0.6);">Project 03 — Full Spread</span>
+          <h3 class="font-serif mt-2" style="font-family: 'DM Serif Display', Georgia, serif; font-size: clamp(2rem, 5vw, 4rem); line-height: 1; color: #F5F1E8; letter-spacing: -0.02em; max-width: 16ch;">RA Project</h3>
+        </div>
+      </div>
+    </div>
+    <div class="px-8 md:px-16 lg:px-24 py-3 border-b border-ink" style="background-color: #F5F1E8;">
+      <p class="caption">Fig. 06 — RA Project, platform & AI research pipeline, 2025–2026</p>
+    </div>
+    <div class="px-8 md:px-16 lg:px-24 py-14" style="background-color: #F5F1E8;">
+      <div class="columns-2-editorial body-editorial text-justify-editorial" style="max-width: 900px;">
+        <p class="mb-4">
+          An ongoing engagement with a research-oriented organisation requiring a combination of platform infrastructure and AI-augmented research tooling. The platform handles data ingestion, processing, and structured storage; the AI layer performs document analysis, entity extraction, and synthesis at a scale that would require a team of analysts to replicate manually.
+        </p>
+        <p>
+          This project represents the kind of work we find most interesting: the intersection of genuine research need, robust engineering, and AI capability that is not decorative. The system processes hundreds of documents daily and surfaces findings that inform decisions at the organisational level.
+        </p>
+      </div>
+      <div class="mt-8 pt-4 border-t" style="border-color: rgba(184,149,106,0.4);">
+        <div class="flex flex-wrap gap-8">
+          <div>
+            <span class="label-mono block mb-1">Status</span>
+            <span class="body-editorial" style="font-size: 0.875rem;">Ongoing, 2025–2026</span>
+          </div>
+          <div>
+            <span class="label-mono block mb-1">Scope</span>
+            <span class="body-editorial" style="font-size: 0.875rem;">Platform, AI pipeline, research tooling</span>
+          </div>
+          <div>
+            <span class="label-mono block mb-1">Stack</span>
+            <span class="body-editorial" style="font-size: 0.875rem;">Python, Claude API, PostgreSQL, FastAPI</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </article>
+</section>
+
+<!-- PROCESS — EDITORIAL ESSAY -->
+<section id="process" style="background-color: #EBE6D8;">
+  <div class="px-8 md:px-16 lg:px-24 pt-8 pb-2">
+    <div class="folio">
+      <span class="running-head">How We Work</span>
+      <span class="running-head">Pages 40 – 48</span>
+    </div>
+    <hr class="page-rule mt-2">
+  </div>
+
+  <div class="px-8 md:px-16 lg:px-24 pt-12 pb-6">
+    <span class="issue-red">Method</span>
+    <h2 class="display-lg mt-2 mb-12" style="max-width: 18ch;">How We Work — A Process Essay</h2>
+  </div>
+
+  <!-- Step 01 -->
+  <div class="fade-section border-t border-ink">
+    <div class="px-8 md:px-16 lg:px-24 py-14">
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-8">
+        <div class="md:col-span-2">
+          <span class="step-number">01</span>
+        </div>
+        <div class="md:col-span-4">
+          <h3 class="display-md mb-4" style="font-size: clamp(1.6rem, 3.5vw, 2.5rem);">Listen Before Everything</h3>
+        </div>
+        <div class="md:col-span-6">
+          <div class="body-editorial text-justify-editorial" style="font-size: 0.9375rem; line-height: 1.78;">
+            <p class="mb-4">The first conversations are not about technology. They are about the business: how it runs today, where it strains, what would need to be true for the next year to look different from the last. We ask questions that might seem beside the point — who uses this system, at what time of day, what happens when it fails — because context is the material that makes good decisions possible.</p>
+            <p>We treat the listening phase as a deliverable, not a formality. At the end of it, both parties should have a shared document describing the problem in enough detail that the solution can be evaluated against it.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Pull quote -->
+  <div class="fade-section border-t border-ink px-8 md:px-16 lg:px-24 py-16" style="background-color: #F5F1E8;">
+    <div class="pull-quote-overflow" style="background-color: transparent; border-top: 2px solid #B8956A; border-bottom: 2px solid #B8956A; padding-top: 2rem; padding-bottom: 2rem;">
+      <p class="pull-quote" style="text-align: center;">
+        "A specification written before the listening is done is not a specification — it is a guess dressed in the language of certainty."
+      </p>
+    </div>
+  </div>
+
+  <!-- Step 02 -->
+  <div class="fade-section border-t border-ink">
+    <div class="px-8 md:px-16 lg:px-24 py-14">
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-8">
+        <div class="md:col-span-2">
+          <span class="step-number">02</span>
+        </div>
+        <div class="md:col-span-4">
+          <h3 class="display-md mb-4" style="font-size: clamp(1.6rem, 3.5vw, 2.5rem);">Design the System, Not the Screen</h3>
+        </div>
+        <div class="md:col-span-6">
+          <div class="body-editorial text-justify-editorial" style="font-size: 0.9375rem; line-height: 1.78;">
+            <p class="mb-4">Most project failures are architecture failures, not implementation failures. Before any code is written, we produce a model of the system: what are its components, how do they communicate, where does the data live, what happens when something breaks. Visual design follows from this — not the other way around.</p>
+            <p>This does not mean the work is slow. It means the work does not need to be redone. There is an economy to deliberate design that only becomes visible over the lifetime of a project.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 03 -->
+  <div class="fade-section border-t border-ink">
+    <div class="px-8 md:px-16 lg:px-24 py-14">
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-8">
+        <div class="md:col-span-2">
+          <span class="step-number">03</span>
+        </div>
+        <div class="md:col-span-4">
+          <h3 class="display-md mb-4" style="font-size: clamp(1.6rem, 3.5vw, 2.5rem);">Build and Transfer</h3>
+        </div>
+        <div class="md:col-span-6">
+          <div class="body-editorial text-justify-editorial" style="font-size: 0.9375rem; line-height: 1.78;">
+            <p class="mb-4">We build in stages, showing work early and adjusting on evidence rather than assumption. Every decision made during the build is documented — not in exhaustive technical prose, but in clear language that the person responsible for the system after us can understand without a glossary.</p>
+            <p>Handover is not an afterthought. The transfer of a working system that no one can maintain is a partial failure. We consider our work complete only when the people who will operate what we built feel confident doing so.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 04 -->
+  <div class="fade-section border-t border-ink">
+    <div class="px-8 md:px-16 lg:px-24 py-14">
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-8">
+        <div class="md:col-span-2">
+          <span class="step-number">04</span>
+        </div>
+        <div class="md:col-span-4">
+          <h3 class="display-md mb-4" style="font-size: clamp(1.6rem, 3.5vw, 2.5rem);">Stay Close After Launch</h3>
+        </div>
+        <div class="md:col-span-6">
+          <div class="body-editorial text-justify-editorial" style="font-size: 0.9375rem; line-height: 1.78;">
+            <p class="mb-4">The weeks immediately following launch are where most of what was learned during a project becomes available for use. We remain engaged during this period — available to observe, adjust, and answer questions — because real use surfaces things that tests do not.</p>
+            <p>Our preference is for relationships that extend beyond the initial engagement. We are better collaborators with clients we understand, and we understand them better with each successive project. This is not a commercial calculation — it is a statement about how good work actually gets made.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- MANIFESTO — Full page pull quote -->
+<section id="manifesto" class="fade-section border-t border-ink" style="background-color: #1B1B19; min-height: 80vh; display: flex; flex-direction: column; justify-content: center;">
+  <div class="px-8 md:px-16 lg:px-24 pt-8 pb-4">
+    <div class="folio" style="border-color: rgba(245,241,232,0.15);">
+      <span class="running-head" style="color: rgba(245,241,232,0.4);">Manifesto</span>
+      <span class="running-head" style="color: rgba(245,241,232,0.4);">Page 50</span>
+    </div>
+    <hr style="border: none; border-top: 1px solid rgba(245,241,232,0.15); margin-top: 0.5rem;">
+  </div>
+
+  <div class="flex-1 flex items-center justify-center px-8 md:px-16 lg:px-24 py-20">
+    <div class="text-center" style="max-width: 900px;">
+      <div class="gold-bracket" style="border-color: #B8956A;">
+        <p class="manifesto-quote" style="color: #F5F1E8;">
+          "We believe that software made slowly and with intent outlasts software made quickly and without it. That the most useful thing a studio can offer is not its technology, but its judgment. That the best digital work is indistinguishable from the organisation it represents — not because it is disguised, but because it is true."
+        </p>
+      </div>
+      <div class="mt-10">
+        <hr style="border: none; border-top: 1px solid rgba(184,149,106,0.35); margin-bottom: 1.5rem;">
+        <span class="caption" style="color: rgba(245,241,232,0.4);">Studio Statement, Phuket, 2024 — published in full, Issue 01</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CONTACT — Letters to the Editor -->
+<section id="contact" class="fade-section border-t border-ink" style="background-color: #F5F1E8;">
+  <div class="px-8 md:px-16 lg:px-24 pt-8 pb-2">
+    <div class="folio">
+      <span class="running-head">Letters to the Studio</span>
+      <span class="running-head">Page 52</span>
+    </div>
+    <hr class="page-rule mt-2">
+  </div>
+
+  <div class="px-8 md:px-16 lg:px-24 py-20 md:py-28">
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-12">
+      <div class="md:col-span-4">
+        <span class="issue-red block mb-4">Write to Us</span>
+        <h2 class="display-md mb-6" style="max-width: 12ch;">We Read Everything</h2>
+        <hr class="page-rule-gold mb-6" style="width: 80px;">
+        <div class="body-editorial" style="font-size: 0.875rem; line-height: 1.7; color: #7A7A72;">
+          <p>Studio address:<br>Phuket, Thailand<br>Bangkok, Thailand</p>
+          <p class="mt-4">Available for:<br>Web development<br>Automation projects<br>AI agent builds<br>Advisory engagements</p>
+        </div>
+      </div>
+
+      <div class="md:col-span-8">
+        <div class="body-editorial-lg text-justify-editorial drop-cap mb-10" style="max-width: 58ch; line-height: 1.72;">
+          <p class="mb-5">
+            Every project we take on begins with a letter — or rather, its contemporary equivalent. A message that describes, with whatever clarity is possible at the outset, what you are trying to build and why it matters.
+          </p>
+          <p class="mb-5">
+            We respond to all enquiries personally, and we read them with attention. If we are not the right people for what you need, we will tell you that directly and, where possible, point you toward someone who is. Our interest is in work that fits, not in work that merely pays.
+          </p>
+          <p>
+            If the description of what we do in these pages has seemed at all relevant to something you are trying to accomplish — write to us. We are particularly interested in conversations that do not yet have a clear shape. Those are often the most interesting ones to develop.
+          </p>
+        </div>
+
+        <div class="pt-8 border-t border-ink">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div>
+              <span class="label-mono block mb-3">Electronic correspondence</span>
+              <a href="mailto:hello@studio.build" class="editorial-link font-body" style="font-family: 'Newsreader', Georgia, serif; font-size: 1.125rem;">hello@studio.build</a>
+              <p class="caption mt-2">Response within 48 hours, always</p>
+            </div>
+            <div>
+              <span class="label-mono block mb-3">Telegram channel</span>
+              <a href="https://t.me/studio_build" class="editorial-link font-body" style="font-family: 'Newsreader', Georgia, serif; font-size: 1.125rem;">@studio_build</a>
+              <p class="caption mt-2">For faster exchanges and brief enquiries</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-12 pt-6 border-t" style="border-color: rgba(184,149,106,0.4);">
+          <p class="body-editorial" style="font-style: italic; font-size: 0.9375rem; color: #7A7A72; max-width: 48ch;">
+            We work with a small number of clients at any one time. This is not a constraint — it is a condition of the quality we wish to maintain.
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER — COLOPHON -->
+<footer class="border-t-2 border-ink" style="background-color: #1B1B19;">
+  <div class="px-8 md:px-16 lg:px-24 py-12">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-10 mb-10">
+      <div>
+        <p class="font-serif mb-3" style="font-family: 'DM Serif Display', Georgia, serif; font-size: 1.5rem; color: #F5F1E8;">STUDIO</p>
+        <p class="caption" style="color: rgba(245,241,232,0.4); font-style: normal; line-height: 1.7;">
+          An independent digital practice.<br>
+          Web development, automation,<br>AI agent design.
+        </p>
+      </div>
+      <div>
+        <p class="label-mono mb-4" style="color: rgba(245,241,232,0.35);">Colophon</p>
+        <p class="caption" style="color: rgba(245,241,232,0.4); font-style: normal; line-height: 1.9;">
+          Display: DM Serif Display (Google Fonts)<br>
+          Body: Newsreader (Google Fonts)<br>
+          Captions: JetBrains Mono (Google Fonts)<br>
+          Background: ivory #F5F1E8<br>
+          Ink: deep #1B1B19<br>
+          Accent: editorial red #B83227<br>
+          Gold: leaf #B8956A
+        </p>
+      </div>
+      <div class="text-right">
+        <p class="label-mono mb-4" style="color: rgba(245,241,232,0.35);">Publication details</p>
+        <p class="caption" style="color: rgba(245,241,232,0.4); font-style: normal; line-height: 1.9;">
+          Volume 2026, Issue 01<br>
+          Designed and set in Phuket &times; Bangkok<br>
+          Printed on screen, 2026<br>
+          All rights reserved
+        </p>
+      </div>
+    </div>
+
+    <hr style="border: none; border-top: 1px solid rgba(245,241,232,0.12); margin-bottom: 1.5rem;">
+
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div>
+        <span class="caption" style="color: rgba(245,241,232,0.35); font-style: normal;">&copy; 2026 Studio. Independent digital practice.</span>
+      </div>
+      <div class="flex items-center gap-6">
+        <span class="caption" style="color: rgba(245,241,232,0.35); font-style: normal;">Phuket / Bangkok</span>
+        <span class="issue-red" style="color: rgba(184,50,39,0.7); font-size: 0.625rem;">Page 54 — End matter</span>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // Parallax on hero title — very subtle
+  const heroTitle = document.getElementById('hero-title');
+
+  function parallaxHero() {
+    const scrollY = window.scrollY;
+    if (heroTitle && scrollY < window.innerHeight) {
+      heroTitle.style.transform = 'translateY(' + (scrollY * 0.12) + 'px)';
+    }
+  }
+
+  window.addEventListener('scroll', parallaxHero, { passive: true });
+
+  // IntersectionObserver for fade-in sections
+  const fadeSections = document.querySelectorAll('.fade-section');
+
+  const observer = new IntersectionObserver(
+    function(entries) {
+      entries.forEach(function(entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    },
+    {
+      threshold: 0.08,
+      rootMargin: '0px 0px -40px 0px'
+    }
+  );
+
+  fadeSections.forEach(function(section) {
+    observer.observe(section);
+  });
+</script>
+</body>
+</html>

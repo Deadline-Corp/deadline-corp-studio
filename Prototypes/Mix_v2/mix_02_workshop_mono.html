@@ -1,0 +1,996 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STUDIO/ — Forge Software. Automate Everything.</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          'bg':       '#1A1410',
+          'surface':  '#211912',
+          'border':   '#3A2D24',
+          'cream':    '#F2EAD9',
+          'mute':     '#9A8A75',
+          'copper':   '#C76A2D',
+          'sand':     '#D9A057',
+        },
+        fontFamily: {
+          mono: ['"JetBrains Mono"', 'monospace'],
+        },
+        borderRadius: { DEFAULT: '0', none: '0', sm: '0', md: '0', lg: '0', xl: '0', full: '0' },
+      }
+    }
+  }
+</script>
+<style>
+  *, *::before, *::after {
+    font-family: 'JetBrains Mono', monospace !important;
+    border-radius: 0 !important;
+    box-sizing: border-box;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background-color: #1A1410;
+    color: #F2EAD9;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+  }
+
+  /* Offset shadow buttons */
+  .btn-primary {
+    display: inline-block;
+    background: #C76A2D;
+    color: #1A1410;
+    border: 3px solid #1A1410;
+    box-shadow: 6px 6px 0 #1A1410;
+    padding: 12px 28px;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    text-decoration: none;
+    transition: transform 0.08s linear, box-shadow 0.08s linear;
+    white-space: nowrap;
+  }
+  .btn-primary:hover {
+    transform: translate(6px, 6px);
+    box-shadow: 0 0 0 #1A1410;
+  }
+
+  .btn-secondary {
+    display: inline-block;
+    background: transparent;
+    color: #F2EAD9;
+    border: 2px solid #D9A057;
+    box-shadow: 4px 4px 0 #D9A057;
+    padding: 12px 28px;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 500;
+    font-size: 13px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+    text-decoration: none;
+    transition: transform 0.08s linear, box-shadow 0.08s linear;
+    white-space: nowrap;
+  }
+  .btn-secondary:hover {
+    transform: translate(4px, 4px);
+    box-shadow: 0 0 0 #D9A057;
+  }
+
+  .btn-ghost {
+    display: inline-block;
+    background: transparent;
+    color: #9A8A75;
+    border: none;
+    padding: 8px 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 400;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    text-decoration: none;
+    transition: color 0.12s linear;
+  }
+  .btn-ghost::after {
+    content: '';
+    opacity: 0;
+    transition: opacity 0.12s linear;
+    margin-left: 4px;
+  }
+  .btn-ghost:hover {
+    color: #F2EAD9;
+  }
+  .btn-ghost:hover::after {
+    content: ' ▸';
+    opacity: 1;
+  }
+
+  /* Nav bracket links */
+  .nav-link {
+    color: #9A8A75;
+    text-decoration: none;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    transition: color 0.1s linear;
+    white-space: nowrap;
+  }
+  .nav-link:hover {
+    color: #F2EAD9;
+  }
+
+  /* Blinking cursor */
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+  }
+  .cursor-blink {
+    display: inline-block;
+    width: 10px;
+    height: 1.1em;
+    background: #C76A2D;
+    vertical-align: text-bottom;
+    animation: blink 1.1s step-end infinite;
+    margin-left: 3px;
+  }
+
+  /* ASCII art */
+  .ascii-art {
+    font-size: 10px;
+    line-height: 1.0;
+    color: #C76A2D;
+    white-space: pre;
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 400;
+    letter-spacing: 0;
+    display: block;
+    opacity: 0.85;
+    user-select: none;
+  }
+
+  /* Status band */
+  .status-band {
+    background: #211912;
+    border-top: 1px solid #3A2D24;
+    border-bottom: 1px solid #3A2D24;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  /* Service panels double border */
+  .service-panel {
+    border: 2px solid #3A2D24;
+    background: #211912;
+    transition: border-color 0.1s linear;
+  }
+  .service-panel:hover {
+    border-color: #C76A2D;
+    border-width: 3px;
+  }
+
+  /* Cases table */
+  .cases-table-header {
+    background: #C76A2D;
+    color: #1A1410;
+  }
+
+  /* Process flow */
+  .process-step {
+    border: 2px solid #3A2D24;
+    background: #211912;
+    transition: border-color 0.1s linear, background 0.1s linear;
+  }
+  .process-step:hover {
+    border-color: #C76A2D;
+    background: #251C14;
+  }
+
+  /* Stats panel */
+  .stat-panel {
+    border: 1px solid #3A2D24;
+    border-top: 3px solid #C76A2D;
+    background: #211912;
+  }
+
+  /* Manifesto box */
+  .manifesto-box {
+    border: 2px solid #3A2D24;
+    background: #211912;
+  }
+
+  /* Contact frame */
+  .contact-frame {
+    border: 2px solid #C76A2D;
+    background: #211912;
+  }
+
+  /* Inline code highlight */
+  code {
+    background: #2A1E14;
+    color: #C76A2D;
+    padding: 1px 5px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.92em;
+    border: 1px solid #3A2D24;
+  }
+
+  /* Fade-up animation */
+  .fade-up {
+    opacity: 0;
+    transform: translateY(24px);
+    transition: opacity 0.4s ease-out, transform 0.4s ease-out;
+  }
+  .fade-up.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* Hero headline */
+  .hero-headline {
+    font-size: clamp(52px, 7vw, 96px);
+    font-weight: 700;
+    line-height: 1.0;
+    letter-spacing: -0.02em;
+    color: #F2EAD9;
+  }
+  .hero-headline span.slash {
+    color: #C76A2D;
+  }
+
+  /* Copper rule */
+  .copper-rule {
+    border: none;
+    border-top: 1px solid #C76A2D;
+    margin: 0;
+  }
+
+  /* Warm chip */
+  .chip {
+    display: inline-block;
+    border: 1px solid #3A2D24;
+    background: #2A1E14;
+    color: #9A8A75;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    padding: 3px 10px;
+    text-transform: uppercase;
+  }
+  .chip-copper {
+    border-color: #C76A2D;
+    color: #C76A2D;
+    background: #2A1E14;
+  }
+
+  /* Stack tag */
+  .tag {
+    display: inline-block;
+    border: 1px solid #3A2D24;
+    color: #9A8A75;
+    font-size: 11px;
+    padding: 2px 8px;
+    letter-spacing: 0.06em;
+    text-transform: lowercase;
+    transition: border-color 0.1s linear, color 0.1s linear;
+  }
+  .tag:hover {
+    border-color: #C76A2D;
+    color: #C76A2D;
+  }
+
+  /* Double-line box drawing */
+  .dbl-border {
+    font-size: 11px;
+    color: #3A2D24;
+    line-height: 1;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: #1A1410; }
+  ::-webkit-scrollbar-thumb { background: #3A2D24; }
+  ::-webkit-scrollbar-thumb:hover { background: #C76A2D; }
+
+  /* Mobile adjustments */
+  @media (max-width: 768px) {
+    .ascii-art { font-size: 7px; }
+    .hero-headline { font-size: clamp(38px, 10vw, 64px); }
+    .ascii-mobile-fallback { display: block; }
+    .ascii-mobile-hide { display: none; }
+  }
+  @media (min-width: 769px) {
+    .ascii-mobile-fallback { display: none; }
+  }
+
+  /* Section copper label */
+  .section-label {
+    font-size: 11px;
+    color: #C76A2D;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════ TOP BAR -->
+<header style="background:#1A1410; border-bottom: 1px solid #3A2D24; position: sticky; top: 0; z-index: 100;">
+  <div style="max-width: 1320px; margin: 0 auto; padding: 0 32px;">
+    <div style="display: flex; align-items: center; justify-content: space-between; height: 52px; gap: 24px;">
+      <!-- Wordmark -->
+      <a href="#" style="text-decoration: none; color: #C76A2D; font-size: 18px; font-weight: 700; letter-spacing: 0.04em; white-space: nowrap;">STUDIO<span style="color:#3A2D24;">/</span></a>
+
+      <!-- Nav -->
+      <nav style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+        <a href="#services" class="nav-link">[services]</a>
+        <a href="#cases"    class="nav-link">[cases]</a>
+        <a href="#process"  class="nav-link">[process]</a>
+        <a href="#contact"  class="nav-link">[contact]</a>
+      </nav>
+
+      <!-- CTA -->
+      <a href="#contact" class="btn-primary" style="font-size: 12px; padding: 9px 20px;">TALK ▸</a>
+    </div>
+  </div>
+</header>
+
+
+<!-- ═══════════════════════════════════════ HERO -->
+<section id="hero" style="min-height: 100vh; background: #1A1410; display: flex; align-items: center; border-bottom: 1px solid #3A2D24; overflow: hidden;">
+  <div style="max-width: 1320px; margin: 0 auto; padding: 80px 32px 64px; width: 100%;">
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: center;">
+
+      <!-- Left: copy -->
+      <div class="fade-up">
+        <!-- Chip row -->
+        <div style="display: flex; gap: 12px; margin-bottom: 32px; flex-wrap: wrap; align-items: center;">
+          <span class="chip-copper chip">// EST. 2026</span>
+          <span class="chip">без воды</span>
+          <span class="chip" style="color: #9A8A75;">web + AI automation</span>
+        </div>
+
+        <!-- Headline -->
+        <div class="hero-headline" style="margin-bottom: 28px;">
+          <div>WE FORGE</div>
+          <div style="color:#3A2D24;">/ / / / / / /</div>
+          <div>SOFTWARE</div>
+          <div><span class="slash">+</span> AUTOMATION</div>
+          <div><span class="slash">+</span> AI.</div>
+        </div>
+
+        <p style="color: #9A8A75; font-size: 15px; line-height: 1.65; max-width: 480px; margin-bottom: 40px;">
+          Built deliberately, in low light, with attention.<br>
+          <span style="color: #C76A2D;">// not an agency. a workshop.</span>
+        </p>
+
+        <!-- Comment annotation -->
+        <p style="color: #3A2D24; font-size: 12px; margin-bottom: 20px; letter-spacing: 0.04em;">
+          /* founders ship alongside you — no junior handoffs */
+        </p>
+
+        <!-- Buttons -->
+        <div style="display: flex; gap: 16px; flex-wrap: wrap; align-items: center;">
+          <a href="#contact" class="btn-primary">FORGE TOGETHER ▸</a>
+          <a href="#cases" class="btn-secondary">SEE THE WORK</a>
+        </div>
+
+        <!-- Small stat row -->
+        <div style="display: flex; gap: 32px; margin-top: 48px; padding-top: 28px; border-top: 1px solid #3A2D24;">
+          <div>
+            <div style="font-size: 28px; font-weight: 700; color: #F2EAD9; font-variant-numeric: tabular-nums;">12+</div>
+            <div style="font-size: 11px; color: #9A8A75; letter-spacing: 0.08em; text-transform: uppercase;">projects shipped</div>
+          </div>
+          <div>
+            <div style="font-size: 28px; font-weight: 700; color: #F2EAD9; font-variant-numeric: tabular-nums;">&lt;24h</div>
+            <div style="font-size: 11px; color: #9A8A75; letter-spacing: 0.08em; text-transform: uppercase;">response time</div>
+          </div>
+          <div>
+            <div style="font-size: 28px; font-weight: 700; color: #C76A2D; font-variant-numeric: tabular-nums;">2</div>
+            <div style="font-size: 11px; color: #9A8A75; letter-spacing: 0.08em; text-transform: uppercase;">founders, no noise</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right: ASCII art -->
+      <div style="display: flex; justify-content: flex-end; align-items: center;">
+        <div class="ascii-mobile-hide fade-up" style="transition-delay: 0.15s;">
+<pre class="ascii-art">
+          ___________________________
+         /                           \
+        /    WORKSHOP  STUDIO /       \
+       /___________________________   \
+      |  ________________________  |   |
+      | |                        | |   |
+      | |   ,---,                | |   |
+      | |  /|   |                | |   |
+      | | / |   |  _____         | |   |
+      | |/  |   | /     \        | |   |
+      | |   |   |/  ,--. \       | |   |
+      | |   |   /  / // \ \      | |   |
+      | |    \ /  / //   \ \     | |   |
+      | |    |X| | |//    | |    | |   |
+      | |   /   \  \ \\   / /    | |   |
+      | |  /  _  \  \ \\ / /     | |   |
+      | | /  / \  \  '----'      | |   |
+      | |/  /   \  \             | |   |
+      | |  /  O  \  '-----,      | |   |
+      | | /   |   \       |      | |   |
+      | |     |    \    __|      | |   |
+      | |  ,--+--,  \  /  \      | |   |
+      | | /   |   \ | /    |     | |   |
+      | ||    |    ||/     |     | |   |
+      | ||====+====||======|     | |   |
+      | |'----+----''------'     | |   |
+      | |________________________| |   |
+      |                            |   |
+      |  // ANVIL  &  HAMMER  //   |   |
+      |  // сделано в темной   //  |   |
+      |  //  мастерской        //  |   |
+      |____________________________|___/
+         |__________________________|
+              |            |
+             [__]          |
+              ||    ,------+-----,
+         ,----++---/              \---,
+        /     ||  |   FORGE FIRST  |   \
+       /      ||   \              /     \
+      '-------++'---'------------'-------'
+              ||||
+         ,----++++----,
+        /   STUDIO /   \
+       '_______________'</pre>
+        </div>
+
+        <!-- Mobile fallback -->
+        <div class="ascii-mobile-fallback" style="text-align: center; padding: 24px;">
+          <pre class="ascii-art" style="font-size: 8px; display: inline-block; text-align: left;">
+    ,-------,
+   /  FORGE /
+  / STUDIO /
+ '---------'
+  //ANVIL//
+  ========
+  |      |
+  '------'</pre>
+          <p style="color: #3A2D24; font-size: 11px; margin-top: 16px; letter-spacing: 0.06em;">// ASCII art — desktop view</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════ STATUS LINE -->
+<div class="status-band" style="padding: 14px 0;">
+  <div style="max-width: 1320px; margin: 0 auto; padding: 0 32px;">
+    <p style="font-size: 12px; color: #9A8A75; margin: 0; letter-spacing: 0.05em; overflow-x: auto; white-space: nowrap; font-variant-numeric: tabular-nums;">
+      <span style="color: #3A2D24;">═══ [</span>
+      <span style="color: #C76A2D;"> ● </span>
+      <span style="color: #F2EAD9;">shipped 12</span>
+      <span style="color: #3A2D24;"> · </span>
+      <span style="color: #F2EAD9;">in flight 3</span>
+      <span style="color: #3A2D24;"> · </span>
+      <span style="color: #C76A2D;">taking on Q3 work</span>
+      <span style="color: #3A2D24;"> · </span>
+      <span style="color: #F2EAD9;">response ≤ 24h</span>
+      <span style="color: #3A2D24;"> · </span>
+      <span style="color: #9A8A75;">Phuket × Bangkok</span>
+      <span style="color: #3A2D24;"> ]
+═══</span>
+    </p>
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════ SERVICES -->
+<section id="services" style="background: #1A1410; padding: 96px 0; border-bottom: 1px solid #3A2D24;">
+  <div style="max-width: 1320px; margin: 0 auto; padding: 0 32px;">
+
+    <!-- Section header -->
+    <div class="fade-up" style="margin-bottom: 48px; display: flex; align-items: baseline; gap: 24px;">
+      <span class="section-label">// SERVICES</span>
+      <hr class="copper-rule" style="flex: 1;">
+      <span style="font-size: 11px; color: #3A2D24; letter-spacing: 0.08em;">THREE CRAFTS</span>
+    </div>
+
+    <!-- 3 panels -->
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 2px;">
+
+      <!-- Panel 01 -->
+      <div class="service-panel fade-up" style="padding: 36px 32px; transition-delay: 0.05s;">
+        <div style="font-size: 11px; color: #C76A2D; letter-spacing: 0.15em; margin-bottom: 20px; display: flex; justify-content: space-between;">
+          <span>[01]</span>
+          <span style="color: #3A2D24;">══════════════</span>
+        </div>
+        <div style="font-size: 24px; font-weight: 700; color: #F2EAD9; letter-spacing: -0.01em; margin-bottom: 16px; text-transform: uppercase;">
+          WEB<br>ENGINEERING
+        </div>
+        <p style="font-size: 13px; color: #9A8A75; line-height: 1.7; margin-bottom: 24px;">
+          Full-stack product development. We design and build customer-facing platforms, dashboards, and tools that ship on schedule and hold up under real load.
+        </p>
+        <p style="font-size: 11px; color: #3A2D24; margin-bottom: 20px; letter-spacing: 0.04em;">
+          /* 6–14 week sprints, founder-reviewed */
+        </p>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+          <span class="tag">[next.js]</span>
+          <span class="tag">[postgres]</span>
+          <span class="tag">[redis]</span>
+          <span class="tag">[vercel]</span>
+          <span class="tag">[typescript]</span>
+        </div>
+        <div style="margin-top: 28px; padding-top: 20px; border-top: 1px solid #3A2D24;">
+          <a href="#contact" class="btn-ghost" style="font-size: 12px;">discuss project</a>
+        </div>
+      </div>
+
+      <!-- Panel 02 -->
+      <div class="service-panel fade-up" style="padding: 36px 32px; transition-delay: 0.1s;">
+        <div style="font-size: 11px; color: #C76A2D; letter-spacing: 0.15em; margin-bottom: 20px; display: flex; justify-content: space-between;">
+          <span>[02]</span>
+          <span style="color: #3A2D24;">══════════════</span>
+        </div>
+        <div style="font-size: 24px; font-weight: 700; color: #F2EAD9; letter-spacing: -0.01em; margin-bottom: 16px; text-transform: uppercase;">
+          AI<br>AUTOMATION
+        </div>
+        <p style="font-size: 13px; color: #9A8A75; line-height: 1.7; margin-bottom: 24px;">
+          Eliminate the repetitive. We build LLM-powered pipelines, AI agents, and workflow automation systems that run in the background so your team doesn't have to.
+        </p>
+        <p style="font-size: 11px; color: #3A2D24; margin-bottom: 20px; letter-spacing: 0.04em;">
+          /* measurable output reduction in manual ops */
+        </p>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+          <span class="tag">[n8n]</span>
+          <span class="tag">[claude api]</span>
+          <span class="tag">[openai]</span>
+          <span class="tag">[python]</span>
+          <span class="tag">[telegram bots]</span>
+        </div>
+        <div style="margin-top: 28px; padding-top: 20px; border-top: 1px solid #3A2D24;">
+          <a href="#contact" class="btn-ghost" style="font-size: 12px;">discuss project</a>
+        </div>
+      </div>
+
+      <!-- Panel 03 -->
+      <div class="service-panel fade-up" style="padding: 36px 32px; transition-delay: 0.15s;">
+        <div style="font-size: 11px; color: #C76A2D; letter-spacing: 0.15em; margin-bottom: 20px; display: flex; justify-content: space-between;">
+          <span>[03]</span>
+          <span style="color: #3A2D24;">══════════════</span>
+        </div>
+        <div style="font-size: 24px; font-weight: 700; color: #F2EAD9; letter-spacing: -0.01em; margin-bottom: 16px; text-transform: uppercase;">
+          DATA<br>INFRASTRUCTURE
+        </div>
+        <p style="font-size: 13px; color: #9A8A75; line-height: 1.7; margin-bottom: 24px;">
+          Pipelines, warehouses, and dashboards. We make your data useful — structured, queryable, and presented in a way decision-makers actually read.
+        </p>
+        <p style="font-size: 11px; color: #3A2D24; margin-bottom: 20px; letter-spacing: 0.04em;">
+          /* built on tools you own, not SaaS lock-in */
+        </p>
+        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+          <span class="tag">[dbt]</span>
+          <span class="tag">[clickhouse]</span>
+          <span class="tag">[airflow]</span>
+          <span class="tag">[metabase]</span>
+          <span class="tag">[bigquery]</span>
+        </div>
+        <div style="margin-top: 28px; padding-top: 20px; border-top: 1px solid #3A2D24;">
+          <a href="#contact" class="btn-ghost" style="font-size: 12px;">discuss project</a>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════ CASES -->
+<section id="cases" style="background: #211912; padding: 96px 0; border-bottom: 1px solid #3A2D24;">
+  <div style="max-width: 1320px; margin: 0 auto; padding: 0 32px;">
+
+    <!-- Section header -->
+    <div class="fade-up" style="margin-bottom: 48px; display: flex; align-items: baseline; gap: 24px;">
+      <span class="section-label">// CASES</span>
+      <hr class="copper-rule" style="flex: 1;">
+      <span style="font-size: 11px; color: #3A2D24; letter-spacing: 0.08em;">SELECTED WORK</span>
+    </div>
+
+    <!-- ASCII table -->
+    <div class="fade-up" style="overflow-x: auto;">
+      <table style="width: 100%; border-collapse: collapse; font-size: 13px; min-width: 640px;">
+        <!-- Top rule -->
+        <thead>
+          <tr>
+            <td colspan="5" style="padding: 0; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #3A2D24; letter-spacing: 0.02em; line-height: 1; padding-bottom: 0;">
+              ╔═══════════════════════════════════════════════════════════════════════════════════════╗
+            </td>
+          </tr>
+          <tr class="cases-table-header">
+            <th style="padding: 12px 20px; text-align: left; font-size: 11px; letter-spacing: 0.15em; font-weight: 700; border-right: 1px solid #1A1410; white-space: nowrap;">ID</th>
+            <th style="padding: 12px 20px; text-align: left; font-size: 11px; letter-spacing: 0.15em; font-weight: 700; border-right: 1px solid #1A1410; white-space: nowrap;">CLIENT</th>
+            <th style="padding: 12px 20px; text-align: left; font-size: 11px; letter-spacing: 0.15em; font-weight: 700; border-right: 1px solid #1A1410; white-space: nowrap;">STACK</th>
+            <th style="padding: 12px 20px; text-align: left; font-size: 11px; letter-spacing: 0.15em; font-weight: 700; border-right: 1px solid #1A1410; white-space: nowrap;">RESULT</th>
+            <th style="padding: 12px 20px; text-align: left; font-size: 11px; letter-spacing: 0.15em; font-weight: 700; white-space: nowrap;">STATUS</th>
+          </tr>
+          <tr>
+            <td colspan="5" style="padding: 0; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #3A2D24; letter-spacing: 0.02em; line-height: 1; padding-top: 0;">
+              ╠═══════════════════════════════════════════════════════════════════════════════════════╣
+            </td>
+          </tr>
+        </thead>
+        <tbody>
+          <!-- Row 1 -->
+          <tr style="border-bottom: 1px solid #3A2D24; transition: background 0.08s linear;" onmouseover="this.style.background='#251C14'" onmouseout="this.style.background='transparent'">
+            <td style="padding: 18px 20px; color: #C76A2D; font-weight: 700; border-right: 1px solid #3A2D24; white-space: nowrap; font-variant-numeric: tabular-nums;">001</td>
+            <td style="padding: 18px 20px; color: #F2EAD9; font-weight: 500; border-right: 1px solid #3A2D24; white-space: nowrap;">VIP_RENTAL_PHUKET</td>
+            <td style="padding: 18px 20px; color: #9A8A75; border-right: 1px solid #3A2D24; white-space: nowrap;">next.js · stripe · postgres · vercel</td>
+            <td style="padding: 18px 20px; color: #F2EAD9; border-right: 1px solid #3A2D24;">Full booking platform. Reduced ops overhead by 70%.</td>
+            <td style="padding: 18px 20px;">
+              <span style="background: #1A3A1A; color: #5A9A5A; font-size: 10px; padding: 3px 8px; border: 1px solid #2A5A2A; letter-spacing: 0.1em;">SHIPPED</span>
+            </td>
+          </tr>
+          <!-- Row 2 -->
+          <tr style="border-bottom: 1px solid #3A2D24; transition: background 0.08s linear;" onmouseover="this.style.background='#251C14'" onmouseout="this.style.background='transparent'">
+            <td style="padding: 18px 20px; color: #C76A2D; font-weight: 700; border-right: 1px solid #3A2D24; white-space: nowrap; font-variant-numeric: tabular-nums;">002</td>
+            <td style="padding: 18px 20px; color: #F2EAD9; font-weight: 500; border-right: 1px solid #3A2D24; white-space: nowrap;">BACKDOOR_STORE</td>
+            <td style="padding: 18px 20px; color: #9A8A75; border-right: 1px solid #3A2D24; white-space: nowrap;">telegram bot · n8n · python · cloudflare</td>
+            <td style="padding: 18px 20px; color: #F2EAD9; border-right: 1px solid #3A2D24;">E-commerce automation. Orders flow zero-touch.</td>
+            <td style="padding: 18px 20px;">
+              <span style="background: #1A3A1A; color: #5A9A5A; font-size: 10px; padding: 3px 8px; border: 1px solid #2A5A2A; letter-spacing: 0.1em;">SHIPPED</span>
+            </td>
+          </tr>
+          <!-- Row 3 -->
+          <tr style="border-bottom: 0; transition: background 0.08s linear;" onmouseover="this.style.background='#251C14'" onmouseout="this.style.background='transparent'">
+            <td style="padding: 18px 20px; color: #C76A2D; font-weight: 700; border-right: 1px solid #3A2D24; white-space: nowrap; font-variant-numeric: tabular-nums;">003</td>
+            <td style="padding: 18px 20px; color: #F2EAD9; font-weight: 500; border-right: 1px solid #3A2D24; white-space: nowrap;">RA_PROJECT</td>
+            <td style="padding: 18px 20px; color: #9A8A75; border-right: 1px solid #3A2D24; white-space: nowrap;">claude api · dbt · clickhouse · metabase</td>
+            <td style="padding: 18px 20px; color: #F2EAD9; border-right: 1px solid #3A2D24;">AI research assistant + analytics layer.</td>
+            <td style="padding: 18px 20px;">
+              <span style="background: #2A1E14; color: #C76A2D; font-size: 10px; padding: 3px 8px; border: 1px solid #C76A2D; letter-spacing: 0.1em;">IN FLIGHT</span>
+            </td>
+          </tr>
+        </tbody>
+        <tfoot>
+          <tr>
+            <td colspan="5" style="padding: 0; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #3A2D24; letter-spacing: 0.02em; line-height: 1; padding-top: 0;">
+              ╚═══════════════════════════════════════════════════════════════════════════════════════╝
+            </td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+
+    <!-- Note -->
+    <p class="fade-up" style="font-size: 11px; color: #3A2D24; margin-top: 16px; letter-spacing: 0.06em;">
+      /* NDA-covered work not shown — available on request during discovery call */
+    </p>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════ PROCESS -->
+<section id="process" style="background: #1A1410; padding: 96px 0; border-bottom: 1px solid #3A2D24;">
+  <div style="max-width: 1320px; margin: 0 auto; padding: 0 32px;">
+
+    <!-- Section header -->
+    <div class="fade-up" style="margin-bottom: 52px; display: flex; align-items: baseline; gap: 24px;">
+      <span class="section-label">// PROCESS</span>
+      <hr class="copper-rule" style="flex: 1;">
+      <span style="font-size: 11px; color: #3A2D24; letter-spacing: 0.08em;">FOUR STAGES</span>
+    </div>
+
+    <!-- ASCII flow -->
+    <div class="fade-up" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0; align-items: start; overflow-x: auto;">
+
+      <!-- Stage 01 -->
+      <div class="process-step" style="padding: 28px 24px; border-right: 0; position: relative;">
+        <div style="font-size: 11px; color: #C76A2D; letter-spacing: 0.15em; margin-bottom: 12px;">[01]</div>
+        <div style="font-size: 18px; font-weight: 700; color: #F2EAD9; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 16px; line-height: 1.2;">DISCOVERY</div>
+        <div style="font-size: 11px; color: #3A2D24; margin-bottom: 12px;">────────────</div>
+        <p style="font-size: 12px; color: #9A8A75; line-height: 1.65; margin-bottom: 16px;">
+          Audit your stack. Map real pain. Define measurable outcomes. No slides — a written brief you keep.
+        </p>
+        <div style="font-size: 11px; color: #3A2D24; letter-spacing: 0.04em;">/* 3–5 days */</div>
+      </div>
+
+      <!-- Arrow -->
+      <div style="display: flex; align-items: center; justify-content: center; padding: 28px 4px; font-size: 18px; color: #3A2D24; font-weight: 700; letter-spacing: -0.05em;">───▸</div>
+
+      <!-- Stage 02 -->
+      <div class="process-step" style="padding: 28px 24px;">
+        <div style="font-size: 11px; color: #C76A2D; letter-spacing: 0.15em; margin-bottom: 12px;">[02]</div>
+        <div style="font-size: 18px; font-weight: 700; color: #F2EAD9; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 16px; line-height: 1.2;">ARCHITECTURE</div>
+        <div style="font-size: 11px; color: #3A2D24; margin-bottom: 12px;">────────────</div>
+        <p style="font-size: 12px; color: #9A8A75; line-height: 1.65; margin-bottom: 16px;">
+          Tech choices justified in plain text. Schema design, integration map, risk log. You approve before we cut code.
+        </p>
+        <div style="font-size: 11px; color: #3A2D24; letter-spacing: 0.04em;">/* 1 week */</div>
+      </div>
+
+      <!-- Arrow -->
+      <div style="display: flex; align-items: center; justify-content: center; padding: 28px 4px; font-size: 18px; color: #3A2D24; font-weight: 700; letter-spacing: -0.05em;">───▸</div>
+
+      <!-- Stage 03 -->
+      <div class="process-step" style="padding: 28px 24px;">
+        <div style="font-size: 11px; color: #C76A2D; letter-spacing: 0.15em; margin-bottom: 12px;">[03]</div>
+        <div style="font-size: 18px; font-weight: 700; color: #F2EAD9; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 16px; line-height: 1.2;">SPRINT</div>
+        <div style="font-size: 11px; color: #3A2D24; margin-bottom: 12px;">────────────</div>
+        <p style="font-size: 12px; color: #9A8A75; line-height: 1.65; margin-bottom: 16px;">
+          Two-week build cycles with weekly deploys to staging. Async updates in Telegram. No status-meeting overhead.
+        </p>
+        <div style="font-size: 11px; color: #3A2D24; letter-spacing: 0.04em;">/* 4–10 weeks */</div>
+      </div>
+
+      <!-- Arrow -->
+      <div style="display: flex; align-items: center; justify-content: center; padding: 28px 4px; font-size: 18px; color: #3A2D24; font-weight: 700; letter-spacing: -0.05em;">───▸</div>
+
+      <!-- Stage 04 -->
+      <div class="process-step" style="padding: 28px 24px;">
+        <div style="font-size: 11px; color: #C76A2D; letter-spacing: 0.15em; margin-bottom: 12px;">[04]</div>
+        <div style="font-size: 18px; font-weight: 700; color: #F2EAD9; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 16px; line-height: 1.2;">HANDOFF</div>
+        <div style="font-size: 11px; color: #3A2D24; margin-bottom: 12px;">────────────</div>
+        <p style="font-size: 12px; color: #9A8A75; line-height: 1.65; margin-bottom: 16px;">
+          Documented, tested, deployed. Runbook included. 30-day support window. You own every credential and repo.
+        </p>
+        <div style="font-size: 11px; color: #3A2D24; letter-spacing: 0.04em;">/* clean exit */</div>
+      </div>
+
+    </div>
+
+    <!-- Bottom note -->
+    <div class="fade-up" style="margin-top: 36px; padding: 20px 24px; border: 1px solid #3A2D24; background: #211912;">
+      <p style="font-size: 12px; color: #9A8A75; margin: 0; letter-spacing: 0.04em; line-height: 1.6;">
+        <span style="color: #C76A2D;">▸ </span>Fixed-scope engagements only. No retainers, no ambiguity. You know what you're paying for before we start.
+        <span style="color: #3A2D24; margin-left: 16px;">/* это не агентство — это мастерская */</span>
+      </p>
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════ STATS -->
+<section style="background: #211912; padding: 96px 0; border-bottom: 1px solid #3A2D24;">
+  <div style="max-width: 1320px; margin: 0 auto; padding: 0 32px;">
+
+    <!-- Section header -->
+    <div class="fade-up" style="margin-bottom: 48px; display: flex; align-items: baseline; gap: 24px;">
+      <span class="section-label">// NUMBERS</span>
+      <hr class="copper-rule" style="flex: 1;">
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 2px;">
+
+      <div class="stat-panel fade-up" style="padding: 36px 28px; transition-delay: 0.05s;">
+        <div style="font-size: 72px; font-weight: 700; color: #F2EAD9; line-height: 1; font-variant-numeric: tabular-nums; margin-bottom: 12px;">12<span style="color: #C76A2D;">+</span></div>
+        <div style="font-size: 11px; color: #9A8A75; letter-spacing: 0.12em; text-transform: uppercase; border-top: 1px solid #3A2D24; padding-top: 12px;">projects shipped</div>
+        <div style="font-size: 11px; color: #3A2D24; margin-top: 8px; letter-spacing: 0.04em;">/* since 2024 */</div>
+      </div>
+
+      <div class="stat-panel fade-up" style="padding: 36px 28px; transition-delay: 0.1s;">
+        <div style="font-size: 72px; font-weight: 700; color: #F2EAD9; line-height: 1; font-variant-numeric: tabular-nums; margin-bottom: 12px;"><span style="color: #C76A2D;">&lt;</span>24h</div>
+        <div style="font-size: 11px; color: #9A8A75; letter-spacing: 0.12em; text-transform: uppercase; border-top: 1px solid #3A2D24; padding-top: 12px;">response time</div>
+        <div style="font-size: 11px; color: #3A2D24; margin-top: 8px; letter-spacing: 0.04em;">/* real humans, not bots */</div>
+      </div>
+
+      <div class="stat-panel fade-up" style="padding: 36px 28px; transition-delay: 0.15s;">
+        <div style="font-size: 72px; font-weight: 700; color: #C76A2D; line-height: 1; font-variant-numeric: tabular-nums; margin-bottom: 12px;">2</div>
+        <div style="font-size: 11px; color: #9A8A75; letter-spacing: 0.12em; text-transform: uppercase; border-top: 1px solid #3A2D24; padding-top: 12px;">senior founders</div>
+        <div style="font-size: 11px; color: #3A2D24; margin-top: 8px; letter-spacing: 0.04em;">/* no account managers */</div>
+      </div>
+
+      <div class="stat-panel fade-up" style="padding: 36px 28px; transition-delay: 0.2s;">
+        <div style="font-size: 72px; font-weight: 700; color: #F2EAD9; line-height: 1; font-variant-numeric: tabular-nums; margin-bottom: 12px;">70<span style="color: #C76A2D;">%</span></div>
+        <div style="font-size: 11px; color: #9A8A75; letter-spacing: 0.12em; text-transform: uppercase; border-top: 1px solid #3A2D24; padding-top: 12px;">avg ops reduction</div>
+        <div style="font-size: 11px; color: #3A2D24; margin-top: 8px; letter-spacing: 0.04em;">/* measured, not estimated */</div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════ MANIFESTO -->
+<section style="background: #1A1410; padding: 96px 0; border-bottom: 1px solid #3A2D24;">
+  <div style="max-width: 1320px; margin: 0 auto; padding: 0 32px;">
+
+    <!-- Section header -->
+    <div class="fade-up" style="margin-bottom: 48px; display: flex; align-items: baseline; gap: 24px;">
+      <span class="section-label">// MANIFESTO</span>
+      <hr class="copper-rule" style="flex: 1;">
+    </div>
+
+    <div class="manifesto-box fade-up" style="padding: 0;">
+      <!-- ASCII frame top -->
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #3A2D24; line-height: 1; padding: 0 0 0 0;">
+        <div style="padding: 0 24px 0;">
+          <span>┌─────────────────────────────────────────────────────────────────────┐</span>
+        </div>
+      </div>
+
+      <!-- Header row -->
+      <div style="padding: 16px 36px; border-bottom: 1px solid #3A2D24; display: flex; justify-content: space-between; align-items: center;">
+        <span style="font-size: 14px; font-weight: 700; color: #C76A2D; letter-spacing: 0.08em;"># manifesto.md</span>
+        <span style="font-size: 11px; color: #3A2D24; letter-spacing: 0.06em;">last modified: 2026-05-08</span>
+      </div>
+
+      <!-- Content -->
+      <div style="padding: 36px; line-height: 1.85;">
+
+        <p style="font-size: 14px; color: #F2EAD9; margin-bottom: 24px;">
+          We started this studio because we kept seeing the same thing: software that shipped late, over-budget, and built by people who'd never have to maintain it.
+        </p>
+
+        <p style="font-size: 13px; color: #9A8A75; margin-bottom: 20px;">
+          We build differently. Every engagement is founder-led. If you're working with us, you're working with Alex or Nikolay — not a project manager routing to a junior dev in another timezone.
+        </p>
+
+        <div style="margin-bottom: 20px; padding: 16px 20px; border-left: 3px solid #C76A2D; background: #251C14;">
+          <p style="font-size: 13px; color: #F2EAD9; margin: 0; line-height: 1.7;">
+            "We believe <code>simplicity</code> is a technical decision. We believe <code>documentation</code> is part of the product. We believe <code>honesty</code> is the only project management tool that works."
+          </p>
+        </div>
+
+        <p style="font-size: 13px; color: #9A8A75; margin-bottom: 20px;">
+          Our stack choices are boring on purpose. <code>next.js</code>, <code>postgres</code>, <code>python</code>, <code>n8n</code>. Battle-tested, community-supported, yours to own when we're done. No proprietary black boxes.
+        </p>
+
+        <p style="font-size: 13px; color: #9A8A75; margin-bottom: 20px;">
+          We're based between Phuket and Bangkok. We work async-first. We take on three to four projects a quarter — not twenty. This is not scale. This is craft.
+        </p>
+
+        <p style="font-size: 12px; color: #3A2D24; margin-bottom: 0; letter-spacing: 0.04em;">
+          /* сделано в темной мастерской — made in a dark workshop, the way good things are */
+        </p>
+
+      </div>
+
+      <!-- ASCII frame bottom -->
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #3A2D24; line-height: 1; padding: 0 24px 0;">
+        <span>└─────────────────────────────────────────────────────────────────────┘</span>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════ CONTACT -->
+<section id="contact" style="background: #211912; padding: 96px 0; border-bottom: 1px solid #3A2D24;">
+  <div style="max-width: 1320px; margin: 0 auto; padding: 0 32px;">
+
+    <!-- Section header -->
+    <div class="fade-up" style="margin-bottom: 48px; display: flex; align-items: baseline; gap: 24px;">
+      <span class="section-label">// CONTACT</span>
+      <hr class="copper-rule" style="flex: 1;">
+    </div>
+
+    <div class="contact-frame fade-up" style="padding: 0; max-width: 780px;">
+
+      <!-- Frame top -->
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #C76A2D; line-height: 1; opacity: 0.4;">
+        <div style="padding: 0 0 0 0;">
+          <span>┌──────────────────────────────────────────────────────────┐</span>
+        </div>
+      </div>
+
+      <!-- Terminal prompt row -->
+      <div style="padding: 20px 32px; border-bottom: 1px solid #3A2D24; background: #1A1410;">
+        <span style="font-size: 13px; color: #9A8A75;">user@studio</span>
+        <span style="font-size: 13px; color: #3A2D24;">:</span>
+        <span style="font-size: 13px; color: #C76A2D;">~</span>
+        <span style="font-size: 13px; color: #3A2D24;">$</span>
+        <span style="font-size: 13px; color: #F2EAD9; margin-left: 8px;">contact</span>
+        <span class="cursor-blink"></span>
+      </div>
+
+      <!-- Contact body -->
+      <div style="padding: 36px 32px;">
+
+        <p style="font-size: 14px; color: #9A8A75; margin-bottom: 32px; line-height: 1.7;">
+          We're open for Q3 projects. Send a brief description of what you're building and your timeline. We reply with a 30-minute call invite or a written brief — your choice.
+        </p>
+
+        <!-- Email -->
+        <div style="margin-bottom: 20px; padding: 16px 20px; border: 1px solid #3A2D24; background: #1A1410; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+          <span style="font-size: 11px; color: #3A2D24; letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap;">[email]</span>
+          <a href="mailto:nikolaybelikov23@gmail.com" style="font-size: 14px; color: #C76A2D; text-decoration: none; font-weight: 700; letter-spacing: 0.04em; transition: color 0.1s linear; word-break: break-all;" onmouseover="this.style.color='#D9A057'" onmouseout="this.style.color='#C76A2D'">
+            NIKOLAYBELIKOV23@GMAIL.COM
+          </a>
+        </div>
+
+        <!-- Telegram -->
+        <div style="margin-bottom: 36px; padding: 16px 20px; border: 1px solid #3A2D24; background: #1A1410; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+          <span style="font-size: 11px; color: #3A2D24; letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap;">[telegram]</span>
+          <a href="https://t.me/studiofoundersua" target="_blank" style="font-size: 14px; color: #D9A057; text-decoration: none; font-weight: 700; letter-spacing: 0.04em; transition: color 0.1s linear;" onmouseover="this.style.color='#F2EAD9'" onmouseout="this.style.color='#D9A057'">
+            @STUDIOFOUNDERSUA
+          </a>
+        </div>
+
+        <!-- CTA -->
+        <div style="display: flex; gap: 16px; flex-wrap: wrap; align-items: center;">
+          <a href="mailto:nikolaybelikov23@gmail.com" class="btn-primary">START A PROJECT ▸</a>
+          <a href="https://t.me/studiofoundersua" target="_blank" class="btn-secondary">TELEGRAM</a>
+        </div>
+
+        <!-- Fine print -->
+        <p style="font-size: 11px; color: #3A2D24; margin-top: 28px; letter-spacing: 0.04em; line-height: 1.6;">
+          /* no forms, no CRMs, no sales sequence — just a conversation with the people who will build your thing */
+        </p>
+
+      </div>
+
+      <!-- Frame bottom -->
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #C76A2D; line-height: 1; opacity: 0.4;">
+        <span>└──────────────────────────────────────────────────────────┘</span>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+
+<!-- ═══════════════════════════════════════ FOOTER -->
+<footer style="background: #1A1410; border-top: 1px solid #3A2D24; padding: 24px 32px;">
+  <div style="max-width: 1320px; margin: 0 auto;">
+    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px;">
+      <p style="font-size: 12px; color: #3A2D24; margin: 0; letter-spacing: 0.06em; line-height: 1.6;">
+        <span style="color: #9A8A75;">© 2026 STUDIO</span>
+        <span style="color: #3A2D24; margin: 0 8px;">·</span>
+        <span style="color: #9A8A75;">forged in Phuket × Bangkok</span>
+        <span style="color: #3A2D24; margin: 0 8px;">·</span>
+        <span style="color: #9A8A75;">by Alex × Nikolay</span>
+      </p>
+      <div style="display: flex; gap: 16px; align-items: center;">
+        <a href="https://github.com" target="_blank" class="nav-link">[github]</a>
+        <a href="https://t.me/studiofoundersua" target="_blank" class="nav-link">[telegram]</a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+
+<script>
+  // IntersectionObserver fade-up
+  (function() {
+    var els = document.querySelectorAll('.fade-up');
+    if (!('IntersectionObserver' in window)) {
+      els.forEach(function(el) { el.classList.add('visible'); });
+      return;
+    }
+    var observer = new IntersectionObserver(function(entries) {
+      entries.forEach(function(entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.12, rootMargin: '0px 0px -40px 0px' });
+    els.forEach(function(el) { observer.observe(el); });
+  })();
+
+  // Smooth scroll for nav links
+  document.querySelectorAll('a[href^="#"]').forEach(function(a) {
+    a.addEventListener('click', function(e) {
+      var target = document.querySelector(this.getAttribute('href'));
+      if (target) {
+        e.preventDefault();
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    });
+  });
+</script>
+
+</body>
+</html>

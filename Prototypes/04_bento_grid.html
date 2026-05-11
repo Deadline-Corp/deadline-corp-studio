@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>STUDIO — Web Dev & AI Automation Agency</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #F6F4EE;
+    --tile-white: #FFFFFF;
+    --tile-cream: #F3EBDD;
+    --tile-ink: #1A1A1A;
+    --tile-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.04);
+    --tile-border: 1px solid rgba(0,0,0,0.06);
+    --tile-border-hover: 1px solid rgba(0,0,0,0.14);
+    --accent-terra: #C84B31;
+    --accent-green: #2F5D3A;
+    --accent-blue: #5B9BD5;
+    --text-primary: #1A1A1A;
+    --text-secondary: #6B6659;
+    --text-tertiary: #9B9589;
+    --radius: 18px;
+    --gap: 12px;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    font-family: 'Inter Tight', sans-serif;
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
+    min-height: 100vh;
+  }
+
+  /* ── NAV ── */
+  .nav {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: rgba(246, 244, 238, 0.88);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border-bottom: 1px solid rgba(0,0,0,0.06);
+    padding: 0 32px;
+    height: 56px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .nav-logo {
+    font-weight: 700;
+    font-size: 14px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-primary);
+    text-decoration: none;
+  }
+  .nav-links {
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    list-style: none;
+  }
+  .nav-links a {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-decoration: none;
+    transition: color 0.2s ease-out;
+  }
+  .nav-links a:hover { color: var(--text-primary); }
+  .nav-cta {
+    background: var(--text-primary);
+    color: #F6F4EE !important;
+    padding: 7px 16px;
+    border-radius: 100px;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    transition: background 0.2s ease-out, transform 0.2s ease-out !important;
+  }
+  .nav-cta:hover { background: #333 !important; transform: translateY(-1px); }
+
+  /* ── BENTO GRID ── */
+  .bento-container {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 28px 24px 48px;
+  }
+
+  .bento-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: var(--gap);
+  }
+
+  /* ── TILE BASE ── */
+  .tile {
+    background: var(--tile-white);
+    border: var(--tile-border);
+    border-radius: var(--radius);
+    box-shadow: var(--tile-shadow);
+    overflow: hidden;
+    position: relative;
+    transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.28s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.28s ease-out;
+    /* Fade-up init */
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  .tile.visible {
+    opacity: 1;
+    transform: translateY(0);
+    transition: opacity 0.55s cubic-bezier(0.22, 1, 0.36, 1), transform 0.55s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.28s cubic-bezier(0.22, 1, 0.36, 1), border-color 0.28s ease-out;
+  }
+  .tile:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.08), 0 2px 8px rgba(0,0,0,0.06);
+    border-color: rgba(0,0,0,0.14);
+  }
+  .tile.tile-ink {
+    background: var(--tile-ink);
+    border-color: rgba(255,255,255,0.06);
+    color: #F6F4EE;
+  }
+  .tile.tile-ink:hover { border-color: rgba(255,255,255,0.12); }
+  .tile.tile-cream {
+    background: var(--tile-cream);
+    border-color: rgba(0,0,0,0.06);
+  }
+
+  /* ── GRID SPANS ── */
+  /* Hero row */
+  .c-span-4 { grid-column: span 4; }
+  .c-span-3 { grid-column: span 3; }
+  .c-span-2 { grid-column: span 2; }
+  .c-span-1 { grid-column: span 1; }
+  .c-span-full { grid-column: 1 / -1; }
+
+  .r-span-2 { grid-row: span 2; }
+
+  /* specific heights */
+  .h-hero-lg { min-height: 420px; }
+  .h-hero-sm { min-height: 200px; }
+  .h-service  { min-height: 260px; }
+  .h-case-lg  { min-height: 380px; }
+  .h-case-sm  { min-height: 200px; }
+  .h-process  { min-height: 160px; }
+  .h-manifesto { min-height: 240px; }
+  .h-contact  { min-height: 240px; }
+  .h-stats    { min-height: 160px; }
+  .h-footer   { min-height: 64px; }
+
+  /* ── TYPOGRAPHY ── */
+  .display-xl {
+    font-family: 'Instrument Serif', serif;
+    font-size: clamp(32px, 4vw, 52px);
+    line-height: 1.08;
+    letter-spacing: -0.02em;
+  }
+  .display-lg {
+    font-family: 'Instrument Serif', serif;
+    font-size: clamp(24px, 2.8vw, 36px);
+    line-height: 1.12;
+    letter-spacing: -0.015em;
+  }
+  .display-md {
+    font-family: 'Instrument Serif', serif;
+    font-size: clamp(20px, 2vw, 26px);
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+  }
+  .label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+  .label-dark { color: rgba(246,244,238,0.45); }
+  .body-sm { font-size: 13px; line-height: 1.6; color: var(--text-secondary); }
+  .body-sm-dark { font-size: 13px; line-height: 1.6; color: rgba(246,244,238,0.62); }
+  .stat-num {
+    font-size: clamp(36px, 5vw, 56px);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+    line-height: 1;
+  }
+
+  /* ── ACCENT LINES ── */
+  .accent-line { width: 32px; height: 3px; border-radius: 2px; margin-bottom: 16px; }
+  .accent-terra { background: var(--accent-terra); }
+  .accent-green  { background: var(--accent-green); }
+  .accent-blue   { background: var(--accent-blue); }
+
+  /* ── STATUS BADGE ── */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 10px;
+    border-radius: 100px;
+  }
+  .badge-green { background: rgba(47,93,58,0.1); color: var(--accent-green); }
+  .badge-terra { background: rgba(200,75,49,0.1); color: var(--accent-terra); }
+  .badge-blue  { background: rgba(91,155,213,0.12); color: var(--accent-blue); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .dot-pulse { animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  /* ── CTA PILL ── */
+  .cta-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--accent-terra);
+    color: white;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 10px 20px;
+    border-radius: 100px;
+    text-decoration: none;
+    border: none;
+    cursor: pointer;
+    transition: background 0.22s ease-out, transform 0.22s ease-out;
+  }
+  .cta-pill:hover { background: #b03d25; transform: translateY(-1px); }
+  .cta-pill-sm {
+    font-size: 12px;
+    padding: 8px 16px;
+  }
+  .cta-secondary {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    color: rgba(246,244,238,0.85);
+    font-size: 12px;
+    font-weight: 500;
+    padding: 8px 14px;
+    border-radius: 100px;
+    border: 1px solid rgba(255,255,255,0.18);
+    text-decoration: none;
+    transition: border-color 0.22s ease-out, color 0.22s ease-out;
+    cursor: pointer;
+  }
+  .cta-secondary:hover { border-color: rgba(255,255,255,0.4); color: white; }
+
+  /* ── TILE INNER PADDING ── */
+  .tp { padding: 28px; }
+  .tp-sm { padding: 20px; }
+
+  /* ── SVG NETWORK ANIMATION ── */
+  .node-circle { transition: r 0.3s ease-out; }
+  .network-tile:hover .node-circle { r: 5; }
+
+  /* ── FLOWCHART ── */
+  .flow-node {
+    transition: fill 0.25s ease-out;
+  }
+  .tile:hover .flow-node-fill { fill: rgba(47,93,58,0.18); }
+
+  /* ── BAR CHART (hover grow) ── */
+  .bar-rect {
+    transform-origin: bottom;
+    transition: transform 0.4s cubic-bezier(0.22,1,0.36,1), fill 0.3s ease-out;
+  }
+  .cases-lg:hover .bar-rect { transform: scaleY(1.08); }
+
+  /* ── CODE TILE ── */
+  .code-line {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    font-size: 11.5px;
+    line-height: 1.7;
+  }
+  .code-kw  { color: var(--accent-blue); }
+  .code-fn  { color: #C57B42; }
+  .code-str { color: var(--accent-green); }
+  .code-dim { color: rgba(246,244,238,0.3); }
+  .code-cursor {
+    display: inline-block;
+    width: 2px;
+    height: 13px;
+    background: rgba(246,244,238,0.7);
+    animation: blink 1.2s step-end infinite;
+    vertical-align: middle;
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+
+  /* ── CHAT BUBBLE ── */
+  .chat-bubble {
+    background: white;
+    border-radius: 14px 14px 14px 3px;
+    padding: 10px 14px;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text-primary);
+    max-width: 82%;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .chat-bubble-out {
+    background: var(--accent-blue);
+    border-radius: 14px 14px 3px 14px;
+    color: white;
+    margin-left: auto;
+  }
+
+  /* ── PROCESS STEPS ── */
+  .process-step {
+    flex: 1;
+    position: relative;
+  }
+  .process-step:not(:last-child)::after {
+    content: '';
+    position: absolute;
+    top: 18px;
+    right: -16px;
+    width: 20px;
+    height: 1px;
+    background: rgba(0,0,0,0.12);
+  }
+  .step-num {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: var(--tile-cream);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+  }
+
+  /* ── MANIFESTO ── */
+  .serif-quote {
+    font-family: 'Instrument Serif', serif;
+    font-style: italic;
+    font-size: clamp(22px, 2.4vw, 32px);
+    line-height: 1.3;
+    letter-spacing: -0.01em;
+  }
+
+  /* ── CASE GRADIENT ART ── */
+  .case-art {
+    width: 100%;
+    height: 180px;
+    border-radius: 12px;
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .case-art-phuket {
+    background: linear-gradient(135deg, #2E4A62 0%, #1A2F3F 40%, #C84B31 100%);
+  }
+  .case-art-store {
+    background: linear-gradient(135deg, #1A1A1A 0%, #2F2F2F 100%);
+  }
+  .case-art-ra {
+    background: linear-gradient(135deg, #E8F4FD 0%, #D6EAF8 50%, #AED6F1 100%);
+  }
+
+  /* ── CONTACT LINKS ── */
+  .contact-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    text-decoration: none;
+    padding: 10px 0;
+    border-bottom: 1px solid rgba(0,0,0,0.06);
+    transition: color 0.2s ease-out;
+  }
+  .contact-link:hover { color: var(--accent-terra); }
+  .contact-link:last-of-type { border-bottom: none; }
+  .contact-icon {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--tile-cream);
+    font-size: 14px;
+    flex-shrink: 0;
+  }
+
+  /* ── REPLY STATS ── */
+  .reply-tile {
+    background: var(--tile-ink);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  /* ── FOOTER ── */
+  .footer-tile {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 4px;
+  }
+  .footer-tile:hover { transform: none; box-shadow: none; border-color: transparent; }
+
+  /* ── TECH TAGS ── */
+  .tech-tag {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 3px 8px;
+    border-radius: 5px;
+    background: rgba(0,0,0,0.05);
+    color: var(--text-secondary);
+    margin: 2px;
+    transition: background 0.2s ease-out, color 0.2s ease-out;
+  }
+  .tile-terra .tech-tag { background: rgba(200,75,49,0.08); color: var(--accent-terra); }
+
+  .tile-terra:hover .tech-tag {
+    background: rgba(200,75,49,0.14);
+  }
+
+  /* ── METRIC CHIP ── */
+  .metric-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(47,93,58,0.1);
+    color: var(--accent-green);
+    font-size: 12px;
+    font-weight: 700;
+    padding: 4px 10px;
+    border-radius: 100px;
+  }
+
+  /* ── DIVIDER ── */
+  .divider { border: none; border-top: 1px solid rgba(0,0,0,0.06); margin: 16px 0; }
+  .divider-dark { border-top-color: rgba(255,255,255,0.08); }
+
+  /* ── TELEGRAM MOCK ── */
+  .tg-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    background: rgba(91,155,213,0.08);
+    border-bottom: 1px solid rgba(0,0,0,0.06);
+  }
+  .tg-avatar {
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: var(--accent-blue);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; color: white; font-weight: 700;
+  }
+
+  /* ── RA CHART ── */
+  .ra-bar-group { transition: opacity 0.25s ease-out; }
+  .tile:hover .ra-bar-group { opacity: 0.9; }
+
+  /* ── NETWORK SVG ── */
+  .net-line { stroke-dasharray: 80; stroke-dashoffset: 80; }
+  .tile.visible .net-line {
+    animation: draw-line 1s 0.6s ease-out forwards;
+  }
+  @keyframes draw-line { to { stroke-dashoffset: 0; } }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 1024px) {
+    .bento-grid {
+      grid-template-columns: repeat(4, 1fr);
+    }
+    .c-span-4 { grid-column: span 4; }
+    .c-span-3 { grid-column: span 2; }
+    .c-span-2 { grid-column: span 2; }
+    .c-span-1 { grid-column: span 2; }
+    .c-span-full { grid-column: 1 / -1; }
+
+    .h-hero-lg { min-height: 360px; }
+  }
+
+  @media (max-width: 640px) {
+    .bento-grid {
+      grid-template-columns: 1fr;
+    }
+    .c-span-4, .c-span-3, .c-span-2, .c-span-1, .c-span-full {
+      grid-column: span 1;
+    }
+    .r-span-2 { grid-row: span 1; }
+    .nav { padding: 0 16px; }
+    .nav-links { display: none; }
+    .bento-container { padding: 16px 12px 40px; }
+    .h-hero-lg { min-height: 320px; }
+    .h-footer { min-height: 52px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════ NAV ═══════════════════════ -->
+<header class="nav">
+  <a href="#" class="nav-logo">Studio</a>
+  <ul class="nav-links">
+    <li><a href="#services">Services</a></li>
+    <li><a href="#cases">Cases</a></li>
+    <li><a href="#process">Process</a></li>
+    <li><a href="#contact" class="nav-cta">Get in touch</a></li>
+  </ul>
+</header>
+
+
+<!-- ═══════════════════════ BENTO GRID ═══════════════════════ -->
+<div class="bento-container">
+<div class="bento-grid">
+
+
+  <!-- ══════════ HERO ══════════ -->
+
+  <!-- HERO: Large ink tile -->
+  <div class="tile tile-ink c-span-4 r-span-2 h-hero-lg tp" style="display:flex; flex-direction:column; justify-content:space-between;">
+    <div>
+      <span class="label label-dark" style="display:block; margin-bottom:20px;">Web dev &amp; AI automation</span>
+      <h1 class="display-xl" style="color:#F6F4EE; max-width:520px;">
+        We build software, automate ops, and ship AI agents.
+      </h1>
+      <p class="body-sm-dark" style="margin-top:18px; max-width:400px;">
+        A small crew with sharp skills — from Figma to prod. We don't sell hours, we deliver outcomes.
+      </p>
+    </div>
+    <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-top:32px;">
+      <a href="#contact" class="cta-pill">Start a project
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><path d="M2.5 6h7M6.5 3l3 3-3 3" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </a>
+      <a href="#cases" class="cta-secondary">See our work</a>
+    </div>
+    <!-- corner decoration -->
+    <div style="position:absolute; top:24px; right:24px; opacity:0.06;">
+      <svg width="120" height="120" viewBox="0 0 120 120" fill="none">
+        <circle cx="60" cy="60" r="58" stroke="#F6F4EE" stroke-width="1"/>
+        <circle cx="60" cy="60" r="40" stroke="#F6F4EE" stroke-width="1"/>
+        <circle cx="60" cy="60" r="22" stroke="#F6F4EE" stroke-width="1"/>
+        <line x1="2" y1="60" x2="118" y2="60" stroke="#F6F4EE" stroke-width="0.8"/>
+        <line x1="60" y1="2" x2="60" y2="118" stroke="#F6F4EE" stroke-width="0.8"/>
+      </svg>
+    </div>
+  </div>
+
+  <!-- HERO: Stats tile -->
+  <div class="tile tile-cream c-span-2 h-hero-sm tp-sm" style="display:flex; flex-direction:column; justify-content:space-between;">
+    <span class="label">Track record</span>
+    <div>
+      <div style="display:flex; align-items:baseline; gap:8px;">
+        <span class="stat-num" style="color:var(--text-primary);">12+</span>
+        <span style="font-size:13px; color:var(--text-secondary);">shipped</span>
+      </div>
+      <div style="display:flex; align-items:baseline; gap:8px; margin-top:8px;">
+        <span class="stat-num" style="font-size:clamp(28px,3.5vw,42px); color:var(--text-secondary);">4 yrs</span>
+      </div>
+    </div>
+    <div style="display:flex; gap:6px; flex-wrap:wrap;">
+      <span class="badge badge-green"><span class="dot dot-pulse"></span>Available</span>
+      <span class="badge badge-terra">Oct 2026 intake open</span>
+    </div>
+  </div>
+
+  <!-- HERO: Network dots animated SVG -->
+  <div class="tile c-span-2 h-hero-sm network-tile" style="display:flex; align-items:center; justify-content:center; overflow:hidden; padding:12px;">
+    <svg width="100%" height="100%" viewBox="0 0 200 160" fill="none" xmlns="http://www.w3.org/2000/svg" style="max-width:220px;">
+      <!-- Lines -->
+      <line x1="40" y1="80" x2="100" y2="40" stroke="#C84B31" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.4"/>
+      <line x1="40" y1="80" x2="100" y2="120" stroke="#5B9BD5" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.4"/>
+      <line x1="100" y1="40" x2="160" y2="80" stroke="#2F5D3A" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.4"/>
+      <line x1="100" y1="120" x2="160" y2="80" stroke="#2F5D3A" stroke-width="1.2" stroke-dasharray="4 3" opacity="0.4"/>
+      <line x1="100" y1="40" x2="100" y2="120" stroke="#1A1A1A" stroke-width="1" stroke-dasharray="3 4" opacity="0.12"/>
+      <!-- animated connecting line -->
+      <line class="net-line" x1="40" y1="80" x2="160" y2="80" stroke="#C84B31" stroke-width="1.5" opacity="0.3"/>
+
+      <!-- Nodes -->
+      <circle class="node-circle" cx="40" cy="80" r="7" fill="#F6F4EE" stroke="#1A1A1A" stroke-width="1.5"/>
+      <circle class="node-circle" cx="100" cy="40" r="9" fill="#1A1A1A"/>
+      <circle cx="100" cy="40" r="4" fill="#F6F4EE"/>
+      <circle class="node-circle" cx="100" cy="120" r="7" fill="#C84B31"/>
+      <circle class="node-circle" cx="160" cy="80" r="11" fill="#F6F4EE" stroke="#1A1A1A" stroke-width="1.5"/>
+      <circle cx="160" cy="80" r="5" fill="#5B9BD5"/>
+
+      <!-- Floating mini-nodes -->
+      <circle cx="140" cy="30" r="3" fill="rgba(91,155,213,0.35)"/>
+      <circle cx="60" cy="130" r="3" fill="rgba(200,75,49,0.3)"/>
+      <circle cx="170" cy="130" r="3" fill="rgba(47,93,58,0.3)"/>
+      <circle cx="30" cy="40" r="2" fill="rgba(0,0,0,0.12)"/>
+
+      <!-- Labels -->
+      <text x="100" y="34" text-anchor="middle" font-family="Inter Tight" font-size="7" fill="#F6F4EE" font-weight="600">API</text>
+      <text x="160" y="84" text-anchor="middle" font-family="Inter Tight" font-size="6.5" fill="#1A1A1A" font-weight="500">UI</text>
+      <text x="100" y="136" text-anchor="middle" font-family="Inter Tight" font-size="6.5" fill="#F6F4EE" font-weight="500">AI</text>
+      <text x="40" y="96" text-anchor="middle" font-family="Inter Tight" font-size="6" fill="var(--text-tertiary)">Data</text>
+    </svg>
+  </div>
+
+
+  <!-- ══════════ SERVICES ══════════ -->
+
+  <!-- Service: Web Dev -->
+  <div class="tile tile-terra c-span-2 h-service tp" id="services">
+    <div class="accent-line accent-terra"></div>
+    <span class="label" style="color:rgba(200,75,49,0.6);">01 — Web Development</span>
+    <h3 class="display-md" style="margin-top:10px; margin-bottom:12px;">Full-stack, front to back.</h3>
+    <p class="body-sm" style="margin-bottom:18px;">We design, build, and deploy production-ready web products that scale. Opinionated about architecture, flexible on stack.</p>
+    <div style="display:flex; flex-wrap:wrap; gap:0;">
+      <span class="tech-tag">Next.js</span>
+      <span class="tech-tag">React</span>
+      <span class="tech-tag">Vue</span>
+      <span class="tech-tag">Postgres</span>
+      <span class="tech-tag">Supabase</span>
+      <span class="tech-tag">Node</span>
+      <span class="tech-tag">Docker</span>
+      <span class="tech-tag">Vercel</span>
+    </div>
+  </div>
+
+  <!-- Service: Automation -->
+  <div class="tile c-span-2 h-service tp" style="display:flex; flex-direction:column;">
+    <div class="accent-line accent-green"></div>
+    <span class="label">02 — Automation</span>
+    <h3 class="display-md" style="margin-top:10px; margin-bottom:12px;">Kill the busywork.</h3>
+    <p class="body-sm" style="margin-bottom:20px;">n8n, Make, custom scripts — we map your ops and automate the painful parts so your team ships faster.</p>
+    <!-- Tiny flowchart SVG -->
+    <div style="margin-top:auto;">
+      <svg width="100%" height="60" viewBox="0 0 240 60" fill="none">
+        <!-- Node 1 -->
+        <rect x="4" y="18" width="60" height="24" rx="6" fill="rgba(47,93,58,0.1)" class="flow-node"/>
+        <text x="34" y="32" text-anchor="middle" font-family="Inter Tight" font-size="9" fill="#2F5D3A" font-weight="600">Trigger</text>
+        <!-- Arrow -->
+        <path d="M64 30 L84 30" stroke="#2F5D3A" stroke-width="1.5" stroke-dasharray="3 2" marker-end="url(#arr1)"/>
+        <!-- Node 2 -->
+        <rect x="90" y="18" width="60" height="24" rx="6" fill="rgba(47,93,58,0.1)" class="flow-node"/>
+        <text x="120" y="32" text-anchor="middle" font-family="Inter Tight" font-size="9" fill="#2F5D3A" font-weight="600">Transform</text>
+        <!-- Arrow -->
+        <path d="M150 30 L170 30" stroke="#2F5D3A" stroke-width="1.5" stroke-dasharray="3 2" marker-end="url(#arr1)"/>
+        <!-- Node 3 -->
+        <rect x="176" y="18" width="60" height="24" rx="6" fill="#2F5D3A"/>
+        <text x="206" y="32" text-anchor="middle" font-family="Inter Tight" font-size="9" fill="white" font-weight="600">Deliver</text>
+        <defs>
+          <marker id="arr1" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+            <path d="M0 0 L6 3 L0 6 Z" fill="#2F5D3A"/>
+          </marker>
+        </defs>
+      </svg>
+    </div>
+  </div>
+
+  <!-- Service: AI Agents -->
+  <div class="tile tile-ink c-span-2 h-service tp" style="display:flex; flex-direction:column;">
+    <div class="accent-line accent-blue"></div>
+    <span class="label label-dark">03 — AI Agents</span>
+    <h3 class="display-md" style="margin-top:10px; margin-bottom:14px; color:#F6F4EE;">Built to reason, not just respond.</h3>
+    <!-- Chat-style preview -->
+    <div style="display:flex; flex-direction:column; gap:8px; margin-top:auto;">
+      <div style="display:flex; align-items:flex-end; gap:8px;">
+        <div style="width:22px; height:22px; border-radius:50%; background:rgba(91,155,213,0.3); flex-shrink:0; display:flex; align-items:center; justify-content:center;">
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><circle cx="5" cy="5" r="3.5" stroke="#5B9BD5" stroke-width="1.2"/><path d="M5 3.5v2l1 1" stroke="#5B9BD5" stroke-width="1" stroke-linecap="round"/></svg>
+        </div>
+        <div class="chat-bubble">Parse all new leads from CRM and score them.</div>
+      </div>
+      <div style="display:flex; justify-content:flex-end;">
+        <div class="chat-bubble chat-bubble-out">Done — 14 leads scored. Top 3 sent to Slack. <span class="code-cursor"></span></div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══════════ CASES ══════════ -->
+
+  <!-- Case: VIP Rental Phuket — Large -->
+  <div class="tile cases-lg c-span-4 r-span-2 h-case-lg tp" id="cases">
+    <!-- CSS gradient art for Phuket -->
+    <div class="case-art case-art-phuket" style="height:200px; display:flex; align-items:flex-end; padding:16px; position:relative; overflow:hidden;">
+      <!-- Abstract shapes -->
+      <div style="position:absolute; top:20px; right:30px; width:80px; height:80px; border-radius:50%; background:rgba(200,75,49,0.4); filter:blur(30px);"></div>
+      <div style="position:absolute; top:-10px; left:40px; width:100px; height:100px; border-radius:50%; background:rgba(91,155,213,0.25); filter:blur(40px);"></div>
+      <div style="position:absolute; bottom:0; left:0; right:0; height:60px; background:linear-gradient(to top, rgba(46,74,98,0.9), transparent);"></div>
+      <div style="position:relative; z-index:1; display:flex; align-items:center; gap:8px;">
+        <span class="badge badge-green" style="background:rgba(47,93,58,0.7);">
+          <span class="dot" style="background:rgba(47,200,100,0.9);"></span>
+          Live
+        </span>
+        <span style="font-size:11px; color:rgba(246,244,238,0.6);">vip-rental-phuket.com</span>
+      </div>
+    </div>
+
+    <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-top:16px; flex-wrap:wrap;">
+      <div>
+        <h3 class="display-md" style="margin-bottom:6px;">VIP Rental Phuket</h3>
+        <p class="body-sm" style="max-width:340px;">Full rebrand + booking platform for a luxury villa rental agency in Thailand. Multilingual, SEO-first, integrated with Airbnb API.</p>
+      </div>
+      <div style="text-align:right; flex-shrink:0;">
+        <div class="metric-chip" style="margin-bottom:6px;">
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 7l2.5-3 2 2L9 2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+          +32% bookings
+        </div>
+        <div class="label" style="color:var(--text-tertiary);">3 months delivery</div>
+      </div>
+    </div>
+    <hr class="divider" />
+    <div style="display:flex; gap:6px; flex-wrap:wrap;">
+      <span class="tech-tag">Next.js</span>
+      <span class="tech-tag">Sanity CMS</span>
+      <span class="tech-tag">Stripe</span>
+      <span class="tech-tag">i18n</span>
+      <span class="tech-tag">Cloudflare</span>
+    </div>
+  </div>
+
+  <!-- Case: Backdoor Store — Telegram bot -->
+  <div class="tile c-span-2 h-case-sm" style="overflow:hidden; display:flex; flex-direction:column;">
+    <!-- Telegram mock UI -->
+    <div class="tg-header">
+      <div class="tg-avatar" style="font-size:10px;">BD</div>
+      <div>
+        <div style="font-size:11px; font-weight:600; line-height:1.2;">BackdoorStoreBot</div>
+        <div style="font-size:10px; color:var(--accent-blue); font-weight:500;">online</div>
+      </div>
+      <svg style="margin-left:auto;" width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M22 2L11 13" stroke="#5B9BD5" stroke-width="2" stroke-linecap="round"/><path d="M22 2L15 22l-4-9-9-4 20-7z" stroke="#5B9BD5" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <div style="padding:12px; flex:1; display:flex; flex-direction:column; gap:7px; justify-content:center;">
+      <div class="chat-bubble" style="font-size:11px; border-radius:10px 10px 10px 2px;">Hi! Show me sneakers under $200</div>
+      <div class="chat-bubble chat-bubble-out" style="font-size:11px; border-radius:10px 10px 2px 10px; background:rgba(91,155,213,0.85);">Found 12 pairs — here's the top 3 </div>
+    </div>
+    <div style="padding:8px 12px; border-top:1px solid rgba(0,0,0,0.06); display:flex; align-items:center; justify-content:space-between;">
+      <span class="label">Backdoor Store</span>
+      <span class="badge badge-blue" style="font-size:10px;">Telegram Bot</span>
+    </div>
+  </div>
+
+  <!-- Case: RA Project — chart -->
+  <div class="tile tile-cream c-span-2 h-case-sm tp-sm" style="display:flex; flex-direction:column;">
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
+      <span class="label">RA Project</span>
+      <span class="badge badge-blue">Analytics</span>
+    </div>
+    <svg width="100%" height="90" viewBox="0 0 200 90" fill="none" style="flex:1;">
+      <!-- Grid lines -->
+      <line x1="0" y1="70" x2="200" y2="70" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>
+      <line x1="0" y1="50" x2="200" y2="50" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>
+      <line x1="0" y1="30" x2="200" y2="30" stroke="rgba(0,0,0,0.06)" stroke-width="1"/>
+      <!-- Bars -->
+      <g class="ra-bar-group">
+        <rect x="10" y="55" width="22" height="15" rx="3" fill="rgba(91,155,213,0.3)" class="bar-rect"/>
+        <rect x="38" y="42" width="22" height="28" rx="3" fill="rgba(91,155,213,0.4)" class="bar-rect"/>
+        <rect x="66" y="35" width="22" height="35" rx="3" fill="rgba(91,155,213,0.55)" class="bar-rect"/>
+        <rect x="94" y="28" width="22" height="42" rx="3" fill="var(--accent-blue)" class="bar-rect"/>
+        <rect x="122" y="38" width="22" height="32" rx="3" fill="rgba(91,155,213,0.5)" class="bar-rect"/>
+        <rect x="150" y="22" width="22" height="48" rx="3" fill="var(--accent-blue)" class="bar-rect"/>
+        <rect x="168" y="16" width="22" height="54" rx="3" fill="#1A1A1A" class="bar-rect"/>
+      </g>
+      <!-- Line trend -->
+      <polyline points="21,62 49,55 77,52 105,49 133,55 161,36 179,32" stroke="var(--accent-terra)" stroke-width="1.5" fill="none" stroke-dasharray="3 2"/>
+    </svg>
+    <div style="margin-top:8px; display:flex; align-items:center; justify-content:space-between;">
+      <span style="font-size:11px; color:var(--text-tertiary);">User acquisition, Q1–Q3</span>
+      <span class="metric-chip" style="font-size:10px;">+41% MoM</span>
+    </div>
+  </div>
+
+
+  <!-- ══════════ PROCESS ══════════ -->
+
+  <div class="tile c-span-full h-process tp" id="process" style="display:flex; align-items:center;">
+    <div style="margin-right:32px; flex-shrink:0;">
+      <span class="label">How we work</span>
+    </div>
+    <div style="display:flex; gap:32px; flex:1; flex-wrap:wrap;">
+
+      <div class="process-step" style="position:relative;">
+        <div class="step-num">01</div>
+        <div style="font-size:13px; font-weight:600; margin-bottom:4px;">Discovery</div>
+        <div class="body-sm">Goals, constraints, user flows, stack audit.</div>
+      </div>
+
+      <div class="process-step" style="position:relative;">
+        <div class="step-num">02</div>
+        <div style="font-size:13px; font-weight:600; margin-bottom:4px;">Design &amp; Plan</div>
+        <div class="body-sm">Wireframes → Figma → scope locked in 1 week.</div>
+      </div>
+
+      <div class="process-step" style="position:relative;">
+        <div class="step-num">03</div>
+        <div style="font-size:13px; font-weight:600; margin-bottom:4px;">Build &amp; Ship</div>
+        <div class="body-sm">2-week sprints, staged deployments, daily updates.</div>
+      </div>
+
+      <div class="process-step">
+        <div class="step-num" style="background:#1A1A1A; color:#F6F4EE;">04</div>
+        <div style="font-size:13px; font-weight:600; margin-bottom:4px;">Support &amp; Grow</div>
+        <div class="body-sm">Post-launch retainer. We stay, we iterate.</div>
+      </div>
+
+    </div>
+  </div>
+
+
+  <!-- ══════════ MANIFESTO + CONTACT ══════════ -->
+
+  <!-- Manifesto tile -->
+  <div class="tile tile-cream c-span-4 h-manifesto tp" style="display:flex; flex-direction:column; justify-content:space-between;">
+    <span class="label">Manifesto</span>
+    <p class="serif-quote" style="color:var(--text-primary); max-width:560px;">
+      "Сделано на совесть — small team, full ownership, no hand-offs to strangers. Your product gets our best thinking from day one to launch day."
+    </p>
+    <div style="display:flex; align-items:center; gap:16px; flex-wrap:wrap;">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <div style="width:28px; height:28px; border-radius:50%; background:var(--text-primary); display:flex; align-items:center; justify-content:center;">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="4" r="2.5" fill="#F6F4EE"/><path d="M1 11c0-2.76 2.24-5 5-5s5 2.24 5 5" stroke="#F6F4EE" stroke-width="1.2" stroke-linecap="round"/></svg>
+        </div>
+        <span style="font-size:12px; font-weight:600; color:var(--text-secondary);">Alex &amp; Nick</span>
+      </div>
+      <span style="font-size:12px; color:var(--text-tertiary);">2x founders, 4+ years building together</span>
+    </div>
+  </div>
+
+  <!-- Contact tile -->
+  <div class="tile c-span-2 h-manifesto tp" id="contact" style="display:flex; flex-direction:column; justify-content:space-between;">
+    <div>
+      <span class="label" style="display:block; margin-bottom:16px;">Get in touch</span>
+      <a href="mailto:hello@studio.dev" class="contact-link">
+        <div class="contact-icon">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="2.5" width="12" height="9" rx="2" stroke="#1A1A1A" stroke-width="1.2"/><path d="M1 4l6 4.5L13 4" stroke="#1A1A1A" stroke-width="1.2"/></svg>
+        </div>
+        hello@studio.dev
+      </a>
+      <a href="https://t.me/studio" class="contact-link">
+        <div class="contact-icon" style="background:rgba(91,155,213,0.12);">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M12.5 2L1.5 6.2l3.4 1.3 1.5 4.3 2-2.3 2.7 2L12.5 2z" stroke="#5B9BD5" stroke-width="1.2" stroke-linejoin="round"/></svg>
+        </div>
+        @studio_build
+      </a>
+    </div>
+    <a href="mailto:hello@studio.dev" class="cta-pill cta-pill-sm" style="align-self:flex-start;">
+      Start a conversation
+    </a>
+  </div>
+
+
+  <!-- ══════════ STATS + FOOTER ══════════ -->
+
+  <!-- Reply time stats tile -->
+  <div class="tile reply-tile c-span-2 h-stats tp-sm" style="display:flex; flex-direction:column; justify-content:space-between;">
+    <span class="label label-dark">Response time</span>
+    <div>
+      <div class="stat-num" style="color:#F6F4EE;">≤24h</div>
+      <div class="body-sm-dark" style="margin-top:6px;">We reply to every inquiry — no ghosting, no auto-replies.</div>
+    </div>
+    <div style="display:flex; align-items:center; gap:6px;">
+      <div style="width:6px; height:6px; border-radius:50%; background:#4CAF50;" class="dot-pulse"></div>
+      <span style="font-size:11px; color:rgba(246,244,238,0.5);">Usually same day</span>
+    </div>
+  </div>
+
+  <!-- Inline code snippet tile -->
+  <div class="tile tile-ink c-span-4 h-stats tp-sm">
+    <span class="label label-dark" style="display:block; margin-bottom:12px;">What our code looks like</span>
+    <div style="display:flex; flex-direction:column; gap:2px;">
+      <div class="code-line">
+        <span class="code-dim">1</span>
+        <span class="code-kw">const</span>
+        <span style="color:rgba(246,244,238,0.85);">agent</span>
+        <span class="code-dim">=</span>
+        <span class="code-kw">new</span>
+        <span class="code-fn">AIAgent</span>
+        <span class="code-dim">(</span>
+        <span class="code-str">'lead-scorer'</span>
+        <span class="code-dim">);</span>
+      </div>
+      <div class="code-line">
+        <span class="code-dim">2</span>
+        <span class="code-kw">await</span>
+        <span style="color:rgba(246,244,238,0.85);">agent</span>
+        <span class="code-dim">.</span>
+        <span class="code-fn">run</span>
+        <span class="code-dim">(</span>
+        <span class="code-str">'score all CRM leads'</span>
+        <span class="code-dim">);</span>
+      </div>
+      <div class="code-line">
+        <span class="code-dim">3</span>
+        <span class="code-fn">notifySlack</span>
+        <span class="code-dim">(agent.</span>
+        <span style="color:rgba(246,244,238,0.85);">results</span>
+        <span class="code-dim">.</span>
+        <span class="code-fn">top</span>
+        <span class="code-dim">(</span>
+        <span style="color:rgba(200,75,49,0.9);">3</span>
+        <span class="code-dim">));</span>
+        <span class="code-cursor"></span>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══════════ FOOTER ══════════ -->
+  <div class="tile footer-tile c-span-full h-footer" style="opacity:1; transform:none;">
+    <span style="font-size:12px; color:var(--text-tertiary);">© 2026 Studio. All rights reserved.</span>
+    <div style="display:flex; align-items:center; gap:20px;">
+      <a href="#" style="font-size:12px; color:var(--text-tertiary); text-decoration:none; transition:color 0.2s ease-out;" onmouseover="this.style.color='var(--text-primary)'" onmouseout="this.style.color='var(--text-tertiary)'">Privacy</a>
+      <a href="#" style="font-size:12px; color:var(--text-tertiary); text-decoration:none; transition:color 0.2s ease-out;" onmouseover="this.style.color='var(--text-primary)'" onmouseout="this.style.color='var(--text-tertiary)'">Terms</a>
+      <span style="font-size:12px; color:var(--text-tertiary);">Made with care in Phuket &amp; Berlin</span>
+    </div>
+  </div>
+
+
+</div><!-- /bento-grid -->
+</div><!-- /bento-container -->
+
+
+<script>
+  // ── Staggered fade-up on scroll ──
+  const tiles = document.querySelectorAll('.tile:not(.footer-tile)');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry, i) => {
+      if (entry.isIntersecting) {
+        const el = entry.target;
+        const delay = parseInt(el.dataset.delay || 0);
+        setTimeout(() => {
+          el.classList.add('visible');
+        }, delay);
+        observer.unobserve(el);
+      }
+    });
+  }, { threshold: 0.08, rootMargin: '0px 0px -32px 0px' });
+
+  // Assign stagger delays
+  tiles.forEach((tile, i) => {
+    tile.dataset.delay = i * 55;
+    observer.observe(tile);
+  });
+
+  // ── Footer always visible ──
+  document.querySelectorAll('.footer-tile').forEach(el => {
+    el.style.opacity = '1';
+    el.style.transform = 'none';
+  });
+
+  // ── Nav smooth shadow on scroll ──
+  const nav = document.querySelector('.nav');
+  window.addEventListener('scroll', () => {
+    if (window.scrollY > 8) {
+      nav.style.boxShadow = '0 1px 0 rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.04)';
+    } else {
+      nav.style.boxShadow = 'none';
+    }
+  }, { passive: true });
+
+  // ── Bar chart grow on case tile hover ──
+  const casesTile = document.querySelector('.cases-lg');
+  if (casesTile) {
+    const bars = casesTile.querySelectorAll('.bar-rect');
+    casesTile.addEventListener('mouseenter', () => {
+      bars.forEach((bar, i) => {
+        setTimeout(() => {
+          bar.style.filter = 'brightness(1.1)';
+        }, i * 30);
+      });
+    });
+    casesTile.addEventListener('mouseleave', () => {
+      bars.forEach(bar => { bar.style.filter = ''; });
+    });
+  }
+
+  // ── Network dot pulse on hover ──
+  const networkTile = document.querySelector('.network-tile');
+  if (networkTile) {
+    const nodes = networkTile.querySelectorAll('.node-circle');
+    let tickInterval = null;
+    networkTile.addEventListener('mouseenter', () => {
+      tickInterval = setInterval(() => {
+        nodes.forEach((n, i) => {
+          setTimeout(() => {
+            const r = parseFloat(n.getAttribute('r'));
+            n.setAttribute('r', r + 2);
+            setTimeout(() => n.setAttribute('r', r), 220);
+          }, i * 80);
+        });
+      }, 1200);
+    });
+    networkTile.addEventListener('mouseleave', () => {
+      clearInterval(tickInterval);
+    });
+  }
+</script>
+
+</body>
+</html>

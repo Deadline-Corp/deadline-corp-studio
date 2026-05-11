@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>10 прототипов · Studio Agency Site</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #FAFAF7;
+    --ink: #111111;
+    --ink-mute: #5C5C57;
+    --rule: rgba(17, 17, 17, 0.12);
+    --rule-strong: rgba(17, 17, 17, 0.22);
+    --accent: #C8102E;
+    --accent-warm: #B8956A;
+    --gutter: clamp(16px, 3vw, 36px);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'Inter Tight', system-ui, sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    font-feature-settings: "ss01", "ss02", "cv11";
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+    font-size: 16px;
+  }
+  ::selection { background: var(--ink); color: var(--paper); }
+  .mono {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .serif {
+    font-family: 'Newsreader', Georgia, serif;
+    font-feature-settings: "ss01";
+  }
+  .hairline { border: 0; border-top: 1px solid var(--rule); margin: 0; }
+  .container { max-width: 1440px; margin: 0 auto; padding: 0 var(--gutter); }
+  /* ── HEADER ──────────────────────────────────────────────── */
+  header {
+    padding: 18px var(--gutter);
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-bottom: 1px solid var(--rule);
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(250, 250, 247, 0.9);
+    backdrop-filter: blur(12px);
+  }
+  header .brand { font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; font-size: 13px; }
+  header .meta { color: var(--ink-mute); font-size: 12px; }
+  header nav a { margin-left: 22px; font-size: 13px; color: var(--ink); text-decoration: none; }
+  header nav a:hover { border-bottom: 1px solid var(--accent); padding-bottom: 2px; }
+  /* ── HERO ────────────────────────────────────────────────── */
+  .hero {
+    padding: clamp(80px, 14vw, 180px) var(--gutter) clamp(60px, 10vw, 120px);
+    border-bottom: 1px solid var(--rule);
+  }
+  .hero .num { color: var(--ink-mute); margin-bottom: 32px; }
+  .hero h1 {
+    font-family: 'Newsreader', Georgia, serif;
+    font-weight: 400;
+    font-size: clamp(40px, 8vw, 110px);
+    line-height: 0.96;
+    letter-spacing: -0.02em;
+    font-variation-settings: "opsz" 72;
+    max-width: 14ch;
+    margin-bottom: 32px;
+  }
+  .hero h1 em { font-style: italic; color: var(--accent); }
+  .hero .deck {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 60px;
+    margin-top: 48px;
+  }
+  .hero .deck p { font-size: 17px; max-width: 56ch; color: var(--ink); }
+  .hero .deck .meta-block { color: var(--ink-mute); font-size: 13px; }
+  .hero .deck .meta-block dt { color: var(--ink); margin-top: 14px; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; font-family: 'JetBrains Mono', monospace; }
+  .hero .deck .meta-block dd { margin-top: 4px; }
+  @media (max-width: 768px) { .hero .deck { grid-template-columns: 1fr; gap: 36px; } }
+  /* ── FILTER BAR ──────────────────────────────────────────── */
+  .filters { padding: 28px var(--gutter); border-bottom: 1px solid var(--rule); display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .filters .label { color: var(--ink-mute); margin-right: 16px; font-size: 11px; }
+  .filters button {
+    background: transparent; border: 1px solid var(--rule);
+    padding: 6px 14px; border-radius: 999px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--ink); cursor: pointer;
+    transition: all 200ms ease;
+  }
+  .filters button.active, .filters button:hover { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  /* ── GRID ────────────────────────────────────────────────── */
+  .grid {
+    padding: clamp(40px, 6vw, 80px) var(--gutter);
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: clamp(20px, 2.4vw, 32px);
+  }
+  .card {
+    text-decoration: none;
+    color: inherit;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    border: 1px solid var(--rule);
+    overflow: hidden;
+    transition: transform 280ms cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                box-shadow 280ms cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                border-color 280ms ease;
+    position: relative;
+  }
+  .card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 16px 48px -16px rgba(17, 17, 17, 0.18);
+    border-color: var(--rule-strong);
+  }
+  .card-preview {
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+    position: relative;
+    background: var(--paper);
+    border-bottom: 1px solid var(--rule);
+  }
+  /* iframe preview, scaled to fit */
+  .card-preview iframe {
+    border: 0;
+    width: 1440px;
+    height: 900px;
+    transform: scale(0.265);
+    transform-origin: 0 0;
+    pointer-events: none;
+  }
+  .card-preview .preview-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, transparent 0%, transparent 70%, rgba(255,255,255,0.05) 100%);
+    pointer-events: none;
+  }
+  .card-body { padding: 22px 24px 24px; flex: 1; display: flex; flex-direction: column; gap: 16px; }
+  .card-meta { display: flex; justify-content: space-between; align-items: baseline; color: var(--ink-mute); }
+  .card-num { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.1em; color: var(--ink); }
+  .card-tags { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-mute); }
+  .card h2 {
+    font-family: 'Newsreader', Georgia, serif;
+    font-weight: 500;
+    font-size: 28px;
+    line-height: 1.05;
+    letter-spacing: -0.01em;
+    font-variation-settings: "opsz" 36;
+  }
+  .card .desc { font-size: 14px; line-height: 1.55; color: var(--ink-mute); }
+  .card .palette { display: flex; gap: 6px; }
+  .card .palette span {
+    width: 22px; height: 22px; border-radius: 999px;
+    border: 1px solid rgba(0,0,0,0.06);
+  }
+  .card .footer-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding-top: 14px; border-top: 1px solid var(--rule);
+    margin-top: auto;
+  }
+  .card .fonts { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.04em; color: var(--ink-mute); text-transform: uppercase; }
+  .card .open-cue { font-size: 13px; color: var(--ink); display: flex; align-items: center; gap: 6px; }
+  .card .open-cue::after { content: '→'; transition: transform 220ms ease; }
+  .card:hover .open-cue::after { transform: translateX(4px); }
+  /* ── COMPARISON TABLE ────────────────────────────────────── */
+  .compare-section { padding: clamp(60px, 8vw, 100px) var(--gutter); border-top: 1px solid var(--rule); }
+  .compare-section h2 {
+    font-family: 'Newsreader', Georgia, serif;
+    font-weight: 400;
+    font-size: clamp(32px, 5vw, 56px);
+    line-height: 1.05;
+    letter-spacing: -0.015em;
+    margin-bottom: 12px;
+    font-variation-settings: "opsz" 60;
+  }
+  .compare-section .sub { color: var(--ink-mute); margin-bottom: 40px; max-width: 60ch; }
+  .compare-table {
+    width: 100%; border-collapse: collapse;
+    font-size: 14px;
+  }
+  .compare-table th, .compare-table td {
+    padding: 14px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--rule);
+  }
+  .compare-table th {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--ink-mute);
+    font-weight: 500;
+    border-bottom: 1px solid var(--rule-strong);
+  }
+  .compare-table td.id { font-family: 'JetBrains Mono', monospace; color: var(--ink-mute); width: 40px; }
+  .compare-table td.name { font-weight: 500; }
+  .compare-table .pill {
+    display: inline-block; padding: 2px 8px; border-radius: 999px;
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    border: 1px solid var(--rule-strong);
+  }
+  .pill.light { background: #FAFAF7; color: var(--ink); }
+  .pill.dark { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+  .pill.warm { background: #F5EFE6; color: #6B4423; border-color: #D4956A; }
+  .pill.bold { background: #FFE45E; color: #000; border-color: #000; }
+  @media (max-width: 768px) {
+    .compare-table { font-size: 12px; }
+    .compare-table th, .compare-table td { padding: 10px 6px; }
+  }
+  /* ── HOW TO CHOOSE ──────────────────────────────────────── */
+  .guide-section { padding: clamp(60px, 8vw, 100px) var(--gutter); border-top: 1px solid var(--rule); }
+  .guide-grid { display: grid; grid-template-columns: 1fr 2fr; gap: 60px; align-items: start; }
+  .guide-grid h2 {
+    font-family: 'Newsreader', Georgia, serif;
+    font-weight: 400;
+    font-size: clamp(32px, 5vw, 56px);
+    line-height: 1.05;
+    letter-spacing: -0.015em;
+    font-variation-settings: "opsz" 60;
+  }
+  .guide-grid .questions dt {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--ink-mute);
+    margin-top: 28px;
+  }
+  .guide-grid .questions dt:first-child { margin-top: 0; }
+  .guide-grid .questions dd { font-size: 17px; margin-top: 8px; max-width: 58ch; }
+  .guide-grid .questions dd em { color: var(--accent); font-style: normal; font-weight: 500; }
+  @media (max-width: 768px) { .guide-grid { grid-template-columns: 1fr; gap: 36px; } }
+  /* ── FOOTER ─────────────────────────────────────────────── */
+  footer {
+    padding: 40px var(--gutter);
+    border-top: 1px solid var(--rule);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap; gap: 20px;
+    color: var(--ink-mute); font-size: 12px;
+  }
+  footer a { color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--rule); }
+  footer a:hover { border-bottom-color: var(--accent); color: var(--accent); }
+  /* ── ANIMATIONS ─────────────────────────────────────────── */
+  @media (prefers-reduced-motion: no-preference) {
+    .card { opacity: 0; transform: translateY(18px); }
+    .card.visible { opacity: 1; transform: translateY(0); transition: opacity 600ms ease, transform 600ms cubic-bezier(0.25, 0.46, 0.45, 0.94); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">STUDIO · Prototypes</div>
+  <nav>
+    <a href="#grid">Гайд</a>
+    <a href="#compare">Сравнение</a>
+    <a href="#guide">Как выбирать</a>
+  </nav>
+  <div class="meta mono">v1.0 — 2026-05-08</div>
+</header>
+
+<section class="hero">
+  <div class="num mono">01 — 10 / визуальных направлений</div>
+  <h1>Десять прототипов <em>одного сайта.</em><br>Один из них — наш.</h1>
+  <div class="deck">
+    <p>
+      Десять параллельных визуальных миров для одного и того же агентства веб-разработки и AI-автоматизации. У каждого — собственная палитра, типографика, ритм и тон голоса. Контент идентичен: услуги, кейсы, процесс, манифест. Меняется только язык дизайна.
+      <br><br>
+      Цель — найти стиль, который чувствуется как наш. После выбора — на его основе строится production-сайт.
+    </p>
+    <dl class="meta-block">
+      <dt>Что внутри</dt>
+      <dd>Hero · Услуги · Кейсы · Процесс · Манифест · Контакт</dd>
+      <dt>Стек</dt>
+      <dd>HTML + Tailwind CDN + Google Fonts. Без сборки.</dd>
+      <dt>Тренды-якоря 2026</dt>
+      <dd>Variable typography · Cloud Dancer · Bento 2.0 · Aurora · Vercel grid · Neubrutalism</dd>
+      <dt>Anti-slop</dt>
+      <dd>Ноль purple-градиентов, ноль bouncy easing, ноль emoji, ноль lorem.</dd>
+    </dl>
+  </div>
+</section>
+
+<div class="filters" role="tablist">
+  <span class="label mono">Фильтр —</span>
+  <button class="active" data-filter="all">Все 10</button>
+  <button data-filter="light">Светлые</button>
+  <button data-filter="dark">Тёмные</button>
+  <button data-filter="editorial">Editorial</button>
+  <button data-filter="tech">Tech</button>
+  <button data-filter="bold">Bold</button>
+  <button data-filter="motion">С motion</button>
+</div>
+
+<section class="grid" id="grid">
+
+  <!-- 01 SWISS EDITORIAL -->
+  <a class="card" href="01_swiss_editorial.html" target="_blank" data-tags="light editorial minimal">
+    <div class="card-preview"><iframe src="01_swiss_editorial.html" loading="lazy" tabindex="-1" aria-hidden="true"></iframe><div class="preview-overlay"></div></div>
+    <div class="card-body">
+      <div class="card-meta">
+        <span class="card-num">01 / TEN</span>
+        <span class="card-tags">Editorial · Light</span>
+      </div>
+      <h2>Swiss Editorial Mono</h2>
+      <p class="desc">Premium B2B-серьёзность. Сетка-12 как религия, один красный акцент, ноль анимаций. Pentagram + Bureau Gorbunov как референсы.</p>
+      <div class="palette">
+        <span style="background:#FAFAF7"></span>
+        <span style="background:#111111"></span>
+        <span style="background:#C8102E"></span>
+      </div>
+      <div class="footer-row">
+        <span class="fonts">Newsreader · Inter Tight</span>
+        <span class="open-cue">Открыть</span>
+      </div>
+    </div>
+  </a>
+
+  <!-- 02 BRUTALIST TECH -->
+  <a class="card" href="02_brutalist_tech.html" target="_blank" data-tags="light tech bold motion">
+    <div class="card-preview"><iframe src="02_brutalist_tech.html" loading="lazy" tabindex="-1" aria-hidden="true"></iframe><div class="preview-overlay"></div></div>
+    <div class="card-body">
+      <div class="card-meta">
+        <span class="card-num">02 / TEN</span>
+        <span class="card-tags">Tech · Mono · Raw</span>
+      </div>
+      <h2>Brutalist Tech</h2>
+      <p class="desc">Терминал в браузере. JetBrains Mono всю дорогу, мигающий курсор, ASCII-фреймы, acid green. Linear meets Liquid Death.</p>
+      <div class="palette">
+        <span style="background:#FFFFFF; border:1px solid #ddd"></span>
+        <span style="background:#000000"></span>
+        <span style="background:#00FF66"></span>
+      </div>
+      <div class="footer-row">
+        <span class="fonts">JetBrains Mono only</span>
+        <span class="open-cue">Открыть</span>
+      </div>
+    </div>
+  </a>
+
+  <!-- 03 DARK LUXURY -->
+  <a class="card" href="03_dark_luxury.html" target="_blank" data-tags="dark tech motion">
+    <div class="card-preview"><iframe src="03_dark_luxury.html" loading="lazy" tabindex="-1" aria-hidden="true"></iframe><div class="preview-overlay"></div></div>
+    <div class="card-body">
+      <div class="card-meta">
+        <span class="card-num">03 / TEN</span>
+        <span class="card-tags">SaaS · Dark · Premium</span>
+      </div>
+      <h2>Dark Luxury</h2>
+      <p class="desc">Linear / Vercel / Resend evolved. Без purple, тёплый amber + ice blue, ambient halo за hero, hairline borders. Premium B2B.</p>
+      <div class="palette">
+        <span style="background:#0A0A0F"></span>
+        <span style="background:#14141C"></span>
+        <span style="background:#F0A961"></span>
+        <span style="background:#6FB3D2"></span>
+      </div>
+      <div class="footer-row">
+        <span class="fonts">Inter Tight · Newsreader</span>
+        <span class="open-cue">Открыть</span>
+      </div>
+    </div>
+  </a>
+
+  <!-- 04 BENTO GRID -->
+  <a class="card" href="04_bento_grid.html" target="_blank" data-tags="light editorial motion">
+    <div class="card-preview"><iframe src="04_bento_grid.html" loading="lazy" tabindex="-1" aria-hidden="true"></iframe><div class="preview-overlay"></div></div>
+    <div class="card-body">
+      <div class="card-meta">
+        <span class="card-num">04 / TEN</span>
+        <span class="card-tags">Modern · Light · Modular</span>
+      </div>
+      <h2>Bento Grid 2026</h2>
+      <p class="desc">Асимметричные плитки с микро-экспериментами: чарты, графы, чат-бабблы. Apple / Notion playful, но дисциплинированно.</p>
+      <div class="palette">
+        <span style="background:#F6F4EE"></span>
+        <span style="background:#1A1A1A"></span>
+        <span style="background:#C84B31"></span>
+        <span style="background:#2F5D3A"></span>
+        <span style="background:#5B9BD5"></span>
+      </div>
+      <div class="footer-row">
+        <span class="fonts">Inter Tight · Instrument Serif</span>
+        <span class="open-cue">Открыть</span>
+      </div>
+    </div>
+  </a>
+
+  <!-- 05 EDITORIAL MAGAZINE -->
+  <a class="card" href="05_editorial_magazine.html" target="_blank" data-tags="light editorial">
+    <div class="card-preview"><iframe src="05_editorial_magazine.html" loading="lazy" tabindex="-1" aria-hidden="true"></iframe><div class="preview-overlay"></div></div>
+    <div class="card-body">
+      <div class="card-meta">
+        <span class="card-num">05 / TEN</span>
+        <span class="card-tags">Editorial · Print-feel</span>
+      </div>
+      <h2>Editorial Magazine</h2>
+      <p class="desc">Журнальный разворот: drop caps, justified columns, paper grain, breaking grid. Wallpaper / The Gentlewoman вайб.</p>
+      <div class="palette">
+        <span style="background:#F5F1E8"></span>
+        <span style="background:#1B1B19"></span>
+        <span style="background:#B83227"></span>
+        <span style="background:#B8956A"></span>
+      </div>
+      <div class="footer-row">
+        <span class="fonts">DM Serif · Newsreader</span>
+        <span class="open-cue">Открыть</span>
+      </div>
+    </div>
+  </a>
+
+  <!-- 06 KINETIC MOCHA -->
+  <a class="card" href="06_kinetic_mocha.html" target="_blank" data-tags="light editorial motion">
+    <div class="card-preview"><iframe src="06_kinetic_mocha.html" loading="lazy" tabindex="-1" aria-hidden="true"></iframe><div class="preview-overlay"></div></div>
+    <div class="card-body">
+      <div class="card-meta">
+        <span class="card-num">06 / TEN</span>
+        <span class="card-tags">Modern · Light · Variable type</span>
+      </div>
+      <h2>Kinetic Mocha</h2>
+      <p class="desc">Главный тренд 2026: variable-вес шрифта живёт по скроллу. Палитра Pantone Cloud Dancer + Mocha Mousse. Тепло и кинетично.</p>
+      <div class="palette">
+        <span style="background:#F5F0EA"></span>
+        <span style="background:#A07855"></span>
+        <span style="background:#C46B3C"></span>
+        <span style="background:#8B9F7E"></span>
+      </div>
+      <div class="footer-row">
+        <span class="fonts">Bricolage Grotesque var.</span>
+        <span class="open-cue">Открыть</span>
+      </div>
+    </div>
+  </a>
+
+  <!-- 07 AURORA AI -->
+  <a class="card" href="07_aurora_ai.html" target="_blank" data-tags="dark tech motion">
+    <div class="card-preview"><iframe src="07_aurora_ai.html" loading="lazy" tabindex="-1" aria-hidden="true"></iframe><div class="preview-overlay"></div></div>
+    <div class="card-body">
+      <div class="card-meta">
+        <span class="card-num">07 / TEN</span>
+        <span class="card-tags">AI-forward · Dark · Atmospheric</span>
+      </div>
+      <h2>Aurora AI</h2>
+      <p class="desc">Анимированный aurora-mesh в глубокой navy палитре. Без purple, teal + amber. Anthropic console × Raycast вайб.</p>
+      <div class="palette">
+        <span style="background:#050B1A"></span>
+        <span style="background:#0E1727"></span>
+        <span style="background:#14B8A6"></span>
+        <span style="background:#FBBF24"></span>
+        <span style="background:#67E8F9"></span>
+      </div>
+      <div class="footer-row">
+        <span class="fonts">Cabinet Grotesk · Inter</span>
+        <span class="open-cue">Открыть</span>
+      </div>
+    </div>
+  </a>
+
+  <!-- 08 3D INTERACTIVE -->
+  <a class="card" href="08_3d_interactive.html" target="_blank" data-tags="dark tech motion">
+    <div class="card-preview"><iframe src="08_3d_interactive.html" loading="lazy" tabindex="-1" aria-hidden="true"></iframe><div class="preview-overlay"></div></div>
+    <div class="card-body">
+      <div class="card-meta">
+        <span class="card-num">08 / TEN</span>
+        <span class="card-tags">Tech · Dark · Interactive 3D</span>
+      </div>
+      <h2>3D Interactive</h2>
+      <p class="desc">Three.js point-cloud в hero — реагирует на курсор. Burnt orange как единственный акцент. Active Theory / Lusion territory.</p>
+      <div class="palette">
+        <span style="background:#0F0F12"></span>
+        <span style="background:#1A1814"></span>
+        <span style="background:#F5F1E8"></span>
+        <span style="background:#E67E2C"></span>
+      </div>
+      <div class="footer-row">
+        <span class="fonts">Cabinet Grotesk · Inter</span>
+        <span class="open-cue">Открыть</span>
+      </div>
+    </div>
+  </a>
+
+  <!-- 09 WARM EARTH -->
+  <a class="card" href="09_warm_earth.html" target="_blank" data-tags="light editorial">
+    <div class="card-preview"><iframe src="09_warm_earth.html" loading="lazy" tabindex="-1" aria-hidden="true"></iframe><div class="preview-overlay"></div></div>
+    <div class="card-body">
+      <div class="card-meta">
+        <span class="card-num">09 / TEN</span>
+        <span class="card-tags">Human · Light · Organic</span>
+      </div>
+      <h2>Warm Earth</h2>
+      <p class="desc">Скандинавский craft: cream / sage / terracotta, рукодельные SVG, paper grain. Anti-tech, RU-first body, slow-craft тон.</p>
+      <div class="palette">
+        <span style="background:#F5EFE6"></span>
+        <span style="background:#D4956A"></span>
+        <span style="background:#4A7C59"></span>
+        <span style="background:#C44A35"></span>
+        <span style="background:#6B4423"></span>
+      </div>
+      <div class="footer-row">
+        <span class="fonts">Fraunces var · Inter</span>
+        <span class="open-cue">Открыть</span>
+      </div>
+    </div>
+  </a>
+
+  <!-- 10 NEUBRUTALIST POP -->
+  <a class="card" href="10_neubrutalist.html" target="_blank" data-tags="light bold">
+    <div class="card-preview"><iframe src="10_neubrutalist.html" loading="lazy" tabindex="-1" aria-hidden="true"></iframe><div class="preview-overlay"></div></div>
+    <div class="card-body">
+      <div class="card-meta">
+        <span class="card-num">10 / TEN</span>
+        <span class="card-tags">Bold · Color · Anti-corp</span>
+      </div>
+      <h2>Neubrutalist Pop</h2>
+      <p class="desc">Громкие цветные блоки, толстые чёрные рамки, hard offset shadows. Figma / Gumroad confidence — «делаем, не питчим».</p>
+      <div class="palette">
+        <span style="background:#FFE45E"></span>
+        <span style="background:#000000"></span>
+        <span style="background:#2B4DFF"></span>
+        <span style="background:#FF3B30"></span>
+        <span style="background:#B6F31E"></span>
+      </div>
+      <div class="footer-row">
+        <span class="fonts">Space Grotesk · Mono</span>
+        <span class="open-cue">Открыть</span>
+      </div>
+    </div>
+  </a>
+
+</section>
+
+<section class="compare-section" id="compare">
+  <h2 class="serif">Сравнение по характеристикам</h2>
+  <p class="sub">Шесть осей, по которым прототипы расходятся: тон, плотность, motion, ценовая аура.</p>
+  <div style="overflow-x:auto">
+    <table class="compare-table">
+      <thead>
+        <tr>
+          <th></th><th>Прототип</th><th>Тон</th><th>Mood</th><th>Motion</th><th>Type system</th><th>Best for</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td class="id">01</td><td class="name">Swiss Editorial</td><td><span class="pill light">Light</span></td><td>B2B serenity</td><td>Минимум</td><td>Serif + Sans + Mono</td><td>Корпоративные клиенты, design-aware</td></tr>
+        <tr><td class="id">02</td><td class="name">Brutalist Tech</td><td><span class="pill light">Light</span></td><td>Hacker, raw</td><td>Курсор-blink, snap</td><td>Mono only</td><td>Dev-first клиенты, стартапы</td></tr>
+        <tr><td class="id">03</td><td class="name">Dark Luxury</td><td><span class="pill dark">Dark</span></td><td>SaaS premium</td><td>Subtle fade-up</td><td>Sans + Serif accent</td><td>Founders, B2B SaaS</td></tr>
+        <tr><td class="id">04</td><td class="name">Bento Grid</td><td><span class="pill light">Light</span></td><td>Modern playful</td><td>Tile micro-interaction</td><td>Sans + Serif</td><td>Product agencies, modern brands</td></tr>
+        <tr><td class="id">05</td><td class="name">Editorial Magazine</td><td><span class="pill warm">Light</span></td><td>Print-craft</td><td>Очень мало</td><td>Serif heavy</td><td>Creative / boutique</td></tr>
+        <tr><td class="id">06</td><td class="name">Kinetic Mocha</td><td><span class="pill warm">Light</span></td><td>Warm modern</td><td>Variable type на скролле</td><td>Variable Sans + Serif</td><td>Creative / 2026-aware</td></tr>
+        <tr><td class="id">07</td><td class="name">Aurora AI</td><td><span class="pill dark">Dark</span></td><td>AI-forward</td><td>Aurora keyframes</td><td>Display Sans + Mono</td><td>AI-агентства, ML-команды</td></tr>
+        <tr><td class="id">08</td><td class="name">3D Interactive</td><td><span class="pill dark">Dark</span></td><td>Premium tech</td><td>Three.js + cursor</td><td>Display Sans</td><td>Award-чейзеры, premium clients</td></tr>
+        <tr><td class="id">09</td><td class="name">Warm Earth</td><td><span class="pill warm">Light</span></td><td>Human, slow</td><td>Гентл fade</td><td>Variable Serif</td><td>Boutique / human-scale clients</td></tr>
+        <tr><td class="id">10</td><td class="name">Neubrutalist Pop</td><td><span class="pill bold">Light</span></td><td>Loud, defiant</td><td>Hard snap</td><td>Quirky Sans + Mono</td><td>Disruptive / D2C / creative</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="guide-section" id="guide">
+  <div class="guide-grid">
+    <h2 class="serif">Как выбирать.</h2>
+    <dl class="questions">
+      <dt>01 — Кто наши клиенты в первый год?</dt>
+      <dd>Если корпоративные / агентства / интеграции через тендер — <em>01 Swiss</em> или <em>03 Dark Luxury</em>.<br>Если стартапы и продакт-команды — <em>04 Bento</em>, <em>06 Kinetic</em>, <em>07 Aurora</em>.<br>Если креативные бренды и D2C — <em>05 Editorial</em>, <em>09 Warm Earth</em>, <em>10 Neubrutalist</em>.</dd>
+
+      <dt>02 — Хотим ли мы выглядеть как «технари» или как «авторы»?</dt>
+      <dd>Технари — <em>02 Brutalist</em>, <em>03 Dark Luxury</em>, <em>07 Aurora</em>, <em>08 3D</em>.<br>Авторы — <em>05 Editorial</em>, <em>06 Kinetic Mocha</em>, <em>09 Warm Earth</em>.<br>Универсальные — <em>01 Swiss</em>, <em>04 Bento</em>.</dd>
+
+      <dt>03 — Какой бюджет на доработку и поддержку?</dt>
+      <dd>Минимум на сборку и итерации — <em>01 Swiss</em>, <em>02 Brutalist</em>, <em>09 Warm Earth</em>.<br>Средний — <em>03 Dark Luxury</em>, <em>04 Bento</em>, <em>05 Editorial</em>, <em>06 Kinetic</em>, <em>10 Neubrutalist</em>.<br>Максимум (3D-сцена) — <em>08 3D Interactive</em>.<br>Aurora-mesh с performance-tuning — <em>07 Aurora</em>.</dd>
+
+      <dt>04 — Какой контраст с конкурентами?</dt>
+      <dd>Большинство AI-агентств в РФ и зарубежом сейчас уходят в дешёвый <em>purple-glow / generic dark SaaS</em>. Любой из <em>01, 05, 06, 09, 10</em> сразу выделится.</dd>
+
+      <dt>05 — На каком стиле легче масштабироваться на 5+ страниц?</dt>
+      <dd><em>01 Swiss</em> и <em>03 Dark Luxury</em> — самые «системные»: design tokens очевидны, добавлять страницы легко.<br><em>05 Editorial</em> и <em>09 Warm Earth</em> требуют сильного арт-директора на каждом разделе.</dd>
+
+      <dt>06 — Тест с твоей сестрой / Аей / Райаном</dt>
+      <dd>Покажи 3 фаворита людям, которые могут стать клиентами. Их первая реакция за первые 5 секунд — главный сигнал.</dd>
+    </dl>
+  </div>
+</section>
+
+<footer>
+  <div class="mono">© 2026 STUDIO · Prototype set v1.0 · Made in Phuket × Bangkok</div>
+  <div class="mono">Crafted by Alex × Nikolay · <a href="https://github.com">github</a> · <a href="https://t.me">telegram</a></div>
+</footer>
+
+<script>
+  // filter chips
+  const buttons = document.querySelectorAll('.filters button');
+  const cards = document.querySelectorAll('.card[data-tags]');
+  buttons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      buttons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const f = btn.dataset.filter;
+      cards.forEach(c => {
+        const tags = (c.dataset.tags || '').split(/\s+/);
+        const show = (f === 'all') || tags.includes(f);
+        c.style.display = show ? '' : 'none';
+      });
+    });
+  });
+  // staggered card reveal
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach((e, i) => {
+        if (e.isIntersecting) {
+          setTimeout(() => e.target.classList.add('visible'), i * 60);
+          obs.unobserve(e.target);
+        }
+      });
+    }, { rootMargin: '0px 0px -10% 0px' });
+    cards.forEach(c => obs.observe(c));
+  } else {
+    cards.forEach(c => c.classList.add('visible'));
+  }
+</script>
+</body>
+</html>

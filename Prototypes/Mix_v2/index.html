@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mix v2 · 10 вариантов микса · STUDIO</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Cabinet+Grotesk:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0F0F12;
+    --surface: #16161B;
+    --surface-2: #1E1E25;
+    --rule: #2A2A30;
+    --rule-strong: #3D3D46;
+    --text: #F5F1E8;
+    --mute: #9A958A;
+    --primary: #E67E2C;
+    --secondary: #F0A961;
+    --gutter: clamp(16px, 3vw, 36px);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+    background: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+    font-size: 14px;
+    font-feature-settings: "tnum";
+  }
+  ::selection { background: var(--primary); color: var(--bg); }
+  .display { font-family: 'Cabinet Grotesk', sans-serif; font-weight: 700; letter-spacing: -0.015em; }
+  .container { max-width: 1480px; margin: 0 auto; padding: 0 var(--gutter); }
+  .hairline { border: 0; border-top: 1px solid var(--rule); }
+  /* ── HEADER ──────────────────────────────────────── */
+  header {
+    padding: 18px var(--gutter);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--rule);
+    position: sticky; top: 0; z-index: 50;
+    background: rgba(15, 15, 18, 0.85);
+    backdrop-filter: blur(14px);
+  }
+  header .brand { font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; font-size: 12px; }
+  header .brand .dot { display: inline-block; width: 6px; height: 6px; background: var(--primary); border-radius: 50%; margin-right: 8px; vertical-align: 1px; animation: pulse 2.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 1 } 50% { opacity: 0.4 } }
+  header nav { display: flex; gap: 22px; }
+  header nav a { color: var(--text); text-decoration: none; font-size: 12px; opacity: 0.78; transition: opacity 180ms ease; }
+  header nav a:hover { opacity: 1; color: var(--primary); }
+  header .meta { color: var(--mute); font-size: 11px; }
+  /* ── HERO ────────────────────────────────────────── */
+  .hero { padding: clamp(72px, 12vw, 160px) var(--gutter) clamp(48px, 8vw, 100px); border-bottom: 1px solid var(--rule); }
+  .hero .chip {
+    display: inline-block;
+    padding: 5px 12px;
+    border: 1px solid var(--rule-strong);
+    color: var(--secondary);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 32px;
+  }
+  .hero h1 {
+    font-family: 'Cabinet Grotesk', sans-serif;
+    font-weight: 800;
+    font-size: clamp(40px, 8vw, 104px);
+    line-height: 0.96;
+    letter-spacing: -0.025em;
+    max-width: 16ch;
+    margin-bottom: 32px;
+  }
+  .hero h1 em { font-style: normal; color: var(--primary); }
+  .hero .sub {
+    color: var(--mute);
+    font-size: 16px;
+    line-height: 1.6;
+    max-width: 60ch;
+    margin-bottom: 32px;
+  }
+  .hero .deck-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 36px;
+    margin-top: 56px;
+    padding-top: 32px;
+    border-top: 1px solid var(--rule);
+  }
+  .hero .deck-grid dt {
+    color: var(--secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 10px;
+    margin-bottom: 6px;
+  }
+  .hero .deck-grid dd {
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  .hero .deck-grid dd code { background: var(--surface); padding: 1px 5px; border: 1px solid var(--rule); color: var(--secondary); }
+  @media (max-width: 768px) { .hero .deck-grid { grid-template-columns: 1fr; gap: 22px; } }
+  /* ── RECIPE STRIP ────────────────────────────────── */
+  .recipe-strip {
+    padding: 18px var(--gutter);
+    border-bottom: 1px solid var(--rule);
+    background: var(--surface);
+    overflow: hidden;
+    white-space: nowrap;
+    color: var(--mute);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .recipe-strip span.brand-tok { color: var(--primary); font-weight: 700; }
+  .recipe-strip span.sep { color: var(--rule-strong); margin: 0 14px; }
+  /* ── FILTERS ─────────────────────────────────────── */
+  .filters { padding: 24px var(--gutter); border-bottom: 1px solid var(--rule); display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .filters .label { color: var(--mute); margin-right: 16px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+  .filters button {
+    background: transparent;
+    border: 1px solid var(--rule-strong);
+    color: var(--text);
+    padding: 7px 14px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 140ms cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 3px 3px 0 var(--rule);
+  }
+  .filters button:hover, .filters button.active {
+    background: var(--primary);
+    color: var(--bg);
+    border-color: var(--bg);
+    transform: translate(3px, 3px);
+    box-shadow: 0 0 0 var(--rule);
+  }
+  /* ── GRID ────────────────────────────────────────── */
+  .grid {
+    padding: clamp(40px, 6vw, 72px) var(--gutter);
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+    gap: 24px;
+  }
+  .card {
+    text-decoration: none;
+    color: inherit;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    border: 1px solid var(--rule-strong);
+    box-shadow: 4px 4px 0 var(--rule);
+    transition: transform 140ms cubic-bezier(0.4, 0, 0.2, 1),
+                box-shadow 140ms cubic-bezier(0.4, 0, 0.2, 1),
+                border-color 140ms ease;
+    position: relative;
+  }
+  .card:hover {
+    transform: translate(-4px, -4px);
+    box-shadow: 8px 8px 0 var(--primary);
+    border-color: var(--primary);
+  }
+  .card-preview {
+    aspect-ratio: 16 / 10;
+    overflow: hidden;
+    position: relative;
+    background: var(--bg);
+    border-bottom: 1px solid var(--rule);
+  }
+  .card-preview iframe {
+    border: 0;
+    width: 1440px;
+    height: 900px;
+    transform: scale(0.265);
+    transform-origin: 0 0;
+    pointer-events: none;
+  }
+  .card-preview .preview-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, transparent 0%, transparent 70%, rgba(15, 15, 18, 0.05) 100%);
+    pointer-events: none;
+  }
+  .card-body { padding: 22px 22px 22px; flex: 1; display: flex; flex-direction: column; gap: 14px; }
+  .card-meta { display: flex; justify-content: space-between; align-items: baseline; }
+  .card-num { font-size: 11px; color: var(--secondary); letter-spacing: 0.1em; }
+  .card-tags { font-size: 10px; letter-spacing: 0.08em; color: var(--mute); text-transform: uppercase; }
+  .card h2 {
+    font-family: 'Cabinet Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 26px;
+    line-height: 1.05;
+    letter-spacing: -0.015em;
+    color: var(--text);
+  }
+  .card .desc { font-size: 13px; line-height: 1.55; color: var(--mute); }
+  .card .palette { display: flex; gap: 5px; }
+  .card .palette span {
+    width: 22px; height: 22px;
+    border: 1px solid var(--rule);
+  }
+  .card .footer-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding-top: 14px; border-top: 1px solid var(--rule);
+    margin-top: auto;
+  }
+  .card .fonts { font-size: 9.5px; letter-spacing: 0.06em; color: var(--mute); text-transform: uppercase; }
+  .card .open-cue { font-size: 11px; color: var(--primary); display: flex; align-items: center; gap: 6px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .card .open-cue::after { content: '▸'; transition: transform 180ms ease; }
+  .card:hover .open-cue::after { transform: translateX(4px); }
+  /* ── COMPARISON ──────────────────────────────────── */
+  .compare-section { padding: clamp(60px, 8vw, 100px) var(--gutter); border-top: 1px solid var(--rule); background: var(--surface); }
+  .compare-section h2 {
+    font-family: 'Cabinet Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: clamp(32px, 5vw, 56px);
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    margin-bottom: 12px;
+  }
+  .compare-section .sub { color: var(--mute); margin-bottom: 40px; max-width: 70ch; font-size: 14px; }
+  .compare-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .compare-table th, .compare-table td {
+    padding: 12px 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--rule);
+  }
+  .compare-table th {
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--secondary);
+    font-weight: 700;
+    border-bottom: 2px solid var(--rule-strong);
+  }
+  .compare-table td.id { color: var(--secondary); width: 36px; }
+  .compare-table td.name { color: var(--text); font-weight: 500; }
+  .compare-table .bar {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    vertical-align: middle;
+  }
+  .compare-table .bar i {
+    display: inline-block;
+    width: 6px;
+    height: 12px;
+    background: var(--rule-strong);
+  }
+  .compare-table .bar i.on { background: var(--primary); }
+  .compare-table .palette-strip { display: inline-flex; gap: 2px; }
+  .compare-table .palette-strip i { width: 14px; height: 14px; display: inline-block; border: 1px solid var(--rule); }
+  /* ── GUIDE ───────────────────────────────────────── */
+  .guide-section { padding: clamp(60px, 8vw, 100px) var(--gutter); border-top: 1px solid var(--rule); }
+  .guide-grid { display: grid; grid-template-columns: 1fr 2fr; gap: 60px; align-items: start; }
+  .guide-grid h2 {
+    font-family: 'Cabinet Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: clamp(32px, 5vw, 56px);
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+  }
+  .guide-grid dt {
+    color: var(--secondary);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-top: 28px;
+  }
+  .guide-grid dt:first-child { margin-top: 0; }
+  .guide-grid dd {
+    font-family: 'Cabinet Grotesk', sans-serif;
+    font-weight: 500;
+    font-size: 17px;
+    line-height: 1.55;
+    margin-top: 8px;
+    max-width: 64ch;
+  }
+  .guide-grid dd em { color: var(--primary); font-style: normal; font-weight: 700; }
+  @media (max-width: 768px) { .guide-grid { grid-template-columns: 1fr; gap: 36px; } }
+  /* ── BACK LINK ───────────────────────────────────── */
+  .back-link {
+    padding: 24px var(--gutter);
+    text-align: center;
+    border-top: 1px solid var(--rule);
+    border-bottom: 1px solid var(--rule);
+  }
+  .back-link a {
+    display: inline-block;
+    color: var(--text);
+    text-decoration: none;
+    border: 2px solid var(--text);
+    box-shadow: 4px 4px 0 var(--text);
+    background: transparent;
+    padding: 12px 24px;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: all 140ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .back-link a:hover { transform: translate(4px, 4px); box-shadow: 0 0 0 var(--text); background: var(--text); color: var(--bg); }
+  /* ── FOOTER ──────────────────────────────────────── */
+  footer {
+    padding: 40px var(--gutter);
+    border-top: 1px solid var(--rule);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 20px;
+    color: var(--mute);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+  }
+  footer a { color: var(--text); text-decoration: none; }
+  footer a:hover { color: var(--primary); }
+  /* ── ANIMATIONS ──────────────────────────────────── */
+  @media (prefers-reduced-motion: no-preference) {
+    .card { opacity: 0; transform: translateY(20px); }
+    .card.visible { opacity: 1; transform: translateY(0); transition: opacity 500ms ease, transform 500ms cubic-bezier(0.25, 0.46, 0.45, 0.94); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand"><span class="dot"></span>STUDIO · MIX_V2</div>
+  <nav>
+    <a href="#grid">10 миксов</a>
+    <a href="#compare">Сравнение</a>
+    <a href="#guide">Как выбирать</a>
+    <a href="../index.html">← Все 20</a>
+  </nav>
+  <div class="meta">v2 — 2026-05-08</div>
+</header>
+
+<section class="hero">
+  <span class="chip">// MIX V2 · 10 ITERATIONS</span>
+  <h1>Десять <em>вариантов</em> одного микса.<br>Тёмные и тёплые.</h1>
+  <p class="sub">
+    Микс взят из четырёх ингредиентов: <em style="color:var(--primary)">дух №3</em> (Linear-style premium calm),
+    <em style="color:var(--primary)">база №2</em> (mono-terminal эстетика), <em style="color:var(--primary)">палитра + 3D №8</em> (charcoal + burnt orange + Three.js),
+    <em style="color:var(--primary)">кнопки №10</em> (thick borders + offset shadows). Все 10 миксов — DARK + WARM. Без жёлтого, кобальта и красного №10.
+  </p>
+  <p class="sub" style="color:var(--text)">
+    Каждый из 10 — это сдвиг по одной из осей: палитра-нюанс, плотность 3D, mono-ratio, character кнопок. Empirical путь к финальному стилю.
+  </p>
+  <dl class="deck-grid">
+    <div><dt>Что варьируется</dt><dd>Палитра • плотность 3D • mono-ratio • интенсивность кнопок • атмосфера</dd></div>
+    <div><dt>Что неизменно</dt><dd>Контент (3 услуги · 3 кейса · процесс · манифест), tone (founder-to-founder), zero AI-slop</dd></div>
+    <div><dt>Стек</dt><dd><code>HTML</code> + <code>Tailwind CDN</code> + <code>Google Fonts</code> + <code>Three.js CDN</code> для 3D-сцен</dd></div>
+    <div><dt>Anti-slop</dt><dd>0 purple/violet/indigo, 0 bouncy easing, 0 emoji, 0 lorem, 0 default Tailwind blue</dd></div>
+  </dl>
+</section>
+
+<div class="recipe-strip">
+  <span class="brand-tok">▸ RECIPE</span>
+  <span class="sep">/</span>
+  <span>spirit: dark luxury (P03)</span>
+  <span class="sep">/</span>
+  <span>base: brutalist mono (P02)</span>
+  <span class="sep">/</span>
+  <span>palette + 3D: charcoal + burnt orange (P08)</span>
+  <span class="sep">/</span>
+  <span>buttons: neubrutalist offset (P10) — но в warm-dark</span>
+  <span class="sep">/</span>
+  <span class="brand-tok">10 ITERATIONS</span>
+</div>
+
+<div class="filters" role="tablist">
+  <span class="label">Фильтр /</span>
+  <button class="active" data-filter="all">Все 10</button>
+  <button data-filter="balanced">Сбалансированные</button>
+  <button data-filter="3d">С 3D</button>
+  <button data-filter="ascii">ASCII / без 3D</button>
+  <button data-filter="loud">Громкие кнопки</button>
+  <button data-filter="quiet">Тихие кнопки</button>
+  <button data-filter="warm">Самые тёплые</button>
+</div>
+
+<section class="grid" id="grid">
+
+  <!-- 01 TERMINAL PREMIUM -->
+  <a class="card" href="mix_01_terminal_premium.html" target="_blank" data-tags="balanced 3d">
+    <div class="card-preview"><iframe src="mix_01_terminal_premium.html" loading="lazy" tabindex="-1" aria-hidden="true"></iframe><div class="preview-overlay"></div></div>
+    <div class="card-body">
+      <div class="card-meta">
+        <span class="card-num">MIX 01 / 10</span>
+        <span class="card-tags">Balanced · 3D minimal</span>
+      </div>
+      <h2>Terminal Premium</h2>
+      <p class="desc">Контрольный микс. Linear meets terminal. 16×16 point grid справа, headline слева. 80% mono. Кнопки умеренные (4px offset).</p>
+      <div class="palette">
+        <span style="background:#0F0F12"></span>
+        <span style="background:#16161B"></span>
+        <span style="background:#F5F1E8"></span>
+        <span style="background:#E67E2C"></span>
+        <span style="background:#F0A961"></span>
+      </div>
+      <div class="footer-row">
+        <span class="fonts">Cabinet Grotesk + Mono</span>
+        <span class="open-cue">Открыть</span>
+      </div>
+    </div>
+  </a>
+
+  <!-- 02 WORKSHOP MONO -->
+  <a class="card" href="mix_02_workshop_mono.html" target="_blank" data-tags="ascii loud warm">
+    <div class="card-preview"><iframe src="mix_02_workshop_mono.html" loading="lazy" tabindex="-1" aria-hidden="true"></iframe><div class="preview-overlay"></div></div>
+    <div class="card-body">
+      <div class="card-meta">
+        <span class="card-num">MIX 02 / 10</span>
+        <span class="card-tags">ASCII · Mono only</span>
+      </div>
+      <h2>Workshop Mono</h2>
+      <p class="desc">Мастерская в тёмном дереве. 100% JetBrains Mono. ASCII-наковальня вместо 3D. Copper-кнопки с 6px offset.</p>
+      <div class="palette">
+        <span style="background:#1A1410"></span>
+        <span style="background:#211912"></span>
+        <span style="background:#F2EAD9"></span>
+        <span style="background:#C76A2D"></span>
+        <span style="background:#D9A057"></span>
+      </div>
+      <div class="footer-row">
+        <span class="fonts">JetBrains Mono only</span>
+        <span class="open-cue">Открыть</span>
+      </div>
+    </div>
+  </a>
+
+  <!-- 03 STUDIO CONSOLE -->
+  <a class="card" href="mix_03_studio_console.html" target="_blank" data-tags="3d quiet">
+    <div class="card-preview"><iframe src="mix_03_studio_console.html" loading="lazy" tabindex="-1" aria-hidden="true"></iframe><div class="preview-overlay"></div></div>
+    <div class="card-body">
+      <div class="card-meta">
+        <span class="card-num">MIX 03 / 10</span>
+        <span class="card-tags">3D heavy · Subtle</span>
+      </div>
+      <h2>Studio Console</h2>
+      <p class="desc">3D на максимум: 24×24 point cloud + cursor warp + agent terminal. Кнопки минимальный offset (2px). Студия за консолью ночью.</p>
+      <div class="palette">
+        <span style="background:#14141C"></span>
+        <span style="background:#1B1B25"></span>
+        <span style="background:#F0EBDB"></span>
+        <span style="background:#E89B5C"></span>
+        <span style="background:#6FB3D2"></span>
+      </div>
+      <div class="footer-row">
+        <span class="fonts">Cabinet Grotesk + Mono</span>
+        <span class="open-cue">Открыть</span>
+      </div>
+    </div>
+  </a>
+
+  <!-- 04 DUST & EMBERS -->
+  <a class="card" href="mix_04_dust_embers.html" target="_blank" data-tags="3d warm">
+    <div class="card-preview"><iframe src="mix_04_dust_embers.html" loading="lazy" tabindex="-1" aria-hidden="true"></iframe><div class="preview-overlay"></div></div>
+    <div class="card-body">
+      <div class="card-meta">
+        <span class="card-num">MIX 04 / 10</span>
+        <span class="card-tags">Atmospheric · Warm halo</span>
+      </div>
+      <h2>Dust &amp; Embers</h2>
+      <p class="desc">Дальний свет угольков. Tar-фон + breathing radial glow за hero + 110 floating particles. Gold-leaf offset на CTA.</p>
+      <div class="palette">
+        <span style="background:#0E0B07"></span>
+        <span style="background:#15110B"></span>
+        <span style="background:#F0E8D5"></span>
+        <span style="background:#D26339"></span>
+        <span style="background:#B8956A"></span>
+      </div>
+      <div class="footer-row">
+        <span class="fonts">Cabinet Grotesk + Mono + Newsreader</span>
+        <span class="open-cue">Открыть</span>
+      </div>
+    </div>
+  </a>
+
+  <!-- 05 DATA MONOLITH -->
+  <a class="card" href="mix_05_data_monolith.html" target="_blank" data-tags="ascii balanced">
+    <div class="card-preview"><iframe src="mix_05_data_monolith.html" loading="lazy" tabindex="-1" aria-hidden="true"></iframe><div class="preview-overlay"></div></div>
+    <div class="card-body">
+      <div class="card-meta">
+        <span class="card-num">MIX 05 / 10</span>
+        <span class="card-tags">Data-dense · Status-board</span>
+      </div>
+      <h2>Data Monolith</h2>
+      <p class="desc">SRE-стиль. ASCII-status-board с тикающими метриками вместо 3D. 90% mono. Hero — операционная панель. Для технических клиентов.</p>
+      <div class="palette">
+        <span style="background:#0F0F12"></span>
+        <span style="background:#181820"></span>
+        <span style="background:#F0EBDB"></span>
+        <span style="background:#F0A961"></span>
+        <span style="background:#8AB868"></span>
+      </div>
+      <div class="footer-row">
+        <span class="fonts">JetBrains Mono primary</span>
+        <span class="open-cue">Открыть</span>
+      </div>
+    </div>
+  </a>
+
+  <!-- 06 SLOW STUDIO -->
+  <a class="card" href="mix_06_slow_studio.html" target="_blank" data-tags="3d quiet">
+    <div class="card-preview"><iframe src="mix_06_slow_studio.html" loading="lazy" tabindex="-1" aria-hidden="true"></iframe><div class="preview-overlay"></div></div>
+    <div class="card-body">
+      <div class="card-meta">
+        <span class="card-num">MIX 06 / 10</span>
+        <span class="card-tags">Editorial · Ghost buttons</span>
+      </div>
+      <h2>Slow Studio</h2>
+      <p class="desc">Anthropic-dark slow craft. Wireframe icosahedron вместо point cloud. Ghost-кнопки (offset только на hover). Newsreader для editorial body.</p>
+      <div class="palette">
+        <span style="background:#14110D"></span>
+        <span style="background:#1B1812"></span>
+        <span style="background:#F0EBDB"></span>
+        <span style="background:#E67E2C"></span>
+        <span style="background:#B8956A"></span>
+      </div>
+      <div class="footer-row">
+        <span class="fonts">Cabinet Grotesk + Newsreader + Mono</span>
+        <span class="open-cue">Открыть</span>
+      </div>
+    </div>
+  </a>
+
+  <!-- 07 FORGE -->
+  <a class="card" href="mix_07_forge.html" target="_blank" data-tags="ascii loud">
+    <div class="card-preview"><iframe src="mix_07_forge.html" loading="lazy" tabindex="-1" aria-hidden="true"></iframe><div class="preview-overlay"></div></div>
+    <div class="card-body">
+      <div class="card-meta">
+        <span class="card-num">MIX 07 / 10</span>
+        <span class="card-tags">Loudest · Typographic</span>
+      </div>
+      <h2>Forge</h2>
+      <p class="desc">Builder-mode. Никакого 3D — typographic sculpture в hero. 8px offset на всех кнопках. Stickers с rotation. Самый «громкий» из dark+warm.</p>
+      <div class="palette">
+        <span style="background:#161208"></span>
+        <span style="background:#1F1A0F"></span>
+        <span style="background:#F0E8D5"></span>
+        <span style="background:#C76A2D"></span>
+        <span style="background:#D9A057"></span>
+      </div>
+      <div class="footer-row">
+        <span class="fonts">Space Grotesk + Mono</span>
+        <span class="open-cue">Открыть</span>
+      </div>
+    </div>
+  </a>
+
+  <!-- 08 LATE NIGHT ATELIER -->
+  <a class="card" href="mix_08_late_night_atelier.html" target="_blank" data-tags="balanced 3d warm">
+    <div class="card-preview"><iframe src="mix_08_late_night_atelier.html" loading="lazy" tabindex="-1" aria-hidden="true"></iframe><div class="preview-overlay"></div></div>
+    <div class="card-body">
+      <div class="card-meta">
+        <span class="card-num">MIX 08 / 10</span>
+        <span class="card-tags">Tonal · Warm 3D</span>
+      </div>
+      <h2>Late Night Atelier</h2>
+      <p class="desc">Студия ночью. Warm orange point cloud (тёплый, не белый). Тональные кнопки (cinnamon на dark). Самый «уютный» из 3D-вариантов.</p>
+      <div class="palette">
+        <span style="background:#1A1410"></span>
+        <span style="background:#221912"></span>
+        <span style="background:#F0E8D5"></span>
+        <span style="background:#D2691E"></span>
+        <span style="background:#E89B5C"></span>
+      </div>
+      <div class="footer-row">
+        <span class="fonts">Cabinet Grotesk + Mono</span>
+        <span class="open-cue">Открыть</span>
+      </div>
+    </div>
+  </a>
+
+  <!-- 09 BRUTALIST FURNACE -->
+  <a class="card" href="mix_09_brutalist_furnace.html" target="_blank" data-tags="ascii loud">
+    <div class="card-preview"><iframe src="mix_09_brutalist_furnace.html" loading="lazy" tabindex="-1" aria-hidden="true"></iframe><div class="preview-overlay"></div></div>
+    <div class="card-body">
+      <div class="card-meta">
+        <span class="card-num">MIX 09 / 10</span>
+        <span class="card-tags">100% mono · 8px offset</span>
+      </div>
+      <h2>Brutalist Furnace</h2>
+      <p class="desc">Самый радикальный микс. 100% JetBrains Mono. ASCII-арт furnace в hero. 4px borders + 8px hard offset. Honest machine.</p>
+      <div class="palette">
+        <span style="background:#0F0F12"></span>
+        <span style="background:#161620"></span>
+        <span style="background:#F5F1E8"></span>
+        <span style="background:#E67E2C"></span>
+        <span style="background:#F0A961"></span>
+      </div>
+      <div class="footer-row">
+        <span class="fonts">JetBrains Mono only</span>
+        <span class="open-cue">Открыть</span>
+      </div>
+    </div>
+  </a>
+
+  <!-- 10 HEARTH -->
+  <a class="card" href="mix_10_hearth.html" target="_blank" data-tags="3d warm quiet">
+    <div class="card-preview"><iframe src="mix_10_hearth.html" loading="lazy" tabindex="-1" aria-hidden="true"></iframe><div class="preview-overlay"></div></div>
+    <div class="card-body">
+      <div class="card-meta">
+        <span class="card-num">MIX 10 / 10</span>
+        <span class="card-tags">Hearth · Most human</span>
+      </div>
+      <h2>Hearth</h2>
+      <p class="desc">У очага. Самый глубокий тёмно-коричневый (#0E0807). Cream-кнопки на dark с ember offset. Floating ember orbs. Самый «человеческий» из 10.</p>
+      <div class="palette">
+        <span style="background:#0E0807"></span>
+        <span style="background:#14100C"></span>
+        <span style="background:#F0E8D5"></span>
+        <span style="background:#C44A35"></span>
+        <span style="background:#D9A057"></span>
+      </div>
+      <div class="footer-row">
+        <span class="fonts">Cabinet Grotesk + Newsreader + Mono</span>
+        <span class="open-cue">Открыть</span>
+      </div>
+    </div>
+  </a>
+
+</section>
+
+<section class="compare-section" id="compare">
+  <h2>Сравнение по микро-параметрам</h2>
+  <p class="sub">Каждый микс отличается от других на 1-2 параметра. Ось — палитра, плотность 3D, mono-ratio, кнопки, температура.</p>
+  <div style="overflow-x:auto">
+    <table class="compare-table">
+      <thead>
+        <tr>
+          <th></th><th>Микс</th><th>Палитра</th><th>3D / hero</th><th>Mono ratio</th><th>Кнопки</th><th>Температура</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td class="id">01</td><td class="name">Terminal Premium</td><td><span class="palette-strip"><i style="background:#0F0F12"></i><i style="background:#E67E2C"></i><i style="background:#F0A961"></i></span></td><td>16×16 grid + cursor</td><td><span class="bar"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span> 80%</td><td>4px offset</td><td>charcoal · neutral</td></tr>
+        <tr><td class="id">02</td><td class="name">Workshop Mono</td><td><span class="palette-strip"><i style="background:#1A1410"></i><i style="background:#C76A2D"></i><i style="background:#D9A057"></i></span></td><td>ASCII anvil</td><td><span class="bar"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span> 100%</td><td>6px offset</td><td>walnut · warm</td></tr>
+        <tr><td class="id">03</td><td class="name">Studio Console</td><td><span class="palette-strip"><i style="background:#14141C"></i><i style="background:#E89B5C"></i><i style="background:#6FB3D2"></i></span></td><td>24×24 + warp</td><td><span class="bar"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span> 70%</td><td>2px subtle</td><td>ink · cool-warm</td></tr>
+        <tr><td class="id">04</td><td class="name">Dust &amp; Embers</td><td><span class="palette-strip"><i style="background:#0E0B07"></i><i style="background:#D26339"></i><i style="background:#B8956A"></i></span></td><td>110 particles + halo</td><td><span class="bar"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span> 60%</td><td>6px gold offset</td><td>tar · very warm</td></tr>
+        <tr><td class="id">05</td><td class="name">Data Monolith</td><td><span class="palette-strip"><i style="background:#0F0F12"></i><i style="background:#F0A961"></i><i style="background:#8AB868"></i></span></td><td>ASCII status board</td><td><span class="bar"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span> 90%</td><td>5px solid amber</td><td>charcoal · neutral</td></tr>
+        <tr><td class="id">06</td><td class="name">Slow Studio</td><td><span class="palette-strip"><i style="background:#14110D"></i><i style="background:#E67E2C"></i><i style="background:#B8956A"></i></span></td><td>Wireframe icosa</td><td><span class="bar"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span> 60%</td><td>Ghost (hover only)</td><td>ink · warm</td></tr>
+        <tr><td class="id">07</td><td class="name">Forge</td><td><span class="palette-strip"><i style="background:#161208"></i><i style="background:#C76A2D"></i><i style="background:#D9A057"></i></span></td><td>Typographic only</td><td><span class="bar"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span> 50%</td><td>8px LOUD offset</td><td>walnut · warm</td></tr>
+        <tr><td class="id">08</td><td class="name">Late Night Atelier</td><td><span class="palette-strip"><i style="background:#1A1410"></i><i style="background:#D2691E"></i><i style="background:#E89B5C"></i></span></td><td>Warm point cloud</td><td><span class="bar"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span> 70%</td><td>5px tonal</td><td>warm dark · warm</td></tr>
+        <tr><td class="id">09</td><td class="name">Brutalist Furnace</td><td><span class="palette-strip"><i style="background:#0F0F12"></i><i style="background:#E67E2C"></i><i style="background:#F0A961"></i></span></td><td>ASCII art massive</td><td><span class="bar"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span> 100%</td><td>8px LOUDEST</td><td>charcoal · neutral</td></tr>
+        <tr><td class="id">10</td><td class="name">Hearth</td><td><span class="palette-strip"><i style="background:#0E0807"></i><i style="background:#C44A35"></i><i style="background:#D9A057"></i></span></td><td>Floating embers</td><td><span class="bar"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span> 60%</td><td>5px ember offset</td><td>deep brown · very warm</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="guide-section" id="guide">
+  <div class="guide-grid">
+    <h2>Как выбирать дальше.</h2>
+    <dl>
+      <dt>01 — какой mono-ratio тебе ближе?</dt>
+      <dd>Если 100% mono кажется «слишком техничным» — смотри <em>Mix 06 (Slow)</em>, <em>Mix 10 (Hearth)</em>, <em>Mix 04 (Dust)</em>. Если наоборот заходит — <em>Mix 02 (Workshop)</em> и <em>Mix 09 (Furnace)</em> на максимум.</dd>
+
+      <dt>02 — нужна ли 3D-сцена в hero?</dt>
+      <dd>3D добавляет премиум-восприятие, но требует производительности. Если да — <em>Mix 01, 03, 04, 06, 08, 10</em>. Если ASCII вместо 3D достаточно — <em>Mix 02, 05, 07, 09</em>.</dd>
+
+      <dt>03 — насколько громкие кнопки?</dt>
+      <dd>Самые тихие — <em>Mix 03 (2px)</em> и <em>Mix 06 (ghost)</em>. Балансные — <em>01, 04, 05, 08, 10 (4-6px)</em>. Самые громкие — <em>Mix 07 и Mix 09 (8px)</em>.</dd>
+
+      <dt>04 — какая температура палитры?</dt>
+      <dd>Нейтрально-серый charcoal — <em>Mix 01, 05, 09</em>. Тёплый ink — <em>Mix 03, 06, 08</em>. Глубокий warm brown/tar — <em>Mix 02, 04, 07, 10</em>.</dd>
+
+      <dt>05 — кто твой первый клиент?</dt>
+      <dd>SRE/data-team → <em>Mix 05 (Data Monolith)</em>. SaaS founder → <em>Mix 01 / 03</em>. Creative бренд → <em>Mix 06 / 10</em>. Бизнес которому нужно «вкатить» → <em>Mix 07 / 09</em>. Premium boutique → <em>Mix 04 / 08</em>.</dd>
+
+      <dt>06 — следующий шаг</dt>
+      <dd>Выбери 1–2 фаворита, скажи мне номер микса. На его основе подкручу детали (типографика, кнопки, ASCII-арт, копирайт) и сделаю production-сайт на Astro/Next.js.</dd>
+    </dl>
+  </div>
+</section>
+
+<div class="back-link">
+  <a href="../index.html">← Вернуться к 10 базовым прототипам</a>
+</div>
+
+<footer>
+  <div>© 2026 STUDIO · MIX_V2 · empirical iteration v1.0</div>
+  <div>Forged in Phuket × Bangkok · Crafted by Alex × Nikolay · <a href="https://t.me">telegram</a></div>
+</footer>
+
+<script>
+  const buttons = document.querySelectorAll('.filters button');
+  const cards = document.querySelectorAll('.card[data-tags]');
+  buttons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      buttons.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const f = btn.dataset.filter;
+      cards.forEach(c => {
+        const tags = (c.dataset.tags || '').split(/\s+/);
+        c.style.display = (f === 'all' || tags.includes(f)) ? '' : 'none';
+      });
+    });
+  });
+  if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const obs = new IntersectionObserver((entries) => {
+      entries.forEach((e, i) => {
+        if (e.isIntersecting) {
+          setTimeout(() => e.target.classList.add('visible'), i * 60);
+          obs.unobserve(e.target);
+        }
+      });
+    }, { rootMargin: '0px 0px -10% 0px' });
+    cards.forEach(c => obs.observe(c));
+  } else {
+    cards.forEach(c => c.classList.add('visible'));
+  }
+</script>
+</body>
+</html>
