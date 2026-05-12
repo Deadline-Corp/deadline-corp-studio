@@ -239,12 +239,17 @@
     letter-spacing: -0.03em;
     line-height: 1.02;
     text-align: center;
+    text-wrap: balance;          /* lines auto-balanced to similar widths */
     margin: 0 auto 64px;
     max-width: 1100px;
     color: var(--cream);
     text-shadow:
       4px 4px 0 var(--border-dark),
       8px 8px 0 rgba(10,8,5,0.35);
+  }
+  .section-headline .lang-ru,
+  .section-headline .lang-en {
+    display: inline-block;       /* span behaves as block-line for balance */
   }
   .section-headline em { color: var(--copper); font-style: normal; }
   .section-headline.copper { color: var(--copper); }
