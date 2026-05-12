@@ -608,7 +608,19 @@
     section[id="process"],
     section[id="contact"] { padding: 80px 16px !important; }
     .section-eyebrow { font-size: 10px; }
-    .section-headline { font-size: clamp(36px, 10vw, 60px) !important; }
+    .section-headline {
+      font-size: clamp(36px, 10vw, 60px) !important;
+      /* Headlines need to centre on viewport even when text is wider
+         than its container's content area. Break out of container
+         padding via negative margins so element spans full viewport,
+         then text-align:center can actually centre on viewport mid. */
+      width: 100vw !important;
+      margin-left: calc(50% - 50vw) !important;
+      margin-right: calc(50% - 50vw) !important;
+      padding-inline: 12px !important;
+      box-sizing: border-box !important;
+      max-width: none !important;
+    }
     .sticker-card {
       transform: none !important;
       padding: 28px 20px !important;
