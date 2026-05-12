@@ -3576,7 +3576,7 @@ html.mode-matrix .nav-chips .btn-chip,
 html.mode-matrix .lang-toggle button,
 html.mode-matrix a.btn-primary,
 html.mode-matrix a.btn-secondary,
-html.mode-matrix button:not([class*="devins-"]):not(.devins-queue button) {
+html.mode-matrix button:not([class*="devins-"]):not(.devins-queue button):not(#magic-toggle) {
   background: transparent !important;
   border: 0 !important;
   outline: 0 !important;
