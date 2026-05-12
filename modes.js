@@ -8,20 +8,21 @@
 (() => {
   'use strict';
 
-  const MODES = ['matrix', 'island', 'studio', 'noir', 'vault', 'kinetic'];
-  // Sequential cycle through 7 positions. Position 1 = ORIGINAL (no mode
-  // class, default DOM visible). Each click advances by one. Position #2
-  // is NOIR by user spec, so the user can predict exactly which design
-  // they'll land on by counting clicks from page-load.
-  const CYCLE = [null, 'noir', 'matrix', 'kinetic', 'vault', 'island', 'studio'];
+  // ── v2 (2026-05-12): cycle trimmed to 4 positions per user spec ──
+  //   pos 1 = ORIGINAL (default, no mode-class)
+  //   pos 2 = NOIR     (graphics / Three.js scenes)
+  //   pos 3 = MATRIX   ("третий скин" — the cinematic CRT one)
+  //   pos 4 = ISLAND   (sunset / island)
+  // studio / vault / kinetic are hidden from cycle but their CSS is left
+  // intact — see CHANGES_MATRIX_v2.md for full rollback.
+  const MODES = ['matrix', 'island', 'noir'];
+  const CYCLE = [null, 'noir', 'matrix', 'island'];
+  // ── v2.3: trimmed labels — only the 4 reachable modes ──
   const MODE_LABELS = {
     'null':    'ORIGINAL',
     'noir':    'NOIR',
-    'vault':   'VAULT',
-    'kinetic': 'KINETIC',
     'matrix':  'MATRIX',
     'island':  'ISLAND',
-    'studio':  'STUDIO',
   };
   const TRANSITION_LOCK_CLASS = 'is-transitioning';
   const HTML = document.documentElement;
@@ -2325,12 +2326,9 @@
   async function enterNoir() {
     if (!CONTENT) CONTENT = extractContent();
 
-    // 1. Detach magic-toggle from .nav-bar to body root
-    const btn = document.getElementById('magic-toggle');
-    if (btn) {
-      magicBtnHome = btn.parentElement;
-      document.body.appendChild(btn);
-    }
+    // 1. (v2.3 2026-05-12) No detach needed — magic-toggle now lives in
+    //    body root from page-load (moved in index.html). Survives noir's
+    //    body-children-hide rule via existing `:not(.magic-toggle)` exception.
 
     // 2. Mount persistent UI chrome: grain → running header → page meta →
     //    scroll progress hairline. Each is body-level so it floats above
@@ -2487,11 +2485,9 @@
     document.body.removeAttribute('data-noir-ch');
     if (noirBook)       { noirBook.remove();       noirBook       = null; }
 
-    const btn = document.getElementById('magic-toggle');
-    if (btn && magicBtnHome) {
-      magicBtnHome.appendChild(btn);
-      magicBtnHome = null;
-    }
+    // (v2.3 2026-05-12) No re-attach needed — magic-toggle lives in body
+    // permanently. magicBtnHome no longer used.
+    magicBtnHome = null;
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -3092,10 +3088,20 @@
     if (!('IntersectionObserver' in window)) return;
     const GLYPHS = '01アイウエオカキクケコサシスセソタチツテト<>{}[]/\\=*+-|ABCDEFGHJK'.split('');
 
-    function decodeSpan(span, finalText, durationMs = 520) {
+    // (v2.7 2026-05-12) Snappier: 280ms / 10 frames. Width-locked during
+    // scramble — measures the span's current rect (final text width) and
+    // pins min-width inline so the layout doesn't dance. Restored on finish.
+    function decodeSpan(span, finalText, durationMs = 280) {
       if (!finalText || finalText.length < 1) return;
+      // Width-lock to kill mid-scramble jitter (only when span has a width)
+      const rect = span.getBoundingClientRect();
+      if (rect.width > 0 && !span.dataset.mxWidthLock) {
+        span.dataset.mxWidthLock = '1';
+        span.dataset.mxPrevMinWidth = span.style.minWidth || '';
+        span.style.minWidth = Math.ceil(rect.width) + 'px';
+      }
       span.classList.add('mx-decoding');
-      const frames = 16;
+      const frames = 10;
       const len = finalText.length;
       let i = 0;
       clearInterval(span._mxDecodeT);
@@ -3113,44 +3119,95 @@
           clearInterval(span._mxDecodeT);
           span.textContent = finalText;
           span.classList.remove('mx-decoding');
+          // Release width-lock (v2.7)
+          if (span.dataset.mxWidthLock) {
+            span.style.minWidth = span.dataset.mxPrevMinWidth || '';
+            delete span.dataset.mxWidthLock;
+            delete span.dataset.mxPrevMinWidth;
+          }
         }
       }, durationMs / (frames + 1));
     }
 
+    // ── v2.8 (2026-05-12): selectors AUDITED against real index.html.
+    // Real structure facts:
+    //   - .svc-body / .svc-bullets are the lang-carrying element (NOT a span inside)
+    //   - .ps-body / .quote / .role contain inner span.lang-{ru,en}
+    //   - .hero-meta .small and .hero-text .sub spans have inline <br>/<strong>
+    //     INSIDE them → decode would destroy that markup → EXCLUDED
+    //   - manifesto / .hero-text .line / .credo-headline — visually too large for scramble → EXCLUDED
+    //
+    // Width-lock in decodeSpan() prevents reflow during scramble.
     const HEADLINE_SEL = [
+      // Section structure
       '.section-headline span.lang-ru', '.section-headline span.lang-en',
       '.section-eyebrow span.lang-ru', '.section-eyebrow span.lang-en',
-      '.section-eyebrow', // fallback when no inner lang-span
-      '.manifesto-text span.lang-ru', '.manifesto-text span.lang-en',
-      '.credo-block .credo-headline .line span.lang-ru',
-      '.credo-block .credo-headline .line span.lang-en',
+      '.section-eyebrow',
+      // Stats
       '.stats-grid .num',
+      '.stats-grid .label span.lang-ru', '.stats-grid .label span.lang-en',
+      // Services (#services section — bullets + closing only; svc-body lives in #work)
       '#services .sticker-card .svc-name span.lang-ru',
       '#services .sticker-card .svc-name span.lang-en',
+      '#services .sticker-card .svc-bullets.lang-ru li',
+      '#services .sticker-card .svc-bullets.lang-en li',
+      '#services .sticker-card .svc-closing span.lang-ru',
+      '#services .sticker-card .svc-closing span.lang-en',
+      // Work / Case studies (svc-body lives HERE, not in #services — corrected v2.8)
+      '#work .sticker-card .svc-name span.lang-ru',
+      '#work .sticker-card .svc-name span.lang-en',
+      '#work .sticker-card .svc-body.lang-ru',   // class on <p> itself
+      '#work .sticker-card .svc-body.lang-en',
+      '#work .sticker-card .case-meta',
+      '#work .sticker-card .btn-chip-copper',
+      // Process
       '#process .process-step .ps-name span.lang-ru',
-      '#process .process-step .ps-name span.lang-en'
+      '#process .process-step .ps-name span.lang-en',
+      '#process .process-step .ps-body span.lang-ru',
+      '#process .process-step .ps-body span.lang-en',
+      // Testimonials
+      '#testimonials .testimonial-card .quote span.lang-ru',
+      '#testimonials .testimonial-card .quote span.lang-en',
+      '#testimonials .testimonial-card .author',
+      '#testimonials .testimonial-card .role span.lang-ru',
+      '#testimonials .testimonial-card .role span.lang-en',
+      // Hero — badge + cta label only (.small and .sub spans contain <br>/<strong>)
+      '.hero-meta .btn-chip-copper',
+      '.hero-cta .label span.lang-ru', '.hero-cta .label span.lang-en',
+      // Contact
+      '#contact .section-headline span.lang-ru',
+      '#contact .section-headline span.lang-en',
+      // (v3.2 2026-05-12) Large poster headlines re-included after width-lock fix.
+      // Hero "Меньше слов. / Больше результата." + manifesto "Мы — DEADLINE…"
+      // — scroll-decode applies, parent layout isolated via CSS `contain`.
+      '.hero-text .line span.lang-ru', '.hero-text .line span.lang-en',
+      '.manifesto-text span.lang-ru', '.manifesto-text span.lang-en',
+      '.credo-block .credo-headline .line span.lang-ru',
+      '.credo-block .credo-headline .line span.lang-en'
     ].join(',');
 
+    // ── v2.1 (2026-05-12): decode fires EVERY time element enters viewport
+    // (both scroll directions), debounced per-element to 1.2s so quick
+    // back-and-forth doesn't stutter. unobserve() removed.
     const observer = new IntersectionObserver((entries) => {
       entries.forEach((entry) => {
         if (!entry.isIntersecting) return;
-        if (!HTML.classList.contains('mode-matrix')) {
-          observer.unobserve(entry.target);
-          return;
-        }
+        if (!HTML.classList.contains('mode-matrix')) return;
         const el = entry.target;
-        // Snapshot original text on first decode
+        // Snapshot original text on first decode (only once)
         if (!el.dataset.mxOrig) el.dataset.mxOrig = el.textContent;
-        // Skip if hidden (other lang)
+        // Skip if hidden (other lang span)
         const cs = getComputedStyle(el);
-        if (cs.display === 'none') {
-          observer.unobserve(el);
-          return;
-        }
-        decodeSpan(el, el.dataset.mxOrig, 480);
-        observer.unobserve(el);
+        if (cs.display === 'none') return;
+        // Per-element debounce: avoid retriggering during the decode itself
+        // or immediately after, but allow re-decode after a real exit/return.
+        const now = performance.now();
+        const last = Number(el.dataset.mxLastDecode || 0);
+        if (now - last < 1500) return;
+        el.dataset.mxLastDecode = String(now);
+        decodeSpan(el, el.dataset.mxOrig);  // v2.4: use default 380ms (faster)
       });
-    }, { threshold: 0.2, rootMargin: '0px 0px -10% 0px' });
+    }, { threshold: [0, 0.15, 0.5], rootMargin: '0px 0px -5% 0px' });
 
     function scanHeadlines() {
       document.querySelectorAll(HEADLINE_SEL).forEach(el => {
@@ -3164,6 +3221,33 @@
     scanHeadlines();
     new MutationObserver(scanHeadlines).observe(document.body, { childList: true, subtree: true });
 
+    // ── v2.2 (2026-05-12): scroll-safety-net.
+    // IntersectionObserver only fires at threshold crossings — if user
+    // scrolls partway and stops, an element fully in view but not crossing
+    // 0.15 won't re-trigger. This idle-after-scroll pass guarantees every
+    // visible un-recent decode fires regardless of crossing direction.
+    let safetyTimer = null;
+    function safetyScan() {
+      if (!HTML.classList.contains('mode-matrix')) return;
+      const vh = window.innerHeight;
+      const now = performance.now();
+      document.querySelectorAll(HEADLINE_SEL).forEach(el => {
+        const r = el.getBoundingClientRect();
+        if (r.bottom < 0 || r.top > vh) return;        // off-screen
+        const cs = getComputedStyle(el);
+        if (cs.display === 'none') return;
+        if (!el.dataset.mxOrig) el.dataset.mxOrig = el.textContent;
+        const last = Number(el.dataset.mxLastDecode || 0);
+        if (now - last < 1500) return;
+        el.dataset.mxLastDecode = String(now);
+        decodeSpan(el, el.dataset.mxOrig);  // v2.4: 380ms default
+      });
+    }
+    window.addEventListener('scroll', () => {
+      clearTimeout(safetyTimer);
+      safetyTimer = setTimeout(safetyScan, 250);
+    }, { passive: true });
+
     // When user switches INTO matrix mode after page has loaded,
     // re-decode visible headlines so the effect happens.
     new MutationObserver(() => {
@@ -3176,7 +3260,7 @@
         if (cs.display === 'none') return;
         const original = el.dataset.mxOrig || el.textContent;
         if (!el.dataset.mxOrig) el.dataset.mxOrig = original;
-        decodeSpan(el, original, 460);
+        decodeSpan(el, original);  // v2.4: 380ms default
       });
     }).observe(HTML, { attributes: true, attributeFilter: ['class'] });
   })();
@@ -3257,10 +3341,15 @@
     function startDrip() {
       stopDrip();
       ensureFloatingCTA();
-      setTimeout(spawnDrip, 300);
-      setTimeout(spawnDrip, 700);
+      // (v2 2026-05-12) Only spawn initial bursts if tab is visible
+      if (!document.hidden) {
+        setTimeout(spawnDrip, 300);
+        setTimeout(spawnDrip, 700);
+      }
       function loop() {
-        spawnDrip();
+        // (v2) Smart auto-pause: skip spawn when tab is hidden, but keep
+        // the loop scheduled so resume is instant when user returns.
+        if (!document.hidden) spawnDrip();
         dripTimer = setTimeout(loop, 600 + Math.random() * 800);
       }
       dripTimer = setTimeout(loop, 1100);
@@ -3286,5 +3375,205 @@
     if (navBarEl) {
       new MutationObserver(check).observe(navBarEl, { attributes: true, attributeFilter: ['class'] });
     }
+  })();
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // MATRIX v2 EFFECTS (added 2026-05-12)
+  //   1  — lens vignette + chromatic aberration (CSS-only, just mount nodes)
+  //   2  — cinematic letterbox around manifesto (IntersectionObserver)
+  //   3  — type-on-load hero headline with blinking caret
+  //   4  — cursor-reactive ambient aura (mousemove → CSS vars)
+  //   6  — glyph-bleed on CTA hover (sets data-mx-bleed for ::before)
+  //   9  — covered above in drip startDrip() via document.hidden check
+  //   10 — colour drift (pure CSS keyframe, no JS needed)
+  // To disable any one — see CHANGES_MATRIX_v2.md.
+  // ═══════════════════════════════════════════════════════════════════════
+  (() => {
+    // ── v2-1: Mount vignette + aberration overlays (CSS-driven visibility)
+    if (!document.querySelector('.mx-cinema-vignette')) {
+      const v = document.createElement('div');
+      v.className = 'mx-cinema-vignette';
+      v.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(v);
+    }
+    if (!document.querySelector('.mx-cinema-aberration')) {
+      const a = document.createElement('div');
+      a.className = 'mx-cinema-aberration';
+      a.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(a);
+    }
+
+    // ── v2-2: Cinematic letterbox — appears around manifesto block
+    if (!document.querySelector('.mx-letterbox.top')) {
+      ['top', 'bottom'].forEach(pos => {
+        const bar = document.createElement('div');
+        bar.className = 'mx-letterbox ' + pos;
+        bar.setAttribute('aria-hidden', 'true');
+        document.body.appendChild(bar);
+      });
+    }
+    // (v3.0 2026-05-12) Letterbox is now GLOBAL — appears as soon as user
+    // scrolls past the first viewport (hero), stays the whole way down, and
+    // retracts back when they scroll up to hero. Cinematic "frame" wrapping
+    // the entire site except the opening shot.
+    let lbScrollPending = false;
+    function lbUpdate() {
+      lbScrollPending = false;
+      if (!HTML.classList.contains('mode-matrix')) {
+        document.body.classList.remove('mx-letterbox-on');
+        return;
+      }
+      // Trigger after user has scrolled past 60% of hero. Going back up
+      // retracts the bars before hero is fully on-screen for a clean look.
+      const threshold = Math.max(180, window.innerHeight * 0.6);
+      const past = (window.scrollY || window.pageYOffset || 0) > threshold;
+      document.body.classList.toggle('mx-letterbox-on', past);
+    }
+    function lbOnScroll() {
+      if (lbScrollPending) return;
+      lbScrollPending = true;
+      requestAnimationFrame(lbUpdate);
+    }
+    window.addEventListener('scroll', lbOnScroll, { passive: true });
+    window.addEventListener('resize', lbOnScroll, { passive: true });
+    // Re-evaluate on mode change (so leaving matrix removes bars instantly)
+    new MutationObserver(lbUpdate).observe(HTML, { attributes: true, attributeFilter: ['class'] });
+    // Initial check
+    lbUpdate();
+
+    // ── v2-3: Type-on-load hero headline
+    // Triggers when matrix mode is entered and hero is visible. Once per
+    // page-load OR per mode-entry. The 3 hero text lines type sequentially.
+    let typedDone = false;
+    function typeLine(el, finalText, durationMs) {
+      return new Promise(resolve => {
+        const total = finalText.length;
+        if (total === 0) { resolve(); return; }
+        // Insert caret as sibling
+        const caret = document.createElement('span');
+        caret.className = 'mx-caret';
+        caret.setAttribute('aria-hidden', 'true');
+        el.textContent = '';
+        el.appendChild(caret);
+        let i = 0;
+        const step = Math.max(18, Math.floor(durationMs / total));
+        const timer = setInterval(() => {
+          i++;
+          el.textContent = finalText.slice(0, i);
+          el.appendChild(caret);
+          if (i >= total) {
+            clearInterval(timer);
+            setTimeout(() => { caret.remove(); resolve(); }, 420);
+          }
+        }, step);
+      });
+    }
+    async function runHeroType() {
+      if (typedDone) return;
+      if (!HTML.classList.contains('mode-matrix')) return;
+      // Pick visible language spans inside .hero-text .line
+      const lines = [...document.querySelectorAll('.hero-text .line')];
+      if (!lines.length) return;
+      typedDone = true; // mark before await to prevent double-trigger
+      for (const lineEl of lines) {
+        const span = [...lineEl.querySelectorAll('span.lang-ru, span.lang-en')]
+          .find(s => getComputedStyle(s).display !== 'none');
+        if (!span) continue;
+        const original = span.dataset.mxTypeOrig || span.textContent;
+        if (!span.dataset.mxTypeOrig) span.dataset.mxTypeOrig = original;
+        await typeLine(span, original, 380);  // v2.4: faster hero typewriter
+      }
+    }
+    // Trigger on first matrix-entry
+    if (HTML.classList.contains('mode-matrix')) {
+      setTimeout(runHeroType, 250);
+    }
+    new MutationObserver(() => {
+      if (HTML.classList.contains('mode-matrix')) runHeroType();
+    }).observe(HTML, { attributes: true, attributeFilter: ['class'] });
+
+    // ── v2-4: Cursor-reactive ambient aura
+    let auraEl = document.querySelector('.mx-cursor-aura');
+    if (!auraEl) {
+      auraEl = document.createElement('div');
+      auraEl.className = 'mx-cursor-aura';
+      auraEl.setAttribute('aria-hidden', 'true');
+      document.body.appendChild(auraEl);
+    }
+    let curX = window.innerWidth / 2, curY = window.innerHeight / 2;
+    let auraX = curX, auraY = curY;
+    let auraRAF = null;
+    function tickAura() {
+      auraX += (curX - auraX) * 0.08;
+      auraY += (curY - auraY) * 0.08;
+      auraEl.style.transform =
+        'translate3d(' + (auraX - 300) + 'px, ' + (auraY - 300) + 'px, 0)';
+      auraRAF = requestAnimationFrame(tickAura);
+    }
+    function onAuraMove(e) { curX = e.clientX; curY = e.clientY; }
+    function refreshAura() {
+      const on = HTML.classList.contains('mode-matrix');
+      if (on && !auraRAF) {
+        document.addEventListener('mousemove', onAuraMove, { passive: true });
+        auraRAF = requestAnimationFrame(tickAura);
+      } else if (!on && auraRAF) {
+        document.removeEventListener('mousemove', onAuraMove);
+        cancelAnimationFrame(auraRAF);
+        auraRAF = null;
+      }
+    }
+    refreshAura();
+    new MutationObserver(refreshAura).observe(HTML, { attributes: true, attributeFilter: ['class'] });
+
+    // ── v2-6: Glyph-bleed on CTA hover (sets data-mx-bleed for CSS ::before)
+    // Picks the currently-visible lang span text and writes it to data-mx-bleed
+    // so the ::before pseudo can duplicate it with mint-shifted shadow.
+    function bindCtaBleed() {
+      const ctas = document.querySelectorAll('.btn-primary, .btn-secondary');
+      ctas.forEach(cta => {
+        if (cta.dataset.mxBleedBound) return;
+        cta.dataset.mxBleedBound = '1';
+        const updateBleed = () => {
+          if (!HTML.classList.contains('mode-matrix')) return;
+          const vis = [...cta.querySelectorAll('span.lang-ru, span.lang-en')]
+            .find(s => getComputedStyle(s).display !== 'none');
+          const txt = vis ? vis.textContent.trim() : cta.textContent.trim();
+          cta.setAttribute('data-mx-bleed', txt);
+        };
+        cta.addEventListener('mouseenter', updateBleed);
+        // Set once for first paint
+        updateBleed();
+      });
+    }
+    bindCtaBleed();
+    new MutationObserver(bindCtaBleed).observe(document.body, { childList: true, subtree: true });
+  })();
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // MATRIX v2.1 EFFECTS (added 2026-05-12)
+  //   A — firefly motes: 7 mint dots breathe at random positions
+  //   B — card hover glow: subtle mint pulse on services / testimonials /
+  //       process / stats cards (CSS-only, JS just ensures matrix scope)
+  //   C — stat number ambient flicker: live mint pulse on .stats-grid .num
+  // ═══════════════════════════════════════════════════════════════════════
+  (() => {
+    // ── v2.1-A: Spawn firefly mote nodes once. CSS animates them. ──
+    if (!document.querySelector('.mx-firefly')) {
+      const FIREFLY_COUNT = 7;
+      for (let i = 0; i < FIREFLY_COUNT; i++) {
+        const f = document.createElement('div');
+        f.className = 'mx-firefly mx-firefly-' + (i + 1);
+        f.setAttribute('aria-hidden', 'true');
+        // Randomize position + drift per mote
+        f.style.setProperty('--mx-fly-x',  (5 + Math.random() * 90).toFixed(1) + '%');
+        f.style.setProperty('--mx-fly-y',  (5 + Math.random() * 90).toFixed(1) + '%');
+        f.style.setProperty('--mx-fly-dx', (-30 + Math.random() * 60).toFixed(0) + 'px');
+        f.style.setProperty('--mx-fly-dy', (-40 + Math.random() * 80).toFixed(0) + 'px');
+        f.style.animationDuration = (6 + Math.random() * 7).toFixed(2) + 's';
+        f.style.animationDelay = (-Math.random() * 5).toFixed(2) + 's';
+        document.body.appendChild(f);
+      }
+    }
+    // (B and C are pure CSS — see modes.css v2.1 block.)
   })();
 })();

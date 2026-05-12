@@ -6,7 +6,7 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "8765", "--bind", "127.0.0.1"],
       "port": 8765,
-      "cwd": "D:/Projects/Deadline"
+      "cwd": "C:/Users/user/Downloads/web-dev-studio-site"
     }
   ]
 }
