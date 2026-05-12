@@ -674,11 +674,26 @@
       box-shadow: 3px 3px 0 var(--border-dark);
     }
 
-    /* Nav — compact */
+    /* Nav — compact, no overflow on iPhone 375px */
     .nav-bar { position: sticky; top: 0; z-index: 200; }
-    .nav-bar .container { padding: 0 14px !important; height: 60px !important; }
-    .logo { font-size: 17px !important; }
-    .logo .pulse { width: 6px; height: 6px; margin-right: 8px; }
+    .nav-bar .container {
+      padding: 0 12px !important;
+      height: 58px !important;
+      gap: 10px !important;
+    }
+    .logo { font-size: 16px !important; letter-spacing: 0.04em !important; }
+    .logo .pulse { width: 6px; height: 6px; margin-right: 7px; }
+    /* Hide language toggle in navbar on mobile (saves ~70px) — default
+       stays RU, user can switch via URL hash #en or by going desktop. */
+    .nav-bar .lang-toggle { display: none !important; }
+    /* СВЯЗАТЬСЯ button — compact, no shadow protrusion */
+    .nav-bar .btn-primary {
+      padding: 8px 12px !important;
+      font-size: 10px !important;
+      border-width: 2px !important;
+      box-shadow: 3px 3px 0 var(--border-dark) !important;
+      letter-spacing: 0.08em !important;
+    }
 
     /* Magic-toggle stays accessible but smaller on phones */
     .magic-toggle {

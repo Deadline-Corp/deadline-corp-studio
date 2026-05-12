@@ -1710,6 +1710,16 @@
       rendererFront.setSize(w, h, false);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
+      // Portrait viewports (phones) have aspect < 1 — geometries that
+      // fit comfortably in landscape get cropped horizontally. Scale
+      // the whole scene root down so the figures stay within the
+      // narrow visible width. Linear interpolation between aspect 0.4
+      // (very tall phone) → 0.45x and aspect 1.0 → 1.0x.
+      const aspect = w / h;
+      const portraitScale = aspect >= 1
+        ? 1
+        : Math.max(0.45, 0.45 + (aspect - 0.4) * 0.92);  // 0.4→0.45, 1.0→1.0
+      scene.scale.setScalar(portraitScale);
     }
     resize();
 
