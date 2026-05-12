@@ -2684,14 +2684,194 @@ body[data-noir-ch="9"]  .noir-bg { filter: opacity(0.85); }    /* WRITE */
   .noir-bg { opacity: 0.45 !important; }
 }
 
-/* ─── Mobile ─── */
-@media (max-width: 760px) {
+/* ─── Mobile — comprehensive responsive for noir (≤768px phones) ─── */
+@media (max-width: 768px) {
+  /* Hide right-rail TOC on phones — taking too much space */
   .noir-toc { display: none; }
-  .noir-cover-center { grid-template-columns: 1fr; gap: 2rem; }
-  .noir-cover-meta { grid-template-columns: 1fr 1fr; gap: 1rem 1.5rem; }
+
+  /* Chapter padding tighter on mobile */
+  .noir-chapter {
+    padding: 4rem 1.2rem 3rem;
+  }
+
+  /* COVER — stack vertically, smaller DEADLINE display */
+  .noir-cover-top {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+    font-size: 9.5px;
+    letter-spacing: 0.18em;
+  }
+  .noir-cover-top .rhs { justify-self: start; text-align: left; }
+  .noir-cover-center {
+    grid-template-columns: 1fr;
+    gap: 1.4rem;
+    align-items: start;
+  }
+  .noir-display {
+    font-size: clamp(4rem, 18vw, 7rem) !important;
+    letter-spacing: -0.045em;
+    line-height: 0.9;
+    text-align: left;
+  }
+  .noir-display-rule { width: 56px; margin-bottom: 1rem; }
+  .noir-display-lead {
+    font-size: clamp(0.95rem, 3.4vw, 1.15rem);
+    line-height: 1.45;
+    max-width: 100%;
+  }
+  .noir-cover-meta {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.9rem 1.2rem;
+    padding-top: 1rem;
+  }
+  .noir-meta-cell .num { font-size: clamp(1.4rem, 6vw, 2rem); }
+  .noir-meta-cell .lbl { font-size: 9px; line-height: 1.25; }
+
+  /* MANIFESTO — smaller centred statement */
+  .noir-statement {
+    font-size: clamp(1.8rem, 8vw, 3rem) !important;
+    line-height: 1.1;
+    max-width: 100%;
+    padding: 0 0.5rem;
+  }
+  .noir-mh-top {
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+    font-size: 9.5px;
+  }
+  .noir-mh-bottom { font-size: 9px; }
+  .noir-mh-bottom::before,
+  .noir-mh-bottom::after { width: 18px; }
+
+  /* SERVICES + CASES — single column */
   .noir-service,
-  .noir-case { grid-template-columns: 1fr; gap: 2.5rem; padding-top: 7.5rem; }
-  .noir-case .mark { aspect-ratio: 16 / 9; max-height: 220px; }
+  .noir-case,
+  .noir-case-solo {
+    grid-template-columns: 1fr;
+    gap: 1.6rem;
+    align-items: start;
+    padding-top: 5.5rem;
+  }
+  .noir-service .ch-title {
+    font-size: clamp(2.8rem, 12vw, 4.5rem);
+    line-height: 0.92;
+  }
+  .noir-service .ch-italic { font-size: clamp(1rem, 4vw, 1.4rem); }
+  .noir-service .rhs { padding-top: 0.5rem; }
+  .noir-service .ch-closing {
+    font-size: clamp(0.95rem, 3.6vw, 1.15rem);
+    max-width: 100%;
+  }
+  .noir-numbered li {
+    grid-template-columns: auto 1fr;
+    gap: 0.9rem;
+    padding: 0.55rem 0;
+    font-size: clamp(0.82rem, 3.2vw, 0.95rem);
+    line-height: 1.45;
+  }
+  .noir-numbered li::before { font-size: 9px; }
+
+  .noir-case .rhs,
+  .noir-case-solo .rhs {
+    justify-self: stretch;
+    padding-right: 0;
+    max-width: 100%;
+  }
+  .noir-case .title {
+    font-size: clamp(2rem, 8.5vw, 3.2rem);
+    line-height: 0.96;
+  }
+  .noir-case .desc {
+    font-size: clamp(0.95rem, 3.6vw, 1.1rem);
+    line-height: 1.55;
+  }
+  .noir-case .metric {
+    grid-template-columns: auto 1fr auto;
+    gap: 0.6rem;
+    font-size: 9.5px;
+    padding: 0.7rem 0;
+  }
+  .noir-case .metric .lbl { font-size: 9px; }
+
+  /* VOICES marquee — narrower cards, slower scroll */
+  .noir-voices > * { padding-left: 1.2rem; padding-right: 1.2rem; }
+  .noir-voices-track {
+    gap: 1.6rem;
+    animation-duration: 60s;   /* slower on small screens */
+  }
+  .noir-voice-card {
+    width: clamp(260px, 78vw, 320px);
+    padding: 1.2rem 1.2rem 1rem;
+    gap: 0.8rem;
+  }
+  .noir-voice-card .quote { font-size: clamp(0.9rem, 3.5vw, 1rem); }
+  .noir-voice-card .byline { font-size: 9px; padding-top: 0.7rem; }
+
+  /* CONTACT — smaller head, tap-friendly links */
+  .noir-contact .head {
+    font-size: clamp(3rem, 13vw, 5rem) !important;
+    line-height: 0.95;
+  }
+  .noir-contact .link {
+    font-size: clamp(1.2rem, 5.5vw, 2rem);
+    word-break: break-all;
+    padding: 0.4em 0.4em;
+  }
+  .noir-contact .label { font-size: 9px; }
+
+  /* PERSISTENT CHROME — tighter for phones */
+  .noir-running {
+    padding: 0.7rem 0.9rem;
+    grid-template-columns: 1fr auto;     /* drop the rhs column — too cramped */
+    font-size: 8.5px;
+    letter-spacing: 0.18em;
+  }
+  .noir-running .rhs { display: none; }
+  .noir-running .lhs { font-size: 8px; }
+  .noir-running .mid { font-size: 8.5px; }
+  .noir-running .mid::before,
+  .noir-running .mid::after { width: 10px; }
+
+  .noir-pages {
+    padding: 0.7rem 0.9rem;
+    font-size: 8.5px;
+    letter-spacing: 0.18em;
+    grid-template-columns: 1fr;
+  }
+  .noir-pages .rhs { display: none; }      /* "EDITION I · PRINT-FOR-WEB" → too much */
+
+  /* Magic-toggle + indicator more compact */
+  html.mode-noir .magic-toggle {
+    transform: scale(0.85);
+    top: 0.6rem !important;
+    right: 0.6rem !important;
+  }
+  html.mode-noir .mode-indicator,
+  body[data-noir-ch] .mode-indicator {
+    top: calc(0.6rem + 30px + 0.3rem) !important;
+    right: 0.7rem !important;
+    font-size: 8.5px !important;
+    padding: 4px 7px !important;
+    letter-spacing: 0.18em !important;
+  }
+
+  /* Hover-specific effects disabled on touch */
+  .noir-cursor-dot { display: none !important; }
+
+  /* Native scroll feel — no smooth on touch (let device handle) */
+  .noir-book { scroll-behavior: auto; }
+}
+
+/* ≤420px — tighter for smaller phones */
+@media (max-width: 420px) {
+  .noir-chapter { padding: 3.5rem 1rem 2.5rem; }
+  .noir-display { font-size: clamp(3.4rem, 16vw, 5rem) !important; }
+  .noir-statement { font-size: clamp(1.5rem, 7vw, 2.4rem) !important; }
+  .noir-service .ch-title { font-size: clamp(2.4rem, 11vw, 3.8rem); }
+  .noir-case .title { font-size: clamp(1.7rem, 8vw, 2.6rem); }
+  .noir-contact .head { font-size: clamp(2.4rem, 12vw, 4rem) !important; }
+  .noir-voice-card { width: 86vw; }
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
