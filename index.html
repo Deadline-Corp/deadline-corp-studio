@@ -239,17 +239,13 @@
     letter-spacing: -0.03em;
     line-height: 1.02;
     text-align: center;
-    text-wrap: balance;          /* lines auto-balanced to similar widths */
+    text-wrap: balance;          /* lines auto-balanced where supported */
     margin: 0 auto 64px;
     max-width: 1100px;
     color: var(--cream);
     text-shadow:
       4px 4px 0 var(--border-dark),
       8px 8px 0 rgba(10,8,5,0.35);
-  }
-  .section-headline .lang-ru,
-  .section-headline .lang-en {
-    display: inline-block;       /* span behaves as block-line for balance */
   }
   .section-headline em { color: var(--copper); font-style: normal; }
   .section-headline.copper { color: var(--copper); }
@@ -1000,8 +996,8 @@
   <div class="container">
     <div class="section-eyebrow reveal">02 / Selected work</div>
     <h2 class="section-headline copper reveal">
-      <span class="lang-ru">Доказательства, <em>не питч.</em></span>
-      <span class="lang-en">Proof, <em>not pitch.</em></span>
+      <span class="lang-ru">Доказательства,<br><em>не питч.</em></span>
+      <span class="lang-en">Proof,<br><em>not pitch.</em></span>
     </h2>
 
     <div class="work-grid">
@@ -1064,8 +1060,8 @@
   <div class="container">
     <div class="section-eyebrow reveal">03 / Reviews</div>
     <h2 class="section-headline reveal">
-      <span class="lang-ru">Клиенты <em>возвращаются.</em></span>
-      <span class="lang-en">Clients <em>come back.</em></span>
+      <span class="lang-ru">Клиенты<br><em>возвращаются.</em></span>
+      <span class="lang-en">Clients<br><em>come back.</em></span>
     </h2>
   </div>
 
