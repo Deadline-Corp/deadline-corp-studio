@@ -11506,3 +11506,113 @@ html.mode-matrix .nav-bar.is-reveal ~ .magic-toggle {
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   MATRIX v3.3 EFFECTS (added 2026-05-12)
+   • Magnetic CTA hover — uses CSS variables set from JS on mousemove.
+   • Stat count-up is pure JS — no CSS needed.
+   • DevTools easter egg is pure JS console.log — no CSS needed.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Magnetic-CTA: translate by JS-set vars when .mx-magnetic class is on.
+   Smooth easing on enter/leave for premium feel. Disabled on touch. */
+html.mode-matrix .btn-primary,
+html.mode-matrix .btn-secondary {
+  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+  --mx-mag-x: 0px;
+  --mx-mag-y: 0px;
+}
+html.mode-matrix .btn-primary.mx-magnetic,
+html.mode-matrix .btn-secondary.mx-magnetic {
+  transform: translate3d(var(--mx-mag-x, 0px), var(--mx-mag-y, 0px), 0);
+  transition: transform 80ms ease-out;  /* responsive while hovered */
+}
+/* Touch: kill magnetic transform completely */
+@media (hover: none) {
+  html.mode-matrix .btn-primary.mx-magnetic,
+  html.mode-matrix .btn-secondary.mx-magnetic {
+    transform: none !important;
+  }
+}
+/* Reduced motion: kill the snap-back too */
+@media (prefers-reduced-motion: reduce) {
+  html.mode-matrix .btn-primary,
+  html.mode-matrix .btn-secondary {
+    transition: none;
+  }
+  html.mode-matrix .btn-primary.mx-magnetic,
+  html.mode-matrix .btn-secondary.mx-magnetic {
+    transform: none !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MATRIX v3.4 — LAYOUT REORG (2026-05-12)
+   Approved (permanent): #2 section padding, #7 contact focus
+   Probationary (easy revert): #8 hero size, #9 column 720, #10 sticky eyebrows
+   To roll back probationary block — delete from `▸ probationary` to end.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ─── #2 — Reduce section padding (matrix only) ───
+   Base 72px, mobile 48px, special 120px before manifesto + contact
+   for cinematic "act break". */
+html.mode-matrix section,
+html.mode-matrix .stats-band,
+html.mode-matrix .work-grid {
+  padding-top: 72px !important;
+  padding-bottom: 72px !important;
+}
+html.mode-matrix .manifesto-block,
+html.mode-matrix #contact {
+  padding-top: 120px !important;
+  padding-bottom: 120px !important;
+}
+@media (max-width: 768px) {
+  html.mode-matrix section,
+  html.mode-matrix .stats-band,
+  html.mode-matrix .work-grid {
+    padding-top: 48px !important;
+    padding-bottom: 48px !important;
+  }
+  html.mode-matrix .manifesto-block,
+  html.mode-matrix #contact {
+    padding-top: 80px !important;
+    padding-bottom: 80px !important;
+  }
+}
+
+/* ─── #7 — Contact: single focused action ───
+   Collapse the long body paragraph, prominent two-CTA row, less chrome. */
+html.mode-matrix #contact .contact-block > p {
+  font-size: 14px !important;
+  max-width: 520px !important;
+  margin: 0 auto 36px !important;
+  opacity: 0.78;
+}
+/* Hide the secondary "Ответ за минуты" line — single focus is the goal */
+html.mode-matrix #contact .contact-block > div:last-child {
+  display: none !important;
+}
+/* CTAs in a clean row, slightly larger, equal weight */
+html.mode-matrix #contact .contact-block > div:nth-of-type(1) {
+  display: flex !important;
+  flex-wrap: wrap;
+  gap: 18px !important;
+  justify-content: center;
+  align-items: center;
+}
+html.mode-matrix #contact .btn-primary,
+html.mode-matrix #contact .btn-secondary {
+  font-size: 14px !important;
+  padding: 16px 26px !important;
+  min-width: 220px;
+  text-align: center;
+}
+
+/* ═══════════════ ▸ probationary block REVERTED (v3.4.1, 2026-05-12) ▸ ═══
+   #8 (hero text size) / #9 (720px column) / #10 (sticky eyebrows) tried,
+   user rejected. Block removed. #2 (padding) and #7 (contact focus) above
+   remain in force. If you want to retry any of the three later, find the
+   original code in git tag `approved-2026-05-12-matrix-v3` (was reverted)
+   or in the v3.4 commit history.
+   ═════════════════════════════════════════════════════════════════════ */
+

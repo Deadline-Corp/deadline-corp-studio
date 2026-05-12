@@ -3143,8 +3143,7 @@
       '.section-headline span.lang-ru', '.section-headline span.lang-en',
       '.section-eyebrow span.lang-ru', '.section-eyebrow span.lang-en',
       '.section-eyebrow',
-      // Stats
-      '.stats-grid .num',
+      // Stats — .num excluded; v3.3 count-up animation handles it.
       '.stats-grid .label span.lang-ru', '.stats-grid .label span.lang-en',
       // Services (#services section — bullets + closing only; svc-body lives in #work)
       '#services .sticker-card .svc-name span.lang-ru',
@@ -3575,5 +3574,135 @@
       }
     }
     // (B and C are pure CSS — see modes.css v2.1 block.)
+  })();
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // MATRIX v3.3 EFFECTS (added 2026-05-12)
+  //   #2 — DevTools console easter egg
+  //   #4 — Magnetic CTA hover (matrix only)
+  //   #5 — Stat numbers count-up on first viewport-entry
+  // ═══════════════════════════════════════════════════════════════════════
+  (() => {
+    // ── v3.3-#2: DevTools easter egg — printed once on page load ────────
+    try {
+      const accent = 'color:#7AC79A;font:13px/1.6 "JetBrains Mono",monospace;';
+      const muted  = 'color:#8A7E64;font:11px/1.6 "JetBrains Mono",monospace;';
+      const link   = 'color:#CFE4D6;font:12px/1.6 "JetBrains Mono",monospace;text-decoration:underline;';
+      console.log(
+        '%c\n  //  D E A D L I N E   ─────────────────────────────\n' +
+        '%c  //  Ничего не горит.\n  //\n' +
+        '%c  //  Видишь это? Значит ты технарь.\n' +
+        '%c  //  Мы делаем web · automation · AI-агенты в production.\n' +
+        '%c  //  Берёмся за всё. Дедлайны нас боятся.\n  //\n' +
+        '%c  //  →  corpdeadline@gmail.com  ·  https://t.me/deadline_corp\n\n',
+        accent, accent, muted, muted, muted, link
+      );
+    } catch (e) { /* ignore — IE/old browsers */ }
+
+    // ── v3.3-#4: Magnetic CTA hover (matrix mode + pointer devices only) ─
+    if (window.matchMedia('(hover: hover)').matches) {
+      const CTA_SELECTOR = '.btn-primary, .btn-secondary';
+      const MAX_PULL = 6;     // px the button can drift toward cursor
+      const STRENGTH = 0.18;  // how much of the offset to use
+
+      function bindMagnetic(cta) {
+        if (cta.dataset.mxMagBound) return;
+        cta.dataset.mxMagBound = '1';
+        let rect = null;
+        let raf  = null;
+
+        function onEnter() {
+          if (!HTML.classList.contains('mode-matrix')) return;
+          rect = cta.getBoundingClientRect();
+        }
+        function onMove(e) {
+          if (!rect || !HTML.classList.contains('mode-matrix')) return;
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top  + rect.height / 2;
+          const dx = (e.clientX - cx) * STRENGTH;
+          const dy = (e.clientY - cy) * STRENGTH;
+          const tx = Math.max(-MAX_PULL, Math.min(MAX_PULL, dx));
+          const ty = Math.max(-MAX_PULL, Math.min(MAX_PULL, dy));
+          if (raf) cancelAnimationFrame(raf);
+          raf = requestAnimationFrame(() => {
+            cta.style.setProperty('--mx-mag-x', tx + 'px');
+            cta.style.setProperty('--mx-mag-y', ty + 'px');
+            cta.classList.add('mx-magnetic');
+          });
+        }
+        function onLeave() {
+          rect = null;
+          cta.classList.remove('mx-magnetic');
+          cta.style.setProperty('--mx-mag-x', '0px');
+          cta.style.setProperty('--mx-mag-y', '0px');
+        }
+        cta.addEventListener('mouseenter', onEnter, { passive: true });
+        cta.addEventListener('mousemove',  onMove,  { passive: true });
+        cta.addEventListener('mouseleave', onLeave, { passive: true });
+      }
+      function scanCtas() {
+        document.querySelectorAll(CTA_SELECTOR).forEach(bindMagnetic);
+      }
+      scanCtas();
+      new MutationObserver(scanCtas).observe(document.body, { childList: true, subtree: true });
+    }
+
+    // ── v3.3-#5: Stat numbers count-up (e.g. "12+", "0", "100%", "8") ────
+    if ('IntersectionObserver' in window) {
+      function parseStat(text) {
+        // Returns {value, suffix} — supports "12+", "100%", "0", "8"
+        const m = String(text || '').trim().match(/^(\d+)([^\d]*)$/);
+        if (!m) return null;
+        return { value: parseInt(m[1], 10), suffix: m[2] || '' };
+      }
+
+      function countUp(el, target, suffix, durationMs = 750) {
+        // Snapshot original so we restore exactly on settle
+        const original = (el.dataset.mxStatOrig = el.dataset.mxStatOrig || el.textContent);
+        const start = performance.now();
+        clearInterval(el._mxCountT);
+        function frame(now) {
+          const t = Math.min(1, (now - start) / durationMs);
+          // Easing: easeOutQuart for a confident finish
+          const eased = 1 - Math.pow(1 - t, 4);
+          const cur = Math.floor(target * eased);
+          el.textContent = cur + (t >= 1 ? suffix : '');
+          if (t < 1) {
+            el._mxCountT = requestAnimationFrame(frame);
+          } else {
+            el.textContent = original;  // exact final string
+          }
+        }
+        el._mxCountT = requestAnimationFrame(frame);
+      }
+
+      const statObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+          if (!entry.isIntersecting) return;
+          if (!HTML.classList.contains('mode-matrix')) return;
+          const el = entry.target;
+          // Debounce: skip if counted in last 1.8s
+          const now = performance.now();
+          const last = Number(el.dataset.mxStatLast || 0);
+          if (now - last < 1800) return;
+          el.dataset.mxStatLast = String(now);
+          const parsed = parseStat(el.dataset.mxStatOrig || el.textContent);
+          if (!parsed) return;
+          countUp(el, parsed.value, parsed.suffix, 750);
+        });
+      }, { threshold: [0, 0.3], rootMargin: '0px 0px -8% 0px' });
+
+      function bindStats() {
+        document.querySelectorAll('.stats-grid .num').forEach(el => {
+          if (el.dataset.mxStatObs) return;
+          el.dataset.mxStatObs = '1';
+          // Cache the original text once
+          if (!el.dataset.mxStatOrig) el.dataset.mxStatOrig = el.textContent.trim();
+          statObserver.observe(el);
+        });
+      }
+      bindStats();
+      new MutationObserver(bindStats).observe(document.body, { childList: true, subtree: true });
+    }
   })();
 })();
