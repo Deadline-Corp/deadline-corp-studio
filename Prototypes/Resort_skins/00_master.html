@@ -672,7 +672,7 @@ body.lang-en :where(.lang-ru){display:none !important}
 </section>
 
 <section class="scene work-scene">
-  <div class="photo"><img src="https://images.unsplash.com/photo-1582719508461-905c673771fd?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
+  <div class="photo"><img src="https://images.unsplash.com/photo-1469474968028-56623f02e42e?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
   <div class="content">
     <div class="nm">— 02 / Selected work  ·  N° 02</div>
     <div class="meta">KeyDrop  ·  2025  ·  Automation + MiniApp</div>
@@ -686,7 +686,7 @@ body.lang-en :where(.lang-ru){display:none !important}
 </section>
 
 <section class="scene work-scene">
-  <div class="photo"><img src="https://images.unsplash.com/photo-1540541338287-41700207dee6?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
+  <div class="photo"><img src="https://images.unsplash.com/photo-1501785888041-af3ef285b470?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
   <div class="content">
     <div class="nm">— 02 / Selected work  ·  N° 03</div>
     <div class="meta">RA Project  ·  2025-2026  ·  Data + AI</div>
@@ -954,33 +954,24 @@ lenis.on('scroll',updProg);
 (function nightLayer(){
   // NIGHT photo IDs in DOM order (querySelectorAll returns DOM order, not selector order)
   // DOM: hero, stats, svc x3, work x3, process-intro-scene, process-panel x4, contact = 13 total
-  // (v3.7.12) Final fix. Even my "verified" IDs from earlier audits were
-  // wrong — 1469474968028 = mountain forest (not resort), 1501785888041
-  // = either lake or urban (inconsistent). Restricting NIGHT_IDS to the
-  // SIX photo IDs that have visually rendered as classic resort/luxury-
-  // tropical in Playwright screenshots THIS session:
-  //   A  1499678329028 Vernazza / Cinque Terre village
-  //   B  1582719508461 Cinque Terre cliff
-  //   C  1540541338287 Maldives overwater bungalows
-  //   D  1506929562872 turquoise lagoon
-  //   E  1507525428034 Krabi karst + palms + thatched roof
-  //   F  1455587734955 sunset water aerial
-  // Each NIGHT_ID picked to differ from the scene's day photo so mask
-  // sweep is a visible transition between two resort frames.
   const NIGHT_IDS=[
-    '1455587734955-081b22074882', // 0  hero (day=Vernazza)        → sunset water (F)
-    '1540541338287-41700207dee6', // 1  stats (day=sunset water)   → Maldives overwater (C)
-    '1506929562872-bb421503ef21', // 2  svc web (day=Maldives)     → turquoise lagoon (D)
-    '1455587734955-081b22074882', // 3  svc auto (day=lagoon)      → sunset water (F)
-    '1499678329028-101435549a4e', // 4  svc ai (day=Krabi karst)   → Vernazza (A)
-    '1507525428034-b723cf961d3e', // 5  work vrp                   → Krabi karst (E)
-    '1455587734955-081b22074882', // 6  work keydrop               → sunset water (F)
-    '1582719508461-905c673771fd', // 7  work ra                    → Cinque Terre cliff (B)
-    '1455587734955-081b22074882', // 8  process-intro-scene        → sunset water (F)
-    '1499678329028-101435549a4e', // 9  process-panel Discovery    → Vernazza (A)
-    '1582719508461-905c673771fd', // 10 process-panel Architecture → Cinque Terre cliff (B)
-    '1540541338287-41700207dee6', // 11 process-panel Sprint Build → Maldives overwater (C)
-    '1499678329028-101435549a4e'  // 12 contact (day=Cinque Terre) → Vernazza (A)
+    '1535025183041-0991a977e25b', // 0  hero — bali aerial night
+    '1499002238440-d264edd596ec', // 1  stats — lit luxury villa at night
+    // (v3.7.14) Two night IDs swapped — user reported via mobile screenshots:
+    //   2 svc web  was 1514565131 (Tokyo skyline) — overcropped to sky on mobile
+    //   3 svc auto was 1519074002996 (Macbook laptop) — wrong vibe in resort
+    // Replaced with same-style resort photos already used elsewhere in flow.
+    '1540541338287-41700207dee6', // 2  svc web — Maldives overwater bungalows (was tokyo skyline)
+    '1506929562872-bb421503ef21', // 3  svc auto — turquoise lagoon aerial (was laptop)
+    '1520250497591-112f2f40a3f4', // 4  svc ai — desert stars
+    '1502672260266-1c1ef2d93688', // 5  work vrp — coastal night
+    '1444703686981-a3abbc4d4fe3', // 6  work keydrop — forest night
+    '1487700160041-babef9c3cb55', // 7  work ra — milky way mountain
+    '1499002238440-d264edd596ec', // 8  process-intro-scene — lit villa night
+    '1444703686981-a3abbc4d4fe3', // 9  process-panel Discovery — forest night
+    '1535025183041-0991a977e25b', // 10 process-panel Architecture — bali aerial night
+    '1502672260266-1c1ef2d93688', // 11 process-panel Sprint Build — coastal night
+    '1502082553048-f009c37129b9'  // 12 contact — night city aerial
   ];
   // Fallback chain — diverse so multiple failed scenes don't all converge to one image
   const FALLBACK_IDS=['1418065460487-3e41a6c84dc5','1473625247510-8ceb1760943f','1419242902214-272b3f66ee7a','1494500764479-0c8f2919a3d8','1493558103817-58b2924bce98','1518709268805-4e9042af9f23'];
