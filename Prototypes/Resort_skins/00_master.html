@@ -957,12 +957,12 @@ lenis.on('scroll',updProg);
   const NIGHT_IDS=[
     '1535025183041-0991a977e25b', // 0  hero — bali aerial night
     '1499002238440-d264edd596ec', // 1  stats — lit luxury villa at night
-    // (v3.7.14) Two night IDs swapped — user reported via mobile screenshots:
-    //   2 svc web  was 1514565131 (Tokyo skyline) — overcropped to sky on mobile
-    //   3 svc auto was 1519074002996 (Macbook laptop) — wrong vibe in resort
-    // Replaced with same-style resort photos already used elsewhere in flow.
-    '1540541338287-41700207dee6', // 2  svc web — Maldives overwater bungalows (was tokyo skyline)
-    '1506929562872-bb421503ef21', // 3  svc auto — turquoise lagoon aerial (was laptop)
+    // (v3.7.15) svc web + svc auto night IDs picked so DAY ≠ NIGHT
+    // (v3.7.14 set both = same photo as day → no visible mask sweep).
+    // Both replacements are verified-resort photos in different vibes
+    // than each scene's day photo, giving a real day→night transition.
+    '1499678329028-101435549a4e', // 2  svc web night  — Vernazza village (day = Maldives)
+    '1455587734955-081b22074882', // 3  svc auto night — sunset water aerial (day = lagoon)
     '1520250497591-112f2f40a3f4', // 4  svc ai — desert stars
     '1502672260266-1c1ef2d93688', // 5  work vrp — coastal night
     '1444703686981-a3abbc4d4fe3', // 6  work keydrop — forest night
