@@ -340,6 +340,17 @@ body.lang-en :where(.lang-ru){display:none !important}
     display: none !important;
   }
 
+  /* (v3.7.6) Photo FULL-BLEED inside scenes on mobile. Previous
+     top:letterbox/bottom:letterbox left two thin black bands inside
+     each scene — text could scroll into those bands ("text on black").
+     Letterbox bar itself is fixed on viewport (z:9990) and overlays the
+     full-bleed photo cleanly at the very top/bottom of viewport. */
+  .scene .photo,
+  .hero .photo {
+    top: 0 !important;
+    bottom: 0 !important;
+  }
+
   /* (v3.7.5) Headline italic-em overlap on phones. Cormorant Garamond
      italic glyphs have wide left/right overhang; combined with the
      negative letter-spacing (-0.022em) the trailing italic word slid
@@ -512,7 +523,7 @@ body.lang-en :where(.lang-ru){display:none !important}
 
 <!-- ═══════════════════════════ STATS — Approach scene ═══════════════════════════ -->
 <section class="scene scene-stats">
-  <div class="photo"><img src="https://images.unsplash.com/photo-1582719508461-905c673771fd?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
+  <div class="photo"><img src="https://images.unsplash.com/photo-1455587734955-081b22074882?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
   <div class="content">
     <div class="eyebrow">— Numbers  ·  since 2025</div>
     <h2><span class="lang-ru">Числа<br>без <em>лирики.</em></span><span class="lang-en">Numbers<br>without <em>poetry.</em></span></h2>
@@ -571,7 +582,7 @@ body.lang-en :where(.lang-ru){display:none !important}
 </section>
 
 <section class="scene svc-scene">
-  <div class="photo"><img src="https://images.unsplash.com/photo-1505228395891-9a51e7e86bf6?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
+  <div class="photo"><img src="https://images.unsplash.com/photo-1518770660439-4636190af475?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
   <div class="content">
     <div class="left">
       <div class="eyebrow">— 01 / Services  ·  Automation</div>
@@ -603,7 +614,7 @@ body.lang-en :where(.lang-ru){display:none !important}
 </section>
 
 <section class="scene svc-scene">
-  <div class="photo"><img src="https://images.unsplash.com/photo-1517824806704-9040b037703b?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
+  <div class="photo"><img src="https://images.unsplash.com/photo-1620712943543-bcc4688e7485?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
   <div class="content">
     <div class="left">
       <div class="eyebrow">— 01 / Services  ·  AI Agents</div>
