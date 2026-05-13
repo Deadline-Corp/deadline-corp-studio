@@ -270,7 +270,16 @@ body.lang-en :where(.lang-ru){display:none !important}
 
 /* ═══════════════════════════ Mobile (tablet ≤880px) ═══════════════════════════ */
 @media(max-width:880px){
+  /* (v3.7.2) Use dvh (dynamic viewport height) so the letterbox bar and
+     scene heights DON'T shift when mobile address-bar slides in/out.
+     This was the jitter source on pinned scenes — when URL bar collapsed,
+     viewport-vh recalculated, pinned scene jumped a few pixels. dvh is the
+     "currently-visible" viewport, stable during browser-chrome animations.
+     Fallback to vh for older browsers via the second declaration. */
   :root{--letterbox:6vh}
+  @supports (height: 100dvh){
+    :root{--letterbox:6dvh}
+  }
   .cur,.cur-ring{display:none}
   body{cursor:auto}a,button{cursor:pointer}
   .head .center,.subtitle .c{display:none}
@@ -322,6 +331,37 @@ body.lang-en :where(.lang-ru){display:none !important}
   .closing .sig{font-size:8.5px;letter-spacing:.4em}
   .testi{padding:calc(var(--letterbox) + 4vh) 20px calc(var(--letterbox) + 4vh)}
   .testi .quote{font-size:clamp(20px,5.5vw,28px);line-height:1.4}
+}
+
+/* ═══════════════════════════ Mobile photo composition (v3.7.2) ═══════════════════════════
+   Landscape photos (Unsplash 16:9) on portrait mobile (9:16) lose 50%+ of
+   their content when object-fit:cover crops the sides. Most resort photos
+   have the subject (water, dunes, pool, lavender) in the LOWER 2/3 of the
+   frame, so we shift object-position upward to keep more of the foreground.
+   Also use 100dvh on scenes so the address-bar doesn't pinch them. */
+@media(max-width:880px){
+  /* Scene/hero/contact height — dvh stops the address-bar jitter at the root */
+  @supports (height:100dvh){
+    .scene,.process-strip,.process-track{min-height:100dvh}
+    .hero{height:100dvh;min-height:100dvh}
+  }
+  /* Photo composition: emphasize lower 2/3 of landscape frames */
+  .scene .photo img,
+  .hero .photo img,
+  .contact .photo img,
+  .closing .photo img,
+  .process-panel .photo img{
+    object-position:center 60% !important;
+  }
+  /* Hero specifically — usually wide pool/sunset shots, keep horizon visible */
+  .hero .photo img{
+    object-position:center 50% !important;
+  }
+  /* Closing (manifesto+contact) — Cinque Terre with foreground people,
+     center the cliffside village */
+  .closing .photo img{
+    object-position:center 45% !important;
+  }
 }
 </style>
 </head>
@@ -915,7 +955,9 @@ lenis.on('scroll',updProg);
         end: isDesktop ? '+=100%' : '+=60%',   // shorter hold on phone
         pin:true,
         pinSpacing:!isProcessIntro,             // cinematic spacer except intro
-        pinType:'transform',
+        // (v3.7.2) Mobile uses pinType:'fixed' to avoid transform-jitter
+        // from dynamic URL bar resizes. Desktop keeps 'transform' (smoother).
+        pinType: isDesktop ? 'transform' : 'fixed',
         scrub: isDesktop ? 0.8 : 0.5,           // tighter scrub on phone for snappier mask
         anticipatePin:1,
         fastScrollEnd:true,
