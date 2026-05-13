@@ -975,6 +975,56 @@ lenis.on('scroll',updProg);
   });
 })();
 
+/* ═══════════════════════════════════════════════════════════════════════
+   PORTRAIT PHOTO CROPS FOR MOBILE (v3.7.4, 2026-05-13)
+   Unsplash photos load as 2400-wide landscape (16:9). On portrait phones
+   object-fit:cover crops 50%+ of width — subject often lost. Solution:
+   re-fetch the SAME photo with portrait dimensions and entropy-crop so
+   Unsplash's CDN picks the most interesting region automatically.
+   Runs after nightLayer so both .day and .night images get re-tuned.
+   ═══════════════════════════════════════════════════════════════════════ */
+(function portraitTune(){
+  function tunePhoto(img){
+    if(!img || !img.src) return;
+    // Stash the original landscape URL once
+    if(!img.dataset.origSrc) img.dataset.origSrc = img.src;
+    const isMobile = matchMedia('(max-width:768px)').matches;
+    try{
+      const u = new URL(img.dataset.origSrc);
+      if(isMobile){
+        // Portrait 9:14 — covers iPhone-class screens generously
+        u.searchParams.set('w','900');
+        u.searchParams.set('h','1400');
+        u.searchParams.set('fit','crop');
+        u.searchParams.set('crop','entropy');
+        u.searchParams.set('q','80');
+      }else{
+        // Restore landscape
+        u.searchParams.set('w','2400');
+        u.searchParams.delete('h');
+        u.searchParams.set('fit','crop');
+        u.searchParams.delete('crop');
+        u.searchParams.set('q','85');
+      }
+      const next = u.toString();
+      if(img.src !== next) img.src = next;
+    }catch(e){ /* malformed URL — ignore */ }
+  }
+  function tuneAll(){
+    document.querySelectorAll('.photo img').forEach(tunePhoto);
+  }
+  // Initial pass — wait one frame so nightLayer's night images are in DOM
+  requestAnimationFrame(tuneAll);
+  // Also catch any late additions (defensive)
+  setTimeout(tuneAll, 600);
+  // Re-tune on viewport flips (rotation / desktop-mobile switch in DevTools)
+  let resizeTimer;
+  addEventListener('resize',()=>{
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(tuneAll, 200);
+  });
+})();
+
 // ─── Force ScrollTrigger to re-measure ALL pin positions after every pin trigger has been created.
 //     Without this, process-strip's pin trigger (created BEFORE scene pins) keeps stale start/end
 //     coords from the pre-scene-pin document height, causing phantom dark zones during scroll. ───
