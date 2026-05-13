@@ -201,8 +201,13 @@ html.is-transitioning,
 html.is-transitioning body {
   pointer-events: none;
 }
+/* (v3.6 2026-05-13) Magic-toggle stays clickable during transitions.
+   The is-transitioning JS lock already debounces real clicks correctly,
+   so the CSS pointer-events:none lockout is removed — user can tap
+   through and queue the next skin even mid-theatre.
+   ORIGINAL: html.is-transitioning .magic-toggle { pointer-events: none; } */
 html.is-transitioning .magic-toggle {
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 /* Mobile: nudge the magic button so it stays comfortably tappable */
@@ -11664,4 +11669,44 @@ html.mode-island body {
 
 /* Magic-toggle remains visible — bumped to z-index above iframe. The
    global terminator already sets it to 10000 which beats iframe's 100. */
+
+/* ═══════════════════════════════════════════════════════════════════════
+   DRAGGABLE MAGIC-TOGGLE (v3.6, 2026-05-13)
+   Touch-action:none disables the browser's default touch-pan/scroll
+   so drag works smoothly on phones. .is-dragging suppresses transition
+   so the button follows the finger 1:1.
+   ═══════════════════════════════════════════════════════════════════════ */
+.magic-toggle {
+  touch-action: none !important;
+  /* user-select: none so long-press doesn't select adjacent text on iOS */
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  -webkit-touch-callout: none !important;
+}
+.magic-toggle.is-dragging {
+  transition: none !important;
+  animation: none !important;
+  opacity: 0.92 !important;
+  cursor: grabbing !important;
+  filter: brightness(1.05) !important;
+  /* Slight scale bump for tactile feedback */
+  transform: scale(1.06) !important;
+}
+/* When position is JS-driven via left/top, the right/bottom hints must
+   not override it. Final terminator already sets them auto when
+   draggable JS applies position; this is defensive. */
+.magic-toggle[style*="left:"] {
+  right: auto !important;
+}
+
+/* Mobile: bump tap target for finger-comfort (38×32 was too small) */
+@media (max-width: 768px) {
+  html .magic-toggle,
+  html.mode-matrix .magic-toggle,
+  html.mode-island .magic-toggle,
+  html.mode-noir .magic-toggle {
+    width: 44px !important;
+    height: 44px !important;
+  }
+}
 

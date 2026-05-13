@@ -250,7 +250,7 @@ body.lang-en :where(.lang-ru){display:none !important}
 /* ═══════════════════════════ Concept badge (small) ═══════════════════════════ */
 .badge{position:fixed;left:24px;top:calc(var(--letterbox) + 16px);z-index:9996;font-family:'Cormorant Garamond';font-style:italic;font-size:13px;letter-spacing:.16em;color:var(--cream-dim);pointer-events:none}
 
-/* ═══════════════════════════ Mobile ═══════════════════════════ */
+/* ═══════════════════════════ Mobile (tablet ≤880px) ═══════════════════════════ */
 @media(max-width:880px){
   :root{--letterbox:6vh}
   .cur,.cur-ring{display:none}
@@ -267,6 +267,38 @@ body.lang-en :where(.lang-ru){display:none !important}
   .badge{display:none}
   .hero-meta{font-size:9px}
   .hero-cta{flex-direction:column;align-items:flex-start;gap:14px}
+}
+
+/* ═══════════════════════════ Phone (≤480px) ═══════════════════════════
+   v3.6 (2026-05-13): tight breakpoint for iPhone-class screens.
+   Letterbox thinner (otherwise it eats most of the screen). Hero text
+   uses clamp so it never overflows. Process big-num scaled down.
+   Manifesto text tightened. Channels stack vertically. */
+@media(max-width:480px){
+  :root{--letterbox:4.5vh}
+  .head{padding:0 16px;font-size:9px;letter-spacing:.32em}
+  .head .brand{font-size:16px;letter-spacing:.14em}
+  .subtitle{padding:0 16px;font-size:9px;letter-spacing:.32em}
+  .subtitle .brand-mark{font-size:11px}
+  .hero-text .line{font-size:clamp(36px,11vw,52px);line-height:1.02;letter-spacing:-.018em}
+  .hero-meta{font-size:8px;letter-spacing:.4em}
+  .hero-cta a{font-size:10px;letter-spacing:.32em}
+  .stats-grid{grid-template-columns:repeat(2,1fr);gap:24px}
+  .stats-grid .num{font-size:clamp(40px,12vw,64px)}
+  .scene{padding:0 16px}
+  .svc-scene .content,.scene-stats .content,.work-scene .content{padding:0;gap:24px}
+  .svc-scene h2,.work-scene h2{font-size:clamp(32px,9vw,48px)}
+  .process-panel .big-num{font-size:88px;line-height:.95}
+  .manifesto{padding:calc(var(--letterbox) + 5vh) 20px 2vh}
+  .manifesto .text{font-size:clamp(36px,11vw,56px);line-height:1.05;letter-spacing:-.018em;max-width:14ch}
+  .manifesto .eyebrow,.manifesto .sig{font-size:9px;letter-spacing:.4em}
+  .contact .content{padding:calc(var(--letterbox) + 32px) 20px calc(var(--letterbox) + 32px)}
+  .contact h2{font-size:clamp(36px,11vw,56px);line-height:1.04}
+  .contact .body{font-size:15px;line-height:1.55;margin-top:32px}
+  .contact .channels{flex-direction:column;gap:14px;align-items:stretch}
+  .contact .channels a{text-align:center;padding:14px 20px}
+  .testi{padding:calc(var(--letterbox) + 4vh) 20px calc(var(--letterbox) + 4vh)}
+  .testi .quote{font-size:clamp(20px,5.5vw,28px);line-height:1.4}
 }
 </style>
 </head>

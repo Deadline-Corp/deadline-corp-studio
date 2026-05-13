@@ -3716,4 +3716,124 @@
       new MutationObserver(bindStats).observe(document.body, { childList: true, subtree: true });
     }
   })();
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // DRAGGABLE MAGIC-TOGGLE (v3.6 2026-05-13)
+  //   • Touch + mouse drag the button around the viewport
+  //   • Position persisted in localStorage between page-loads + skin swaps
+  //   • Distinguishes tap (≤8px movement) from drag — tap still cycles skin
+  //   • Always reachable: clears the during-transition pointer-events block
+  //   • Constrained to viewport with 8px safety margin
+  // ═══════════════════════════════════════════════════════════════════════
+  (() => {
+    const btn = document.getElementById('magic-toggle');
+    if (!btn) return;
+
+    const LS_KEY = 'mx-toggle-pos';
+    const DRAG_THRESHOLD = 8;  // px — below this counts as tap, not drag
+    const EDGE_MARGIN = 8;
+
+    let dragging = false;
+    let didMove  = false;
+    let startX = 0, startY = 0;
+    let btnStartX = 0, btnStartY = 0;
+    let suppressNextClick = false;
+
+    function applyPosition(x, y) {
+      const w = btn.offsetWidth  || 46;
+      const h = btn.offsetHeight || 36;
+      const maxX = window.innerWidth  - w - EDGE_MARGIN;
+      const maxY = window.innerHeight - h - EDGE_MARGIN;
+      x = Math.max(EDGE_MARGIN, Math.min(maxX, x));
+      y = Math.max(EDGE_MARGIN, Math.min(maxY, y));
+      btn.style.left   = x + 'px';
+      btn.style.top    = y + 'px';
+      btn.style.right  = 'auto';
+      btn.style.bottom = 'auto';
+    }
+
+    function loadSaved() {
+      try {
+        const raw = localStorage.getItem(LS_KEY);
+        if (!raw) return;
+        const pos = JSON.parse(raw);
+        if (typeof pos.x === 'number' && typeof pos.y === 'number') {
+          applyPosition(pos.x, pos.y);
+        }
+      } catch (e) { /* ignore */ }
+    }
+    function savePosition() {
+      try {
+        const r = btn.getBoundingClientRect();
+        localStorage.setItem(LS_KEY, JSON.stringify({ x: r.left, y: r.top }));
+      } catch (e) { /* ignore */ }
+    }
+
+    function eventPoint(e) {
+      if (e.touches && e.touches[0]) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      if (e.changedTouches && e.changedTouches[0]) return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+      return { x: e.clientX, y: e.clientY };
+    }
+
+    function onStart(e) {
+      const r = btn.getBoundingClientRect();
+      btnStartX = r.left;
+      btnStartY = r.top;
+      const p = eventPoint(e);
+      startX = p.x;
+      startY = p.y;
+      dragging = true;
+      didMove  = false;
+      btn.classList.add('is-dragging');
+      // Touch: prevent page scroll while dragging the button
+      if (e.type === 'touchstart' && e.cancelable) e.preventDefault();
+    }
+    function onMove(e) {
+      if (!dragging) return;
+      const p = eventPoint(e);
+      const dx = p.x - startX;
+      const dy = p.y - startY;
+      if (!didMove && (Math.abs(dx) + Math.abs(dy) > DRAG_THRESHOLD)) didMove = true;
+      if (didMove) applyPosition(btnStartX + dx, btnStartY + dy);
+      if (e.type === 'touchmove' && e.cancelable && didMove) e.preventDefault();
+    }
+    function onEnd() {
+      if (!dragging) return;
+      dragging = false;
+      btn.classList.remove('is-dragging');
+      if (didMove) {
+        savePosition();
+        suppressNextClick = true;
+      }
+    }
+
+    // Wire it: button captures start, window captures move/end so the
+    // drag survives even when the finger/cursor leaves the button bounds.
+    btn.addEventListener('mousedown',  onStart);
+    btn.addEventListener('touchstart', onStart, { passive: false });
+    window.addEventListener('mousemove',  onMove);
+    window.addEventListener('touchmove',  onMove, { passive: false });
+    window.addEventListener('mouseup',    onEnd);
+    window.addEventListener('touchend',   onEnd);
+    window.addEventListener('touchcancel', onEnd);
+
+    // Swallow the click that follows a drag (browser fires click after mouseup/touchend)
+    btn.addEventListener('click', (e) => {
+      if (suppressNextClick) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        suppressNextClick = false;
+      }
+    }, true);
+
+    // Re-clamp on viewport resize / orientation change
+    window.addEventListener('resize', () => {
+      const r = btn.getBoundingClientRect();
+      applyPosition(r.left, r.top);
+      savePosition();
+    });
+    // Apply saved position once on load (after CSS terminator has set defaults)
+    // Slight delay so any other init finishes first.
+    setTimeout(loadSaved, 50);
+  })();
 })();
