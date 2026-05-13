@@ -893,55 +893,36 @@ lenis.on('scroll',updProg);
 
   // Desktop: ScrollTrigger pin + scrub timeline per scene
   // Mobile: simple scroll-driven mask without pin (page would feel too slow on small screens)
-  if(matchMedia('(min-width:881px)').matches){
-    // No vertical pins — scenes flow normally, mask sweeps as scene traverses viewport.
-    // Eliminates pin-spacer dark gaps between sections AND removes "magnet snap" on entry/exit.
-    // start='top bottom' = sweep begins when scene's top enters viewport from below
-    // end='bottom top' = sweep ends when scene's bottom exits viewport from above
-    // Total trigger range = 200vh of scroll → plenty of time for smooth power2.inOut sweep
-    // power2.inOut ease naturally creates "hold day → sweep → hold night" without explicit stages.
-    photos.forEach(photo=>{
-      const scene=photo.closest('.hero,.scene,.contact');
-      if(!scene)return;
-      // Special-case: process-intro-scene's spacer creates ugly gap before process-strip
-      // (intro releases pin → 100vh dark padding → process-strip pin starts).
-      // Set pinSpacing:false ONLY for intro so it flows directly into process-strip.
-      const isProcessIntro=scene.classList.contains('process-intro-scene');
-      gsap.to(photo,{
-        '--mp':1,
-        ease:'power2.inOut',
-        scrollTrigger:{
-          trigger:scene,
-          start:'top top',
-          end:'+=100%',
-          pin:true,
-          pinSpacing:!isProcessIntro,  // true for all scenes (cinematic spacer) — EXCEPT intro
-          pinType:'transform',
-          scrub:0.8,
-          anticipatePin:1,
-          fastScrollEnd:true,
-          invalidateOnRefresh:true
-        }
-      });
+  // (v3.7.1 2026-05-13) Mobile now ALSO gets the day→night pin, but with
+  // a SHORTER pin duration (60% scroll vs 100% on desktop). Gives the
+  // "коротенький захват" feel — scene momentarily pins, mask sweeps R→L
+  // day→night, then releases. Previously mobile had no pin and the photo
+  // didn't "transition cinematically" — user noticed and asked to fix.
+  const isDesktop = matchMedia('(min-width:881px)').matches;
+  photos.forEach(photo=>{
+    const scene=photo.closest('.hero,.scene,.contact');
+    if(!scene)return;
+    // Special-case: process-intro-scene's spacer creates ugly gap before
+    // process-strip (intro releases pin → 100vh dark padding →
+    // process-strip pin starts). Set pinSpacing:false ONLY for intro.
+    const isProcessIntro=scene.classList.contains('process-intro-scene');
+    gsap.to(photo,{
+      '--mp':1,
+      ease:'power2.inOut',
+      scrollTrigger:{
+        trigger:scene,
+        start:'top top',
+        end: isDesktop ? '+=100%' : '+=60%',   // shorter hold on phone
+        pin:true,
+        pinSpacing:!isProcessIntro,             // cinematic spacer except intro
+        pinType:'transform',
+        scrub: isDesktop ? 0.8 : 0.5,           // tighter scrub on phone for snappier mask
+        anticipatePin:1,
+        fastScrollEnd:true,
+        invalidateOnRefresh:true
+      }
     });
-  } else {
-    // Mobile fallback — simple progress mask, no pin
-    function updateMasks(){
-      const vh=innerHeight;
-      photos.forEach(p=>{
-        const scene=p.closest('.hero,.scene,.contact');
-        if(!scene)return;
-        const r=scene.getBoundingClientRect();
-        const total=vh+r.height;
-        const traveled=vh-r.top;
-        const pr=Math.max(0,Math.min(1,traveled/total));
-        p.style.setProperty('--mp',pr.toFixed(4));
-      });
-    }
-    lenis.on('scroll',updateMasks);
-    addEventListener('resize',updateMasks);
-    updateMasks();
-  }
+  });
 })();
 
 // ─── Force ScrollTrigger to re-measure ALL pin positions after every pin trigger has been created.
