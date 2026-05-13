@@ -416,17 +416,22 @@
     video.playsInline = true;
     video.preload = 'auto';
 
-    const src1080 = document.createElement('source');
-    src1080.src = isMobile
+    // (v3.7) On mobile use ONLY the 720p file (455 KB instead of 1.9 MB).
+    // No 1080p fallback on phones — saves ~1.5 MB per matrix entry on
+    // cellular. Desktop still gets a tiered 1080p loop + 1080p hero.
+    const src1 = document.createElement('source');
+    src1.src = isMobile
       ? 'assets/video/morpheus-hero-720p.mp4'
       : 'assets/video/morpheus-loop-1080p.mp4';
-    src1080.type = 'video/mp4';
-    video.appendChild(src1080);
+    src1.type = 'video/mp4';
+    video.appendChild(src1);
 
-    const src2 = document.createElement('source');
-    src2.src = 'assets/video/morpheus-hero-1080p.mp4';
-    src2.type = 'video/mp4';
-    video.appendChild(src2);
+    if (!isMobile) {
+      const src2 = document.createElement('source');
+      src2.src = 'assets/video/morpheus-hero-1080p.mp4';
+      src2.type = 'video/mp4';
+      video.appendChild(src2);
+    }
 
     document.body.appendChild(video);
     matrixVideo = video;
@@ -815,7 +820,7 @@
       // Chrome aggressively caches HTML loaded inside iframes, even
       // when ETag/Last-Modified would otherwise invalidate. Bump this
       // string whenever 00_master.html is meaningfully edited.
-      frame.src = 'Prototypes/Resort_skins/00_master.html?v=3.6.2';
+      frame.src = 'Prototypes/Resort_skins/00_master.html?v=3.7';
       frame.setAttribute('title', 'DEADLINE — Resort');
       frame.setAttribute('loading', 'eager');
       document.body.appendChild(frame);
@@ -3792,8 +3797,10 @@
       dragging = true;
       didMove  = false;
       btn.classList.add('is-dragging');
-      // Touch: prevent page scroll while dragging the button
-      if (e.type === 'touchstart' && e.cancelable) e.preventDefault();
+      // (v3.6.3) DO NOT preventDefault on touchstart — it cancels the
+      // synthetic click that mobile browsers fire on tap. Without that
+      // click, taps stop cycling skins. Drag-during-scroll prevention
+      // is handled in touchmove instead (only after we know it's a drag).
     }
     function onMove(e) {
       if (!dragging) return;
@@ -3801,18 +3808,34 @@
       const dx = p.x - startX;
       const dy = p.y - startY;
       if (!didMove && (Math.abs(dx) + Math.abs(dy) > DRAG_THRESHOLD)) didMove = true;
-      if (didMove) applyPosition(btnStartX + dx, btnStartY + dy);
-      if (e.type === 'touchmove' && e.cancelable && didMove) e.preventDefault();
+      if (didMove) {
+        applyPosition(btnStartX + dx, btnStartY + dy);
+        // Only block scroll AFTER we're sure this is a drag, not a tap
+        if (e.type === 'touchmove' && e.cancelable) e.preventDefault();
+      }
     }
-    function onEnd() {
+    function onEnd(e) {
       if (!dragging) return;
       dragging = false;
       btn.classList.remove('is-dragging');
       if (didMove) {
         savePosition();
         suppressNextClick = true;
+      } else if (e && e.type === 'touchend') {
+        // Mobile-only fallback: if no native click fires (some browsers
+        // skip it under fast-tap heuristics), trigger one manually.
+        // Use a microtask delay so any organic click fires first.
+        setTimeout(() => {
+          if (!suppressNextClick) {
+            // Check if a click happened in the last 50ms by reading flag
+            if (!btn._mxClickFired) btn.click();
+          }
+          btn._mxClickFired = false;
+        }, 60);
       }
     }
+    // Track natively-fired clicks so the touchend fallback doesn't double-fire
+    btn.addEventListener('click', () => { btn._mxClickFired = true; }, true);
 
     // Wire it: button captures start, window captures move/end so the
     // drag survives even when the finger/cursor leaves the button bounds.
@@ -3844,3 +3867,19 @@
     setTimeout(loadSaved, 50);
   })();
 })();
+
+/* ═══════════════════════════════════════════════════════════════════════
+   SERVICE WORKER REGISTRATION (v3.7, 2026-05-13)
+   Enables offline support + faster repeat visits.
+   sw.js handles the cache strategy.
+   ═══════════════════════════════════════════════════════════════════════ */
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('sw.js', { scope: './' })
+      .catch((err) => {
+        // Don't break the site if SW registration fails (e.g. file:// protocol)
+        console.warn('[sw] registration failed:', err.message);
+      });
+  });
+}

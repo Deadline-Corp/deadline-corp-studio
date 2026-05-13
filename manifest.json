@@ -1,0 +1,21 @@
+{
+  "name": "DEADLINE — Web · Automation · AI Agents",
+  "short_name": "DEADLINE",
+  "description": "Мы — DEADLINE. У нас ничего не горит.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#08070A",
+  "theme_color": "#161208",
+  "categories": ["business", "productivity"],
+  "lang": "ru",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -226,22 +226,40 @@ body.lang-en :where(.lang-ru){display:none !important}
 .process-progress .bar{display:block;width:1px;background:var(--accent);transform-origin:top;transform:scaleY(0)}
 
 /* ═══════════════════════════ MANIFESTO — Margins silence (compact, no oversized vertical room) ═══════════════════════════ */
-.manifesto{padding:calc(var(--letterbox) + 6vh) clamp(24px,5vw,72px) 2vh;min-height:auto;display:grid;place-items:center;text-align:center;background:radial-gradient(60% 50% at 50% 50%,rgba(200,168,113,.05),transparent 70%),var(--ink)}
-.manifesto .eyebrow{font-family:'Inter';font-size:10px;letter-spacing:.5em;text-transform:uppercase;color:var(--accent);margin-bottom:36px}
-.manifesto .text{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(48px,8vw,144px);line-height:1.04;letter-spacing:-.025em;color:var(--cream);max-width:18ch}
-.manifesto .text em{font-style:italic;color:var(--accent)}
-.manifesto .sig{margin-top:36px;font-family:'Inter';font-size:10px;letter-spacing:.5em;text-transform:uppercase;color:var(--cream-dim)}
+/* ═══════════════════════════ CLOSING — Manifesto + Contact unified (v3.6.4 2026-05-13)
+   Both blocks merged into ONE cinema-frame section. Photo full-bleed under
+   everything. Manifesto headline up top (large editorial). Thin gold hair
+   divider as visual breath. Contact h2 + CTAs centered below. Sig footer.
+   ~1 mobile viewport total. ═══════════════════════════ */
+.closing{position:relative;width:100vw;min-height:100vh;overflow:hidden;display:grid;align-items:center}
+.closing .photo{position:absolute;top:0;bottom:0;left:0;right:0;overflow:hidden}
+.closing .photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 2s cubic-bezier(.5,0,.2,1)}
+.closing .photo img.is-loaded{opacity:1}
+.closing .photo::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,7,10,.72) 0%,rgba(8,7,10,.45) 30%,rgba(8,7,10,.45) 65%,rgba(8,7,10,.88) 100%);pointer-events:none;z-index:2}
 
-/* ═══════════════════════════ CONTACT — Margins + Horizon fade ═══════════════════════════ */
-.contact{position:relative;width:100vw;min-height:100vh;overflow:hidden;display:grid;align-items:center}
-.contact .photo{position:absolute;top:0;bottom:0;left:0;right:0;overflow:hidden}
-.contact .photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 2s cubic-bezier(.5,0,.2,1)}
-.contact .photo img.is-loaded{opacity:1}
-.contact .photo::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,7,10,.5) 0%,rgba(8,7,10,.32) 50%,rgba(8,7,10,.78) 100%)}
-.contact .content{position:relative;z-index:5;padding:calc(var(--letterbox) + 48px) clamp(24px,5vw,72px) calc(var(--letterbox) + 48px);max-width:1640px;margin:0 auto;width:100%;text-align:center}
-.contact .eyebrow{font-family:'Inter';font-size:10px;letter-spacing:.5em;text-transform:uppercase;color:var(--accent);margin-bottom:36px}
-.contact h2{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(48px,8vw,160px);line-height:1.0;letter-spacing:-.022em;color:var(--cream);margin:0 auto;max-width:22ch;text-shadow:0 6px 32px rgba(8,7,10,.55)}
-.contact h2 em{font-style:italic;color:var(--accent)}
+.closing .content{position:relative;z-index:5;padding:calc(var(--letterbox) + 48px) clamp(24px,5vw,72px) calc(var(--letterbox) + 32px);max-width:760px;margin:0 auto;width:100%;text-align:center;display:flex;flex-direction:column;gap:36px;align-items:center}
+
+.closing .manifesto-block{display:flex;flex-direction:column;align-items:center;gap:14px}
+.closing .manifesto-block .eyebrow{font-family:'Inter';font-size:10px;letter-spacing:.5em;text-transform:uppercase;color:var(--accent)}
+.closing .manifesto-block .text{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(40px,7vw,108px);line-height:1.04;letter-spacing:-.025em;color:var(--cream);max-width:16ch;text-shadow:0 6px 32px rgba(8,7,10,.65)}
+.closing .manifesto-block .text em{font-style:italic;color:var(--accent)}
+
+.closing .divider{width:1px;height:36px;background:linear-gradient(180deg,transparent 0%,var(--cream-soft) 50%,transparent 100%);margin:0 auto;opacity:.8}
+
+.closing .contact-block{display:flex;flex-direction:column;align-items:center;gap:22px;max-width:640px}
+.closing .contact-block .eyebrow{font-family:'Inter';font-size:10px;letter-spacing:.5em;text-transform:uppercase;color:var(--accent)}
+.closing .contact-block h2{font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(20px,2.6vw,30px);line-height:1.35;color:var(--cream);max-width:32ch;text-shadow:0 4px 20px rgba(8,7,10,.55);margin:0}
+.closing .contact-block h2 em{font-style:italic;color:var(--accent)}
+.closing .channels{display:flex;flex-wrap:wrap;gap:12px;justify-content:center;align-items:center}
+.closing .reply{font-family:'Inter';font-size:10px;letter-spacing:.5em;text-transform:uppercase;color:var(--cream-soft);display:inline-flex;align-items:center;gap:8px}
+.closing .reply .dot{color:var(--accent);font-size:13px;animation:dotpulse 2.2s ease-in-out infinite}
+@keyframes dotpulse{0%,100%{opacity:.35;transform:scale(1)}50%{opacity:1;transform:scale(1.18)}}
+
+.closing .sig{font-family:'Inter';font-size:9px;letter-spacing:.5em;text-transform:uppercase;color:var(--cream-dim);margin-top:8px}
+
+/* Legacy .manifesto and .contact rules kept harmless — selectors no longer
+   match new HTML. Removing them risks accidentally breaking any unrelated
+   inline use. Leave them as dead code. */
 .contact .body{margin:48px auto 0;font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(18px,1.8vw,24px);line-height:1.5;color:rgba(244,236,222,.85);max-width:48ch}
 .contact .channels{margin-top:64px;display:flex;justify-content:center;gap:24px;flex-wrap:wrap}
 .contact .reply{margin-top:36px;font-family:'Inter';font-size:10px;letter-spacing:.5em;text-transform:uppercase;color:var(--cream-soft)}
@@ -289,14 +307,19 @@ body.lang-en :where(.lang-ru){display:none !important}
   .svc-scene .content,.scene-stats .content,.work-scene .content{padding:0;gap:24px}
   .svc-scene h2,.work-scene h2{font-size:clamp(32px,9vw,48px)}
   .process-panel .big-num{font-size:88px;line-height:.95}
-  .manifesto{padding:calc(var(--letterbox) + 5vh) 20px 2vh}
-  .manifesto .text{font-size:clamp(36px,11vw,56px);line-height:1.05;letter-spacing:-.018em;max-width:14ch}
-  .manifesto .eyebrow,.manifesto .sig{font-size:9px;letter-spacing:.4em}
-  .contact .content{padding:calc(var(--letterbox) + 32px) 20px calc(var(--letterbox) + 32px)}
-  .contact h2{font-size:clamp(36px,11vw,56px);line-height:1.04}
-  .contact .body{font-size:15px;line-height:1.55;margin-top:32px}
-  .contact .channels{flex-direction:column;gap:14px;align-items:stretch}
-  .contact .channels a{text-align:center;padding:14px 20px}
+  /* CLOSING (merged manifesto+contact) — phone-tight overrides */
+  .closing .content{padding:calc(var(--letterbox) + 28px) 20px calc(var(--letterbox) + 24px);gap:24px}
+  .closing .manifesto-block{gap:10px}
+  .closing .manifesto-block .text{font-size:clamp(36px,10.5vw,54px);line-height:1.05;letter-spacing:-.018em;max-width:13ch}
+  .closing .manifesto-block .eyebrow{font-size:9px;letter-spacing:.4em}
+  .closing .divider{height:24px}
+  .closing .contact-block{gap:16px}
+  .closing .contact-block .eyebrow{font-size:9px;letter-spacing:.4em}
+  .closing .contact-block h2{font-size:15px;line-height:1.4;max-width:28ch}
+  .closing .channels{flex-direction:column;gap:10px;width:100%;align-items:stretch}
+  .closing .channels a{text-align:center;padding:14px 20px}
+  .closing .reply{font-size:9px;letter-spacing:.4em}
+  .closing .sig{font-size:8.5px;letter-spacing:.4em}
   .testi{padding:calc(var(--letterbox) + 4vh) 20px calc(var(--letterbox) + 4vh)}
   .testi .quote{font-size:clamp(20px,5.5vw,28px);line-height:1.4}
 }
@@ -660,37 +683,43 @@ body.lang-en :where(.lang-ru){display:none !important}
   </aside>
 </section>
 
-<!-- ═══════════════════════════ MANIFESTO — Margins silence ═══════════════════════════ -->
-<section class="manifesto">
-  <div class="eyebrow">— Manifesto</div>
-  <div class="text">
-    <span class="lang-ru">Мы — <em>DEADLINE.</em><br>У нас <em>ничего не горит.</em></span>
-    <span class="lang-en">We are <em>DEADLINE.</em><br>Nothing's <em>on fire here.</em></span>
-  </div>
-  <div class="sig">— DEADLINE  ·  since 2025</div>
-</section>
-
-<!-- ═══════════════════════════ CONTACT — Margins + Horizon fade ═══════════════════════════ -->
-<section class="contact" id="contact">
+<!-- ═══════════════════════════ CLOSING — Manifesto + Contact unified (v3.6.4 2026-05-13)
+     User feedback: previous separate manifesto + contact blocks felt like two
+     dark screens with too much vertical air. Merged into ONE cinema-frame:
+     Cinque Terre photo as full-bleed background, manifesto headline floats
+     above a thin gold hairline divider, contact CTA pair below, sig footer.
+     Whole thing fits in ~1 mobile viewport. ═══════════════════════════ -->
+<section class="closing" id="contact">
   <div class="photo"><img src="https://images.unsplash.com/photo-1582719508461-905c673771fd?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
   <div class="content">
-    <div class="eyebrow">— 05 / Contact</div>
-    <h2>
-      <span class="lang-ru">Пиши — <em>ответим раньше, чем уберёшь руки от клавиатуры.</em></span>
-      <span class="lang-en">Write — <em>we'll reply before your hands leave the keyboard.</em></span>
-    </h2>
-    <p class="body">
-      <span class="lang-ru">Опиши задачу одним сообщением. Без brief-форм, без «давайте созвонимся обсудим формат созвона». Берёмся за всё. План и срок прилетят прежде, чем ты допьёшь кофе.</span>
-      <span class="lang-en">Describe the task in one message. No brief forms, no "let's schedule a call to discuss the call format". We take everything on. The plan and the deadline will land before you finish your coffee.</span>
-    </p>
-    <div class="channels">
-      <a href="mailto:corpdeadline@gmail.com" class="btn-primary">corpdeadline@gmail.com</a>
-      <a href="https://t.me/deadline_corp" class="btn-secondary">@deadline_corp</a>
+
+    <div class="manifesto-block">
+      <div class="eyebrow">— Manifesto</div>
+      <div class="text">
+        <span class="lang-ru">Мы — <em>DEADLINE.</em><br>У нас <em>ничего не горит.</em></span>
+        <span class="lang-en">We are <em>DEADLINE.</em><br>Nothing's <em>on fire here.</em></span>
+      </div>
     </div>
-    <div class="reply">
-      <span class="lang-ru"><span class="dot">●</span>Ответ за минуты</span>
-      <span class="lang-en"><span class="dot">●</span>Replies in minutes</span>
+
+    <div class="divider" aria-hidden="true"></div>
+
+    <div class="contact-block">
+      <div class="eyebrow">— Contact</div>
+      <h2>
+        <span class="lang-ru">Пиши — <em>ответим раньше, чем уберёшь руки от клавиатуры.</em></span>
+        <span class="lang-en">Write — <em>we'll reply before your hands leave the keyboard.</em></span>
+      </h2>
+      <div class="channels">
+        <a href="mailto:corpdeadline@gmail.com" class="btn-primary">corpdeadline@gmail.com</a>
+        <a href="https://t.me/deadline_corp" class="btn-secondary">@deadline_corp</a>
+      </div>
+      <div class="reply">
+        <span class="lang-ru"><span class="dot">●</span>Ответ за минуты</span>
+        <span class="lang-en"><span class="dot">●</span>Replies in minutes</span>
+      </div>
     </div>
+
+    <div class="sig">— DEADLINE  ·  since 2025</div>
   </div>
 </section>
 
@@ -721,12 +750,19 @@ document.querySelectorAll('.scene .photo img').forEach(img=>{
   gsap.to(img,{yPercent:-7,ease:'none',scrollTrigger:{trigger:img.closest('.scene'),start:'top bottom',end:'bottom top',scrub:true}});
 });
 
+// (v3.7) safeFrom defined first so every reveal below is guarded.
+// Without guards GSAP emits "target not found" warnings every transition
+// for any selector that doesn't match — noisy on the parent console.
+const safeFrom = (sel, props) => {
+  if (document.querySelector(sel)) gsap.from(sel, props);
+};
+
 // ─── Entrance reveal: hero (gsap.from = animate FROM hidden TO computed — failsafe if JS hangs) ───
-gsap.from('.hero-meta',{y:14,opacity:0,duration:1.4,delay:0.4,ease:'power2.out'});
-gsap.from('.hero-text .line',{y:42,opacity:0,duration:1.4,stagger:0.14,delay:0.6,ease:'power3.out'});
-gsap.from('.hero-text .sub',{y:24,opacity:0,duration:1.2,delay:1.0,ease:'power3.out'});
-gsap.from('.hero-cta',{opacity:0,duration:1.2,delay:1.3,ease:'power2.out'});
-gsap.from('.hero-cta > *',{y:14,opacity:0,duration:0.9,stagger:0.08,delay:1.4,ease:'power2.out'});
+safeFrom('.hero-meta',{y:14,opacity:0,duration:1.4,delay:0.4,ease:'power2.out'});
+safeFrom('.hero-text .line',{y:42,opacity:0,duration:1.4,stagger:0.14,delay:0.6,ease:'power3.out'});
+safeFrom('.hero-text .sub',{y:24,opacity:0,duration:1.2,delay:1.0,ease:'power3.out'});
+safeFrom('.hero-cta',{opacity:0,duration:1.2,delay:1.3,ease:'power2.out'});
+safeFrom('.hero-cta > *',{y:14,opacity:0,duration:0.9,stagger:0.08,delay:1.4,ease:'power2.out'});
 
 // ─── Stats + services + work scene reveals ───
 document.querySelectorAll('.scene-stats .content > *, .svc-scene .left > *, .svc-scene .right li, .work-scene .content > *').forEach(el=>{
@@ -734,14 +770,16 @@ document.querySelectorAll('.scene-stats .content > *, .svc-scene .left > *, .svc
 });
 
 // ─── Testimonials head reveal ───
-gsap.from('.testi .head-row > *',{y:32,opacity:0,duration:1.2,stagger:0.1,ease:'power3.out',scrollTrigger:{trigger:'.testi',start:'top 78%'}});
+safeFrom('.testi .head-row > *',{y:32,opacity:0,duration:1.2,stagger:0.1,ease:'power3.out',scrollTrigger:{trigger:'.testi',start:'top 78%'}});
 
-// ─── Process intro reveal ───
-gsap.from('.process-intro > *',{y:32,opacity:0,duration:1.2,stagger:0.1,ease:'power3.out',scrollTrigger:{trigger:'.process-intro',start:'top 75%'}});
+// ─── Process intro reveal (v3.7 — selector fixed: was .process-intro, actual class is .process-intro-scene .content) ───
+safeFrom('.process-intro-scene .content > *',{y:32,opacity:0,duration:1.2,stagger:0.1,ease:'power3.out',scrollTrigger:{trigger:'.process-intro-scene',start:'top 75%'}});
 
-// ─── Manifesto + Contact reveals ───
-gsap.from('.manifesto > *',{y:32,opacity:0,duration:1.4,stagger:0.15,ease:'power3.out',scrollTrigger:{trigger:'.manifesto',start:'top 70%'}});
-gsap.from('.contact .content > *',{y:32,opacity:0,duration:1.4,stagger:0.12,ease:'power3.out',scrollTrigger:{trigger:'.contact',start:'top 70%'}});
+// ─── Closing reveals (v3.7 — merged manifesto + contact) ───
+safeFrom('.closing .manifesto-block > *',{y:32,opacity:0,duration:1.4,stagger:0.15,ease:'power3.out',scrollTrigger:{trigger:'.closing',start:'top 70%'}});
+safeFrom('.closing .contact-block > *',  {y:32,opacity:0,duration:1.4,stagger:0.12,ease:'power3.out',scrollTrigger:{trigger:'.closing',start:'top 60%'}});
+safeFrom('.closing .divider',            {scaleY:0,opacity:0,duration:1.2,ease:'power3.out',scrollTrigger:{trigger:'.closing',start:'top 65%'},transformOrigin:'center top'});
+safeFrom('.closing .sig',                {y:14,opacity:0,duration:1.0,delay:.4,ease:'power2.out',scrollTrigger:{trigger:'.closing .sig',start:'top 92%'}});
 
 // ─── Process horizontal pin (desktop only) ───
 // Deferred via setTimeout so it's created AFTER all vertical scene pins have been set up

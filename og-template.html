@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>DEADLINE — OG template</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,500;1,400&family=Inter:wght@300;400;500&family=JetBrains+Mono:wght@400&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    font-family: 'Inter', sans-serif;
+    background: #08070A;
+    color: #F4ECDE;
+    position: relative;
+  }
+  .bg {
+    position: absolute;
+    inset: 0;
+    background-image: url('https://images.unsplash.com/photo-1582719508461-905c673771fd?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85');
+    background-size: cover;
+    background-position: center;
+    filter: brightness(0.55);
+  }
+  .bg::after {
+    content: "";
+    position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(8,7,10,0.55) 0%, rgba(8,7,10,0.45) 35%, rgba(8,7,10,0.78) 100%),
+                radial-gradient(60% 50% at 50% 50%, rgba(200,168,113,0.08), transparent 70%);
+  }
+  .content {
+    position: relative;
+    z-index: 5;
+    width: 100%;
+    height: 100%;
+    padding: 64px 80px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+  .top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-family: 'Inter';
+    font-size: 13px;
+    letter-spacing: 0.42em;
+    text-transform: uppercase;
+    color: rgba(244,236,222,0.62);
+  }
+  .top .brand {
+    font-family: 'Cormorant Garamond';
+    font-style: italic;
+    font-weight: 500;
+    font-size: 26px;
+    letter-spacing: 0.18em;
+    color: #F4ECDE;
+    text-transform: none;
+  }
+  .top .channels {
+    display: flex;
+    gap: 28px;
+    color: rgba(244,236,222,0.72);
+  }
+  .center {
+    text-align: left;
+  }
+  .eyebrow {
+    font-family: 'Inter';
+    font-size: 14px;
+    letter-spacing: 0.5em;
+    text-transform: uppercase;
+    color: #C8A871;
+    margin-bottom: 28px;
+  }
+  .headline {
+    font-family: 'Cormorant Garamond';
+    font-weight: 300;
+    font-size: 120px;
+    line-height: 0.96;
+    letter-spacing: -0.025em;
+    color: #F4ECDE;
+    text-shadow: 0 8px 36px rgba(8,7,10,0.7);
+    max-width: 16ch;
+  }
+  .headline em {
+    font-style: italic;
+    color: #C8A871;
+  }
+  .bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .lead {
+    font-family: 'Cormorant Garamond';
+    font-style: italic;
+    font-weight: 300;
+    font-size: 22px;
+    color: rgba(244,236,222,0.82);
+    max-width: 38ch;
+    line-height: 1.4;
+  }
+  .url {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.18em;
+    color: rgba(244,236,222,0.6);
+    text-transform: uppercase;
+  }
+  /* Cinema letterbox bars (Horizon DNA) */
+  .lb-top, .lb-bot {
+    position: absolute;
+    left: 0; right: 0;
+    height: 56px;
+    background: #000;
+    z-index: 10;
+  }
+  .lb-top { top: 0; }
+  .lb-bot { bottom: 0; }
+</style>
+</head>
+<body>
+  <div class="bg"></div>
+  <div class="lb-top"></div>
+  <div class="lb-bot"></div>
+
+  <div class="content">
+
+    <div class="top">
+      <div class="brand">DEADLINE</div>
+      <div class="channels">
+        <span>Web · Automation · AI agents</span>
+      </div>
+    </div>
+
+    <div class="center">
+      <div class="eyebrow">— MANIFESTO</div>
+      <h1 class="headline">
+        Мы — <em>DEADLINE.</em><br>
+        У нас <em>ничего не горит.</em>
+      </h1>
+    </div>
+
+    <div class="bottom">
+      <div class="lead">
+        В production к согласованной дате,<br>
+        без сюрпризов в счёте.
+      </div>
+      <div class="url">deadline-corp.github.io</div>
+    </div>
+
+  </div>
+</body>
+</html>

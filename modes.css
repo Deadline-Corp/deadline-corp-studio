@@ -11710,3 +11710,68 @@ html.mode-island body {
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   AUDIT FIXES (v3.7, 2026-05-13)
+   Five bugs + UX recommendations from Playwright audit.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* FIX #1 — matrix mobile horizontal overflow.
+   .section-headline was extending 20-40px past the 375px viewport
+   on mobile because of large clamp() font-size with no max-width
+   guard. Add hard caps + word-wrap so headlines wrap instead of bleed.
+   Also belt-and-braces overflow-x:hidden on the body so nothing else
+   can leak horizontally either. */
+@media (max-width: 768px) {
+  html.mode-matrix body,
+  html.mode-matrix {
+    overflow-x: hidden !important;
+  }
+  html.mode-matrix .section-headline,
+  html.mode-matrix h2.section-headline,
+  html.mode-matrix .credo-headline .line,
+  html.mode-matrix .manifesto-text,
+  html.mode-matrix .hero-text .line {
+    max-width: 100% !important;
+    word-wrap: break-word !important;
+    overflow-wrap: break-word !important;
+    hyphens: auto !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+  }
+  /* Tame the huge hero clamp on phones — was bleeding because 11vw on 375 = ~41px but headlines have extra letter-spacing */
+  html.mode-matrix section,
+  html.mode-matrix .stats-band,
+  html.mode-matrix .hero,
+  html.mode-matrix .work-grid {
+    max-width: 100vw !important;
+    box-sizing: border-box !important;
+  }
+  /* Common containers that might have inline maxes still set */
+  html.mode-matrix .container {
+    max-width: 100% !important;
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+}
+
+/* FIX #4 / Rec6 — default-skin tap targets (logo + email + telegram).
+   Add padding so the hit area meets 44×44 minimum without changing
+   the visible text layout meaningfully. Mobile only — desktop is fine. */
+@media (max-width: 768px) {
+  html:not(.mode-matrix):not(.mode-island):not(.mode-noir) .nav-bar a.logo {
+    padding: 12px 0 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    min-height: 44px !important;
+  }
+  /* Footer + contact mailto/tg links — bump tap area */
+  html:not(.mode-matrix):not(.mode-island):not(.mode-noir) a[href^="mailto:"],
+  html:not(.mode-matrix):not(.mode-island):not(.mode-noir) a[href*="t.me/"] {
+    display: inline-block !important;
+    padding: 10px 4px !important;
+    min-height: 44px !important;
+    line-height: 1.6 !important;
+  }
+}
+
+
