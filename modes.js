@@ -811,7 +811,11 @@
     if (!frame) {
       frame = document.createElement('iframe');
       frame.className = 'mx-resort-frame';
-      frame.src = 'Prototypes/Resort_skins/00_master.html';
+      // (v3.6.2 2026-05-13) Cache-bust the iframe src — without ?v=
+      // Chrome aggressively caches HTML loaded inside iframes, even
+      // when ETag/Last-Modified would otherwise invalidate. Bump this
+      // string whenever 00_master.html is meaningfully edited.
+      frame.src = 'Prototypes/Resort_skins/00_master.html?v=3.6.2';
       frame.setAttribute('title', 'DEADLINE — Resort');
       frame.setAttribute('loading', 'eager');
       document.body.appendChild(frame);
