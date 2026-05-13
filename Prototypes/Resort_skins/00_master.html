@@ -339,6 +339,33 @@ body.lang-en :where(.lang-ru){display:none !important}
   .process-strip {
     display: none !important;
   }
+
+  /* (v3.7.5) Headline italic-em overlap on phones. Cormorant Garamond
+     italic glyphs have wide left/right overhang; combined with the
+     negative letter-spacing (-0.022em) the trailing italic word slid
+     under the next word on narrow viewports ("без / лирики" merging).
+     Zero letter-spacing + small extra word-spacing on phone breaks the
+     collision without changing desktop typography. */
+  .scene-stats h2,
+  .svc-scene h2,
+  .work-scene h2,
+  .process-intro-scene h2,
+  .testi .head-row .title,
+  .closing .manifesto-block .text,
+  .closing .contact-block h2 {
+    letter-spacing: 0 !important;
+    word-spacing: 0.06em !important;
+    line-height: 1.05 !important;
+  }
+  /* Headlines with italic <em> in the middle — small extra margin on the em
+     itself prevents the italic descender from kissing the next word. */
+  .scene-stats h2 em,
+  .svc-scene h2 em,
+  .work-scene h2 em,
+  .closing .manifesto-block .text em,
+  .closing .contact-block h2 em {
+    margin-right: 0.08em;
+  }
 }
 
 /* ═══════════════════════════ Mobile photo composition (v3.7.2) ═══════════════════════════
@@ -992,18 +1019,27 @@ lenis.on('scroll',updProg);
     try{
       const u = new URL(img.dataset.origSrc);
       if(isMobile){
-        // Portrait 9:14 — covers iPhone-class screens generously
+        // (v3.7.5) Portrait 9:14 with focal point at center-lower-third.
+        // entropy was choosing sky too often on landscape photos with
+        // detailed cloud patterns (Tokyo night, beach sunsets) — the
+        // skyline / subject sat in the lower half and got cropped away.
+        // fp-y=0.58 = 58% from top biases the crop toward the subject
+        // (water / sand / city skyline) while keeping a slice of sky.
         u.searchParams.set('w','900');
         u.searchParams.set('h','1400');
         u.searchParams.set('fit','crop');
-        u.searchParams.set('crop','entropy');
+        u.searchParams.set('crop','focalpoint');
+        u.searchParams.set('fp-x','0.5');
+        u.searchParams.set('fp-y','0.58');
         u.searchParams.set('q','80');
       }else{
-        // Restore landscape
+        // Restore landscape (clean up any mobile-only focal-point keys)
         u.searchParams.set('w','2400');
         u.searchParams.delete('h');
         u.searchParams.set('fit','crop');
         u.searchParams.delete('crop');
+        u.searchParams.delete('fp-x');
+        u.searchParams.delete('fp-y');
         u.searchParams.set('q','85');
       }
       const next = u.toString();
