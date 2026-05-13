@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HOURS · DEADLINE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;1,300&family=Inter:wght@200;300;400&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+<style>
+:root{--ink:#0F0D0A;--ink-2:#1A1612;--cream:#F4ECDE;--cream-soft:rgba(244,236,222,.62);--accent:#C8A871;--accent-dim:rgba(200,168,113,.6)}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--ink);color:var(--cream);font-family:'Inter',sans-serif;font-weight:300;-webkit-font-smoothing:antialiased;overflow-x:hidden;cursor:none}
+img{display:block;max-width:100%}
+a{color:inherit;text-decoration:none}
+a,button{cursor:none}
+
+.cur{position:fixed;width:5px;height:5px;background:var(--cream);border-radius:50%;pointer-events:none;z-index:9999;transform:translate(-50%,-50%);mix-blend-mode:difference}
+.cur-ring{position:fixed;width:32px;height:32px;border:1px solid var(--cream);border-radius:50%;pointer-events:none;z-index:9998;transform:translate(-50%,-50%);mix-blend-mode:difference;opacity:.4;transition:width .35s,height .35s,opacity .35s}
+.cur-ring.is-hover{width:58px;height:58px;opacity:.7}
+
+.head{position:fixed;top:0;left:0;right:0;z-index:60;padding:32px clamp(24px,5vw,72px);display:grid;grid-template-columns:1fr auto 1fr;gap:24px;align-items:center;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:var(--cream);mix-blend-mode:difference;pointer-events:none}
+.head>*{pointer-events:auto}
+.head .brand{font-family:'Cormorant Garamond';font-style:italic;font-weight:500;font-size:18px;letter-spacing:.04em;text-transform:none}
+.head .c{justify-self:center;font-family:'Cormorant Garamond';font-style:italic;font-size:14px;letter-spacing:.04em;text-transform:none}
+.head .r{justify-self:end;display:flex;gap:24px}
+
+/* Live clock fixed at top-left (under brand) */
+.clock{position:fixed;left:clamp(24px,5vw,72px);top:78px;z-index:55;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;color:var(--cream-soft);mix-blend-mode:difference;pointer-events:none}
+.clock strong{color:var(--accent);font-weight:400}
+
+/* Cover */
+.cover{padding:38vh clamp(24px,6vw,96px) 18vh;max-width:1640px;margin:0 auto}
+.cover .eyebrow{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:var(--accent);margin-bottom:32px}
+.cover h1{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(54px,9vw,168px);line-height:.92;letter-spacing:-.025em;color:var(--cream);max-width:14ch;margin:0}
+.cover h1 em{font-style:italic;color:var(--accent)}
+.cover .sub{margin-top:36px;font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(20px,2vw,28px);color:var(--cream-soft);max-width:46ch;line-height:1.45}
+
+/* Timeline rail (vertical sticky on the left) */
+.tl-wrap{position:relative;padding:120px 0}
+.tl-rail{position:absolute;left:clamp(64px,8vw,140px);top:120px;bottom:120px;width:1px;background:rgba(244,236,222,.18)}
+.tl-rail::before{content:"";position:absolute;left:-2px;top:0;width:5px;height:5px;background:var(--accent);border-radius:50%}
+.tl-rail::after{content:"";position:absolute;left:-2px;bottom:0;width:5px;height:5px;background:var(--accent);border-radius:50%}
+
+/* Each hour */
+.hour{padding:80px clamp(24px,6vw,96px);position:relative;display:grid;grid-template-columns:clamp(120px,12vw,200px) 1fr 1fr;gap:48px;align-items:start;max-width:1640px;margin:0 auto}
+.hour .time{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:400;letter-spacing:.32em;color:var(--accent);position:relative;padding-left:32px}
+.hour .time::before{content:"";position:absolute;left:0;top:8px;width:20px;height:1px;background:var(--accent)}
+.hour .time .clock-big{display:block;font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(40px,5vw,72px);color:var(--cream);letter-spacing:-.02em;margin-top:14px;text-transform:none}
+.hour .time .clock-big em{color:var(--accent-dim);font-style:italic;font-weight:300}
+.hour .text{position:relative}
+.hour .nm{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:var(--cream-soft);margin-bottom:16px}
+.hour h2{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(32px,4.2vw,56px);line-height:1.05;letter-spacing:-.014em;color:var(--cream);margin:0;max-width:18ch}
+.hour h2 em{font-style:italic;color:var(--accent)}
+.hour .body{margin-top:24px;font-family:'Cormorant Garamond';font-weight:400;font-size:17px;line-height:1.6;color:var(--cream-soft);max-width:42ch}
+
+/* Hour photograph (right column) */
+.hour .img-wrap{position:relative;aspect-ratio:4/5;overflow:hidden;background:#16110D}
+.hour .img-wrap img{position:absolute;inset:0;width:100%;height:108%;object-fit:cover;opacity:0;transition:opacity 1.4s cubic-bezier(.5,0,.2,1)}
+.hour .img-wrap img.is-loaded{opacity:1}
+.hour .img-wrap::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 60%,rgba(15,13,10,.5) 100%);pointer-events:none}
+.hour .img-wrap .cap{position:absolute;left:14px;right:14px;bottom:12px;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.32em;text-transform:uppercase;color:rgba(244,236,222,.78);display:flex;justify-content:space-between}
+
+/* Closing */
+.fin{padding:34vh clamp(24px,6vw,96px) 22vh;border-top:1px solid rgba(244,236,222,.15);max-width:1640px;margin:0 auto}
+.fin .small{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:var(--accent);margin-bottom:36px}
+.fin .q{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(48px,7.5vw,128px);line-height:1.02;letter-spacing:-.022em;color:var(--cream);max-width:18ch;margin:0}
+.fin .q em{font-style:italic;color:var(--accent)}
+.fin .ch{margin-top:72px;display:flex;flex-direction:column;gap:14px;font-family:'Inter';font-size:13px;letter-spacing:.18em;text-transform:uppercase}
+.fin .ch a{color:var(--cream);border-bottom:1px solid rgba(244,236,222,.3);padding-bottom:4px;width:fit-content;transition:border-color .35s}
+.fin .ch a:hover{border-bottom-color:var(--accent)}
+.fin .colo{margin-top:96px;border-top:1px solid rgba(244,236,222,.15);padding-top:24px;display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:var(--cream-soft)}
+
+@media(max-width:880px){
+  .hour{grid-template-columns:1fr;gap:24px}
+  .hour .time .clock-big{font-size:36px}
+  .tl-rail{display:none}
+  .head .c{display:none}
+  .clock{top:64px;font-size:10px}
+  .cur,.cur-ring{display:none}
+  body{cursor:auto}a,button{cursor:pointer}
+}
+</style>
+</head>
+<body>
+
+<div class="cur"></div><div class="cur-ring" id="curRing"></div>
+
+<header class="head">
+  <span class="brand">DEADLINE</span>
+  <span class="c">Hours  ·  one day, one project</span>
+  <div class="r">
+    <a href="mailto:corpdeadline@gmail.com">corpdeadline@gmail.com</a>
+    <a href="https://t.me/deadline_corp">@deadline_corp</a>
+  </div>
+</header>
+<div class="clock"><strong id="clock">--:--:--</strong>  ·  Phuket / GMT+7</div>
+
+<section class="cover">
+  <div class="eyebrow">— A day in production · One project · 06:00 → 23:00</div>
+  <h1>Меньше слов.<br><em>Больше</em> результата.</h1>
+  <p class="sub">Один день из релиза VRP Phuket — час за часом. Как именно срок остаётся сроком, когда что-то идёт не по плану.</p>
+</section>
+
+<div class="tl-wrap">
+  <div class="tl-rail"></div>
+
+  <article class="hour">
+    <div class="time">06 : 04<span class="clock-big">Рассвет.</span></div>
+    <div class="text">
+      <div class="nm">— 06:04  ·  Острова, отгрузка день 1</div>
+      <h2>Партнёр выгружает <em>финальную</em> миграцию схемы.</h2>
+      <p class="body">База с восемьюдесятью виллами идёт в production-кластер. Никакой драмы — просто `pg_dump` и `pg_restore`, проверки чексумм, всё на месте.</p>
+    </div>
+    <div class="img-wrap"><img src="https://images.unsplash.com/photo-1501785888041-af3ef285b470?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=85" alt=""><div class="cap"><span>06:04</span><span>Day 1</span></div></div>
+  </article>
+
+  <article class="hour">
+    <div class="time">09 : 22<span class="clock-big">Утро.</span></div>
+    <div class="text">
+      <div class="nm">— 09:22  ·  Кофе, инвентарь, RAG</div>
+      <h2>GPT-4 индексирует <em>живой</em> инвентарь — двенадцать минут.</h2>
+      <p class="body">Восемьдесят описаний, фотографии, цены. RAG разворачивается над живой базой. Embedding-cost фиксируется — двадцать два доллара двенадцать центов. Логируем.</p>
+    </div>
+    <div class="img-wrap"><img src="https://images.unsplash.com/photo-1582719508461-905c673771fd?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=85" alt=""><div class="cap"><span>09:22</span><span>$22.12 · 12 min</span></div></div>
+  </article>
+
+  <article class="hour">
+    <div class="time">12 : 47<span class="clock-big">Полдень.</span></div>
+    <div class="text">
+      <div class="nm">— 12:47  ·  Первый живой запрос</div>
+      <h2>Концьерж берёт <em>первого</em> гостя — без оператора.</h2>
+      <p class="body">Запрос на виллу с террасой и поваром. Двенадцать секунд от ввода до ответа с тремя релевантными вариантами. Гость кладёт пятидесятипроцентный депозит.</p>
+    </div>
+    <div class="img-wrap"><img src="https://images.unsplash.com/photo-1571896349842-33c89424de2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=85" alt=""><div class="cap"><span>12:47</span><span>First booking</span></div></div>
+  </article>
+
+  <article class="hour">
+    <div class="time">16 : 18<span class="clock-big">После обеда.</span></div>
+    <div class="text">
+      <div class="nm">— 16:18  ·  Что-то пошло не по плану</div>
+      <h2>Один из <em>фолбэков</em> срабатывает <em>не туда.</em></h2>
+      <p class="body">Запрос про «вилла рядом с дайвингом» уходит в fallback с генерацией. Это не критично, но это не то качество. Чиним за час с лимитом — не двигаем дату.</p>
+    </div>
+    <div class="img-wrap"><img src="https://images.unsplash.com/photo-1505228395891-9a51e7e86bf6?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=85" alt=""><div class="cap"><span>16:18</span><span>Hot fix · 1h</span></div></div>
+  </article>
+
+  <article class="hour">
+    <div class="time">22 : 49<span class="clock-big">Ночь.</span></div>
+    <div class="text">
+      <div class="nm">— 22:49  ·  Двадцать первый booking за день</div>
+      <h2>Сорок процентов запросов — <em>без</em> оператора.</h2>
+      <p class="body">Это первый день. Через неделю показатель вырастет до семидесяти трёх. Через две — мы сократим колл-центр до одной смены. Срок выдержан.</p>
+    </div>
+    <div class="img-wrap"><img src="https://images.unsplash.com/photo-1499678329028-101435549a4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=85" alt=""><div class="cap"><span>22:49</span><span>21 / day</span></div></div>
+  </article>
+</div>
+
+<section class="fin">
+  <div class="small">— Closing  ·  Day 1 of 18 months</div>
+  <p class="q">Мы — DEADLINE.<br><em>У нас ничего не горит.</em></p>
+  <div class="ch">
+    <a href="mailto:corpdeadline@gmail.com">corpdeadline@gmail.com</a>
+    <a href="https://t.me/deadline_corp">@deadline_corp</a>
+  </div>
+  <div class="colo">
+    <span>© 2025—2026 DEADLINE</span>
+    <span>Concept 07 · Hours</span>
+    <span>since 2025</span>
+  </div>
+</section>
+
+<script>
+gsap.registerPlugin(ScrollTrigger);
+const lenis=new Lenis({duration:1.5,easing:t=>1-Math.pow(1-t,3)});
+lenis.on('scroll',ScrollTrigger.update);gsap.ticker.add(t=>lenis.raf(t*1000));gsap.ticker.lagSmoothing(0);
+
+const cur=document.querySelector('.cur'),ring=document.getElementById('curRing');
+let mx=innerWidth/2,my=innerHeight/2,rx=mx,ry=my;
+addEventListener('mousemove',e=>{mx=e.clientX;my=e.clientY;cur.style.left=mx+'px';cur.style.top=my+'px'});
+function cr(){rx+=(mx-rx)*.14;ry+=(my-ry)*.14;ring.style.left=rx+'px';ring.style.top=ry+'px';requestAnimationFrame(cr)}cr();
+document.querySelectorAll('a,button').forEach(el=>{el.addEventListener('mouseenter',()=>ring.classList.add('is-hover'));el.addEventListener('mouseleave',()=>ring.classList.remove('is-hover'))});
+
+document.querySelectorAll('.img-wrap img').forEach(img=>{
+  if(img.complete)img.classList.add('is-loaded');
+  else img.addEventListener('load',()=>img.classList.add('is-loaded'));
+  img.addEventListener('error',()=>{img.parentElement.style.background='linear-gradient(160deg,#3A2F25,#1A1612)'});
+});
+
+// Live clock
+function tick(){const d=new Date();const h=String(d.getHours()).padStart(2,'0');const m=String(d.getMinutes()).padStart(2,'0');const s=String(d.getSeconds()).padStart(2,'0');document.getElementById('clock').textContent=`${h}:${m}:${s}`}setInterval(tick,1000);tick();
+
+gsap.from('.cover > *',{y:36,opacity:0,duration:1.2,stagger:0.12,ease:'power3.out',delay:0.2});
+
+document.querySelectorAll('.hour').forEach(h=>{
+  gsap.from(h.querySelector('.time'),{x:-32,opacity:0,duration:1.0,ease:'power3.out',scrollTrigger:{trigger:h,start:'top 75%'}});
+  gsap.from(h.querySelectorAll('.text > *'),{y:24,opacity:0,duration:1.0,stagger:0.08,ease:'power2.out',scrollTrigger:{trigger:h,start:'top 70%'}});
+  gsap.from(h.querySelector('.img-wrap'),{y:48,opacity:0,duration:1.2,ease:'power3.out',scrollTrigger:{trigger:h,start:'top 72%'}});
+  const img=h.querySelector('img');if(img)gsap.to(img,{yPercent:-6,ease:'none',scrollTrigger:{trigger:h,start:'top bottom',end:'bottom top',scrub:true}});
+});
+
+gsap.from('.fin > *',{y:36,opacity:0,duration:1.2,stagger:0.1,ease:'power3.out',scrollTrigger:{trigger:'.fin',start:'top 78%'}});
+</script>
+</body>
+</html>

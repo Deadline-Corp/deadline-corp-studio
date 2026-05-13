@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LOOKBOOK · DEADLINE resort skin concept #09</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Cormorant+Garamond:ital,wght@0,300;0,500;1,300;1,500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --cream:#F8F0DE;
+  --cream-deep:#E8DDC1;
+  --green:#2D4F3A;
+  --green-soft:#7A8E7E;
+  --coral:#D67B6C;
+  --ink:#0F0E0C;
+  --gold:#B8945F;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--cream);color:var(--ink);font-family:'Inter',system-ui,sans-serif;font-weight:300;-webkit-font-smoothing:antialiased}
+::selection{background:var(--coral);color:var(--cream)}
+
+/* Header */
+.head{padding:48px clamp(20px,4vw,56px) 24px;display:grid;grid-template-columns:1fr auto 1fr;gap:24px;align-items:center}
+.head .brand{font-family:'Marcellus',serif;font-size:18px;letter-spacing:.42em;color:var(--ink)}
+.head .center{justify-self:center;font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:18px;color:var(--green-soft);text-align:center}
+.head .right{justify-self:end;display:flex;gap:32px;font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase}
+.head .right a{color:var(--ink);text-decoration:none;border-bottom:1px solid transparent;padding-bottom:2px;transition:border-color .25s}
+.head .right a:hover{border-bottom-color:var(--coral)}
+
+.hero-strip{padding:8px clamp(20px,4vw,56px) 56px;display:grid;grid-template-columns:1fr auto;gap:48px;align-items:end}
+.hero-strip h1{font-family:'Marcellus',serif;font-weight:400;font-size:clamp(48px,7.5vw,120px);line-height:.95;letter-spacing:-.022em;margin:0;color:var(--ink);max-width:18ch}
+.hero-strip h1 em{font-family:'Cormorant Garamond';font-style:italic;font-weight:300;color:var(--green)}
+.hero-strip .meta{font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--green-soft);text-align:right;line-height:1.8}
+.hero-strip .meta strong{color:var(--coral);font-weight:500}
+
+/* Filter bar */
+.filter{padding:0 clamp(20px,4vw,56px) 32px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-family:'Inter';font-size:11px;letter-spacing:.28em;text-transform:uppercase}
+.filter .lbl{color:var(--green-soft);margin-right:16px}
+.filter button{background:transparent;border:1px solid rgba(15,14,12,.18);padding:8px 18px;border-radius:999px;font:inherit;letter-spacing:.28em;text-transform:uppercase;color:var(--ink);cursor:pointer;transition:background .2s,border-color .2s,color .2s}
+.filter button:hover{border-color:var(--coral);color:var(--coral)}
+.filter button.is-active{background:var(--ink);border-color:var(--ink);color:var(--cream)}
+
+/* Masonry */
+.masonry{padding:0 clamp(20px,4vw,56px) 80px;column-count:4;column-gap:20px}
+.tile{break-inside:avoid;margin-bottom:20px;position:relative;cursor:pointer;border-radius:2px;overflow:hidden;background:var(--cream-deep);transition:transform .5s cubic-bezier(.2,.7,.3,1),box-shadow .5s}
+.tile:hover{transform:translateY(-4px);box-shadow:0 24px 48px -16px rgba(15,14,12,.35)}
+.tile .surface{position:relative;width:100%;display:block}
+.tile .surface::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 50%,rgba(15,14,12,.55) 100%);opacity:.85;transition:opacity .4s}
+.tile:hover .surface::after{opacity:1}
+.tile .meta{position:absolute;left:18px;right:18px;bottom:16px;z-index:2;color:var(--cream);font-family:'Inter';font-size:10px;letter-spacing:.36em;text-transform:uppercase;display:flex;justify-content:space-between;gap:12px}
+.tile .meta .ttl{font-family:'Marcellus';font-size:18px;letter-spacing:.04em;text-transform:none;color:var(--cream);max-width:62%}
+.tile .meta .tag{color:var(--gold);font-weight:500}
+.tile .surface{view-transition-name:tile-active}
+.tile .pin{position:absolute;top:14px;left:14px;width:28px;height:28px;border-radius:50%;background:rgba(248,240,222,.92);color:var(--ink);font-family:'Marcellus';font-size:11px;display:flex;align-items:center;justify-content:center;z-index:3}
+
+/* Tile aspect / color variants */
+.tile.t1 .surface{aspect-ratio:4/5;background:linear-gradient(150deg,#7DA8A7 0%,#3F6A75 70%,#1D3B4A 100%)}
+.tile.t2 .surface{aspect-ratio:5/4;background:linear-gradient(160deg,#E8C28C 0%,#B8854E 70%,#5B3B22 100%)}
+.tile.t3 .surface{aspect-ratio:3/4;background:linear-gradient(170deg,#9CB58A 0%,#5C7A5F 60%,#2A4032 100%)}
+.tile.t4 .surface{aspect-ratio:1/1;background:linear-gradient(150deg,#D7826F 0%,#A0432F 70%,#3F1B14 100%)}
+.tile.t5 .surface{aspect-ratio:4/3;background:linear-gradient(160deg,#C6B49A 0%,#8A7558 60%,#3F3424 100%)}
+.tile.t6 .surface{aspect-ratio:3/5;background:linear-gradient(150deg,#5A8090 0%,#2D4B5C 70%,#0F2530 100%)}
+.tile.t7 .surface{aspect-ratio:5/6;background:linear-gradient(160deg,#E8B696 0%,#B47753 60%,#492C1A 100%)}
+.tile.t8 .surface{aspect-ratio:4/5;background:linear-gradient(140deg,#A4B8A6 0%,#5F7861 60%,#222D24 100%)}
+.tile.t9 .surface{aspect-ratio:1/1;background:linear-gradient(160deg,#D2A079 0%,#956748 60%,#37241A 100%)}
+.tile.t10 .surface{aspect-ratio:4/5;background:linear-gradient(160deg,#94BDC0 0%,#4F8489 60%,#1A3940 100%)}
+.tile.t11 .surface{aspect-ratio:3/4;background:linear-gradient(170deg,#8E9F86 0%,#56684F 60%,#21281D 100%)}
+.tile.t12 .surface{aspect-ratio:5/6;background:linear-gradient(150deg,#E5B594 0%,#A06D48 70%,#3D2517 100%)}
+
+/* Texture overlay (subtle film grain per tile) */
+.tile .surface::before{content:"";position:absolute;inset:0;z-index:1;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='320'><filter id='t'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/><feColorMatrix values='0 0 0 0 1, 0 0 0 0 1, 0 0 0 0 1, 0 0 0 .18 0'/></filter><rect width='100%' height='100%' filter='url(%23t)'/></svg>");mix-blend-mode:overlay;opacity:.55}
+
+/* Reading panel — opens on click */
+.reader{position:fixed;inset:0;z-index:200;background:var(--cream);display:none;flex-direction:column;overflow-y:auto;overflow-x:hidden}
+.reader.is-open{display:flex;view-transition-name:tile-active}
+.reader .close{position:fixed;top:24px;right:24px;z-index:10;border:1px solid var(--ink);background:transparent;padding:10px 22px;border-radius:999px;font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;cursor:pointer;color:var(--ink);transition:background .2s,color .2s}
+.reader .close:hover{background:var(--ink);color:var(--cream)}
+.reader .hero-img{height:62vh;background:linear-gradient(150deg,#7DA8A7,#1D3B4A);position:relative;overflow:hidden}
+.reader .hero-img::before{content:"";position:absolute;inset:0;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1200' height='800'><filter id='t'><feTurbulence type='fractalNoise' baseFrequency='0.005' numOctaves='5'/><feColorMatrix values='0 0 0 0 0.35, 0 0 0 0 0.55, 0 0 0 0 0.55, 0 0 0 1.5 -0.3'/></filter><rect width='100%' height='100%' filter='url(%23t)'/></svg>");opacity:.6;mix-blend-mode:overlay}
+.reader .hero-img .caption{position:absolute;left:clamp(20px,5vw,80px);bottom:48px;color:var(--cream);font-family:'Marcellus',serif;font-size:clamp(40px,6vw,96px);line-height:1;letter-spacing:-.02em;max-width:18ch;text-shadow:0 4px 24px rgba(15,14,12,.4)}
+.reader .hero-img .caption em{font-family:'Cormorant Garamond';font-style:italic;font-weight:300}
+.reader .lede{max-width:880px;margin:96px auto 0;padding:0 clamp(20px,4vw,40px)}
+.reader .lede .tags{font-family:'Inter';font-size:11px;letter-spacing:.42em;text-transform:uppercase;color:var(--gold);margin-bottom:32px}
+.reader .lede .tags strong{color:var(--ink)}
+.reader .lede h2{font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(28px,3.4vw,42px);line-height:1.3;color:var(--green);margin:0 0 48px}
+.reader .lede p{font-size:17px;line-height:1.8;margin:0 0 24px;color:rgba(15,14,12,.86)}
+.reader .lede p:first-of-type::first-letter{font-family:'Marcellus';font-size:5em;line-height:.85;float:left;padding:6px 14px 0 0;color:var(--coral)}
+.reader .specs{max-width:880px;margin:80px auto 200px;padding:48px clamp(20px,4vw,40px);border-top:1px solid rgba(15,14,12,.18);border-bottom:1px solid rgba(15,14,12,.18);display:grid;grid-template-columns:repeat(3,1fr);gap:32px;font-family:'Inter';font-size:13px}
+.reader .specs div{display:flex;flex-direction:column;gap:6px}
+.reader .specs .k{font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:var(--green-soft)}
+.reader .specs .v{font-family:'Cormorant Garamond';font-style:italic;font-size:20px;color:var(--ink)}
+
+/* Concept badge */
+.badge{position:fixed;left:24px;bottom:24px;z-index:60;font-family:'Marcellus',serif;font-size:11px;letter-spacing:.4em;color:rgba(15,14,12,.7);background:rgba(248,240,222,.7);backdrop-filter:blur(12px);padding:10px 18px;border-radius:999px;border:1px solid rgba(15,14,12,.12)}
+
+@media(max-width:1100px){.masonry{column-count:3}}
+@media(max-width:760px){.masonry{column-count:2}.head{grid-template-columns:1fr auto}.head .center{display:none}.head .right{display:none}.hero-strip{grid-template-columns:1fr}.reader .specs{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<header class="head">
+  <div class="brand">DEADLINE</div>
+  <div class="center">Lookbook  ·  N° 12  ·  Dec 2026</div>
+  <div class="right">
+    <a href="#">Услуги</a>
+    <a href="#">Кейсы</a>
+    <a href="#">Связаться</a>
+  </div>
+</header>
+
+<section class="hero-strip">
+  <h1>Лукбук на <em>12</em> отгрузок<br>и ноль <em>пропущенных</em> дедлайнов.</h1>
+  <div class="meta">
+    Since <strong>2025</strong><br>
+    12 проектов в production<br>
+    8 индустрий<br>
+    100% возврат
+  </div>
+</section>
+
+<div class="filter">
+  <span class="lbl">— Фильтр</span>
+  <button class="is-active" data-f="all">Все · 12</button>
+  <button data-f="web">Web</button>
+  <button data-f="auto">Automation</button>
+  <button data-f="ai">AI Agents</button>
+  <button data-f="data">Data</button>
+</div>
+
+<div class="masonry" id="masonry">
+  <div class="tile t1" data-tag="web" data-pin="01" data-title="VRP — VIP Rental" data-cat="Web · AI · 2026"><div class="surface"><div class="pin">01</div><div class="meta"><span class="ttl">VRP <em>VIP Rental Phuket</em></span><span class="tag">Web · 2026</span></div></div></div>
+  <div class="tile t2" data-tag="auto" data-pin="02" data-title="KeyDrop MiniApp" data-cat="Automation · 2025"><div class="surface"><div class="pin">02</div><div class="meta"><span class="ttl">KeyDrop</span><span class="tag">Auto · 2025</span></div></div></div>
+  <div class="tile t3" data-tag="ai" data-pin="03" data-title="RA Project" data-cat="AI · Data · 2025-26"><div class="surface"><div class="pin">03</div><div class="meta"><span class="ttl">RA Project</span><span class="tag">AI · 2026</span></div></div></div>
+  <div class="tile t4" data-tag="web" data-pin="04" data-title="Concierge SaaS" data-cat="Web · SaaS · 2026"><div class="surface"><div class="pin">04</div><div class="meta"><span class="ttl">Concierge SaaS</span><span class="tag">Web · 2026</span></div></div></div>
+  <div class="tile t5" data-tag="data" data-pin="05" data-title="ClickHouse Ops" data-cat="Data · Infra · 2025"><div class="surface"><div class="pin">05</div><div class="meta"><span class="ttl">ClickHouse Ops</span><span class="tag">Data · 2025</span></div></div></div>
+  <div class="tile t6" data-tag="auto" data-pin="06" data-title="n8n Fabric" data-cat="Automation · 2026"><div class="surface"><div class="pin">06</div><div class="meta"><span class="ttl">n8n Fabric</span><span class="tag">Auto · 2026</span></div></div></div>
+  <div class="tile t7" data-tag="ai" data-pin="07" data-title="RAG Stack" data-cat="AI · 2026"><div class="surface"><div class="pin">07</div><div class="meta"><span class="ttl">RAG Stack</span><span class="tag">AI · 2026</span></div></div></div>
+  <div class="tile t8" data-tag="web" data-pin="08" data-title="Studio Suite" data-cat="Web · 2025-26"><div class="surface"><div class="pin">08</div><div class="meta"><span class="ttl">Studio Suite</span><span class="tag">Web · 2025</span></div></div></div>
+  <div class="tile t9" data-tag="data" data-pin="09" data-title="Block Ingest" data-cat="Data · 2026"><div class="surface"><div class="pin">09</div><div class="meta"><span class="ttl">Block Ingest</span><span class="tag">Data · 2026</span></div></div></div>
+  <div class="tile t10" data-tag="auto" data-pin="10" data-title="Telegram Botlist" data-cat="Auto · 2025"><div class="surface"><div class="pin">10</div><div class="meta"><span class="ttl">Telegram Botlist</span><span class="tag">Auto · 2025</span></div></div></div>
+  <div class="tile t11" data-tag="ai" data-pin="11" data-title="Agent Observability" data-cat="AI · 2026"><div class="surface"><div class="pin">11</div><div class="meta"><span class="ttl">Agent Obs.</span><span class="tag">AI · 2026</span></div></div></div>
+  <div class="tile t12" data-tag="web" data-pin="12" data-title="Brand Microsites" data-cat="Web · 2025"><div class="surface"><div class="pin">12</div><div class="meta"><span class="ttl">Brand Microsites</span><span class="tag">Web · 2025</span></div></div></div>
+</div>
+
+<div class="reader" id="reader" aria-hidden="true">
+  <button class="close" id="close">← Назад в лукбук</button>
+  <div class="hero-img" id="readerHero">
+    <div class="caption" id="readerCaption">VRP — <em>VIP Rental</em><br>Phuket, 2026</div>
+  </div>
+  <div class="lede">
+    <div class="tags" id="readerTags">Case study  ·  <strong>Web · AI · 2026</strong></div>
+    <h2>Next.js + GPT-4 концьерж заменил колл-центр на 73% запросов.</h2>
+    <p>Заказчик пришёл с задачей «продать виллу в Пхукете незнакомцу за полчаса». На входе — 80+ объектов, на выходе — единственный консьерж, который сам отбивает 73% запросов без подключения менеджера.</p>
+    <p>Стэк: Next.js 14 App Router, GPT-4 + RAG над живым инвентарём, Stripe и Telegram payments. Лейаут — full-bleed photography, нав-плавающий, как в высокой моде. Никакого «фильтра по 8 параметрам» — задал параметры один раз, дальше всё в диалоге.</p>
+    <p>Результат: +32% conversion vs. предыдущий сайт. Колл-центр сокращён до одного оператора. Срок — отгрузка день в день.</p>
+  </div>
+  <div class="specs">
+    <div><span class="k">Стэк</span><span class="v">Next.js · GPT-4 · RAG</span></div>
+    <div><span class="k">Срок</span><span class="v">10 недель, отгружено в день</span></div>
+    <div><span class="k">Результат</span><span class="v">+32% conversion · 73% автоответ</span></div>
+  </div>
+</div>
+
+<div class="badge">Concept 09 · Lookbook</div>
+
+<script>
+(()=>{
+  const masonry=document.getElementById('masonry');
+  const reader=document.getElementById('reader');
+  const close=document.getElementById('close');
+  const heroBg=document.getElementById('readerHero');
+  const caption=document.getElementById('readerCaption');
+  const tags=document.getElementById('readerTags');
+
+  // Filters
+  document.querySelectorAll('.filter button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      document.querySelectorAll('.filter button').forEach(x=>x.classList.toggle('is-active',x===b));
+      const f=b.dataset.f;
+      document.querySelectorAll('.tile').forEach(t=>{
+        t.style.display=(f==='all'||t.dataset.tag===f)?'block':'none';
+      });
+    });
+  });
+
+  // Open reader via View Transitions if supported
+  document.querySelectorAll('.tile').forEach(t=>{
+    t.addEventListener('click',()=>{
+      const surface=t.querySelector('.surface');
+      const bg=window.getComputedStyle(surface).background;
+      const open=()=>{
+        // copy gradient color over to reader hero
+        heroBg.style.background=bg;
+        caption.innerHTML=t.dataset.title.replace(/(.+) — (.+)/,'$1 — <em>$2</em>');
+        tags.innerHTML='Case study  ·  <strong>'+t.dataset.cat+'</strong>';
+        reader.classList.add('is-open');
+        document.body.style.overflow='hidden';
+      };
+      if(document.startViewTransition){
+        document.startViewTransition(open);
+      }else{
+        open();
+      }
+    });
+  });
+
+  close.addEventListener('click',()=>{
+    const back=()=>{reader.classList.remove('is-open');document.body.style.overflow=''}
+    if(document.startViewTransition){document.startViewTransition(back)}else{back()}
+  });
+})();
+</script>
+</body>
+</html>

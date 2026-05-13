@@ -11566,12 +11566,12 @@ html.mode-matrix .work-grid {
   padding-bottom: 72px !important;
 }
 html.mode-matrix .manifesto-block {
-  padding-top: 120px !important;
-  padding-bottom: 56px !important;
+  padding-top: 96px !important;
+  padding-bottom: 24px !important;  /* v3.5.1: 56→24 — user still felt the gap too dark */
 }
 html.mode-matrix #contact {
-  padding-top: 120px !important;
-  padding-bottom: 120px !important;
+  padding-top: 56px !important;     /* v3.5.1: 120→56 — collapses the manifesto→contact dead zone */
+  padding-bottom: 96px !important;
 }
 @media (max-width: 768px) {
   html.mode-matrix section,
@@ -11581,12 +11581,12 @@ html.mode-matrix #contact {
     padding-bottom: 48px !important;
   }
   html.mode-matrix .manifesto-block {
-    padding-top: 80px !important;
-    padding-bottom: 40px !important;
+    padding-top: 64px !important;
+    padding-bottom: 16px !important;
   }
   html.mode-matrix #contact {
-    padding-top: 80px !important;
-    padding-bottom: 80px !important;
+    padding-top: 40px !important;
+    padding-bottom: 64px !important;
   }
 }
 

@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BIVOUAC · DEADLINE resort skin concept #05</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,500;1,300;1,500&family=Inter:wght@200;300;400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --forest:#1B2A24;
+  --forest-deep:#0E1714;
+  --slate:#3A3F44;
+  --ember:#D2643A;
+  --ember-deep:#9A3F1F;
+  --champagne:#C9A877;
+  --champagne-pale:#E5D5B0;
+  --cream:#F2E9D6;
+  --cream-soft:rgba(242,233,214,.78);
+  --ink:#0A0908;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--ink);color:var(--cream);font-family:'Inter',system-ui,sans-serif;font-weight:300;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+
+/* Persistent canvas */
+#world{position:fixed;inset:0;width:100%;height:100%;z-index:0}
+
+.shell{position:relative;z-index:1}
+
+/* Top bar */
+.topbar{position:fixed;top:0;left:0;right:0;z-index:50;padding:24px clamp(20px,4vw,56px);display:grid;grid-template-columns:auto 1fr auto;gap:24px;align-items:center;background:linear-gradient(180deg,rgba(10,9,8,.6),transparent);backdrop-filter:blur(8px)}
+.topbar .brand{font-family:'Cormorant Garamond';font-style:italic;font-weight:500;font-size:22px;letter-spacing:.32em;color:var(--cream)}
+.topbar .center{justify-self:center;font-family:'Inter';font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:var(--cream-soft)}
+.topbar .right{display:flex;gap:14px;align-items:center}
+.topbar .right .season{background:transparent;border:1px solid rgba(242,233,214,.4);color:var(--cream);font:inherit;letter-spacing:.32em;text-transform:uppercase;padding:8px 16px;border-radius:999px;cursor:pointer;font-size:10px;font-family:'Inter';transition:background .25s,color .25s}
+.topbar .right .season:hover{background:var(--cream);color:var(--ink)}
+
+/* Section frame — overlays the canvas */
+.room{min-height:100vh;display:flex;flex-direction:column;justify-content:flex-end;padding:160px clamp(20px,4vw,72px) 100px;position:relative;color:var(--cream)}
+.room-eyebrow{font-family:'Inter';font-size:11px;font-weight:500;letter-spacing:.42em;text-transform:uppercase;color:var(--champagne);margin-bottom:28px}
+.room-eyebrow::before{content:"◌  "}
+.room h1,.room h2{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(56px,9vw,160px);line-height:.92;letter-spacing:-.025em;margin:0;text-shadow:0 6px 32px rgba(10,9,8,.6);max-width:14ch}
+.room h1 em,.room h2 em{font-style:italic;color:var(--champagne-pale)}
+.room-sub{margin-top:36px;font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(20px,2.2vw,30px);line-height:1.45;color:var(--cream-soft);max-width:48ch;text-shadow:0 2px 18px rgba(10,9,8,.6)}
+.room-meta{margin-top:40px;display:flex;gap:32px;font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--champagne);flex-wrap:wrap;align-items:center}
+.room-meta strong{color:var(--cream);font-weight:500}
+
+/* Layout variants */
+.r1{justify-content:flex-end}
+.r2{justify-content:center;text-align:left}
+.r2 .room-body{max-width:920px;margin-left:auto}
+.r3{justify-content:center;text-align:right}
+.r3 .room-body{max-width:920px;margin-left:auto;margin-right:0;text-align:right}
+.r4{justify-content:center;text-align:center}
+.r4 .room-body{max-width:920px;margin:0 auto;text-align:center}
+.r5{justify-content:center;text-align:center}
+.r5 .room-body{max-width:920px;margin:0 auto;text-align:center}
+
+/* Services list — appears in room 2 */
+.svc-list{margin-top:48px;display:grid;grid-template-columns:repeat(3,1fr);gap:32px;max-width:1100px}
+.svc-item{position:relative;padding:24px 0;border-top:2px solid var(--ember)}
+.svc-item .nm{font-family:'Inter';font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:var(--ember-deep)}
+.svc-item h3{font-family:'Cormorant Garamond';font-weight:300;font-size:28px;line-height:1.1;margin:14px 0 14px;color:var(--cream)}
+.svc-item h3 em{font-style:italic;color:var(--champagne-pale)}
+.svc-item p{font-size:14px;line-height:1.65;color:var(--cream-soft);margin:0}
+
+/* Cases in room 3 */
+.cases{margin-top:48px;display:flex;flex-direction:column;gap:8px;max-width:780px;margin-left:auto}
+.case-row{display:grid;grid-template-columns:60px 1fr auto;gap:24px;padding:18px 0;border-top:1px solid rgba(242,233,214,.18);font-family:'Inter';font-size:13px;letter-spacing:.04em;color:var(--cream-soft);align-items:baseline}
+.case-row:last-child{border-bottom:1px solid rgba(242,233,214,.18)}
+.case-row .n{font-family:'Cormorant Garamond';font-style:italic;color:var(--champagne)}
+.case-row .t{font-family:'Cormorant Garamond';font-size:22px;color:var(--cream);text-align:left}
+.case-row .t em{font-style:italic;color:var(--champagne-pale)}
+.case-row .r{font-family:'Cormorant Garamond';font-style:italic;font-size:18px;color:var(--ember)}
+
+/* Manifesto centered */
+.r4 .room-meta{justify-content:center}
+
+/* Contact channels */
+.channels{margin-top:48px;display:flex;justify-content:center;gap:48px;font-family:'Cormorant Garamond';font-style:italic;font-size:24px;flex-wrap:wrap}
+.channels a{color:var(--cream);text-decoration:none;border-bottom:1px solid var(--champagne);padding-bottom:6px;transition:gap .25s,color .25s,border-color .25s;display:inline-flex;gap:12px;align-items:center}
+.channels a:hover{color:var(--champagne-pale);gap:24px}
+
+/* Floating scroll progress */
+.progress{position:fixed;top:0;left:0;height:2px;background:linear-gradient(90deg,var(--ember-deep),var(--champagne));width:0;z-index:60;transition:width .12s linear}
+
+/* Concept badge */
+.badge{position:fixed;left:24px;bottom:24px;z-index:60;font-family:'Cormorant Garamond';font-style:italic;font-size:13px;letter-spacing:.3em;color:rgba(242,233,214,.85);background:rgba(10,9,8,.55);backdrop-filter:blur(12px);padding:10px 18px;border-radius:999px;border:1px solid rgba(242,233,214,.18)}
+
+/* Room indicator (right edge dots) */
+.dots{position:fixed;right:24px;top:50%;transform:translateY(-50%);z-index:60;display:flex;flex-direction:column;gap:14px;font-family:'Cormorant Garamond';font-style:italic;font-size:12px;color:var(--cream-soft);align-items:flex-end}
+.dots .dot{display:flex;align-items:center;gap:14px;opacity:.55;transition:opacity .3s,color .3s}
+.dots .dot.is-active{opacity:1;color:var(--champagne-pale)}
+.dots .dot::after{content:"";display:inline-block;width:8px;height:1px;background:currentColor;transition:width .3s}
+.dots .dot.is-active::after{width:24px}
+
+@media(max-width:880px){
+  .svc-list{grid-template-columns:1fr}
+  .dots{display:none}
+  .topbar .center{display:none}
+  .case-row{grid-template-columns:50px 1fr}.case-row .r{grid-column:2}
+}
+</style>
+</head>
+<body>
+
+<canvas id="world"></canvas>
+<div class="progress" id="progress"></div>
+
+<header class="topbar">
+  <div class="brand">DEADLINE</div>
+  <div class="center">Bivouac  ·  3D scroll-driven world  ·  N° 12</div>
+  <div class="right">
+    <button class="season" id="seasonBtn">☀ Dawn</button>
+  </div>
+</header>
+
+<aside class="dots" id="dots"></aside>
+
+<div class="shell">
+
+  <section class="room r1" data-cam="0">
+    <div class="room-body">
+      <div class="room-eyebrow">Bivouac — DEADLINE villa · Camp 12</div>
+      <h1>Меньше слов.<br><em>Больше</em> результата.</h1>
+      <p class="room-sub">Поставили лагерь на горе. Внизу — двенадцать проектов в production, наверху — ноль сорванных дедлайнов.</p>
+      <div class="room-meta">
+        <span>// deadlines fear us</span>
+        <strong>Camp 12 · since 2025</strong>
+      </div>
+    </div>
+  </section>
+
+  <section class="room r2" data-cam="1">
+    <div class="room-body">
+      <div class="room-eyebrow">Room .01 — Что мы делаем</div>
+      <h2>Три <em>палатки.</em><br>Один лагерь.</h2>
+      <div class="svc-list">
+        <div class="svc-item">
+          <div class="nm">01  ·  Web</div>
+          <h3>Сипим продукт.<br><em>Не «MVP for now».</em></h3>
+          <p>Next.js / Astro / SSR, аналитика и инфра — с первой строки.</p>
+        </div>
+        <div class="svc-item">
+          <div class="nm">02  ·  Automation</div>
+          <h3>Горячая<br><em>автоматизация.</em></h3>
+          <p>n8n, custom-API, Telegram-операторы.</p>
+        </div>
+        <div class="svc-item">
+          <div class="nm">03  ·  AI Agents</div>
+          <h3>Не chatbot.<br><em>Production.</em></h3>
+          <p>RAG, MCP, observability на токены и качество.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="room r3" data-cam="2">
+    <div class="room-body">
+      <div class="room-eyebrow">Room .02 — Что отгрузили</div>
+      <h2><em>Двенадцать</em><br>проектов.</h2>
+      <div class="cases">
+        <div class="case-row"><span class="n">.01</span><span class="t">VRP — <em>VIP Rental</em></span><span class="r">+32% conv</span></div>
+        <div class="case-row"><span class="n">.02</span><span class="t">KeyDrop — <em>MiniApp</em></span><span class="r">1000+/мес</span></div>
+        <div class="case-row"><span class="n">.03</span><span class="t">RA Project — <em>analytics</em></span><span class="r">41M+ блоков</span></div>
+        <div class="case-row"><span class="n">.04</span><span class="t">Studio — <em>microsites</em></span><span class="r">TTL 2ч</span></div>
+        <div class="case-row"><span class="n">.05</span><span class="t">Concierge — <em>SaaS</em></span><span class="r">Production</span></div>
+        <div class="case-row"><span class="n">.06</span><span class="t">n8n — <em>Fabric</em></span><span class="r">Self-healing</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="room r4" data-cam="3">
+    <div class="room-body">
+      <div class="room-eyebrow" style="text-align:center">Room .03 — Манифест</div>
+      <h2 style="margin:0 auto">Мы — DEADLINE.<br><em>У нас ничего не горит.</em></h2>
+      <p class="room-sub" style="margin-left:auto;margin-right:auto">Дата — это обещание, а не пожелание. Если что-то горит — это не у нас.</p>
+      <div class="room-meta" style="justify-content:center">
+        <strong>12 проектов</strong> <span>·</span> <strong>0 сорванных</strong> <span>·</span> <strong>100% возврат</strong>
+      </div>
+    </div>
+  </section>
+
+  <section class="room r5" data-cam="4">
+    <div class="room-body">
+      <div class="room-eyebrow" style="text-align:center">Room .04 — Связаться</div>
+      <h2 style="margin:0 auto">Пиши.<br><em>Кофе ещё горячий.</em></h2>
+      <p class="room-sub" style="margin-left:auto;margin-right:auto">Ответим раньше, чем уберёшь руки от клавиатуры. План и срок прилетят прежде, чем ты допьёшь кофе.</p>
+      <div class="channels">
+        <a href="mailto:corpdeadline@gmail.com">corpdeadline@gmail.com →</a>
+        <a href="https://t.me/deadline_corp">@deadline_corp →</a>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<div class="badge">Concept 05 · Bivouac</div>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
+<script type="module">
+import * as THREE from 'three';
+
+const canvas=document.getElementById('world');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:false});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setSize(window.innerWidth,window.innerHeight);
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+
+const scene=new THREE.Scene();
+const fog=new THREE.FogExp2(0x1B2A24,0.022);
+scene.fog=fog;
+scene.background=new THREE.Color(0x0E1714);
+
+const camera=new THREE.PerspectiveCamera(38,window.innerWidth/window.innerHeight,0.1,400);
+
+// ─── LIGHTS ───
+const sun=new THREE.DirectionalLight(0xFFD4A0,1.4);
+sun.position.set(28,40,18);
+sun.castShadow=true;
+sun.shadow.mapSize.set(1024,1024);
+sun.shadow.camera.left=-40;sun.shadow.camera.right=40;
+sun.shadow.camera.top=40;sun.shadow.camera.bottom=-40;
+scene.add(sun);
+const ambient=new THREE.AmbientLight(0x2F4A40,0.7);
+scene.add(ambient);
+const ember=new THREE.PointLight(0xD2643A,1.2,30);
+ember.position.set(0,8.4,0);
+scene.add(ember);
+
+// ─── MOUNTAIN ───
+const mountainGeo=new THREE.ConeGeometry(28,38,7,5);
+// perturb verts for irregular face
+const pos=mountainGeo.attributes.position;
+for(let i=0;i<pos.count;i++){
+  const x=pos.getX(i),y=pos.getY(i),z=pos.getZ(i);
+  const r=Math.sqrt(x*x+z*z);
+  if(r>0.5){
+    pos.setX(i,x+(Math.random()-.5)*1.4);
+    pos.setZ(i,z+(Math.random()-.5)*1.4);
+    pos.setY(i,y+(Math.random()-.5)*0.6);
+  }
+}
+mountainGeo.computeVertexNormals();
+const mountainMat=new THREE.MeshStandardMaterial({color:0x3A3F44,roughness:.95,flatShading:true});
+const mountain=new THREE.Mesh(mountainGeo,mountainMat);
+mountain.position.y=4;
+mountain.castShadow=true;
+mountain.receiveShadow=true;
+scene.add(mountain);
+
+// Snow cap
+const cap=new THREE.Mesh(
+  new THREE.ConeGeometry(6,6,7,1),
+  new THREE.MeshStandardMaterial({color:0xE8E2D6,roughness:.7,flatShading:true})
+);
+cap.position.y=22;
+cap.castShadow=true;
+scene.add(cap);
+
+// ─── VILLA — small cabin on summit ───
+const villa=new THREE.Group();
+const villaBody=new THREE.Mesh(
+  new THREE.BoxGeometry(2.4,1.6,1.8),
+  new THREE.MeshStandardMaterial({color:0x6B5638,roughness:.85,flatShading:true})
+);
+villaBody.castShadow=true;
+villaBody.receiveShadow=true;
+villa.add(villaBody);
+const villaRoof=new THREE.Mesh(
+  new THREE.ConeGeometry(1.8,1.2,4),
+  new THREE.MeshStandardMaterial({color:0xD2643A,roughness:.9,flatShading:true})
+);
+villaRoof.rotation.y=Math.PI/4;
+villaRoof.position.y=1.4;
+villaRoof.castShadow=true;
+villa.add(villaRoof);
+// Glow window
+const window1=new THREE.Mesh(
+  new THREE.PlaneGeometry(.6,.4),
+  new THREE.MeshBasicMaterial({color:0xFFD68C})
+);
+window1.position.set(0,.1,.91);
+villa.add(window1);
+villa.position.set(0,24,0);
+scene.add(villa);
+
+// Small chimney smoke (placeholder sphere drift)
+const smoke=new THREE.Mesh(
+  new THREE.SphereGeometry(.3,8,8),
+  new THREE.MeshBasicMaterial({color:0xE5D5B0,transparent:true,opacity:.18})
+);
+smoke.position.set(0,26.6,0);
+scene.add(smoke);
+
+// ─── TREES around base (GPU-instanced cones) ───
+const treeGeo=new THREE.ConeGeometry(0.6,2.4,6);
+const treeMat=new THREE.MeshStandardMaterial({color:0x4F7355,roughness:.95,flatShading:true});
+const treeCount=80;
+const trees=new THREE.InstancedMesh(treeGeo,treeMat,treeCount);
+const dummy=new THREE.Object3D();
+for(let i=0;i<treeCount;i++){
+  const angle=Math.random()*Math.PI*2;
+  const radius=30+Math.random()*22;
+  const x=Math.cos(angle)*radius;
+  const z=Math.sin(angle)*radius;
+  const s=0.7+Math.random()*1.1;
+  dummy.position.set(x,1.2,z);
+  dummy.scale.setScalar(s);
+  dummy.rotation.y=Math.random()*Math.PI*2;
+  dummy.updateMatrix();
+  trees.setMatrixAt(i,dummy.matrix);
+}
+trees.castShadow=true;
+trees.receiveShadow=true;
+scene.add(trees);
+
+// ─── GROUND / FOG-FLOOR ───
+const ground=new THREE.Mesh(
+  new THREE.CircleGeometry(100,42),
+  new THREE.MeshStandardMaterial({color:0x1B2A24,roughness:1.0})
+);
+ground.rotation.x=-Math.PI/2;
+ground.position.y=-2;
+ground.receiveShadow=true;
+scene.add(ground);
+
+// ─── STARS / SKY DOME ───
+const stars=new THREE.Group();
+const starGeo=new THREE.SphereGeometry(0.05,4,4);
+const starMat=new THREE.MeshBasicMaterial({color:0xF2E9D6});
+for(let i=0;i<280;i++){
+  const s=new THREE.Mesh(starGeo,starMat);
+  const phi=Math.random()*Math.PI*2;
+  const theta=Math.random()*Math.PI*0.45+Math.PI*0.05;
+  const r=140;
+  s.position.set(r*Math.sin(theta)*Math.cos(phi),r*Math.cos(theta)*0.8+10,r*Math.sin(theta)*Math.sin(phi));
+  stars.add(s);
+}
+scene.add(stars);
+
+// ─── CAMERA WAYPOINTS (5 rooms) ───
+const cams=[
+  {pos:new THREE.Vector3(0,28,68),tgt:new THREE.Vector3(0,10,0)},   // 0 wide hero
+  {pos:new THREE.Vector3(22,22,40),tgt:new THREE.Vector3(0,18,0)},  // 1 close mountain
+  {pos:new THREE.Vector3(-26,16,46),tgt:new THREE.Vector3(0,12,0)}, // 2 valley drift
+  {pos:new THREE.Vector3(0,40,86),tgt:new THREE.Vector3(0,8,0)},    // 3 pull-back
+  {pos:new THREE.Vector3(6,26,32),tgt:new THREE.Vector3(0,24,0)}    // 4 villa close-up
+];
+camera.position.copy(cams[0].pos);
+
+// ─── SCROLL → CAMERA INTERP ───
+let scrollProgress=0;
+function onScroll(){
+  const h=document.documentElement;
+  scrollProgress=h.scrollTop/(h.scrollHeight-h.clientHeight);
+  document.getElementById('progress').style.width=(scrollProgress*100)+'%';
+}
+addEventListener('scroll',onScroll,{passive:true});
+
+// Resize
+addEventListener('resize',()=>{
+  renderer.setSize(window.innerWidth,window.innerHeight);
+  camera.aspect=window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+// Season toggle
+let season='dawn';
+const seasonBtn=document.getElementById('seasonBtn');
+const seasons={
+  dawn:{bg:0x0E1714,fog:0x1B2A24,sun:0xFFD4A0,ambient:0x2F4A40,ember:0xD2643A,btn:'☀ Dawn'},
+  noon:{bg:0x3D5A6E,fog:0x6B8AA0,sun:0xFFF5E0,ambient:0x8AA8BA,ember:0xFFB870,btn:'☼ Noon'},
+  dusk:{bg:0x2A1F2C,fog:0x4A2F38,sun:0xFFA060,ambient:0x6B4252,ember:0xFF8040,btn:'☽ Dusk'}
+};
+seasonBtn.addEventListener('click',()=>{
+  const keys=Object.keys(seasons);
+  const next=keys[(keys.indexOf(season)+1)%keys.length];
+  season=next;
+  const s=seasons[next];
+  scene.background=new THREE.Color(s.bg);
+  scene.fog.color=new THREE.Color(s.fog);
+  sun.color.setHex(s.sun);
+  ambient.color.setHex(s.ambient);
+  ember.color.setHex(s.ember);
+  seasonBtn.textContent=s.btn;
+});
+
+// ─── DOTS UI ───
+const dotsEl=document.getElementById('dots');
+['Hero','Services','Кейсы','Манифест','Связаться'].forEach((lbl,i)=>{
+  const d=document.createElement('div');
+  d.className='dot';
+  d.dataset.idx=i;
+  d.innerHTML=`<span>.0${i}</span>`;
+  d.addEventListener('click',()=>{
+    document.querySelectorAll('.room')[i].scrollIntoView({behavior:'smooth'});
+  });
+  dotsEl.appendChild(d);
+});
+
+// ─── ANIM LOOP ───
+const clock=new THREE.Clock();
+const tmpPos=new THREE.Vector3();
+const tmpTgt=new THREE.Vector3();
+function lerpCam(){
+  // scrollProgress 0..1 maps to 0..(cams.length-1)
+  const segs=cams.length-1;
+  const pos=scrollProgress*segs;
+  const i=Math.min(Math.floor(pos),segs-1);
+  const t=pos-i;
+  // smoothstep
+  const e=t*t*(3-2*t);
+  tmpPos.lerpVectors(cams[i].pos,cams[i+1].pos,e);
+  tmpTgt.lerpVectors(cams[i].tgt,cams[i+1].tgt,e);
+  camera.position.lerp(tmpPos,0.07);
+  camera.lookAt(tmpTgt);
+  // active dot
+  const idx=Math.round(scrollProgress*segs);
+  document.querySelectorAll('.dot').forEach((d,j)=>d.classList.toggle('is-active',j===idx));
+}
+
+function tick(){
+  const t=clock.getElapsedTime();
+  lerpCam();
+  smoke.position.y=26.6+Math.sin(t*0.4)*0.4;
+  smoke.position.x=Math.sin(t*0.18)*0.3;
+  // pulse ember light
+  ember.intensity=1.0+Math.sin(t*1.3)*0.3;
+  // rotate stars slowly
+  stars.rotation.y=t*0.01;
+  renderer.render(scene,camera);
+  requestAnimationFrame(tick);
+}
+tick();
+onScroll();
+</script>
+</body>
+</html>

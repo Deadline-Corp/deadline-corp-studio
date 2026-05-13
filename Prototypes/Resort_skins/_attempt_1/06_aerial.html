@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AERIAL · DEADLINE resort skin concept #06</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Italiana&family=Cormorant+Garamond:ital,wght@0,300;1,300&family=Inter:wght@200;300;400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ink:#0B0908;
+  --cream:#F4ECDE;
+  --transition:1.2s cubic-bezier(.7,0,.2,1);
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--ink);color:var(--cream);font-family:'Inter',system-ui,sans-serif;font-weight:300;-webkit-font-smoothing:antialiased}
+html{scroll-snap-type:y mandatory;scroll-behavior:smooth}
+body{overflow-x:hidden}
+
+/* Nav */
+.nav{position:fixed;top:0;left:0;right:0;z-index:100;padding:28px clamp(20px,4vw,56px);display:flex;justify-content:space-between;align-items:center;mix-blend-mode:difference;pointer-events:none}
+.nav>*{pointer-events:auto}
+.brand{font-family:'Italiana',serif;font-size:18px;letter-spacing:.42em;color:var(--cream)}
+.nav-right{display:flex;gap:36px;font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--cream)}
+.nav-right a{color:inherit;text-decoration:none;opacity:.75;transition:opacity .25s}
+.nav-right a:hover{opacity:1}
+
+/* Section frame */
+.scene{position:relative;height:100vh;width:100%;scroll-snap-align:start;scroll-snap-stop:always;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;padding:64px clamp(20px,5vw,80px) 80px}
+.scene-bg{position:absolute;inset:0;z-index:0;background-size:cover;background-position:center;transform:scale(1.08);transition:transform 4s cubic-bezier(.4,0,.2,1)}
+.scene.is-active .scene-bg{transform:scale(1)}
+.scene::after{content:"";position:absolute;inset:0;z-index:1;background:linear-gradient(180deg,rgba(11,9,8,.0) 0%,rgba(11,9,8,.05) 40%,rgba(11,9,8,.75) 100%)}
+.scene-grain{position:absolute;inset:0;z-index:2;pointer-events:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='400'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/><feColorMatrix values='0 0 0 0 1, 0 0 0 0 1, 0 0 0 0 1, 0 0 0 .12 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");opacity:.4;mix-blend-mode:overlay}
+.scene-inner{position:relative;z-index:3;max-width:1640px;width:100%;margin:0 auto;display:grid;grid-template-rows:1fr auto;gap:48px;height:100%;padding-top:80px}
+
+/* Top corner meta */
+.scene-meta{position:absolute;top:96px;left:clamp(20px,5vw,80px);z-index:4;display:flex;gap:24px;font-family:'Inter';font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:rgba(244,236,222,.7)}
+.scene-meta strong{color:var(--cream);font-weight:500}
+.scene-meta::before{content:"";display:inline-block;width:32px;height:1px;background:rgba(244,236,222,.5);align-self:center}
+
+/* Bottom block */
+.scene-body{align-self:end;max-width:880px}
+.scene-eyebrow{font-family:'Inter';font-size:11px;font-weight:500;letter-spacing:.42em;text-transform:uppercase;color:rgba(244,236,222,.62);margin-bottom:28px}
+.scene-eyebrow::before{content:"◌  "}
+.scene h1{font-family:'Italiana',serif;font-weight:400;font-size:clamp(54px,8.5vw,144px);line-height:.94;letter-spacing:-.018em;margin:0;color:var(--cream);max-width:18ch}
+.scene h1 em{font-family:'Cormorant Garamond';font-style:italic;font-weight:300}
+.scene-sub{margin-top:36px;font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(20px,2vw,28px);line-height:1.5;max-width:46ch;color:rgba(244,236,222,.86)}
+
+.scene-foot{position:absolute;bottom:36px;left:clamp(20px,5vw,80px);right:clamp(20px,5vw,80px);z-index:4;display:flex;justify-content:space-between;align-items:end;gap:32px;font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:rgba(244,236,222,.62)}
+.scroll-indicator{display:inline-flex;align-items:center;gap:14px;font-family:'Cormorant Garamond';font-style:italic;font-size:14px;letter-spacing:.04em;text-transform:none;color:rgba(244,236,222,.7)}
+.scroll-indicator .line{display:inline-block;width:1px;height:48px;background:linear-gradient(180deg,transparent,rgba(244,236,222,.6),transparent);animation:line-pulse 2.4s ease-in-out infinite}
+@keyframes line-pulse{0%,100%{transform:scaleY(.6);opacity:.4}50%{transform:scaleY(1);opacity:1}}
+
+/* Specific scene backdrops */
+.s1 .scene-bg{background:
+  radial-gradient(70% 50% at 50% 30%,rgba(255,200,140,.45),transparent 70%),
+  linear-gradient(180deg,#2A4D63 0%,#1F3949 30%,#0E2330 80%,#0B0908 100%)}
+.s1 .scene-bg::after{content:"";position:absolute;inset:0;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1200' height='800'><filter id='w'><feTurbulence type='turbulence' baseFrequency='0.005 0.015' numOctaves='5' seed='1'/><feColorMatrix values='0 0 0 0 0.16, 0 0 0 0 0.36, 0 0 0 0 0.48, 0 0 0 1.2 -0.2'/></filter><rect width='100%' height='100%' filter='url(%23w)'/></svg>");opacity:.45;mix-blend-mode:overlay}
+
+.s2 .scene-bg{background:
+  radial-gradient(40% 35% at 80% 20%,rgba(255,180,120,.5),transparent 70%),
+  linear-gradient(180deg,#E6A57A 0%,#C77F4F 20%,#8A4E2F 50%,#3D2618 90%,#0B0908 100%)}
+.s2 .scene-bg::after{content:"";position:absolute;inset:0;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1200' height='800'><filter id='d'><feTurbulence type='fractalNoise' baseFrequency='0.012' numOctaves='4' seed='4'/><feColorMatrix values='0 0 0 0 0.68, 0 0 0 0 0.42, 0 0 0 0 0.24, 0 0 0 1.4 -0.3'/></filter><rect width='100%' height='100%' filter='url(%23d)'/></svg>");opacity:.7;mix-blend-mode:multiply}
+
+.s3 .scene-bg{background:
+  radial-gradient(60% 40% at 30% 70%,rgba(140,180,140,.4),transparent 70%),
+  linear-gradient(180deg,#3F4E3A 0%,#2C3D29 40%,#1A2818 80%,#0B0908 100%)}
+.s3 .scene-bg::after{content:"";position:absolute;inset:0;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1200' height='800'><filter id='j'><feTurbulence type='fractalNoise' baseFrequency='0.022 0.008' numOctaves='5' seed='2'/><feColorMatrix values='0 0 0 0 0.22, 0 0 0 0 0.3, 0 0 0 0 0.2, 0 0 0 1.6 -0.4'/></filter><rect width='100%' height='100%' filter='url(%23j)'/></svg>");opacity:.55;mix-blend-mode:overlay}
+
+.s4 .scene-bg{background:
+  radial-gradient(50% 40% at 70% 25%,rgba(255,224,200,.45),transparent 70%),
+  linear-gradient(180deg,#F4D4B0 0%,#D6A77A 25%,#9C7044 60%,#3A2A1A 90%,#0B0908 100%)}
+.s4 .scene-bg::after{content:"";position:absolute;inset:0;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1200' height='800'><filter id='s'><feTurbulence type='fractalNoise' baseFrequency='0.04 0.005' numOctaves='3' seed='5'/><feColorMatrix values='0 0 0 0 0.85, 0 0 0 0 0.7, 0 0 0 0 0.55, 0 0 0 1.4 -0.4'/></filter><rect width='100%' height='100%' filter='url(%23s)'/></svg>");opacity:.45;mix-blend-mode:overlay}
+
+.s5 .scene-bg{background:
+  radial-gradient(60% 60% at 50% 40%,rgba(60,80,90,.6),transparent 70%),
+  linear-gradient(180deg,#1A2128 0%,#0F1418 60%,#0B0908 100%)}
+.s5 .scene-bg::after{content:"";position:absolute;inset:0;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='1200' height='800'><filter id='c'><feTurbulence type='fractalNoise' baseFrequency='0.008' numOctaves='6' seed='7'/><feColorMatrix values='0 0 0 0 0.6, 0 0 0 0 0.5, 0 0 0 0 0.35, 0 0 0 1.2 -0.2'/></filter><rect width='100%' height='100%' filter='url(%23c)'/></svg>");opacity:.35;mix-blend-mode:overlay}
+
+/* Last scene — contact */
+.s5{align-items:center;justify-content:center;text-align:center}
+.s5 .scene-body{max-width:920px;margin:0 auto;text-align:center;align-self:center}
+.s5 h1{max-width:none}
+.s5 .channels{margin-top:48px;display:flex;justify-content:center;gap:40px;flex-wrap:wrap;font-family:'Cormorant Garamond';font-style:italic;font-size:clamp(20px,2vw,28px)}
+.s5 .channels a{color:var(--cream);text-decoration:none;border-bottom:1px solid rgba(244,236,222,.6);padding-bottom:6px;transition:gap .25s,border-color .25s;display:inline-flex;gap:12px;align-items:center}
+.s5 .channels a:hover{border-bottom-color:var(--cream)}
+.s5 .channels .ico{display:inline-flex;width:24px;height:24px;border-radius:50%;border:1px solid rgba(244,236,222,.5);align-items:center;justify-content:center;font-size:11px;font-family:'Inter';font-style:normal;letter-spacing:0;font-weight:400}
+
+/* Section indicator (right edge) */
+.dots{position:fixed;right:32px;top:50%;transform:translateY(-50%);z-index:60;display:flex;flex-direction:column;gap:14px}
+.dots .dot{width:6px;height:6px;border-radius:50%;background:rgba(244,236,222,.4);border:0;padding:0;cursor:pointer;transition:transform .25s,background .25s}
+.dots .dot.is-active{background:var(--cream);transform:scale(1.6)}
+.dots .dot:hover{background:rgba(244,236,222,.85)}
+
+/* Concept badge */
+.badge{position:fixed;left:24px;bottom:24px;z-index:60;font-family:'Italiana',serif;font-size:11px;letter-spacing:.4em;color:rgba(244,236,222,.8);background:rgba(11,9,8,.5);backdrop-filter:blur(12px);padding:10px 18px;border-radius:999px;border:1px solid rgba(244,236,222,.15)}
+
+@media(max-width:880px){
+  .scene{padding:120px 24px 80px}
+  .dots{display:none}
+  .nav-right{display:none}
+  .scene-meta{font-size:9px}
+}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="brand">DEADLINE</div>
+  <div class="nav-right">
+    <a href="#s1">01</a>
+    <a href="#s2">02</a>
+    <a href="#s3">03</a>
+    <a href="#s4">04</a>
+    <a href="#s5">Связаться</a>
+  </div>
+</nav>
+
+<div class="dots" id="dots"></div>
+
+<section class="scene s1" id="s1">
+  <div class="scene-bg"></div>
+  <div class="scene-grain"></div>
+  <div class="scene-meta"><strong>N° 01</strong> <span>VRP  ·  Phuket  ·  2026</span></div>
+  <div class="scene-body">
+    <div class="scene-eyebrow">Web  ·  AI Concierge</div>
+    <h1>На воде <em>держим</em><br>VIP Rental Phuket.</h1>
+    <p class="scene-sub">Next.js + GPT-4. +32% conversion, 73% запросов закрываются без человека. 80+ объектов, единственный консьерж — у нас.</p>
+  </div>
+  <div class="scene-foot">
+    <span>// Untamed. Unscripted. Undeniable.</span>
+    <div class="scroll-indicator">Scroll<span class="line"></span></div>
+  </div>
+</section>
+
+<section class="scene s2" id="s2">
+  <div class="scene-bg"></div>
+  <div class="scene-grain"></div>
+  <div class="scene-meta"><strong>N° 02</strong> <span>KeyDrop  ·  Telegram  ·  2025</span></div>
+  <div class="scene-body">
+    <div class="scene-eyebrow">Automation  ·  MiniApp</div>
+    <h1>В песках <em>выстроена</em><br>экономика на 1000+/мес.</h1>
+    <p class="scene-sub">Telegram MiniApp на Steam-кодах. 99.99% uptime, 18 месяцев без падений. Та автоматизация, про которую забыл.</p>
+  </div>
+  <div class="scene-foot">
+    <span>// 99.99% uptime · 18 months</span>
+    <div class="scroll-indicator">Scroll<span class="line"></span></div>
+  </div>
+</section>
+
+<section class="scene s3" id="s3">
+  <div class="scene-bg"></div>
+  <div class="scene-grain"></div>
+  <div class="scene-meta"><strong>N° 03</strong> <span>RA Project  ·  on-chain  ·  2025-26</span></div>
+  <div class="scene-body">
+    <div class="scene-eyebrow">AI Agents  ·  Data</div>
+    <h1>В джунглях данных —<br><em>41M</em> блоков, 4 агента.</h1>
+    <p class="scene-sub">12 блокчейн-сетей, ClickHouse и Kafka под капотом, четыре AI-агента в production. Не chatbot — production-assistant с метриками.</p>
+  </div>
+  <div class="scene-foot">
+    <span>// 12 networks · 41M+ blocks</span>
+    <div class="scroll-indicator">Scroll<span class="line"></span></div>
+  </div>
+</section>
+
+<section class="scene s4" id="s4">
+  <div class="scene-bg"></div>
+  <div class="scene-grain"></div>
+  <div class="scene-meta"><strong>N° 04</strong> <span>Numbers  ·  без bullshit</span></div>
+  <div class="scene-body">
+    <div class="scene-eyebrow">Numbers without compromises</div>
+    <h1>12 проектов. <em>Ноль</em><br>сорванных deadlines.</h1>
+    <p class="scene-sub">100% клиентов возвращаются или рекомендуют. 8 индустрий — и больше. Цифры, на которые мы не закрашиваем глаза.</p>
+  </div>
+  <div class="scene-foot">
+    <span>// since 2025</span>
+    <div class="scroll-indicator">Scroll<span class="line"></span></div>
+  </div>
+</section>
+
+<section class="scene s5" id="s5">
+  <div class="scene-bg"></div>
+  <div class="scene-grain"></div>
+  <div class="scene-meta"><strong>N° 05</strong> <span>Contact  ·  edge of wildness</span></div>
+  <div class="scene-body">
+    <div class="scene-eyebrow">Связаться</div>
+    <h1>Мы — DEADLINE.<br><em>У нас ничего не горит.</em></h1>
+    <p class="scene-sub" style="margin-left:auto;margin-right:auto">Пиши — ответим раньше, чем уберёшь руки от клавиатуры. План и срок прилетят прежде, чем ты допьёшь кофе.</p>
+    <div class="channels">
+      <a href="https://t.me/deadline_corp" target="_blank"><span class="ico">tg</span>@deadline_corp</a>
+      <a href="https://wa.me/" target="_blank"><span class="ico">w</span>WhatsApp</a>
+      <a href="mailto:corpdeadline@gmail.com"><span class="ico">@</span>corpdeadline</a>
+    </div>
+  </div>
+</section>
+
+<div class="badge">Concept 06 · Aerial</div>
+
+<script>
+// Section dots + active scene observer
+(()=>{
+  const scenes=[...document.querySelectorAll('.scene')];
+  const dotsEl=document.getElementById('dots');
+  scenes.forEach((s,i)=>{
+    const d=document.createElement('button');
+    d.className='dot';d.dataset.idx=i;
+    d.addEventListener('click',()=>s.scrollIntoView({behavior:'smooth'}));
+    dotsEl.appendChild(d);
+  });
+  const dots=[...dotsEl.children];
+  const io=new IntersectionObserver(es=>{
+    es.forEach(e=>{
+      if(e.isIntersecting){
+        e.target.classList.add('is-active');
+        const i=scenes.indexOf(e.target);
+        dots.forEach((d,j)=>d.classList.toggle('is-active',j===i));
+      }
+    });
+  },{threshold:.55});
+  scenes.forEach(s=>io.observe(s));
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PORTRAIT · DEADLINE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,500;1,300;1,500&family=Inter:wght@200;300;400&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+<style>
+:root{--cream:#F5EEDA;--cream-2:#E8DCC4;--ink:#1A1410;--ink-soft:rgba(26,20,16,.65);--rule:rgba(26,20,16,.16);--accent:#5A6B58;--accent-2:#A88B5C}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--cream);color:var(--ink);font-family:'Inter',sans-serif;font-weight:300;-webkit-font-smoothing:antialiased;overflow-x:hidden;cursor:none}
+img{display:block;max-width:100%}
+a{color:inherit;text-decoration:none}
+a,button{cursor:none}
+
+.cur{position:fixed;width:5px;height:5px;background:var(--ink);border-radius:50%;pointer-events:none;z-index:9999;transform:translate(-50%,-50%);mix-blend-mode:multiply}
+.cur-ring{position:fixed;width:32px;height:32px;border:1px solid var(--ink);border-radius:50%;pointer-events:none;z-index:9998;transform:translate(-50%,-50%);opacity:.3;transition:width .35s,height .35s,opacity .35s}
+.cur-ring.is-hover{width:58px;height:58px;opacity:.55}
+
+/* Persistent header */
+.head{position:fixed;top:0;left:0;right:0;z-index:60;padding:32px clamp(24px,5vw,72px);display:grid;grid-template-columns:1fr auto 1fr;gap:24px;align-items:center;background:linear-gradient(180deg,var(--cream) 70%,transparent);backdrop-filter:blur(6px);font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--ink)}
+.head .c{justify-self:center;font-family:'Cormorant Garamond';font-style:italic;font-size:14px;text-transform:none;letter-spacing:.04em;color:var(--accent-2)}
+.head .r{justify-self:end;display:flex;gap:32px}
+.head .r a{transition:color .25s}
+.head .r a:hover{color:var(--accent-2)}
+
+/* Cover */
+.cover{padding:38vh clamp(24px,6vw,96px) 20vh;max-width:1640px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:end}
+.cover .eyebrow{font-family:'Inter';font-size:10px;font-weight:400;letter-spacing:.42em;text-transform:uppercase;color:var(--accent-2);margin-bottom:32px}
+.cover h1{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(64px,9.5vw,180px);line-height:.92;letter-spacing:-.025em;color:var(--ink);max-width:14ch;margin:0}
+.cover h1 em{font-style:italic;color:var(--accent)}
+.cover .right .lead{font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(20px,2vw,28px);line-height:1.45;color:var(--ink-soft);max-width:38ch}
+.cover .right .small{margin-top:48px;font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--ink-soft);line-height:2}
+
+/* Portrait sequence — alternating */
+.portrait{padding:160px clamp(24px,6vw,96px);max-width:1640px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:center;position:relative}
+.portrait.flip{direction:rtl}
+.portrait.flip > *{direction:ltr}
+.portrait .img-wrap{position:relative;aspect-ratio:3/4;overflow:hidden;background:var(--cream-2)}
+.portrait .img-wrap img{position:absolute;inset:0;width:100%;height:108%;object-fit:cover;opacity:0;transition:opacity 1.6s cubic-bezier(.5,0,.2,1);will-change:transform}
+.portrait .img-wrap img.is-loaded{opacity:1}
+.portrait .nm{font-family:'Inter';font-size:10px;font-weight:400;letter-spacing:.42em;text-transform:uppercase;color:var(--accent-2);margin-bottom:24px;display:flex;gap:14px;align-items:center}
+.portrait .nm::before{content:"";display:inline-block;width:32px;height:1px;background:var(--accent-2)}
+.portrait h2{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(40px,5.6vw,84px);line-height:1.02;letter-spacing:-.018em;color:var(--ink);margin:0;max-width:14ch}
+.portrait h2 em{font-style:italic;color:var(--accent)}
+.portrait .body{margin-top:32px;font-family:'Cormorant Garamond';font-weight:400;font-size:18px;line-height:1.6;color:var(--ink-soft);max-width:38ch}
+.portrait .body p{margin:0 0 12px}
+.portrait .results{margin-top:40px;display:flex;gap:36px;font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--ink-soft);border-top:1px solid var(--rule);padding-top:18px}
+.portrait .results .v{font-family:'Cormorant Garamond';font-style:italic;font-weight:500;font-size:22px;color:var(--ink);text-transform:none;letter-spacing:0;display:block;margin-bottom:6px}
+
+/* Quiet caption under image */
+.portrait .img-wrap .cap{position:absolute;left:0;right:0;bottom:-32px;font-family:'Inter';font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:var(--ink-soft);display:flex;justify-content:space-between;padding:8px 4px 0;border-top:1px solid var(--rule)}
+.portrait .img-wrap .cap em{font-family:'Cormorant Garamond';font-style:italic;text-transform:none;letter-spacing:.04em;font-size:13px;color:var(--accent-2)}
+
+/* Closing */
+.fin{padding:38vh clamp(24px,6vw,96px) 18vh;max-width:1640px;margin:0 auto;display:grid;grid-template-columns:1fr 1fr;gap:80px;align-items:end;border-top:1px solid var(--rule)}
+.fin .q{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(48px,7.5vw,128px);line-height:1.02;letter-spacing:-.022em;color:var(--ink);max-width:18ch;margin:0}
+.fin .q em{font-style:italic;color:var(--accent)}
+.fin .right{display:flex;flex-direction:column;gap:14px;font-family:'Inter';font-size:13px;letter-spacing:.18em;text-transform:uppercase;text-align:right}
+.fin .right a{color:var(--ink);border-bottom:1px solid var(--rule);padding-bottom:5px;width:fit-content;justify-self:end;transition:border-color .35s}
+.fin .right a:hover{border-bottom-color:var(--accent-2)}
+
+.colo{padding:32px clamp(24px,6vw,96px) 64px;max-width:1640px;margin:0 auto;border-top:1px solid var(--rule);display:flex;justify-content:space-between;font-family:'Inter';font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:var(--ink-soft)}
+
+@media(max-width:880px){
+  .cover,.portrait,.portrait.flip,.fin{grid-template-columns:1fr;gap:48px;direction:ltr}
+  .head .c{display:none}
+  .head .r{gap:18px}
+  .cur,.cur-ring{display:none}
+  body{cursor:auto}a,button{cursor:pointer}
+  .fin .right{text-align:left;align-items:flex-start}
+  .fin .right a{justify-self:flex-start}
+}
+</style>
+</head>
+<body>
+
+<div class="cur"></div><div class="cur-ring" id="curRing"></div>
+
+<header class="head">
+  <span>DEADLINE</span>
+  <span class="c">Portrait series  ·  N° 12</span>
+  <div class="r">
+    <a href="mailto:corpdeadline@gmail.com">corpdeadline@gmail.com</a>
+    <a href="https://t.me/deadline_corp">@deadline_corp</a>
+  </div>
+</header>
+
+<section class="cover">
+  <div>
+    <div class="eyebrow">— Portrait · С 2025 года</div>
+    <h1>Меньше слов.<br><em>Больше</em> результата.</h1>
+  </div>
+  <div class="right">
+    <p class="lead">Каждый кейс — портрет. Один проект — один кадр, один разворот, одна подпись. Без массовой галереи.</p>
+    <div class="small">12 проектов  ·  0 сорванных дат<br>8 индустрий  ·  100% возврат</div>
+  </div>
+</section>
+
+<article class="portrait">
+  <div class="img-wrap">
+    <img src="https://images.unsplash.com/photo-1571896349842-33c89424de2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=1800&q=85" alt="">
+    <div class="cap"><em>N° 01 · VRP, Phuket</em><span>Web · AI · 2026</span></div>
+  </div>
+  <div class="text">
+    <div class="nm">.01 · Phuket · 2026</div>
+    <h2>VRP — <em>VIP Rental Phuket.</em></h2>
+    <div class="body">
+      <p>Next.js + GPT-4 концьерж над живым инвентарём. Восемьдесят вилл, один консьерж — у нас. Колл-центр сократился до одной смены.</p>
+      <p>Десять недель от первой строки до production. Отгружено в день обещания.</p>
+    </div>
+    <div class="results">
+      <div><span class="v">+32%</span>Conversion</div>
+      <div><span class="v">73%</span>Без оператора</div>
+      <div><span class="v">80+</span>Объектов</div>
+    </div>
+  </div>
+</article>
+
+<article class="portrait flip">
+  <div class="img-wrap">
+    <img src="https://images.unsplash.com/photo-1505228395891-9a51e7e86bf6?ixlib=rb-4.0.3&auto=format&fit=crop&w=1800&q=85" alt="">
+    <div class="cap"><em>N° 02 · KeyDrop</em><span>Automation · 2025</span></div>
+  </div>
+  <div class="text">
+    <div class="nm">.02 · Telegram · 2025</div>
+    <h2>KeyDrop —<br><em>тысяча</em> заказов в месяц.</h2>
+    <div class="body">
+      <p>Telegram MiniApp на Steam-кодах. Восемнадцать месяцев в production без падений. Оператор закрывает только аномалии.</p>
+    </div>
+    <div class="results">
+      <div><span class="v">1000+/мес</span>Заказов</div>
+      <div><span class="v">99.99%</span>Uptime</div>
+      <div><span class="v">18 мес</span>В prod</div>
+    </div>
+  </div>
+</article>
+
+<article class="portrait">
+  <div class="img-wrap">
+    <img src="https://images.unsplash.com/photo-1517824806704-9040b037703b?ixlib=rb-4.0.3&auto=format&fit=crop&w=1800&q=85" alt="">
+    <div class="cap"><em>N° 03 · RA Project</em><span>AI · Data · 2025-26</span></div>
+  </div>
+  <div class="text">
+    <div class="nm">.03 · On-chain · 2025-26</div>
+    <h2>RA Project — <em>analytics на blockchain.</em></h2>
+    <div class="body">
+      <p>Двенадцать блокчейн-сетей, ClickHouse и Kafka в боевом режиме. Сорок один миллион блоков. Четыре AI-агента в production.</p>
+    </div>
+    <div class="results">
+      <div><span class="v">12</span>Сетей</div>
+      <div><span class="v">41M+</span>Блоков</div>
+      <div><span class="v">4</span>Агента</div>
+    </div>
+  </div>
+</article>
+
+<article class="portrait flip">
+  <div class="img-wrap">
+    <img src="https://images.unsplash.com/photo-1469474968028-56623f02e42e?ixlib=rb-4.0.3&auto=format&fit=crop&w=1800&q=85" alt="">
+    <div class="cap"><em>N° 04 · Studio Suite</em><span>Brand · 2025-26</span></div>
+  </div>
+  <div class="text">
+    <div class="nm">.04 · Studio · 2025-26</div>
+    <h2>Studio Suite —<br><em>восемь</em> микросайтов.</h2>
+    <div class="body">
+      <p>Восемь брендовых микросайтов из одного design-system. Time-to-launch — два часа от конфига до GitHub Pages.</p>
+    </div>
+    <div class="results">
+      <div><span class="v">8</span>Сайтов</div>
+      <div><span class="v">2 часа</span>TTL</div>
+      <div><span class="v">1 DS</span>На все</div>
+    </div>
+  </div>
+</article>
+
+<section class="fin">
+  <p class="q">Мы — DEADLINE.<br><em>У нас ничего не горит.</em></p>
+  <div class="right">
+    <a href="mailto:corpdeadline@gmail.com">corpdeadline@gmail.com</a>
+    <a href="https://t.me/deadline_corp">@deadline_corp</a>
+  </div>
+</section>
+
+<div class="colo">
+  <span>© 2025—2026 DEADLINE</span>
+  <span>Concept 06 · Portrait</span>
+  <span>since 2025  ·  N° 12</span>
+</div>
+
+<script>
+gsap.registerPlugin(ScrollTrigger);
+const lenis=new Lenis({duration:1.5,easing:t=>1-Math.pow(1-t,3)});
+lenis.on('scroll',ScrollTrigger.update);gsap.ticker.add(t=>lenis.raf(t*1000));gsap.ticker.lagSmoothing(0);
+
+const cur=document.querySelector('.cur'),ring=document.getElementById('curRing');
+let mx=innerWidth/2,my=innerHeight/2,rx=mx,ry=my;
+addEventListener('mousemove',e=>{mx=e.clientX;my=e.clientY;cur.style.left=mx+'px';cur.style.top=my+'px'});
+function cr(){rx+=(mx-rx)*.14;ry+=(my-ry)*.14;ring.style.left=rx+'px';ring.style.top=ry+'px';requestAnimationFrame(cr)}cr();
+document.querySelectorAll('a,button').forEach(el=>{el.addEventListener('mouseenter',()=>ring.classList.add('is-hover'));el.addEventListener('mouseleave',()=>ring.classList.remove('is-hover'))});
+
+document.querySelectorAll('.img-wrap img').forEach(img=>{
+  if(img.complete)img.classList.add('is-loaded');
+  else img.addEventListener('load',()=>img.classList.add('is-loaded'));
+  img.addEventListener('error',()=>{img.parentElement.style.background='linear-gradient(160deg,#C5B89A,#8A7558)'});
+});
+
+// Cover reveal
+gsap.from('.cover > div',{y:36,opacity:0,duration:1.2,stagger:0.12,ease:'power3.out',delay:0.2});
+
+// Per-portrait: img scale-up + text reveal + scroll parallax
+document.querySelectorAll('.portrait').forEach((p)=>{
+  const img=p.querySelector('img');
+  gsap.from(p.querySelector('.img-wrap'),{y:60,opacity:0,duration:1.4,ease:'power3.out',scrollTrigger:{trigger:p,start:'top 75%'}});
+  gsap.from(p.querySelectorAll('.text > *'),{y:24,opacity:0,duration:1.0,stagger:0.08,ease:'power2.out',scrollTrigger:{trigger:p,start:'top 70%'}});
+  if(img)gsap.to(img,{yPercent:-7,ease:'none',scrollTrigger:{trigger:p,start:'top bottom',end:'bottom top',scrub:true}});
+});
+
+gsap.from('.fin > *',{y:36,opacity:0,duration:1.2,stagger:0.12,ease:'power3.out',scrollTrigger:{trigger:'.fin',start:'top 80%'}});
+</script>
+</body>
+</html>

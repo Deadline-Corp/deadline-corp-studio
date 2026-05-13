@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ATLAS · DEADLINE resort skin concept #02</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Italiana&family=Lora:ital,wght@0,400;0,500;1,400&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --cream:#F5EBD8;
+  --cream-deep:#E8D8B2;
+  --paper:#FBF4E1;
+  --berber:#3C6470;
+  --berber-deep:#1F3F4A;
+  --saffron:#D89A48;
+  --saffron-deep:#9C6A24;
+  --ink:#1F1812;
+  --ink-soft:rgba(31,24,18,.78);
+  --rule:rgba(31,24,18,.16);
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--cream);color:var(--ink);font-family:'Inter',system-ui,sans-serif;font-weight:300;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+
+/* Paper grain */
+body::after{content:"";position:fixed;inset:0;z-index:1;pointer-events:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='400'><filter id='p'><feTurbulence type='fractalNoise' baseFrequency='1.4' numOctaves='2'/><feColorMatrix values='0 0 0 0 0.4, 0 0 0 0 0.3, 0 0 0 0 0.2, 0 0 0 .14 0'/></filter><rect width='100%' height='100%' filter='url(%23p)'/></svg>");opacity:.55;mix-blend-mode:multiply}
+
+.shell{position:relative;z-index:2}
+
+/* Nav */
+.nav{padding:28px clamp(20px,4vw,56px);display:grid;grid-template-columns:auto 1fr auto;gap:24px;align-items:center}
+.nav .brand{font-family:'Italiana',serif;font-size:20px;letter-spacing:.42em}
+.nav .center{justify-self:center;font-family:'Lora';font-style:italic;font-size:14px;color:var(--berber);letter-spacing:.04em}
+.nav .right{display:flex;gap:32px;font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase}
+.nav .right a{color:var(--ink);text-decoration:none;border-bottom:1px solid transparent;padding-bottom:2px;transition:border-color .25s}
+.nav .right a:hover{border-bottom-color:var(--saffron-deep)}
+
+/* Hero */
+.hero{padding:80px clamp(20px,4vw,72px) 40px;display:grid;grid-template-columns:1.1fr 1fr;gap:64px;align-items:center;min-height:88vh}
+.hero-text{position:relative}
+.hero-eyebrow{font-family:'Inter';font-size:11px;font-weight:500;letter-spacing:.42em;text-transform:uppercase;color:var(--berber-deep);margin-bottom:32px}
+.hero-eyebrow::before{content:"◌  ";color:var(--saffron-deep)}
+.hero h1{font-family:'Italiana',serif;font-weight:400;font-size:clamp(54px,9vw,150px);line-height:.92;letter-spacing:-.022em;margin:0;color:var(--ink);max-width:14ch}
+.hero h1 em{font-family:'Lora';font-style:italic;font-weight:500;color:var(--berber)}
+.hero-sub{margin-top:36px;font-family:'Lora';font-style:italic;font-weight:400;font-size:clamp(20px,2.2vw,28px);line-height:1.45;color:var(--ink-soft);max-width:46ch}
+.hero-meta{margin-top:48px;display:flex;gap:32px;font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--saffron-deep);flex-wrap:wrap;align-items:center}
+.hero-meta strong{color:var(--ink);font-weight:500}
+
+/* Map container — isometric SVG */
+.map-wrap{position:relative;aspect-ratio:1.2/1;background:linear-gradient(160deg,var(--paper),var(--cream-deep));border:1px solid var(--rule);border-radius:6px;padding:32px;box-shadow:0 24px 64px -24px rgba(31,24,18,.22),inset 0 0 0 1px rgba(255,255,255,.5)}
+.map-wrap::before{content:"";position:absolute;inset:8px;border:1px dashed rgba(31,24,18,.18);border-radius:4px;pointer-events:none}
+.map-wrap .compass{position:absolute;top:18px;right:20px;font-family:'Lora';font-style:italic;font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--berber);display:flex;flex-direction:column;align-items:center;gap:2px}
+.map-wrap .compass .n{font-size:18px;font-style:italic;font-family:'Italiana'}
+.map-wrap .legend{position:absolute;left:24px;bottom:18px;font-family:'Inter';font-size:9px;letter-spacing:.32em;text-transform:uppercase;color:var(--berber-deep);line-height:1.6}
+.map-wrap .legend strong{color:var(--saffron-deep);font-weight:500}
+.map-svg{width:100%;height:100%;display:block}
+
+/* Region styles */
+.region{cursor:pointer;transition:opacity .3s}
+.region polygon{fill:var(--cream-deep);stroke:var(--berber-deep);stroke-width:1.4;transition:fill .3s,filter .3s,transform .4s cubic-bezier(.2,.7,.3,1);transform-origin:center;transform-box:fill-box}
+.region:hover polygon{fill:var(--saffron);filter:drop-shadow(0 8px 14px rgba(31,24,18,.25));transform:translateY(-3px)}
+.region.is-active polygon{fill:var(--berber);stroke:var(--saffron);stroke-width:2}
+.region .pin{fill:var(--berber-deep);transition:fill .3s,r .3s}
+.region:hover .pin{fill:var(--saffron-deep)}
+.region.is-active .pin{fill:var(--saffron);r:5}
+.region text{font-family:'Lora';font-style:italic;font-size:11px;fill:var(--ink);pointer-events:none}
+.region:hover text,.region.is-active text{font-weight:500}
+.region .num{font-family:'Italiana';font-size:9px;letter-spacing:.18em;fill:var(--saffron-deep)}
+
+/* Detail panel */
+.detail{padding:80px clamp(20px,4vw,72px) 120px;background:var(--paper);border-top:1px solid var(--rule)}
+.detail-head{display:flex;align-items:baseline;gap:24px;margin-bottom:48px}
+.detail-head .lbl{font-family:'Inter';font-size:11px;letter-spacing:.42em;text-transform:uppercase;color:var(--saffron-deep);font-weight:500}
+.detail-head .rule{flex:1;height:1px;background:var(--rule)}
+.detail-head .num{font-family:'Italiana';font-size:14px;color:var(--berber);letter-spacing:.18em}
+.detail-grid{display:grid;grid-template-columns:1fr 2fr;gap:64px;align-items:start}
+.detail-grid .left h2{font-family:'Italiana';font-weight:400;font-size:clamp(40px,5.5vw,84px);line-height:.95;letter-spacing:-.018em;margin:0;color:var(--ink)}
+.detail-grid .left h2 em{font-family:'Lora';font-style:italic;font-weight:500;color:var(--berber)}
+.detail-grid .left .sub{margin-top:16px;font-family:'Lora';font-style:italic;font-size:18px;line-height:1.45;color:var(--ink-soft);max-width:34ch}
+.detail-grid .left .tags{margin-top:32px;display:flex;flex-wrap:wrap;gap:8px;font-family:'Inter';font-size:10px;letter-spacing:.32em;text-transform:uppercase}
+.detail-grid .left .tags span{padding:6px 14px;border:1px solid var(--rule);border-radius:999px;color:var(--berber-deep)}
+.detail-grid .right{display:grid;grid-template-columns:repeat(3,1fr);gap:36px}
+.detail-grid .right .field{border-top:2px solid var(--saffron);padding-top:24px}
+.detail-grid .right .k{font-family:'Inter';font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:var(--berber-deep);margin-bottom:8px}
+.detail-grid .right .v{font-family:'Italiana';font-size:clamp(28px,3.4vw,44px);line-height:1.05;color:var(--ink);letter-spacing:-.012em}
+.detail-grid .right .v em{font-family:'Lora';font-style:italic}
+.detail-grid .right p{margin:14px 0 0;font-size:14px;color:var(--ink-soft);line-height:1.7}
+
+/* Bottom — closing */
+.close{padding:160px clamp(20px,4vw,72px) 120px;text-align:center;background:linear-gradient(180deg,var(--cream),var(--cream-deep));border-top:1px solid var(--rule);position:relative}
+.close::before{content:"";position:absolute;left:50%;top:96px;transform:translateX(-50%);width:80px;height:1px;background:var(--saffron)}
+.close .q{font-family:'Italiana';font-weight:400;font-size:clamp(56px,9vw,140px);line-height:1.02;letter-spacing:-.025em;color:var(--ink);max-width:16ch;margin:0 auto}
+.close .q em{font-family:'Lora';font-style:italic;font-weight:500;color:var(--berber)}
+.close .channels{margin-top:64px;display:flex;justify-content:center;gap:48px;font-family:'Lora';font-style:italic;font-size:24px;flex-wrap:wrap}
+.close .channels a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--saffron);padding-bottom:6px;transition:gap .25s,color .25s;display:inline-flex;gap:12px;align-items:center}
+.close .channels a:hover{color:var(--berber);gap:22px}
+
+/* Concept badge */
+.badge{position:fixed;left:24px;bottom:24px;z-index:60;font-family:'Italiana',serif;font-size:11px;letter-spacing:.4em;color:rgba(31,24,18,.7);background:rgba(245,235,216,.78);backdrop-filter:blur(12px);padding:10px 18px;border-radius:0;border:1px solid var(--rule)}
+
+@media(max-width:1000px){
+  .hero{grid-template-columns:1fr;gap:48px;padding-top:48px}
+  .detail-grid{grid-template-columns:1fr}
+  .detail-grid .right{grid-template-columns:repeat(2,1fr)}
+  .nav .center{display:none}
+}
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+<nav class="nav">
+  <div class="brand">DEADLINE</div>
+  <div class="center">Atlas of industries  ·  N° 12  ·  2026</div>
+  <div class="right">
+    <a href="#">Услуги</a>
+    <a href="#">Кейсы</a>
+    <a href="#">Связаться</a>
+  </div>
+</nav>
+
+<section class="hero">
+  <div class="hero-text">
+    <div class="hero-eyebrow">Atlas of operations  ·  since 2025</div>
+    <h1>Восемь <em>индустрий.</em><br>Одна <em>методология.</em></h1>
+    <p class="hero-sub">Наведи на регион — раскроем кейс из этой индустрии. Каждый — отгружен в день обещания, ни один срок не сдвинули.</p>
+    <div class="hero-meta">
+      <span>// <strong>deadlines fear us</strong></span>
+      <span>12 проектов</span>
+      <span>0 смещений</span>
+      <span>100% возврат</span>
+    </div>
+  </div>
+
+  <div class="map-wrap">
+    <div class="compass"><span class="n">N</span><span>Atlas</span></div>
+    <svg class="map-svg" viewBox="0 0 600 500" xmlns="http://www.w3.org/2000/svg">
+      <!-- Isometric grid background -->
+      <defs>
+        <pattern id="grid" x="0" y="0" width="40" height="22" patternUnits="userSpaceOnUse" patternTransform="skewX(-30)">
+          <line x1="0" y1="0" x2="0" y2="22" stroke="#1F1812" stroke-width=".4" opacity=".12"/>
+          <line x1="0" y1="0" x2="40" y2="0" stroke="#1F1812" stroke-width=".4" opacity=".12"/>
+        </pattern>
+        <filter id="paper">
+          <feTurbulence type="fractalNoise" baseFrequency="0.02" numOctaves="2" seed="2"/>
+          <feColorMatrix values="0 0 0 0 0.6, 0 0 0 0 0.5, 0 0 0 0 0.4, 0 0 0 .1 0"/>
+        </filter>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#grid)"/>
+
+      <!-- 8 isometric regions -->
+      <g class="region" data-r="web" data-title="Web" data-num="01" data-stats="Next.js · Astro · SSR" data-result="+32% conversion · Lighthouse 95+">
+        <polygon points="120,180 200,140 280,180 200,220"/>
+        <circle class="pin" cx="200" cy="180" r="3"/>
+        <text x="200" y="208" text-anchor="middle">Web</text>
+        <text class="num" x="200" y="166" text-anchor="middle">01</text>
+      </g>
+      <g class="region" data-r="auto" data-title="Automation" data-num="02" data-stats="n8n · Telegram · custom-API" data-result="99.99% uptime · 18 мес">
+        <polygon points="260,140 340,100 420,140 340,180"/>
+        <circle class="pin" cx="340" cy="140" r="3"/>
+        <text x="340" y="168" text-anchor="middle">Automation</text>
+        <text class="num" x="340" y="126" text-anchor="middle">02</text>
+      </g>
+      <g class="region" data-r="ai" data-title="AI Agents" data-num="03" data-stats="RAG · tool-use · MCP" data-result="73% запросов без человека">
+        <polygon points="400,180 480,140 560,180 480,220"/>
+        <circle class="pin" cx="480" cy="180" r="3"/>
+        <text x="480" y="208" text-anchor="middle">AI</text>
+        <text class="num" x="480" y="166" text-anchor="middle">03</text>
+      </g>
+      <g class="region" data-r="data" data-title="Data &amp; Infra" data-num="04" data-stats="ClickHouse · Kafka · 12 сетей" data-result="41M+ блоков обработано">
+        <polygon points="200,240 280,200 360,240 280,280"/>
+        <circle class="pin" cx="280" cy="240" r="3"/>
+        <text x="280" y="268" text-anchor="middle">Data</text>
+        <text class="num" x="280" y="226" text-anchor="middle">04</text>
+      </g>
+      <g class="region" data-r="brand" data-title="Brand · Studio" data-num="05" data-stats="DS · микросайты · кампании" data-result="Time-to-launch 2 ч">
+        <polygon points="340,240 420,200 500,240 420,280"/>
+        <circle class="pin" cx="420" cy="240" r="3"/>
+        <text x="420" y="268" text-anchor="middle">Brand</text>
+        <text class="num" x="420" y="226" text-anchor="middle">05</text>
+      </g>
+      <g class="region" data-r="fintech" data-title="Fintech &amp; Payments" data-num="06" data-stats="Stripe · Telegram payments" data-result="0 dispute losses">
+        <polygon points="120,300 200,260 280,300 200,340"/>
+        <circle class="pin" cx="200" cy="300" r="3"/>
+        <text x="200" y="328" text-anchor="middle">Fintech</text>
+        <text class="num" x="200" y="286" text-anchor="middle">06</text>
+      </g>
+      <g class="region" data-r="commerce" data-title="E-commerce" data-num="07" data-stats="MiniApp · catalog · checkout" data-result="1000+ заказов/мес">
+        <polygon points="260,360 340,320 420,360 340,400"/>
+        <circle class="pin" cx="340" cy="360" r="3"/>
+        <text x="340" y="388" text-anchor="middle">Commerce</text>
+        <text class="num" x="340" y="346" text-anchor="middle">07</text>
+      </g>
+      <g class="region" data-r="ops" data-title="Ops &amp; Observability" data-num="08" data-stats="Dashboards · alerts · eval" data-result="MTTR ↓ 4×">
+        <polygon points="400,300 480,260 560,300 480,340"/>
+        <circle class="pin" cx="480" cy="300" r="3"/>
+        <text x="480" y="328" text-anchor="middle">Ops</text>
+        <text class="num" x="480" y="286" text-anchor="middle">08</text>
+      </g>
+
+      <!-- Compass arrow -->
+      <g transform="translate(60 60)">
+        <circle cx="0" cy="0" r="20" fill="none" stroke="#3C6470" stroke-width="1"/>
+        <polygon points="0,-18 4,0 0,2 -4,0" fill="#D89A48"/>
+      </g>
+    </svg>
+    <div class="legend">Hover/click  ·  <strong>8 industries</strong>  ·  12 projects mapped</div>
+  </div>
+</section>
+
+<section class="detail" id="detail">
+  <div class="detail-head">
+    <span class="lbl" id="detailLbl">— Region · Web</span>
+    <span class="rule"></span>
+    <span class="num" id="detailNum">N° 01</span>
+  </div>
+  <div class="detail-grid">
+    <div class="left">
+      <h2 id="detailTitle">Web — <em>отгрузка в день</em></h2>
+      <p class="sub" id="detailSub">Next.js · Astro · SSR. Production-стэк, аналитика и инфра — с первой строки.</p>
+      <div class="tags" id="detailTags"><span>Next.js</span><span>Astro</span><span>SSR</span><span>Stripe</span><span>SEO</span></div>
+    </div>
+    <div class="right" id="detailRight">
+      <div class="field"><div class="k">Стэк</div><div class="v">Next.js · <em>Astro</em></div></div>
+      <div class="field"><div class="k">Срок</div><div class="v">10 <em>недель</em></div><p>От первого касания до отгрузки. День в день.</p></div>
+      <div class="field"><div class="k">Результат</div><div class="v">+32%</div><p>Conversion vs предыдущий сайт. 73% запросов без человека.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="close">
+  <p class="q">Мы — DEADLINE.<br><em>У нас ничего не горит.</em></p>
+  <div class="channels">
+    <a href="mailto:corpdeadline@gmail.com">corpdeadline@gmail.com →</a>
+    <a href="https://t.me/deadline_corp">@deadline_corp →</a>
+  </div>
+</section>
+
+</div>
+<div class="badge">Concept 02 · Atlas</div>
+
+<script>
+(()=>{
+  const data={
+    web:{title:'Web — <em>отгрузка в день</em>',sub:'Next.js · Astro · SSR. Production-стэк, аналитика и инфра — с первой строки.',tags:['Next.js','Astro','SSR','Stripe','SEO'],fields:[
+      {k:'Стэк',v:'Next.js · <em>Astro</em>',p:''},
+      {k:'Срок',v:'10 <em>недель</em>',p:'От первого касания до отгрузки. День в день.'},
+      {k:'Результат',v:'+32%',p:'Conversion vs предыдущий сайт. 73% запросов без человека.'}]},
+    auto:{title:'Automation — <em>фоновая</em>',sub:'n8n, custom-API, Telegram-операторы. Та автоматизация, про которую забыл.',tags:['n8n','Custom API','Telegram','Cron'],fields:[
+      {k:'Стэк',v:'n8n · <em>Telegram</em>',p:''},
+      {k:'Uptime',v:'99.99%',p:'18 месяцев без падений. Self-healing pipelines.'},
+      {k:'Объём',v:'1000<em>+</em>',p:'Заказов/месяц через MiniApp без участия оператора.'}]},
+    ai:{title:'AI Agents — <em>не chatbot</em>',sub:'Production-assistant с метриками, eval-гарантиями и стоимостью на токен.',tags:['RAG','MCP','Tool-use','Eval'],fields:[
+      {k:'Стэк',v:'GPT-4 · <em>RAG</em>',p:''},
+      {k:'Автоответ',v:'73%',p:'Запросов закрываются без подключения человека.'},
+      {k:'Метрики',v:'Cost <em>+</em> qual.',p:'Observability на токены, latency, eval-регрессии.'}]},
+    data:{title:'Data — <em>41M блоков</em>',sub:'ClickHouse + Kafka pipelines для 12 блокчейн-сетей в режиме live.',tags:['ClickHouse','Kafka','12 networks','Live'],fields:[
+      {k:'Сеток',v:'12',p:''},
+      {k:'Объём',v:'41M<em>+</em>',p:'Блоков обработано и нормализовано в production.'},
+      {k:'Latency',v:'< 800<em>ms</em>',p:'p99 от ingest до доступности в запросе.'}]},
+    brand:{title:'Brand — <em>один DS на восемь</em>',sub:'Восемь микросайтов под кампании из одного design-system. Time-to-launch — 2 часа.',tags:['Design System','Microsites','Tokens'],fields:[
+      {k:'Сайтов',v:'8',p:''},
+      {k:'TTL',v:'2 <em>часа</em>',p:'От конфига до GitHub Pages deploy.'},
+      {k:'Поддержка',v:'1 <em>DS</em>',p:'Единая токен-архитектура, никакого drift между сайтами.'}]},
+    fintech:{title:'Fintech — <em>0 dispute losses</em>',sub:'Stripe и Telegram payments. Полный стэк с retry-логикой и reconciliation.',tags:['Stripe','TG Payments','Reconciliation'],fields:[
+      {k:'Disputes',v:'0',p:'Потерь — ни одной. За счёт reconciliation и proactive escalation.'},
+      {k:'Объём',v:'$xxk<em>/mo</em>',p:'Прохождение платежей через стэк.'},
+      {k:'Reliability',v:'99.97%',p:'Успешность транзакций.'}]},
+    commerce:{title:'Commerce — <em>1000+ заказов</em>',sub:'Telegram MiniApp · Steam-коды · мгновенный checkout. KeyDrop.',tags:['MiniApp','Checkout','Catalog'],fields:[
+      {k:'Заказов',v:'1000<em>+</em>',p:'В месяц через MiniApp без участия оператора.'},
+      {k:'Uptime',v:'99.99%',p:'18 месяцев без падений в production.'},
+      {k:'TTL',v:'12 <em>нед</em>',p:'От первого экрана до отгрузки.'}]},
+    ops:{title:'Ops — <em>MTTR ↓ 4×</em>',sub:'Dashboards, alerts, observability и eval-метрики для production-агентов.',tags:['Dashboards','Alerts','Eval','SLO'],fields:[
+      {k:'MTTR',v:'↓ 4<em>×</em>',p:'Сокращение mean-time-to-recover после внедрения наблюдаемости.'},
+      {k:'Покрытие',v:'100%',p:'Critical paths под observability.'},
+      {k:'SLO',v:'99.9%',p:'Целевая на сервисы первой линии.'}]}
+  };
+
+  const regions=document.querySelectorAll('.region');
+  regions.forEach(r=>{
+    r.addEventListener('click',()=>activate(r));
+    r.addEventListener('mouseenter',()=>activate(r));
+  });
+
+  function activate(r){
+    regions.forEach(x=>x.classList.toggle('is-active',x===r));
+    const k=r.dataset.r;const d=data[k];if(!d)return;
+    document.getElementById('detailLbl').textContent='— Region · '+r.dataset.title;
+    document.getElementById('detailNum').textContent='N° '+r.dataset.num;
+    document.getElementById('detailTitle').innerHTML=d.title;
+    document.getElementById('detailSub').textContent=d.sub;
+    const tags=document.getElementById('detailTags');
+    tags.innerHTML=d.tags.map(t=>'<span>'+t+'</span>').join('');
+    const right=document.getElementById('detailRight');
+    right.innerHTML=d.fields.map(f=>'<div class="field"><div class="k">'+f.k+'</div><div class="v">'+f.v+'</div>'+(f.p?'<p>'+f.p+'</p>':'')+'</div>').join('');
+  }
+
+  // init with first region active
+  activate(regions[0]);
+})();
+</script>
+</body>
+</html>

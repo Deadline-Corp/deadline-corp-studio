@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TOPOGRAPHY · DEADLINE resort skin concept #01</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,500;1,300&family=Inter:wght@200;300;400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --ochre:#C18555;
+  --ochre-deep:#8A5530;
+  --ochre-pale:#E8C39C;
+  --turq:#1C5A65;
+  --turq-deep:#0F3942;
+  --turq-pale:#5A8E96;
+  --sand:#F2E7D2;
+  --sand-deep:#E0D2B4;
+  --ink:#1A1410;
+  --ink-soft:rgba(26,20,16,.78);
+  --cream:#F4ECDE;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--ink);color:var(--cream);font-family:'Inter',system-ui,sans-serif;font-weight:300;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+
+/* Canvas hero */
+.hero{position:relative;height:100vh;width:100%;overflow:hidden}
+#three-canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+.hero::after{content:"";position:absolute;inset:0;pointer-events:none;background:
+  radial-gradient(60% 50% at 50% 20%,transparent,rgba(15,57,66,.45) 80%),
+  linear-gradient(180deg,transparent 0%,transparent 60%,rgba(26,20,16,.65) 100%)}
+
+/* Top bar */
+.topbar{position:fixed;top:0;left:0;right:0;z-index:50;padding:24px clamp(20px,4vw,56px);display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:24px;color:var(--cream);mix-blend-mode:difference;pointer-events:none}
+.topbar>*{pointer-events:auto}
+.topbar .brand{font-family:'Cormorant Garamond';font-style:italic;font-weight:500;font-size:22px;letter-spacing:.32em}
+.topbar .center{justify-self:center;font-family:'Inter';font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:rgba(244,236,222,.72)}
+.topbar .right{display:flex;gap:32px;font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;align-items:center}
+.topbar .right a{color:inherit;text-decoration:none;opacity:.8;transition:opacity .25s}
+.topbar .right a:hover{opacity:1}
+.audio-toggle{background:transparent;border:1px solid rgba(244,236,222,.4);color:inherit;font:inherit;letter-spacing:.32em;text-transform:uppercase;padding:8px 16px;border-radius:999px;cursor:pointer;font-size:10px;transition:background .25s,color .25s}
+.audio-toggle:hover{background:var(--cream);color:var(--ink)}
+
+/* Hero text overlay */
+.hero-text{position:absolute;left:0;right:0;bottom:0;z-index:10;padding:0 clamp(20px,4vw,72px) 80px;color:var(--cream);max-width:1640px;margin:0 auto;pointer-events:none}
+.hero-eyebrow{font-family:'Inter';font-size:11px;font-weight:500;letter-spacing:.42em;text-transform:uppercase;color:var(--ochre-pale);margin-bottom:28px}
+.hero-eyebrow::before{content:"◌  "}
+.hero h1{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(56px,9.5vw,160px);line-height:.92;letter-spacing:-.025em;margin:0;color:var(--cream);text-shadow:0 6px 32px rgba(15,57,66,.5);max-width:14ch}
+.hero h1 em{font-style:italic;font-weight:300;color:var(--ochre-pale)}
+.hero-sub{margin-top:36px;font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(20px,2.2vw,30px);line-height:1.45;color:rgba(244,236,222,.85);max-width:48ch;text-shadow:0 2px 18px rgba(15,57,66,.6)}
+.hero-meta{margin-top:48px;display:flex;justify-content:space-between;align-items:end;gap:24px;font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:rgba(244,236,222,.7);flex-wrap:wrap;pointer-events:auto}
+.scroll-hint{display:inline-flex;align-items:center;gap:14px;font-family:'Cormorant Garamond';font-style:italic;font-size:14px;text-transform:none;letter-spacing:.02em}
+.scroll-hint::after{content:"";display:inline-block;width:1px;height:36px;background:linear-gradient(180deg,var(--ochre-pale),transparent);animation:bob 2.4s ease-in-out infinite}
+@keyframes bob{0%,100%{transform:translateY(0);opacity:.5}50%{transform:translateY(8px);opacity:1}}
+
+/* Mini-map (legend) right side */
+.minimap{position:fixed;top:50%;right:32px;transform:translateY(-50%);z-index:40;width:160px;font-family:'Inter';color:var(--cream);font-size:10px;letter-spacing:.32em;text-transform:uppercase;display:flex;flex-direction:column;gap:8px;background:rgba(15,57,66,.5);backdrop-filter:blur(14px);padding:18px 20px;border-radius:12px;border:1px solid rgba(244,236,222,.18)}
+.minimap .lbl{color:var(--ochre-pale);font-weight:500;border-bottom:1px solid rgba(244,236,222,.18);padding-bottom:8px;margin-bottom:4px}
+.minimap .island{display:flex;justify-content:space-between;align-items:center;cursor:pointer;padding:8px 0;border-top:1px solid rgba(244,236,222,.08);transition:color .25s}
+.minimap .island:first-of-type{border-top:0}
+.minimap .island:hover{color:var(--ochre-pale)}
+.minimap .island.is-active{color:var(--ochre-pale)}
+.minimap .island .pin{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ochre-pale);box-shadow:0 0 8px var(--ochre)}
+.minimap .island.is-active .pin{background:var(--cream);box-shadow:0 0 12px var(--cream)}
+
+/* Below-fold sections */
+.section{padding:140px clamp(20px,4vw,72px);max-width:1640px;margin:0 auto;color:var(--cream);position:relative}
+.section .eyebrow{font-family:'Inter';font-size:11px;font-weight:500;letter-spacing:.42em;text-transform:uppercase;color:var(--ochre-pale);margin-bottom:32px}
+.section .eyebrow::before{content:"◌  "}
+.section h2{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(48px,8vw,140px);line-height:.94;letter-spacing:-.022em;margin:0;max-width:14ch}
+.section h2 em{font-style:italic;color:var(--turq-pale)}
+
+/* Stats over a dark gradient with topographic lines */
+.stats{padding:120px clamp(20px,4vw,72px);background:linear-gradient(180deg,#0F1F26 0%,#0A1418 100%);position:relative;overflow:hidden}
+.stats::before{content:"";position:absolute;inset:0;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='600' height='600' viewBox='0 0 600 600'><g fill='none' stroke='%23C18555' stroke-width='.6' opacity='.32'><path d='M0 240 C 120 200, 200 280, 320 240 S 540 200, 600 240'/><path d='M0 280 C 120 240, 200 320, 320 280 S 540 240, 600 280'/><path d='M0 320 C 120 280, 200 360, 320 320 S 540 280, 600 320'/><path d='M0 360 C 120 320, 200 400, 320 360 S 540 320, 600 360'/><path d='M0 400 C 120 360, 200 440, 320 400 S 540 360, 600 400'/></g></svg>");opacity:.65}
+.stats-inner{position:relative;display:grid;grid-template-columns:repeat(4,1fr);gap:48px;max-width:1640px;margin:0 auto}
+.stat{position:relative;border-top:1px solid var(--ochre);padding-top:24px}
+.stat .v{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(56px,7vw,108px);line-height:1;letter-spacing:-.03em;color:var(--cream)}
+.stat .v em{font-style:italic;color:var(--ochre-pale)}
+.stat .l{margin-top:14px;font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:rgba(244,236,222,.65);max-width:18ch;line-height:1.7}
+
+/* Islands list — case studies */
+.islands{padding:140px clamp(20px,4vw,72px);max-width:1640px;margin:0 auto}
+.islands-head{margin-bottom:64px;display:flex;justify-content:space-between;align-items:end;gap:32px;flex-wrap:wrap}
+.islands h2{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(48px,7vw,120px);line-height:.94;letter-spacing:-.022em;margin:0;max-width:14ch;color:var(--cream)}
+.islands h2 em{font-style:italic;color:var(--ochre-pale)}
+.island-card{display:grid;grid-template-columns:160px 1fr 1fr;gap:48px;padding:48px 0;border-top:1px solid rgba(244,236,222,.18);align-items:start;cursor:pointer;transition:background .25s}
+.island-card:last-of-type{border-bottom:1px solid rgba(244,236,222,.18)}
+.island-card:hover{background:linear-gradient(90deg,transparent,rgba(193,133,85,.06),transparent)}
+.island-card .nm{font-family:'Cormorant Garamond';font-style:italic;font-size:32px;color:var(--ochre-pale);line-height:1}
+.island-card .nm small{display:block;margin-top:8px;font-family:'Inter';font-size:10px;letter-spacing:.32em;color:rgba(244,236,222,.55);text-transform:uppercase;font-style:normal}
+.island-card h3{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(28px,3.4vw,44px);line-height:1.05;letter-spacing:-.012em;margin:0 0 14px;color:var(--cream)}
+.island-card h3 em{font-style:italic;color:var(--turq-pale)}
+.island-card p{margin:0;font-size:15px;line-height:1.7;color:rgba(244,236,222,.78)}
+.island-card .results{display:flex;flex-direction:column;gap:18px;font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:rgba(244,236,222,.65)}
+.island-card .results .v{font-family:'Cormorant Garamond';font-size:28px;color:var(--cream);text-transform:none;letter-spacing:0;font-style:italic}
+
+/* Closing */
+.close{padding:200px clamp(20px,4vw,72px);text-align:center;background:linear-gradient(180deg,#0A1418,#0F3942 60%,#1A1410);position:relative}
+.close::before{content:"";position:absolute;left:50%;top:140px;transform:translateX(-50%);width:80px;height:1px;background:var(--ochre)}
+.close .q{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(56px,9vw,140px);line-height:1.02;letter-spacing:-.025em;color:var(--cream);max-width:18ch;margin:0 auto}
+.close .q em{font-style:italic;color:var(--ochre-pale)}
+.close .channels{margin-top:64px;display:flex;justify-content:center;gap:48px;font-family:'Cormorant Garamond';font-style:italic;font-size:24px;flex-wrap:wrap;color:var(--cream)}
+.close .channels a{color:inherit;text-decoration:none;border-bottom:1px solid var(--ochre-pale);padding-bottom:6px;transition:gap .25s,color .25s,border-color .25s;display:inline-flex;gap:12px;align-items:center}
+.close .channels a:hover{gap:24px;color:var(--ochre-pale);border-bottom-color:var(--cream)}
+
+/* Concept badge */
+.badge{position:fixed;left:24px;bottom:24px;z-index:60;font-family:'Cormorant Garamond';font-style:italic;font-size:13px;letter-spacing:.3em;color:rgba(244,236,222,.85);background:rgba(15,57,66,.55);backdrop-filter:blur(12px);padding:10px 18px;border-radius:999px;border:1px solid rgba(244,236,222,.16)}
+
+@media(max-width:880px){
+  .stats-inner{grid-template-columns:repeat(2,1fr);gap:36px}
+  .island-card{grid-template-columns:1fr;gap:16px}
+  .minimap{display:none}
+  .topbar .center{display:none}
+}
+</style>
+</head>
+<body>
+
+<section class="hero">
+  <canvas id="three-canvas"></canvas>
+
+  <div class="topbar">
+    <div class="brand">DEADLINE</div>
+    <div class="center">Archipelago · since 2025 · N° 12</div>
+    <div class="right">
+      <button class="audio-toggle" id="audioToggle">♪ Audio off</button>
+      <a href="#islands">Острова</a>
+      <a href="#contact">Связаться</a>
+    </div>
+  </div>
+
+  <div class="hero-text">
+    <div class="hero-eyebrow">Topography of production · 2026</div>
+    <h1>Меньше слов.<br><em>Больше</em> результата.</h1>
+    <p class="hero-sub">Двенадцать проектов — двенадцать островов. Один архипелаг. Ни один срок ещё не сорвался в воду.</p>
+    <div class="hero-meta">
+      <span>// 12 проектов · 0 сорванных deadlines</span>
+      <div class="scroll-hint">Открыть архипелаг</div>
+    </div>
+  </div>
+</section>
+
+<aside class="minimap">
+  <div class="lbl">— Островов: 4</div>
+  <div class="island is-active" data-i="0"><span>VRP</span><span class="pin"></span></div>
+  <div class="island" data-i="1"><span>KeyDrop</span><span class="pin"></span></div>
+  <div class="island" data-i="2"><span>RA Project</span><span class="pin"></span></div>
+  <div class="island" data-i="3"><span>Studio</span><span class="pin"></span></div>
+</aside>
+
+<section class="stats">
+  <div class="stats-inner">
+    <div class="stat"><div class="v">12<em>+</em></div><div class="l">Проектов в production</div></div>
+    <div class="stat"><div class="v">0</div><div class="l">Сорванных дедлайнов</div></div>
+    <div class="stat"><div class="v">100<em>%</em></div><div class="l">Возвращаются или рекомендуют</div></div>
+    <div class="stat"><div class="v">8</div><div class="l">Индустрий и больше</div></div>
+  </div>
+</section>
+
+<section class="islands" id="islands">
+  <div class="islands-head">
+    <h2>Архипелаг<br><em>отгрузок.</em></h2>
+    <div style="font-family:'Cormorant Garamond';font-style:italic;font-size:20px;color:rgba(244,236,222,.65);max-width:32ch;text-align:right">Hover над островом в hero — мини-карта подсветится. Скролл — заходим вглубь.</div>
+  </div>
+
+  <article class="island-card">
+    <div class="nm">.01<small>Phuket  ·  2026</small></div>
+    <div>
+      <h3>VRP — <em>VIP Rental</em> Phuket</h3>
+      <p>Next.js + GPT-4 консьерж. Поставлен в production за 10 недель, отгружен в день. Колл-центр сокращён до одного оператора.</p>
+    </div>
+    <div class="results">
+      <div>Conversion<span class="v">+32%</span></div>
+      <div>Без человека<span class="v">73%</span></div>
+      <div>Объектов<span class="v">80+</span></div>
+    </div>
+  </article>
+
+  <article class="island-card">
+    <div class="nm">.02<small>Telegram  ·  2025</small></div>
+    <div>
+      <h3>KeyDrop — <em>MiniApp</em></h3>
+      <p>E-commerce на Steam-кодах. 1000+ заказов/мес, 18 месяцев uptime 99.99%. Та автоматизация, про которую забыл.</p>
+    </div>
+    <div class="results">
+      <div>Заказов<span class="v">1000+/мес</span></div>
+      <div>Uptime<span class="v">99.99%</span></div>
+      <div>В prod<span class="v">18 мес</span></div>
+    </div>
+  </article>
+
+  <article class="island-card">
+    <div class="nm">.03<small>On-chain  ·  2025-26</small></div>
+    <div>
+      <h3>RA Project — <em>analytics</em></h3>
+      <p>12 блокчейн-сетей, ClickHouse + Kafka, 41M+ блоков. Четыре AI-агента в production вычитывают и нормализуют данные.</p>
+    </div>
+    <div class="results">
+      <div>Сетей<span class="v">12</span></div>
+      <div>Блоков<span class="v">41M+</span></div>
+      <div>Агентов<span class="v">4 в prod</span></div>
+    </div>
+  </article>
+
+  <article class="island-card">
+    <div class="nm">.04<small>Studio  ·  2025-26</small></div>
+    <div>
+      <h3>Brand <em>Microsites</em></h3>
+      <p>Восемь микросайтов под кампании из одного design-system. Time-to-launch — 2 часа на сайт.</p>
+    </div>
+    <div class="results">
+      <div>Сайтов<span class="v">8</span></div>
+      <div>TTL<span class="v">2 часа</span></div>
+      <div>DS<span class="v">один на всё</span></div>
+    </div>
+  </article>
+</section>
+
+<section class="close" id="contact">
+  <p class="q">Мы — DEADLINE.<br><em>У нас ничего не горит.</em></p>
+  <div class="channels">
+    <a href="mailto:corpdeadline@gmail.com">corpdeadline@gmail.com →</a>
+    <a href="https://t.me/deadline_corp">@deadline_corp →</a>
+  </div>
+</section>
+
+<div class="badge">Concept 01 · Topography</div>
+
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js"}}</script>
+<script type="module">
+import * as THREE from 'three';
+
+const canvas=document.getElementById('three-canvas');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,alpha:true});
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.setSize(window.innerWidth,window.innerHeight);
+
+const scene=new THREE.Scene();
+scene.fog=new THREE.FogExp2(0x0F3942,0.018);
+scene.background=null;
+
+const camera=new THREE.PerspectiveCamera(38,window.innerWidth/window.innerHeight,0.1,300);
+camera.position.set(0,42,52);
+camera.lookAt(0,-4,0);
+
+// Lights
+const sun=new THREE.DirectionalLight(0xFFD9A0,1.1);
+sun.position.set(40,40,20);
+scene.add(sun);
+scene.add(new THREE.AmbientLight(0x2A4F5C,0.6));
+const warm=new THREE.PointLight(0xC18555,0.9,80);
+warm.position.set(-20,15,10);
+scene.add(warm);
+
+// Sea — large plane with custom shader
+const seaGeo=new THREE.PlaneGeometry(160,160,140,140);
+seaGeo.rotateX(-Math.PI/2);
+const seaMat=new THREE.ShaderMaterial({
+  uniforms:{
+    uTime:{value:0},
+    uColorA:{value:new THREE.Color(0x1C5A65)},
+    uColorB:{value:new THREE.Color(0x0F3942)},
+    uColorC:{value:new THREE.Color(0xE8C39C)}
+  },
+  vertexShader:`
+    uniform float uTime;
+    varying vec3 vWorld;
+    varying float vWave;
+    void main(){
+      vec3 p=position;
+      float w1=sin(p.x*0.18+uTime*0.6)*0.22;
+      float w2=sin(p.z*0.22+uTime*0.45)*0.18;
+      float w3=sin((p.x+p.z)*0.14+uTime*0.35)*0.15;
+      p.y+=w1+w2+w3;
+      vWave=p.y;
+      vec4 worldPos=modelMatrix*vec4(p,1.);
+      vWorld=worldPos.xyz;
+      gl_Position=projectionMatrix*viewMatrix*worldPos;
+    }
+  `,
+  fragmentShader:`
+    uniform vec3 uColorA;
+    uniform vec3 uColorB;
+    uniform vec3 uColorC;
+    uniform float uTime;
+    varying vec3 vWorld;
+    varying float vWave;
+    // simple pseudo-caustic
+    float caustic(vec2 p,float t){
+      float a=sin(p.x*1.4+t*0.7)+sin(p.y*1.7+t*0.6);
+      float b=sin((p.x+p.y)*1.1+t*0.5);
+      return smoothstep(0.5,1.4,a+b);
+    }
+    void main(){
+      float depth=clamp((-vWorld.y+1.0)/4.0,0.0,1.0);
+      vec3 base=mix(uColorB,uColorA,1.0-depth);
+      float c=caustic(vWorld.xz*0.3,uTime);
+      base+=vec3(0.12,0.16,0.18)*c;
+      base+=0.06*sin(uTime*0.3+vWorld.x*0.5)*uColorC;
+      float fade=smoothstep(70.0,30.0,length(vWorld.xz));
+      gl_FragColor=vec4(base,1.0);
+    }
+  `
+});
+const sea=new THREE.Mesh(seaGeo,seaMat);
+sea.position.y=-2;
+scene.add(sea);
+
+// Islands — low-poly cones + spheres
+function island(x,z,scale,color){
+  const g=new THREE.Group();
+  // base island disc
+  const disc=new THREE.Mesh(
+    new THREE.CylinderGeometry(scale*1.8,scale*2.4,scale*0.4,18,1),
+    new THREE.MeshStandardMaterial({color:0xE0C49C,roughness:.92,flatShading:true})
+  );
+  disc.position.y=0;
+  g.add(disc);
+  // mountain
+  const m=new THREE.Mesh(
+    new THREE.ConeGeometry(scale*1.2,scale*2.2,8,1),
+    new THREE.MeshStandardMaterial({color:color||0xC18555,roughness:.95,flatShading:true})
+  );
+  m.position.y=scale*1.0;
+  g.add(m);
+  // small palm — a sphere on a stick
+  const trunk=new THREE.Mesh(
+    new THREE.CylinderGeometry(0.05,0.07,scale*1.0,6),
+    new THREE.MeshStandardMaterial({color:0x5A3A22,flatShading:true})
+  );
+  trunk.position.set(scale*0.8,scale*0.7,0);
+  trunk.rotation.z=Math.PI*0.04;
+  g.add(trunk);
+  const leaves=new THREE.Mesh(
+    new THREE.IcosahedronGeometry(scale*0.32,0),
+    new THREE.MeshStandardMaterial({color:0x4F7355,flatShading:true,roughness:.9})
+  );
+  leaves.position.set(scale*0.95,scale*1.2,0);
+  g.add(leaves);
+  g.position.set(x,0,z);
+  return g;
+}
+
+const islands=[
+  island(-14,-6,2.4,0xC18555),
+  island(8,4,1.8,0xB47246),
+  island(18,-12,2.2,0xCC8F58),
+  island(-6,12,1.6,0xD49A6C)
+];
+islands.forEach(i=>scene.add(i));
+
+// Tiny boat marker
+const boat=new THREE.Mesh(
+  new THREE.ConeGeometry(0.25,0.6,6),
+  new THREE.MeshStandardMaterial({color:0xF4ECDE,flatShading:true})
+);
+boat.rotation.z=Math.PI/2;
+boat.position.set(0,0.2,0);
+scene.add(boat);
+
+// Resize
+addEventListener('resize',()=>{
+  renderer.setSize(window.innerWidth,window.innerHeight);
+  camera.aspect=window.innerWidth/window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+// Mouse parallax
+let mx=0,my=0;
+addEventListener('mousemove',e=>{
+  mx=(e.clientX/window.innerWidth-.5)*2;
+  my=(e.clientY/window.innerHeight-.5)*2;
+});
+
+// Animate
+const clock=new THREE.Clock();
+function tick(){
+  const t=clock.getElapsedTime();
+  seaMat.uniforms.uTime.value=t;
+  // gentle island bob
+  islands.forEach((isle,i)=>{isle.position.y=Math.sin(t*0.5+i)*0.18});
+  boat.position.x=Math.sin(t*0.18)*8;
+  boat.position.z=Math.cos(t*0.18)*4;
+  boat.rotation.y=-t*0.18+Math.PI/2;
+  // camera parallax
+  camera.position.x+=((mx*6)-camera.position.x)*0.03;
+  camera.position.y+=(42+(-my*4)-camera.position.y)*0.03;
+  camera.lookAt(0,-2,0);
+  renderer.render(scene,camera);
+  requestAnimationFrame(tick);
+}
+tick();
+
+// Minimap interactions
+document.querySelectorAll('.minimap .island').forEach(el=>{
+  el.addEventListener('mouseenter',()=>{
+    document.querySelectorAll('.minimap .island').forEach(x=>x.classList.toggle('is-active',x===el));
+    const idx=parseInt(el.dataset.i);
+    const target=islands[idx];
+    // pulse target island
+    if(target){
+      target.children[1].material.emissive=new THREE.Color(0xE8C39C);
+      target.children[1].material.emissiveIntensity=0.6;
+      setTimeout(()=>{target.children[1].material.emissiveIntensity=0},900);
+    }
+  });
+});
+
+// Audio toggle (silent placeholder)
+let audioOn=false;
+document.getElementById('audioToggle').addEventListener('click',e=>{
+  audioOn=!audioOn;
+  e.target.textContent=audioOn?'♫ Audio on':'♪ Audio off';
+});
+</script>
+</body>
+</html>

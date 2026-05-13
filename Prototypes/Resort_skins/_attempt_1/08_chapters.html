@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CHAPTERS · DEADLINE resort skin concept #08</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,500;1,300;1,500&family=Marcellus&family=Inter:wght@200;300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+<style>
+:root{
+  --olive:#C9A463;
+  --olive-deep:#8A6F3D;
+  --olive-pale:#E8D8B2;
+  --whitewash:#F5EFE2;
+  --whitewash-deep:#EAE0CB;
+  --ink:#1A1612;
+  --ink-soft:rgba(26,22,18,.78);
+  --grape:#3A1F2C;
+  --grape-deep:#22121A;
+  --rule:rgba(26,22,18,.14);
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--whitewash);color:var(--ink);font-family:'Inter',system-ui,sans-serif;font-weight:300;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+
+/* Persistent running header */
+.running{position:fixed;top:0;left:0;right:0;z-index:50;padding:18px clamp(20px,4vw,56px);display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:24px;background:linear-gradient(180deg,rgba(245,239,226,.95),rgba(245,239,226,.0));backdrop-filter:blur(10px);font-family:'Inter';font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:var(--olive-deep)}
+.running .l{justify-self:start}
+.running .c{justify-self:center;font-family:'Cormorant Garamond';font-style:italic;font-weight:500;font-size:14px;letter-spacing:.18em;color:var(--ink);text-transform:none}
+.running .c::before,.running .c::after{content:"";display:inline-block;width:24px;height:1px;background:var(--olive);vertical-align:middle;margin:0 12px}
+.running .r{justify-self:end;color:var(--ink)}
+
+/* Persistent chapter number (sticky huge digit, left-bottom) */
+.huge-num{position:fixed;left:clamp(20px,4vw,56px);bottom:32px;z-index:40;font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(120px,18vw,260px);line-height:.85;color:rgba(26,22,18,.08);letter-spacing:-.04em;pointer-events:none;transition:color .8s cubic-bezier(.6,0,.3,1)}
+.huge-num.dark{color:rgba(245,239,226,.16)}
+
+/* Scroll progress hairline at top */
+.progress{position:fixed;top:0;left:0;height:2px;background:linear-gradient(90deg,var(--olive-deep),var(--olive));width:0;z-index:60;transition:width .12s linear}
+
+/* Generic chapter */
+.chap{padding:140px clamp(20px,4vw,72px) 140px;min-height:100vh;display:grid;grid-template-rows:1fr auto;gap:48px;position:relative;border-bottom:1px solid var(--rule)}
+.chap-marker{font-family:'Inter';font-size:11px;font-weight:500;letter-spacing:.42em;text-transform:uppercase;color:var(--olive-deep);margin-bottom:24px;display:flex;align-items:center;gap:14px}
+.chap-marker::after{content:"";flex:1;height:1px;background:var(--rule);max-width:160px}
+.chap h2{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(56px,10vw,180px);line-height:.92;letter-spacing:-.025em;margin:0;color:var(--ink);max-width:14ch}
+.chap h2 em{font-style:italic;font-weight:300;color:var(--grape)}
+.chap-body{display:grid;grid-template-columns:1fr 2fr;gap:64px;align-items:start;border-top:1px solid var(--rule);padding-top:36px;margin-top:32px}
+.chap-body .meta{font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--olive-deep);line-height:2}
+.chap-body .meta strong{display:block;font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:22px;letter-spacing:.02em;text-transform:none;color:var(--ink);margin-top:4px}
+.chap-body .copy{font-size:16px;line-height:1.85;color:var(--ink-soft);column-count:2;column-gap:40px;column-rule:1px solid var(--rule)}
+.chap-body .copy p{margin:0 0 18px}
+.chap-body .copy p:first-child::first-letter{font-family:'Cormorant Garamond';font-weight:300;font-size:5em;line-height:.85;float:left;padding:8px 14px 0 0;color:var(--olive-deep);font-style:italic}
+
+/* Chapter 00 — cover */
+.cover{display:grid;place-items:center;text-align:center;padding-top:160px;background:radial-gradient(60% 50% at 50% 30%,rgba(201,164,99,.18),transparent 65%),var(--whitewash)}
+.cover h1{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(72px,12vw,200px);line-height:.92;letter-spacing:-.03em;margin:0;color:var(--ink);max-width:none}
+.cover h1 em{font-style:italic;color:var(--grape)}
+.cover .sub{margin-top:36px;font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(20px,2.2vw,30px);line-height:1.45;color:var(--ink-soft);max-width:46ch;margin-left:auto;margin-right:auto}
+.cover .scroll-cue{margin-top:80px;font-family:'Marcellus';font-size:12px;letter-spacing:.42em;color:var(--olive-deep);text-transform:uppercase;display:inline-flex;align-items:center;gap:14px}
+.cover .scroll-cue::after{content:"";display:inline-block;width:1px;height:36px;background:var(--olive);animation:bob 2.4s ease-in-out infinite}
+@keyframes bob{0%,100%{transform:translateY(0);opacity:.4}50%{transform:translateY(8px);opacity:1}}
+
+/* Chapter 04 dark — manifesto */
+.chap-dark{background:var(--grape-deep);color:var(--whitewash);border-bottom:0}
+.chap-dark .chap-marker{color:var(--olive)}
+.chap-dark .chap-marker::after{background:rgba(245,239,226,.22)}
+.chap-dark h2{color:var(--whitewash)}
+.chap-dark h2 em{color:var(--olive)}
+.chap-dark .chap-body{border-top-color:rgba(245,239,226,.15)}
+.chap-dark .chap-body .meta{color:rgba(245,239,226,.55)}
+.chap-dark .chap-body .meta strong{color:var(--olive-pale)}
+.chap-dark .chap-body .copy{color:rgba(245,239,226,.85);column-rule:1px solid rgba(245,239,226,.15)}
+.chap-dark .chap-body .copy p:first-child::first-letter{color:var(--olive)}
+
+/* Stats inline */
+.kpi-row{padding:80px clamp(20px,4vw,72px);background:var(--whitewash-deep);display:grid;grid-template-columns:repeat(4,1fr);gap:64px;border-top:1px solid var(--rule)}
+.kpi{position:relative}
+.kpi::before{content:"";position:absolute;top:-32px;left:0;width:42px;height:1px;background:var(--olive)}
+.kpi .v{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(56px,7vw,108px);line-height:1;letter-spacing:-.03em;color:var(--ink)}
+.kpi .v em{font-style:italic;color:var(--olive-deep)}
+.kpi .l{margin-top:12px;font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--olive-deep);line-height:1.7}
+
+/* Closing */
+.close{padding:200px clamp(20px,4vw,72px) 120px;text-align:center}
+.close .q{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(56px,9vw,140px);line-height:1.02;letter-spacing:-.025em;color:var(--ink);max-width:18ch;margin:0 auto}
+.close .q em{font-style:italic;color:var(--grape)}
+.close .channels{margin-top:64px;display:flex;justify-content:center;gap:48px;font-family:'Cormorant Garamond';font-style:italic;font-size:24px;flex-wrap:wrap}
+.close .channels a{color:var(--ink);text-decoration:none;border-bottom:1px solid var(--olive);padding-bottom:6px;transition:gap .25s,color .25s,border-color .25s;display:inline-flex;align-items:center;gap:12px}
+.close .channels a:hover{color:var(--grape);border-bottom-color:var(--grape)}
+
+/* Concept badge */
+.badge{position:fixed;left:24px;top:80px;z-index:60;font-family:'Marcellus',serif;font-size:11px;letter-spacing:.4em;color:rgba(26,22,18,.65);background:rgba(245,239,226,.7);backdrop-filter:blur(12px);padding:10px 18px;border-radius:0;border:1px solid var(--rule)}
+
+@media(max-width:880px){
+  .chap-body{grid-template-columns:1fr}
+  .chap-body .copy{column-count:1}
+  .kpi-row{grid-template-columns:repeat(2,1fr);gap:40px}
+  .running .l{display:none}
+  .huge-num{font-size:120px;bottom:16px}
+}
+</style>
+</head>
+<body>
+
+<div class="progress" id="progress"></div>
+
+<header class="running">
+  <div class="l" id="run-l">N° 12 · DEC 2026 · CHAPTER .00 OUVERTURE</div>
+  <div class="c">DEADLINE</div>
+  <div class="r"><a href="mailto:corpdeadline@gmail.com" style="color:inherit;text-decoration:none">CORPDEADLINE@GMAIL.COM</a></div>
+</header>
+
+<div class="huge-num" id="hugeNum">.00</div>
+
+<div class="badge">Concept 08 · Chapters</div>
+
+<section class="chap cover" data-chap=".00" data-label="Ouverture">
+  <div></div>
+  <div>
+    <h1>Меньше слов.<br><em>Больше</em> результата.</h1>
+    <p class="sub">Издание двенадцатое. Четыре главы, ноль сорванных дедлайнов, и одна простая мысль — отгружаем то, что обещали, в день, когда обещали.</p>
+    <div class="scroll-cue">Открыть главу .01</div>
+  </div>
+  <div></div>
+</section>
+
+<section class="chap" data-chap=".01" data-label="Problem">
+  <div>
+    <div class="chap-marker">Chapter .01  ·  ~6 pages</div>
+    <h2>Проблема —<br><em>не</em> в технологиях.</h2>
+  </div>
+  <div class="chap-body">
+    <div class="meta">
+      Studio Notes<br><strong>O. P.  ·  partner</strong><br><br>
+      Reading time<br><strong>~4 min</strong><br><br>
+      Tags<br><strong>Web · Automation · AI</strong>
+    </div>
+    <div class="copy">
+      <p>Бизнес обычно говорит «нужен сайт» — и через три месяца получает «MVP for now», который через полгода переписывают на нормальный стэк. Знакомо. Мы видели это в восьми индустриях.</p>
+      <p>Проблема — не в технологиях. Технологии давно понятны. Проблема — в обещании срока. Большинство студий держит дату до момента, когда становится очевидно, что они не успеют. Тогда дату двигают. Тихо.</p>
+      <p>DEADLINE стартовал с одного простого правила: дату не двигаем. Если что-то идёт не по плану — режем scope, но не срок. Это сложнее технически, но проще операционно. И клиент получает то, что обещали, тогда, когда обещали.</p>
+      <p>Двенадцать проектов спустя — ноль смещений. Это не магия и не лозунг. Это методология, которую мы описываем в следующих трёх главах.</p>
+    </div>
+  </div>
+</section>
+
+<section class="chap" data-chap=".02" data-label="Stack">
+  <div>
+    <div class="chap-marker">Chapter .02  ·  ~8 pages</div>
+    <h2><em>Стэк</em>,<br>а не библиотеки.</h2>
+  </div>
+  <div class="chap-body">
+    <div class="meta">
+      Studio Notes<br><strong>Engineering</strong><br><br>
+      Reading time<br><strong>~6 min</strong><br><br>
+      Stack<br><strong>Next.js · n8n · LLM-стэк · Stripe</strong>
+    </div>
+    <div class="copy">
+      <p>Каждый проект собирается из понятного набора кирпичей: Next.js (или Astro, если статика), n8n / custom-pipelines для процессов, LLM-агенты для тех задач, где они действительно дешевле человека.</p>
+      <p>Мы не «пробуем новый фреймворк» на клиентском бюджете. Мы пробуем на наших внутренних проектах. К моменту, когда библиотека приходит в production-стэк, она прошла трёхмесячный карантин у нас.</p>
+      <p>Поэтому отгрузка предсказуема. Поэтому срок держится. Поэтому в проде восемнадцать месяцев работает то, что мы поставили — без срочных хотфиксов и недосыпов.</p>
+      <p>Стэк это не инструменты. Стэк — это уверенность, что инструменты не подведут.</p>
+    </div>
+  </div>
+</section>
+
+<section class="kpi-row">
+  <div class="kpi"><div class="v">12<em>+</em></div><div class="l">Проектов<br>в production</div></div>
+  <div class="kpi"><div class="v">0</div><div class="l">Сорванных<br>дедлайнов</div></div>
+  <div class="kpi"><div class="v">100<em>%</em></div><div class="l">Возвращаются<br>или рекомендуют</div></div>
+  <div class="kpi"><div class="v">8</div><div class="l">Индустрий<br>и больше</div></div>
+</section>
+
+<section class="chap" data-chap=".03" data-label="Shipping">
+  <div>
+    <div class="chap-marker">Chapter .03  ·  ~12 pages</div>
+    <h2><em>Отгрузка</em> —<br>в день обещания.</h2>
+  </div>
+  <div class="chap-body">
+    <div class="meta">
+      Studio Notes<br><strong>Ops</strong><br><br>
+      Reading time<br><strong>~10 min</strong><br><br>
+      Methodology<br><strong>Fixed date · variable scope</strong>
+    </div>
+    <div class="copy">
+      <p>Когда мы говорим «двенадцатого марта», мы имеем в виду двенадцатое марта. Не «к концу марта» и не «в конце недели от двенадцатого». Двенадцатое.</p>
+      <p>Чтобы это работало, мы режем scope, а не срок. На kickoff фиксируем 100% задач, на 75-процентной отметке мы знаем, что 80% из них уже в репозитории, и тогда обсуждаем, какие 20% задвинуть в фазу 2.</p>
+      <p>Это договорённость, которую клиент любит и партнёры боятся. Любит — потому что прогнозируемо. Боятся — потому что нет места для «ну ещё пару дней».</p>
+      <p>За двенадцать проектов мы передвинули дату ровно ноль раз. И отгрузили ровно двенадцать проектов.</p>
+    </div>
+  </div>
+</section>
+
+<section class="chap chap-dark" data-chap=".04" data-label="Manifesto" data-dark="1">
+  <div>
+    <div class="chap-marker">Chapter .04  ·  Closing essay</div>
+    <h2>Мы — DEADLINE.<br><em>У нас</em> ничего не горит.</h2>
+  </div>
+  <div class="chap-body">
+    <div class="meta">
+      Closing<br><strong>The studio</strong><br><br>
+      Reading time<br><strong>~3 min</strong><br><br>
+      Year<br><strong>2026</strong>
+    </div>
+    <div class="copy">
+      <p>Название мы выбрали не для красоты. DEADLINE — это не угроза, а обещание. Если что-то горит — это не у нас. Если что-то горит у тебя — приходи, поможем потушить.</p>
+      <p>Дедлайны не пугают тех, кто умеет с ними жить. Они пугают тех, кто к ним не готовится. Мы готовимся за две недели до первой строчки кода: считаем scope, считаем риски, считаем дату.</p>
+      <p>Поэтому, когда мы говорим — «отгрузим двенадцатого» — мы отгружаем двенадцатого. Если вокруг этого нужно работать в выходные, мы работаем в выходные. Но клиент про это не узнаёт — потому что отгрузка приходит в обещанный день, а не в обещанный день минус неделя «на тесты».</p>
+      <p>Пиши. План и срок прилетят раньше, чем ты допьёшь кофе. Это тоже обещание.</p>
+    </div>
+  </div>
+</section>
+
+<section class="close">
+  <div class="chap-marker" style="justify-content:center;color:var(--olive-deep);margin-bottom:32px">— Колофон  ·  Связаться</div>
+  <p class="q">Пиши — ответим<br>раньше, чем<br><em>уберёшь руки</em><br>от клавиатуры.</p>
+  <div class="channels">
+    <a href="mailto:corpdeadline@gmail.com">corpdeadline@gmail.com →</a>
+    <a href="https://t.me/deadline_corp">@deadline_corp →</a>
+  </div>
+</section>
+
+<script>
+gsap.registerPlugin(ScrollTrigger);
+
+const hugeNum=document.getElementById('hugeNum');
+const runL=document.getElementById('run-l');
+const chaps=[...document.querySelectorAll('[data-chap]')];
+
+chaps.forEach(c=>{
+  ScrollTrigger.create({
+    trigger:c,
+    start:'top 60%',
+    end:'bottom 40%',
+    onEnter:()=>updateChap(c),
+    onEnterBack:()=>updateChap(c)
+  });
+});
+
+function updateChap(c){
+  const n=c.dataset.chap;
+  const lbl=c.dataset.label;
+  // Animate huge num
+  gsap.to(hugeNum,{opacity:0,duration:.2,onComplete:()=>{
+    hugeNum.textContent=n;
+    hugeNum.classList.toggle('dark',!!c.dataset.dark);
+    gsap.to(hugeNum,{opacity:1,duration:.4});
+  }});
+  runL.textContent=`N° 12 · DEC 2026 · CHAPTER ${n} ${lbl.toUpperCase()}`;
+}
+
+// Scroll progress bar
+document.addEventListener('scroll',()=>{
+  const h=document.documentElement;
+  const pct=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100;
+  document.getElementById('progress').style.width=pct+'%';
+},{passive:true});
+
+// Reveal each chapter
+chaps.forEach(c=>{
+  gsap.from(c.querySelectorAll('.chap-marker, h1, h2, .sub, .copy, .meta, .scroll-cue'),{
+    y:32,opacity:0,duration:.9,stagger:.08,ease:'power2.out',
+    scrollTrigger:{trigger:c,start:'top 75%'}
+  });
+});
+</script>
+</body>
+</html>

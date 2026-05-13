@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LAGOON · DEADLINE resort skin concept #01</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=Marcellus&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --sand:#F4EFE6;
+  --sand-deep:#E8DFCC;
+  --seafoam:#87B7B0;
+  --seafoam-deep:#5A8F88;
+  --ocean:#2C3E45;
+  --coral:#E4A89E;
+  --champagne:#C8A871;
+  --ink:#1B2428;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--sand);color:var(--ocean);font-family:'Inter',system-ui,sans-serif;font-weight:300;overflow-x:hidden}
+
+/* ─── Caustics shader fallback (animated SVG turbulence + multi-layer gradient) ─── */
+.lagoon-bg{position:fixed;inset:0;z-index:0;overflow:hidden;background:linear-gradient(180deg,#E0EBE8 0%,#F4EFE6 60%,#FBF6EB 100%)}
+.caustic{position:absolute;inset:-20%;mix-blend-mode:soft-light;opacity:.55;filter:blur(1px) saturate(1.4);background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='800' height='800'><defs><filter id='t'><feTurbulence type='fractalNoise' baseFrequency='0.013 0.018' numOctaves='3' seed='2'/><feColorMatrix values='0 0 0 0 0.53, 0 0 0 0 0.72, 0 0 0 0 0.69, 0 0 0 1.4 -0.4'/><feGaussianBlur stdDeviation='3'/></filter></defs><rect width='100%' height='100%' filter='url(%23t)'/></svg>");background-size:1100px 1100px;animation:caustic-drift 22s linear infinite}
+.caustic.b{animation-duration:35s;animation-direction:reverse;opacity:.35;background-size:1500px 1500px;mix-blend-mode:overlay}
+@keyframes caustic-drift{0%{transform:translate(0,0) rotate(0)}50%{transform:translate(-6%,-4%) rotate(2deg)}100%{transform:translate(0,0) rotate(0)}}
+
+/* Light beams overlay */
+.beams{position:fixed;inset:0;z-index:1;pointer-events:none;background:
+  radial-gradient(60% 50% at 28% -10%, rgba(255,250,235,.85), transparent 60%),
+  radial-gradient(45% 35% at 78% 0%, rgba(200,168,113,.35), transparent 60%);}
+
+/* ─── Layout ─── */
+.shell{position:relative;z-index:2;min-height:100vh}
+.nav{display:flex;justify-content:space-between;align-items:center;padding:28px clamp(24px,5vw,72px);position:fixed;top:0;left:0;right:0;z-index:50;backdrop-filter:blur(18px) saturate(1.1);-webkit-backdrop-filter:blur(18px) saturate(1.1);background:rgba(244,239,230,.42);border-bottom:1px solid rgba(135,183,176,.18)}
+.brand{font-family:'Marcellus',serif;font-size:18px;letter-spacing:.32em;color:var(--ocean)}
+.brand .dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--seafoam);margin-right:10px;vertical-align:middle;box-shadow:0 0 12px var(--seafoam)}
+.nav-links{display:flex;gap:36px;font-family:'Cormorant Garamond',serif;font-style:italic;font-size:18px;color:var(--ocean)}
+.nav-links a{color:inherit;text-decoration:none;position:relative;padding:4px 2px;transition:color .25s}
+.nav-links a::after{content:"";position:absolute;left:0;right:0;bottom:-2px;height:1px;background:var(--seafoam);transform:scaleX(0);transform-origin:left;transition:transform .35s ease}
+.nav-links a:hover{color:var(--seafoam-deep)}
+.nav-links a:hover::after{transform:scaleX(1)}
+
+/* Hero */
+.hero{min-height:100vh;display:grid;grid-template-rows:1fr auto;padding:140px clamp(24px,6vw,96px) 60px}
+.hero-eyebrow{font-family:'Inter',sans-serif;font-size:11px;font-weight:500;letter-spacing:.4em;text-transform:uppercase;color:var(--seafoam-deep);margin-bottom:36px}
+.hero-eyebrow::before{content:"◌  "}
+.hero h1{font-family:'Cormorant Garamond',serif;font-weight:300;font-size:clamp(56px,11vw,168px);line-height:.92;letter-spacing:-.025em;margin:0;color:var(--ink);max-width:14ch}
+.hero h1 em{font-style:italic;font-weight:400;color:var(--seafoam-deep);background:linear-gradient(120deg,var(--seafoam-deep),var(--champagne) 60%,var(--coral));-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero-sub{font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:300;font-size:clamp(20px,2.2vw,30px);line-height:1.45;color:rgba(44,62,69,.78);max-width:48ch;margin-top:36px}
+.hero-foot{display:flex;justify-content:space-between;align-items:flex-end;gap:48px;flex-wrap:wrap;margin-top:80px;font-family:'Inter',sans-serif;font-size:13px;color:rgba(44,62,69,.6);letter-spacing:.18em;text-transform:uppercase}
+.hero-foot .cta{font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:500;font-size:28px;color:var(--ink);text-transform:none;letter-spacing:0;text-decoration:none;border-bottom:1px solid var(--ocean);padding-bottom:4px;transition:gap .3s,color .3s,border-color .3s;display:inline-flex;gap:14px;align-items:center}
+.hero-foot .cta:hover{gap:24px;color:var(--seafoam-deep);border-color:var(--seafoam-deep)}
+
+/* Stats — glassmorphism band */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:rgba(135,183,176,.2);padding:1px;margin:80px clamp(24px,6vw,96px);border-radius:18px;overflow:hidden;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
+.stat{background:rgba(244,239,230,.55);padding:48px 32px;text-align:left;backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+.stat .num{font-family:'Cormorant Garamond',serif;font-weight:300;font-size:clamp(48px,6vw,84px);line-height:1;color:var(--ink);letter-spacing:-.03em}
+.stat .label{font-family:'Inter',sans-serif;font-size:11px;letter-spacing:.28em;text-transform:uppercase;color:var(--seafoam-deep);margin-top:18px;line-height:1.6}
+
+/* Services — glass cards */
+.services{padding:120px clamp(24px,6vw,96px)}
+.section-head{display:grid;grid-template-columns:1fr auto;align-items:end;margin-bottom:64px;gap:48px}
+.section-head .eyebrow{font-family:'Inter',sans-serif;font-size:11px;letter-spacing:.4em;text-transform:uppercase;color:var(--seafoam-deep)}
+.section-head h2{font-family:'Cormorant Garamond',serif;font-weight:300;font-size:clamp(40px,5.6vw,80px);line-height:1;letter-spacing:-.02em;margin:8px 0 0;color:var(--ink)}
+.section-head h2 em{font-style:italic;color:var(--seafoam-deep)}
+.svc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.svc{position:relative;padding:40px;background:linear-gradient(160deg,rgba(255,253,247,.78),rgba(244,239,230,.45));border-radius:24px;border:1px solid rgba(135,183,176,.22);backdrop-filter:blur(20px) saturate(1.1);-webkit-backdrop-filter:blur(20px) saturate(1.1);box-shadow:0 24px 60px -28px rgba(44,62,69,.18),0 2px 0 rgba(255,255,255,.5) inset;transition:transform .5s cubic-bezier(.2,.7,.3,1),box-shadow .5s}
+.svc:hover{transform:translateY(-6px);box-shadow:0 40px 80px -28px rgba(90,143,136,.45),0 2px 0 rgba(255,255,255,.7) inset}
+.svc-num{font-family:'Marcellus',serif;font-size:14px;letter-spacing:.3em;color:var(--champagne)}
+.svc h3{font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:500;font-size:32px;line-height:1.1;margin:24px 0 16px;color:var(--ink)}
+.svc p{font-size:15px;line-height:1.7;color:rgba(44,62,69,.78);margin:0 0 24px}
+.svc ul{list-style:none;padding:0;margin:0;font-size:14px;color:rgba(44,62,69,.7)}
+.svc ul li{padding:6px 0;border-top:1px solid rgba(135,183,176,.18)}
+.svc ul li::before{content:"◌  ";color:var(--seafoam)}
+
+/* Footer manifesto */
+.manifesto{padding:160px clamp(24px,6vw,96px) 120px;text-align:center;position:relative}
+.manifesto .quote{font-family:'Cormorant Garamond',serif;font-style:italic;font-weight:300;font-size:clamp(40px,7vw,110px);line-height:1.04;letter-spacing:-.02em;color:var(--ink);max-width:18ch;margin:0 auto}
+.manifesto .quote em{font-style:italic;font-weight:400;background:linear-gradient(110deg,var(--coral),var(--champagne) 50%,var(--seafoam-deep));-webkit-background-clip:text;background-clip:text;color:transparent}
+.manifesto .sig{margin-top:48px;font-family:'Marcellus',serif;font-size:13px;letter-spacing:.42em;color:var(--seafoam-deep)}
+
+/* Ripple cursor */
+.ripple{position:fixed;width:14px;height:14px;border-radius:50%;pointer-events:none;z-index:1000;background:radial-gradient(circle,rgba(135,183,176,.7) 0%,transparent 70%);transform:translate(-50%,-50%);transition:transform .15s ease}
+.ripple-trail{position:fixed;border-radius:50%;pointer-events:none;z-index:999;border:1px solid var(--seafoam);opacity:.5;animation:ripple-out 1.1s ease-out forwards}
+@keyframes ripple-out{0%{width:8px;height:8px;opacity:.6}100%{width:140px;height:140px;opacity:0;border-width:.5px}}
+
+/* Concept badge */
+.badge{position:fixed;left:24px;bottom:24px;z-index:60;font-family:'Marcellus',serif;font-size:11px;letter-spacing:.4em;color:rgba(44,62,69,.55);background:rgba(244,239,230,.6);backdrop-filter:blur(12px);padding:10px 18px;border-radius:999px;border:1px solid rgba(135,183,176,.25)}
+
+@media(max-width:880px){
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .svc-grid{grid-template-columns:1fr}
+  .nav-links{display:none}
+  .hero{padding-top:100px}
+}
+</style>
+</head>
+<body>
+<div class="lagoon-bg">
+  <div class="caustic"></div>
+  <div class="caustic b"></div>
+</div>
+<div class="beams"></div>
+
+<nav class="nav">
+  <div class="brand"><span class="dot"></span>DEADLINE</div>
+  <div class="nav-links">
+    <a href="#">Услуги</a>
+    <a href="#">Кейсы</a>
+    <a href="#">Процесс</a>
+    <a href="#">Связаться</a>
+  </div>
+</nav>
+
+<section class="hero">
+  <div>
+    <div class="hero-eyebrow">Concept 01 · Lagoon</div>
+    <h1>Меньше слов.<br><em>Больше результата.</em></h1>
+    <p class="hero-sub">Web, automation и AI-агенты в production к согласованной дате. Мы держим deadlines — и это единственное обещание, которое мы повторяем.</p>
+  </div>
+  <div class="hero-foot">
+    <span>// deadlines fear us</span>
+    <a class="cta" href="#">Связаться →</a>
+    <span>since 2025</span>
+  </div>
+</section>
+
+<div class="stats">
+  <div class="stat"><div class="num">12+</div><div class="label">Проектов<br>в production</div></div>
+  <div class="stat"><div class="num">0</div><div class="label">Сорванных<br>дедлайнов</div></div>
+  <div class="stat"><div class="num">100<span style="font-size:.6em">%</span></div><div class="label">Возвращаются<br>или рекомендуют</div></div>
+  <div class="stat"><div class="num">8</div><div class="label">Индустрий<br>и больше</div></div>
+</div>
+
+<section class="services">
+  <div class="section-head">
+    <div>
+      <div class="eyebrow">— Что делаем</div>
+      <h2>Три волны, <em>один результат</em></h2>
+    </div>
+  </div>
+  <div class="svc-grid">
+    <div class="svc">
+      <div class="svc-num">01</div>
+      <h3>Web</h3>
+      <p>Сипим продукт. Не «MVP for now». Production-стэк, аналитика и инфра — с первой строки.</p>
+      <ul><li>Next.js / Astro / SSR</li><li>Stripe / Telegram payments</li><li>SEO + Lighthouse 95+</li></ul>
+    </div>
+    <div class="svc">
+      <div class="svc-num">02</div>
+      <h3>Automation</h3>
+      <p>Горячая автоматизация — та, про которую забыл. Скрипты, n8n, Zapier, custom-API.</p>
+      <ul><li>Ops dashboards</li><li>Cron & event-driven</li><li>Slack / Telegram бот-операторы</li></ul>
+    </div>
+    <div class="svc">
+      <div class="svc-num">03</div>
+      <h3>AI Agents</h3>
+      <p>Не chatbot. Production-assistant с метриками, eval-гарантиями и стоимостью на токен.</p>
+      <ul><li>RAG + векторные базы</li><li>Tool-use, MCP</li><li>Cost & quality observability</li></ul>
+    </div>
+  </div>
+</section>
+
+<section class="manifesto">
+  <p class="quote">Мы — DEADLINE.<br><em>У нас ничего не горит.</em></p>
+  <div class="sig">since 2025  ·  corpdeadline@gmail.com  ·  @deadline_corp</div>
+</section>
+
+<div class="badge">CONCEPT 01 · LAGOON</div>
+<div class="ripple" id="ripple"></div>
+
+<script>
+// Ripple cursor + trail
+(()=>{
+  const r=document.getElementById('ripple');
+  let lastT=0;
+  document.addEventListener('mousemove',e=>{
+    r.style.left=e.clientX+'px';
+    r.style.top=e.clientY+'px';
+    const t=performance.now();
+    if(t-lastT>120){
+      lastT=t;
+      const d=document.createElement('div');
+      d.className='ripple-trail';
+      d.style.left=(e.clientX-4)+'px';
+      d.style.top=(e.clientY-4)+'px';
+      document.body.appendChild(d);
+      setTimeout(()=>d.remove(),1100);
+    }
+  });
+})();
+</script>
+</body>
+</html>

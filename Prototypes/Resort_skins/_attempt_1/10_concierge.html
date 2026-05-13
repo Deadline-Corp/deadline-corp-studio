@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CONCIERGE · DEADLINE resort skin concept #10</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Marcellus&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --champagne:#E5D5B0;
+  --champagne-deep:#C9B388;
+  --cream:#F5ECD8;
+  --cardamom:#6B8068;
+  --cardamom-deep:#4A5A48;
+  --sage:#9CB3A0;
+  --ink:#1A1410;
+  --ink-soft:rgba(26,20,16,.78);
+  --gold:#A88B5C;
+  --rule:rgba(26,20,16,.14);
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--cream);color:var(--ink);font-family:'Inter',system-ui,sans-serif;font-weight:300;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+
+/* Welcome ribbon (changes per state) */
+.ribbon{position:fixed;top:0;left:0;right:0;z-index:100;background:linear-gradient(180deg,var(--cream) 70%,transparent);padding:18px clamp(20px,4vw,56px);display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:24px;font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;border-bottom:1px solid var(--rule)}
+.ribbon .brand{font-family:'Marcellus';font-size:18px;letter-spacing:.42em;color:var(--ink);text-transform:none}
+.ribbon .state{justify-self:center;font-family:'DM Serif Display';font-style:italic;font-weight:400;font-size:14px;letter-spacing:.08em;color:var(--gold);text-transform:none}
+.ribbon .state .dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--cardamom);margin-right:10px;vertical-align:middle;animation:pulse 2s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:.4;transform:scale(.85)}50%{opacity:1;transform:scale(1.15)}}
+.ribbon .lang{display:flex;gap:8px}
+.ribbon .lang button{background:transparent;border:0;font:inherit;letter-spacing:.32em;text-transform:uppercase;color:rgba(26,20,16,.4);cursor:pointer;padding:4px 6px;transition:color .25s}
+.ribbon .lang button.is-active{color:var(--ink);border-bottom:1px solid var(--gold)}
+
+/* Container shared */
+.section{padding:80px clamp(20px,4vw,72px);max-width:1640px;margin:0 auto}
+.eyebrow{font-family:'Inter';font-size:10px;font-weight:500;letter-spacing:.42em;text-transform:uppercase;color:var(--cardamom-deep);margin-bottom:24px}
+.eyebrow::before{content:"◌  ";color:var(--gold)}
+
+/* ─── STATE A: First visit (default) ─── */
+.state-a{display:block}
+.state-b,.state-c{display:none}
+body[data-state="b"] .state-a{display:none}
+body[data-state="b"] .state-b{display:block}
+body[data-state="c"] .state-a,body[data-state="c"] .state-b{display:none}
+body[data-state="c"] .state-c{display:block}
+
+/* ── State A: Manifesto hero ── */
+.manifesto-hero{padding:140px clamp(20px,4vw,72px) 100px;min-height:88vh;display:grid;grid-template-rows:1fr auto;gap:64px;position:relative;background:radial-gradient(60% 50% at 20% 20%,rgba(168,139,92,.18),transparent 60%),radial-gradient(50% 60% at 85% 70%,rgba(107,128,104,.18),transparent 60%),var(--cream)}
+.manifesto-hero::before{content:"";position:absolute;left:clamp(20px,4vw,72px);top:140px;width:60px;height:1px;background:var(--gold)}
+.manifesto-hero h1{font-family:'DM Serif Display';font-weight:400;font-size:clamp(56px,9.5vw,160px);line-height:.94;letter-spacing:-.018em;margin:0;color:var(--ink);max-width:14ch}
+.manifesto-hero h1 em{font-family:'DM Serif Display';font-style:italic;color:var(--cardamom-deep)}
+.manifesto-hero .sub{margin-top:48px;font-family:'DM Serif Display';font-style:italic;font-weight:400;font-size:clamp(20px,2.2vw,30px);line-height:1.45;color:var(--ink-soft);max-width:46ch}
+.manifesto-hero .foot{display:flex;justify-content:space-between;align-items:end;gap:24px;flex-wrap:wrap;font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--cardamom-deep)}
+.manifesto-hero .foot .cta{font-family:'DM Serif Display';font-style:italic;font-weight:400;font-size:28px;color:var(--ink);text-transform:none;letter-spacing:0;border-bottom:1px solid var(--ink);padding-bottom:6px;cursor:pointer;transition:gap .25s,color .25s,border-color .25s;display:inline-flex;align-items:center;gap:14px;background:transparent;border-left:0;border-right:0;border-top:0}
+.manifesto-hero .foot .cta:hover{gap:24px;color:var(--cardamom-deep);border-bottom-color:var(--cardamom-deep)}
+
+/* ── State A: Trio of pillars ── */
+.pillars{display:grid;grid-template-columns:repeat(3,1fr);gap:48px;padding:80px clamp(20px,4vw,72px);max-width:1640px;margin:0 auto;border-top:1px solid var(--rule)}
+.pillar{position:relative;padding-top:24px;border-top:2px solid var(--gold)}
+.pillar .nm{font-family:'Inter';font-size:11px;letter-spacing:.42em;text-transform:uppercase;color:var(--gold)}
+.pillar h3{font-family:'DM Serif Display';font-weight:400;font-size:clamp(36px,4vw,56px);line-height:1.05;letter-spacing:-.015em;margin:16px 0 16px;color:var(--ink)}
+.pillar h3 em{font-family:'DM Serif Display';font-style:italic;color:var(--cardamom-deep)}
+.pillar p{font-size:15px;line-height:1.75;color:var(--ink-soft);margin:0 0 20px}
+.pillar ul{list-style:none;padding:0;margin:0;font-size:13px;color:var(--ink-soft)}
+.pillar ul li{padding:8px 0;border-top:1px solid var(--rule);font-family:'Marcellus';letter-spacing:.04em}
+.pillar ul li::before{content:"—  ";color:var(--gold)}
+
+/* ── State B: Returning visitor — cases-first ── */
+.welcome-back{padding:140px clamp(20px,4vw,72px) 32px;display:grid;grid-template-columns:auto 1fr;gap:32px;align-items:center;border-bottom:1px solid var(--rule)}
+.welcome-back .avatar{width:84px;height:84px;border-radius:50%;background:linear-gradient(135deg,var(--champagne),var(--gold) 60%,var(--cardamom-deep));display:flex;align-items:center;justify-content:center;font-family:'DM Serif Display';font-style:italic;font-size:30px;color:var(--cream);box-shadow:0 14px 32px -10px rgba(26,20,16,.3)}
+.welcome-back h2{font-family:'DM Serif Display';font-weight:400;font-size:clamp(36px,5vw,72px);line-height:1.02;margin:0;color:var(--ink)}
+.welcome-back h2 em{font-family:'DM Serif Display';font-style:italic;color:var(--cardamom-deep)}
+.welcome-back .meta{font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--gold);margin-top:8px}
+
+.cases-grid{padding:64px clamp(20px,4vw,72px) 100px;max-width:1640px;margin:0 auto;display:grid;grid-template-columns:repeat(2,1fr);gap:24px}
+.case{position:relative;padding:48px;background:linear-gradient(160deg,#FBF4DE,#EDDFC0);border-radius:14px;border:1px solid var(--rule);overflow:hidden;transition:transform .4s cubic-bezier(.2,.7,.3,1),box-shadow .4s;cursor:pointer}
+.case:hover{transform:translateY(-4px);box-shadow:0 24px 60px -20px rgba(74,90,72,.4)}
+.case::before{content:"";position:absolute;inset:0;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300'><filter id='p'><feTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2'/><feColorMatrix values='0 0 0 0 0.5, 0 0 0 0 0.4, 0 0 0 0 0.3, 0 0 0 .12 0'/></filter><rect width='100%' height='100%' filter='url(%23p)'/></svg>");mix-blend-mode:multiply;opacity:.5;pointer-events:none}
+.case>*{position:relative}
+.case .tag{display:inline-block;font-family:'Inter';font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:var(--gold);padding:4px 12px;border:1px solid var(--gold);border-radius:999px;margin-bottom:24px}
+.case h3{font-family:'DM Serif Display';font-weight:400;font-size:clamp(28px,3.4vw,44px);line-height:1.05;letter-spacing:-.012em;margin:0 0 14px;color:var(--ink)}
+.case h3 em{font-family:'DM Serif Display';font-style:italic;color:var(--cardamom-deep)}
+.case p{font-size:15px;line-height:1.7;color:var(--ink-soft);margin:0 0 20px}
+.case .results{display:flex;gap:32px;margin-top:32px;font-family:'Marcellus';font-size:13px}
+.case .results div{flex:1}
+.case .results .v{font-family:'DM Serif Display';font-size:28px;line-height:1;color:var(--ink)}
+.case .results .l{margin-top:4px;font-family:'Inter';font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:var(--cardamom)}
+
+.case-c2{background:linear-gradient(160deg,#E8DDC4,#C8B58A)}
+.case-c3{background:linear-gradient(150deg,#D0C0A0,#9C8862)}
+.case-c4{background:linear-gradient(170deg,#B5A88A,#7C6E50)}
+
+/* ── State C: Post-CTA thank-you ── */
+.thank{padding:200px clamp(20px,4vw,72px);min-height:88vh;display:flex;flex-direction:column;justify-content:center;text-align:center;background:radial-gradient(60% 50% at 50% 30%,rgba(168,139,92,.18),transparent 60%),var(--cream);position:relative}
+.thank::before{content:"";position:absolute;left:50%;top:160px;width:80px;height:1px;background:var(--gold);transform:translateX(-50%)}
+.thank h1{font-family:'DM Serif Display';font-weight:400;font-size:clamp(56px,9vw,140px);line-height:.95;letter-spacing:-.018em;margin:0 auto;max-width:14ch;color:var(--ink)}
+.thank h1 em{font-family:'DM Serif Display';font-style:italic;color:var(--cardamom-deep)}
+.thank .sub{margin-top:36px;font-family:'DM Serif Display';font-style:italic;font-size:clamp(20px,2.2vw,28px);line-height:1.5;color:var(--ink-soft);max-width:46ch;margin-left:auto;margin-right:auto}
+.thank .next{margin-top:64px;display:grid;grid-template-columns:repeat(3,1fr);gap:24px;max-width:1100px;margin-left:auto;margin-right:auto;text-align:left}
+.thank .next .card{padding:32px;background:rgba(248,236,216,.55);border:1px solid var(--rule);border-radius:14px;backdrop-filter:blur(8px)}
+.thank .next .card .step{font-family:'Marcellus';font-size:13px;letter-spacing:.32em;color:var(--gold);text-transform:uppercase}
+.thank .next .card h4{font-family:'DM Serif Display';font-weight:400;font-size:22px;line-height:1.2;margin:14px 0 14px;color:var(--ink)}
+.thank .next .card p{font-size:14px;color:var(--ink-soft);line-height:1.65;margin:0}
+
+/* Common footer */
+.foot{padding:48px clamp(20px,4vw,72px);background:var(--ink);color:var(--cream);display:flex;justify-content:space-between;align-items:center;font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;flex-wrap:wrap;gap:20px}
+.foot a{color:var(--gold);text-decoration:none}
+
+/* Visitor state toggle (demo control) */
+.state-toggle{position:fixed;right:24px;bottom:24px;z-index:60;background:rgba(255,255,255,.85);backdrop-filter:blur(12px);padding:8px;border-radius:999px;border:1px solid var(--rule);display:flex;gap:4px}
+.state-toggle button{background:transparent;border:0;padding:8px 16px;font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--ink-soft);cursor:pointer;border-radius:999px;transition:background .2s,color .2s}
+.state-toggle button.is-active{background:var(--ink);color:var(--cream)}
+
+/* Badge */
+.badge{position:fixed;left:24px;bottom:24px;z-index:60;font-family:'Marcellus',serif;font-size:11px;letter-spacing:.4em;color:rgba(26,20,16,.6);background:rgba(245,236,216,.7);backdrop-filter:blur(12px);padding:10px 18px;border-radius:999px;border:1px solid var(--rule)}
+
+@media(max-width:880px){
+  .pillars{grid-template-columns:1fr}
+  .cases-grid{grid-template-columns:1fr}
+  .thank .next{grid-template-columns:1fr}
+  .welcome-back{grid-template-columns:1fr}
+  .ribbon{grid-template-columns:auto auto;gap:16px}
+  .ribbon .state{display:none}
+}
+</style>
+</head>
+<body data-state="a">
+
+<header class="ribbon">
+  <div class="brand">DEADLINE</div>
+  <div class="state" id="state-label"><span class="dot"></span>Welcome  ·  First visit</div>
+  <div class="lang">
+    <button class="is-active">RU</button>
+    <button>EN</button>
+  </div>
+</header>
+
+<!-- ─── STATE A — first visit ─── -->
+<div class="state-a">
+  <section class="manifesto-hero">
+    <div>
+      <div class="eyebrow">Studio  ·  Web · Automation · AI</div>
+      <h1>Меньше слов.<br><em>Больше</em> результата.</h1>
+      <p class="sub">Web, automation и AI-агенты в production к согласованной дате. Это не маркетинг — это единственное обещание, которое мы повторяем.</p>
+    </div>
+    <div class="foot">
+      <span>// deadlines fear us</span>
+      <button class="cta" id="goto-cases">Посмотреть кейсы →</button>
+      <span>since 2025  ·  N° 12</span>
+    </div>
+  </section>
+
+  <section class="pillars">
+    <div class="pillar">
+      <span class="nm">01 · Web</span>
+      <h3><em>Сипим</em> продукт.<br>Не «MVP for now».</h3>
+      <p>Production-стэк, аналитика и инфра — с первой строки. Сайт, который выдерживает приходящий трафик и завтрашние гипотезы.</p>
+      <ul><li>Next.js / Astro / SSR</li><li>Stripe · Telegram payments</li><li>SEO + Lighthouse 95+</li></ul>
+    </div>
+    <div class="pillar">
+      <span class="nm">02 · Automation</span>
+      <h3>Горячая<br><em>автоматизация</em>.</h3>
+      <p>Та, про которую забыл — потому что работает фоном. Скрипты, n8n, Zapier, custom-API, Telegram-операторы для команды.</p>
+      <ul><li>Ops dashboards</li><li>Cron · event-driven</li><li>Slack · Telegram bots</li></ul>
+    </div>
+    <div class="pillar">
+      <span class="nm">03 · AI Agents</span>
+      <h3>Не chatbot.<br><em>Production-assistant.</em></h3>
+      <p>С метриками, eval-гарантиями и понятной стоимостью на токен. RAG, tool-use, MCP — всё то, что в 2026 уже не магия, а инженерия.</p>
+      <ul><li>RAG · vector DBs</li><li>Tool-use · MCP</li><li>Cost & quality observability</li></ul>
+    </div>
+  </section>
+</div>
+
+<!-- ─── STATE B — returning ─── -->
+<div class="state-b">
+  <section class="welcome-back">
+    <div class="avatar">D</div>
+    <div>
+      <div class="meta">— С возвращением</div>
+      <h2>Привет снова. <em>Вот что отгружено</em> с твоего последнего визита.</h2>
+    </div>
+  </section>
+
+  <section class="cases-grid">
+    <article class="case">
+      <span class="tag">Web · AI · 2026</span>
+      <h3>VRP — <em>VIP Rental</em> Phuket</h3>
+      <p>Next.js + GPT-4 консьерж. Поставлен в production за 10 недель, отгружен в день. Колл-центр сокращён до одного оператора — остальное закрывает консьерж.</p>
+      <div class="results">
+        <div><div class="v">+32%</div><div class="l">Conversion</div></div>
+        <div><div class="v">73%</div><div class="l">Без человека</div></div>
+        <div><div class="v">80+</div><div class="l">Объектов</div></div>
+      </div>
+    </article>
+    <article class="case case-c2">
+      <span class="tag">Automation · 2025</span>
+      <h3>KeyDrop — <em>Telegram MiniApp</em></h3>
+      <p>E-commerce на Steam-кодах. 1000+ заказов/месяц, 18 месяцев uptime 99.99%. Внутренний оператор закрывает только аномалии.</p>
+      <div class="results">
+        <div><div class="v">1000+</div><div class="l">заказов/мес</div></div>
+        <div><div class="v">99.99%</div><div class="l">Uptime</div></div>
+        <div><div class="v">18 мес</div><div class="l">В production</div></div>
+      </div>
+    </article>
+    <article class="case case-c3">
+      <span class="tag">AI · Data · 2025-26</span>
+      <h3>RA Project — <em>on-chain analytics</em></h3>
+      <p>12 блокчейн-сетей, ClickHouse + Kafka, 41M+ блоков. Четыре AI-агента в production вычитывают и нормализуют данные на лету.</p>
+      <div class="results">
+        <div><div class="v">12</div><div class="l">Сетей</div></div>
+        <div><div class="v">41M+</div><div class="l">Блоков</div></div>
+        <div><div class="v">4</div><div class="l">Агента в prod</div></div>
+      </div>
+    </article>
+    <article class="case case-c4">
+      <span class="tag">Web · Brand · 2025</span>
+      <h3>Studio Suite — <em>пакет микросайтов</em></h3>
+      <p>Восемь микросайтов под кампании, общий design system, deploy-out-of-box. Каждый сайт собирается из конфига за 2 часа.</p>
+      <div class="results">
+        <div><div class="v">8</div><div class="l">Сайтов</div></div>
+        <div><div class="v">2ч</div><div class="l">Time-to-launch</div></div>
+        <div><div class="v">1</div><div class="l">DS на всё</div></div>
+      </div>
+    </article>
+  </section>
+</div>
+
+<!-- ─── STATE C — post-CTA ─── -->
+<div class="state-c">
+  <section class="thank">
+    <div class="eyebrow" style="text-align:center;margin-bottom:48px">Послание получено</div>
+    <h1>Спасибо. <em>Уже</em> читаем.</h1>
+    <p class="sub">Ответим раньше, чем уберёшь руки от клавиатуры. План и срок прилетят прежде, чем ты допьёшь кофе.</p>
+    <div class="next">
+      <div class="card">
+        <span class="step">Step 01  ·  ~10 min</span>
+        <h4>Прочитаем сообщение</h4>
+        <p>Дежурный партнёр получает тебя в течение 10 минут в будни и часа в выходные.</p>
+      </div>
+      <div class="card">
+        <span class="step">Step 02  ·  ~2 hr</span>
+        <h4>Соберём план и срок</h4>
+        <p>Black-box оценка: стэк, риски, проверочные точки. Без типового «мы свяжемся».</p>
+      </div>
+      <div class="card">
+        <span class="step">Step 03  ·  Today</span>
+        <h4>Кофе-звонок</h4>
+        <p>20-минутный созвон с одним из партнёров. Решаем — стартуем или нет.</p>
+      </div>
+    </div>
+  </section>
+</div>
+
+<footer class="foot">
+  <div>© 2025–2026 DEADLINE</div>
+  <div><a href="mailto:corpdeadline@gmail.com">corpdeadline@gmail.com</a>  ·  <a href="https://t.me/deadline_corp">@deadline_corp</a></div>
+</footer>
+
+<div class="state-toggle" id="stateToggle">
+  <button data-s="a" class="is-active">A · First</button>
+  <button data-s="b">B · Returning</button>
+  <button data-s="c">C · Post-CTA</button>
+</div>
+
+<div class="badge">Concept 10 · Concierge</div>
+
+<script>
+(()=>{
+  const labels={
+    a:'Welcome  ·  First visit',
+    b:'Welcome back  ·  Returning visitor',
+    c:'Послание получено  ·  Thank-you'
+  };
+  const stateLabel=document.getElementById('state-label');
+  const toggle=document.getElementById('stateToggle');
+
+  function setState(s){
+    document.body.dataset.state=s;
+    stateLabel.innerHTML='<span class="dot"></span>'+labels[s];
+    toggle.querySelectorAll('button').forEach(b=>b.classList.toggle('is-active',b.dataset.s===s));
+    window.scrollTo({top:0,behavior:'smooth'});
+    try{localStorage.setItem('deadline-visit-state',s)}catch(e){}
+  }
+
+  toggle.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click',()=>setState(b.dataset.s));
+  });
+
+  // Initial detection: real adaptive logic
+  let initial='a';
+  try{
+    const stored=localStorage.getItem('deadline-visit-state');
+    const visits=parseInt(localStorage.getItem('deadline-visits')||'0',10);
+    localStorage.setItem('deadline-visits',visits+1);
+    if(stored==='c')initial='c';
+    else if(visits>=1||stored==='b')initial='b';
+  }catch(e){}
+  setState(initial);
+
+  // Wire CTA on State A to go to State B
+  document.getElementById('goto-cases').addEventListener('click',()=>setState('b'));
+})();
+</script>
+</body>
+</html>

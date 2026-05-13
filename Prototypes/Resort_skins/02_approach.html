@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>APPROACH · DEADLINE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;1,300&family=Inter:wght@200;300;400&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+<style>
+:root{--ink:#0A0908;--ink-2:#16110D;--cream:#F4ECDE;--cream-soft:rgba(244,236,222,.55);--accent:#C8A871}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--ink);color:var(--cream);font-family:'Inter',sans-serif;font-weight:300;-webkit-font-smoothing:antialiased;overflow-x:hidden;cursor:none}
+img{display:block;max-width:100%}
+a{color:inherit;text-decoration:none}
+a,button{cursor:none}
+
+/* Custom cursor */
+.cur{position:fixed;width:6px;height:6px;background:var(--cream);border-radius:50%;pointer-events:none;z-index:9999;transform:translate(-50%,-50%);mix-blend-mode:difference}
+.cur-ring{position:fixed;width:36px;height:36px;border:1px solid var(--cream);border-radius:50%;pointer-events:none;z-index:9998;transform:translate(-50%,-50%);mix-blend-mode:difference;opacity:.45;transition:width .35s,height .35s,opacity .35s}
+.cur-ring.is-hover{width:64px;height:64px;opacity:.8}
+
+/* Persistent fixed running header — bare */
+.head{position:fixed;top:0;left:0;right:0;z-index:60;padding:32px clamp(24px,5vw,72px);display:flex;justify-content:space-between;font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--cream);mix-blend-mode:difference;pointer-events:none}
+.head>*{pointer-events:auto}
+.head .right{display:flex;gap:32px}
+
+/* Each chapter — full-viewport photograph + one phrase */
+.chapter{position:relative;width:100vw;height:100vh;overflow:hidden;background:#0a0908}
+.chapter .photo{position:absolute;inset:0;overflow:hidden}
+.chapter .photo img{position:absolute;inset:0;width:100%;height:108%;object-fit:cover;will-change:transform;opacity:0;transition:opacity 1.8s cubic-bezier(.5,0,.2,1)}
+.chapter .photo img.is-loaded{opacity:1}
+.chapter .photo::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(10,9,8,.2) 0%,transparent 30%,transparent 65%,rgba(10,9,8,.75) 100%)}
+
+.chapter .text{position:absolute;left:clamp(24px,6vw,96px);bottom:clamp(48px,8vh,120px);right:clamp(24px,6vw,96px);z-index:5;color:var(--cream);max-width:1100px}
+.chapter .nm{font-family:'Inter';font-size:10px;font-weight:400;letter-spacing:.42em;text-transform:uppercase;color:rgba(244,236,222,.62);margin-bottom:24px;display:flex;gap:14px;align-items:center}
+.chapter .nm::before{content:"";display:inline-block;width:32px;height:1px;background:rgba(244,236,222,.5)}
+.chapter h2{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(40px,6vw,108px);line-height:1.02;letter-spacing:-.02em;max-width:18ch;text-shadow:0 4px 28px rgba(10,9,8,.4)}
+.chapter h2 em{font-style:italic;color:rgba(244,236,222,.78)}
+
+/* Opening chapter — centered */
+.intro .text{left:50%;right:auto;bottom:auto;top:50%;transform:translate(-50%,-50%);text-align:center;width:100%;max-width:1200px}
+.intro h2{max-width:18ch;margin:0 auto;font-size:clamp(54px,8vw,168px)}
+.intro .nm{justify-content:center;margin-bottom:36px}
+.intro .nm::before{display:none}
+.intro .sub{margin-top:32px;font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(16px,1.6vw,22px);color:rgba(244,236,222,.62);max-width:38ch;margin-left:auto;margin-right:auto}
+
+/* Final chapter — contact, no photo */
+.fin{background:var(--ink);padding:38vh clamp(24px,6vw,96px) 24vh;min-height:100vh;display:grid;align-content:center}
+.fin .q{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(48px,7.5vw,128px);line-height:1.02;letter-spacing:-.022em;color:var(--cream);max-width:18ch;margin:0}
+.fin .q em{font-style:italic;color:var(--accent)}
+.fin .ch{margin-top:80px;display:flex;flex-direction:column;gap:18px;font-family:'Inter';font-size:13px;letter-spacing:.18em;text-transform:uppercase}
+.fin .ch a{color:var(--cream);border-bottom:1px solid rgba(244,236,222,.3);padding-bottom:5px;width:fit-content;transition:border-color .35s,color .35s}
+.fin .ch a:hover{border-bottom-color:var(--accent);color:var(--accent)}
+.fin .colophon{margin-top:120px;border-top:1px solid rgba(244,236,222,.15);padding-top:24px;display:flex;justify-content:space-between;font-family:'Inter';font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:rgba(244,236,222,.4)}
+
+/* Progress fraction in fixed top-left */
+.frac{position:fixed;top:32px;left:50%;transform:translateX(-50%);z-index:60;font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:14px;color:var(--cream);mix-blend-mode:difference;pointer-events:none;letter-spacing:.04em}
+.frac strong{font-weight:300;font-style:normal}
+
+@media(max-width:760px){
+  .head{font-size:10px;letter-spacing:.28em;padding:20px 24px}
+  .head .right{gap:20px}
+  .frac{display:none}
+  .chapter .text{bottom:80px}
+  .cur,.cur-ring{display:none}
+  body{cursor:auto}
+  a,button{cursor:pointer}
+}
+</style>
+</head>
+<body>
+
+<div class="cur"></div><div class="cur-ring" id="curRing"></div>
+
+<header class="head">
+  <span>DEADLINE</span>
+  <div class="right">
+    <a href="mailto:corpdeadline@gmail.com">corpdeadline@gmail.com</a>
+    <a href="https://t.me/deadline_corp">@deadline_corp</a>
+  </div>
+</header>
+
+<div class="frac" id="frac"><strong>00</strong> <span style="opacity:.5">/</span> 05</div>
+
+<section class="chapter intro" data-i="01">
+  <div class="photo">
+    <img src="https://images.unsplash.com/photo-1469474968028-56623f02e42e?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt="">
+  </div>
+  <div class="text">
+    <div class="nm">Подход · С 2025 года</div>
+    <h2>Меньше слов.<br><em>Больше</em> результата.</h2>
+    <p class="sub">Web, automation и AI-агенты — собираем, отгружаем в день обещания, не двигаем дату.</p>
+  </div>
+</section>
+
+<section class="chapter" data-i="02">
+  <div class="photo">
+    <img src="https://images.unsplash.com/photo-1499678329028-101435549a4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt="">
+  </div>
+  <div class="text">
+    <div class="nm">.01 · Phuket · 2026</div>
+    <h2>VRP — <em>VIP&nbsp;Rental.</em><br>Next.js + GPT-4 концьерж<br>заменил <em>колл-центр.</em></h2>
+  </div>
+</section>
+
+<section class="chapter" data-i="03">
+  <div class="photo">
+    <img src="https://images.unsplash.com/photo-1505228395891-9a51e7e86bf6?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt="">
+  </div>
+  <div class="text">
+    <div class="nm">.02 · Telegram · 2025</div>
+    <h2>KeyDrop —<br>тысяча заказов в месяц,<br>восемнадцать месяцев <em>без падений.</em></h2>
+  </div>
+</section>
+
+<section class="chapter" data-i="04">
+  <div class="photo">
+    <img src="https://images.unsplash.com/photo-1517824806704-9040b037703b?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt="">
+  </div>
+  <div class="text">
+    <div class="nm">.03 · On-chain · 2025-26</div>
+    <h2>RA Project — <em>сорок один</em><br>миллион блоков, <em>четыре</em><br>AI-агента в production.</h2>
+  </div>
+</section>
+
+<section class="chapter" data-i="05">
+  <div class="photo">
+    <img src="https://images.unsplash.com/photo-1501785888041-af3ef285b470?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt="">
+  </div>
+  <div class="text">
+    <div class="nm">.04 · Numbers · since 2025</div>
+    <h2>Двенадцать <em>отгрузок.</em><br>Ноль сдвинутых дат.<br>Сто процентов возврат.</h2>
+  </div>
+</section>
+
+<section class="fin" data-i="06">
+  <p class="q">Мы — DEADLINE.<br><em>У нас ничего не горит.</em></p>
+  <div class="ch">
+    <a href="mailto:corpdeadline@gmail.com">corpdeadline@gmail.com</a>
+    <a href="https://t.me/deadline_corp">@deadline_corp</a>
+  </div>
+  <div class="colophon">
+    <span>© 2025—2026 · since 2025</span>
+    <span>Concept 02 · Approach</span>
+  </div>
+</section>
+
+<script>
+gsap.registerPlugin(ScrollTrigger);
+
+// Lenis smooth scroll integrated with ScrollTrigger
+const lenis=new Lenis({duration:1.6,easing:t=>1-Math.pow(1-t,3)});
+lenis.on('scroll',ScrollTrigger.update);
+gsap.ticker.add(t=>lenis.raf(t*1000));
+gsap.ticker.lagSmoothing(0);
+
+// Cursor lerp
+const cur=document.querySelector('.cur'),ring=document.getElementById('curRing');
+let mx=innerWidth/2,my=innerHeight/2,rx=mx,ry=my;
+addEventListener('mousemove',e=>{mx=e.clientX;my=e.clientY;cur.style.left=mx+'px';cur.style.top=my+'px'});
+function cr(){rx+=(mx-rx)*.14;ry+=(my-ry)*.14;ring.style.left=rx+'px';ring.style.top=ry+'px';requestAnimationFrame(cr)}cr();
+document.querySelectorAll('a,button').forEach(el=>{
+  el.addEventListener('mouseenter',()=>ring.classList.add('is-hover'));
+  el.addEventListener('mouseleave',()=>ring.classList.remove('is-hover'));
+});
+
+// Photo fade-in + parallax
+document.querySelectorAll('.chapter').forEach(ch=>{
+  const img=ch.querySelector('img');
+  if(img.complete)img.classList.add('is-loaded');
+  else img.addEventListener('load',()=>img.classList.add('is-loaded'));
+  img.addEventListener('error',()=>{ch.querySelector('.photo').style.background='linear-gradient(160deg,#1a2228,#0a0908)'});
+  // gentle parallax on scroll
+  gsap.to(img,{yPercent:-8,ease:'none',scrollTrigger:{trigger:ch,start:'top bottom',end:'bottom top',scrub:true}});
+});
+
+// Text reveal per chapter
+document.querySelectorAll('.chapter .text > *').forEach(el=>{
+  gsap.from(el,{y:36,opacity:0,duration:1.4,ease:'power3.out',scrollTrigger:{trigger:el,start:'top 78%'}});
+});
+
+// Progress fraction
+const frac=document.getElementById('frac');
+const chapters=document.querySelectorAll('[data-i]');
+chapters.forEach((c,i)=>{
+  ScrollTrigger.create({
+    trigger:c,start:'top 55%',end:'bottom 45%',
+    onEnter:()=>frac.querySelector('strong').textContent=String(i+1).padStart(2,'0'),
+    onEnterBack:()=>frac.querySelector('strong').textContent=String(i+1).padStart(2,'0')
+  });
+});
+</script>
+</body>
+</html>

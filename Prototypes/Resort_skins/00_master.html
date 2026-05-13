@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ISLAND · CINEMA · DEADLINE — master prototype</title>
+<meta name="description" content="DEADLINE — Web, automation, AI-agents в production к согласованной дате.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,500;1,300;1,500&family=Inter:wght@200;300;400;500&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+<style>
+:root{
+  --ink:#08070A;
+  --ink-2:#100D11;
+  --cream:#F4ECDE;
+  --cream-soft:rgba(244,236,222,.62);
+  --cream-dim:rgba(244,236,222,.42);
+  --accent:#C8A871;
+  --accent-deep:#A88B5C;
+  --rule:rgba(244,236,222,.15);
+  --letterbox:9vh;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--ink);color:var(--cream);font-family:'Inter',sans-serif;font-weight:300;-webkit-font-smoothing:antialiased;overflow-x:hidden;cursor:none}
+img{display:block;max-width:100%}
+a{color:inherit;text-decoration:none}
+a,button{cursor:none}
+
+/* Language switching */
+body:not(.lang-en) :where(.lang-en){display:none !important}
+body.lang-en :where(.lang-ru){display:none !important}
+
+/* ─── Custom cursor ─── */
+.cur{position:fixed;width:5px;height:5px;background:var(--cream);border-radius:50%;pointer-events:none;z-index:10001;transform:translate(-50%,-50%);mix-blend-mode:difference}
+.cur-ring{position:fixed;width:34px;height:34px;border:1px solid var(--cream);border-radius:50%;pointer-events:none;z-index:10000;transform:translate(-50%,-50%);mix-blend-mode:difference;opacity:.42;transition:width .35s,height .35s,opacity .35s,border-color .35s}
+.cur-ring.is-hover{width:62px;height:62px;opacity:.78}
+
+/* ─── Permanent letterbox (CinemaScope frame, Horizon DNA) ─── */
+.letterbox{position:fixed;left:0;right:0;z-index:9990;background:#000;pointer-events:none}
+.letterbox.top{top:0;height:var(--letterbox)}
+.letterbox.bot{bottom:0;height:var(--letterbox)}
+
+/* ─── Persistent running header (lives inside letterbox top) ─── */
+.head{position:fixed;top:0;left:0;right:0;z-index:9995;padding:0 clamp(24px,5vw,72px);height:var(--letterbox);display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:24px;color:var(--cream);font-family:'Inter';font-size:10px;letter-spacing:.42em;text-transform:uppercase;pointer-events:none}
+.head>*{pointer-events:auto}
+.head .brand{font-family:'Cormorant Garamond';font-style:italic;font-weight:500;font-size:20px;letter-spacing:.18em;color:var(--cream);text-transform:none}
+.head .center{justify-self:center;font-family:'Cormorant Garamond';font-style:italic;font-size:13px;letter-spacing:.06em;text-transform:none;color:var(--cream-soft)}
+.head .right{justify-self:end;display:flex;gap:24px;align-items:center}
+.head .right .nav-links{display:flex;gap:20px}
+.head .right .nav-links a{transition:color .25s}
+.head .right .nav-links a:hover{color:var(--accent)}
+.lang-toggle{display:inline-flex;gap:6px;font-family:'Inter';font-size:10px;letter-spacing:.32em}
+.lang-toggle button{background:transparent;border:0;color:var(--cream-dim);font:inherit;letter-spacing:inherit;text-transform:uppercase;cursor:none;padding:0;transition:color .25s}
+.lang-toggle button.is-active{color:var(--accent)}
+.lang-toggle .sep{color:var(--cream-dim)}
+
+/* ─── Permanent persistent foot (bottom letterbox is subtitle band, Horizon DNA) ─── */
+.subtitle{position:fixed;bottom:0;left:0;right:0;z-index:9995;padding:0 clamp(24px,5vw,72px);height:var(--letterbox);display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:24px;font-family:'Inter';font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:var(--cream-soft);pointer-events:none}
+.subtitle>*{pointer-events:auto}
+.subtitle .brand-mark{font-family:'Cormorant Garamond';font-style:italic;letter-spacing:.06em;text-transform:none;font-size:13px;color:var(--cream)}
+.subtitle .c{justify-self:center;font-family:'Inter';font-size:10px;color:var(--cream-dim)}
+.subtitle .r{justify-self:end;display:flex;gap:18px}
+.subtitle .r a{color:var(--cream-soft);transition:color .25s}
+.subtitle .r a:hover{color:var(--accent)}
+
+/* Scroll progress hairline (between letterbox top and content) */
+.progress{position:fixed;top:var(--letterbox);left:0;height:1px;background:linear-gradient(90deg,var(--accent-deep),var(--accent));width:0;z-index:9994;transition:width .12s linear}
+
+/* ═══════════════════════════ COMMON SCENE FRAMING ═══════════════════════════ */
+.scene{position:relative;width:100vw;min-height:100vh;overflow:hidden}
+.scene .photo{position:absolute;top:var(--letterbox);bottom:var(--letterbox);left:0;right:0;overflow:hidden}
+.scene .photo img{position:absolute;inset:0;width:100%;height:108%;object-fit:cover;opacity:0;transition:opacity 2s cubic-bezier(.5,0,.2,1);will-change:transform}
+.scene .photo img.is-loaded{opacity:1}
+.scene .photo::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,7,10,.28) 0%,transparent 30%,transparent 60%,rgba(8,7,10,.78) 100%);pointer-events:none;z-index:2}
+
+/* ─── Night layer: same scene at night, revealed via scroll-driven mask sweep R→L ─── */
+/* --mp set on parent .photo via JS, inherited here. Fallback 0 = night hidden. */
+.scene .photo,.hero .photo,.contact .photo{--mp:0}
+.scene .photo .night,.hero .photo .night,.contact .photo .night{
+  position:absolute;inset:0;width:100%;height:108%;object-fit:cover;opacity:0;
+  transition:opacity 1.4s cubic-bezier(.5,0,.2,1);
+  z-index:1;will-change:transform;
+  -webkit-mask-image:linear-gradient(265deg, black calc(var(--mp) * 110% - 5%), transparent calc(var(--mp) * 110% + 22%));
+  mask-image:linear-gradient(265deg, black calc(var(--mp) * 110% - 5%), transparent calc(var(--mp) * 110% + 22%));
+}
+.scene .photo .night.is-loaded,.hero .photo .night.is-loaded,.contact .photo .night.is-loaded{opacity:1}
+/* Hero/contact photo container needs z-index ordering: day=0 (default), night=1, overlay::after=2 */
+.hero .photo,.contact .photo{position:absolute}
+
+/* ═══════════════════════════ HERO (Margins style) ═══════════════════════════ */
+.hero{position:relative;width:100vw;height:100vh;overflow:hidden;display:grid;grid-template-rows:auto 1fr auto;padding:calc(var(--letterbox) + 32px) clamp(24px,5vw,72px) calc(var(--letterbox) + 36px);text-align:center;align-items:center}
+.hero .photo{position:absolute;top:var(--letterbox);bottom:var(--letterbox);left:0;right:0;overflow:hidden;z-index:0}
+.hero .photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 2.4s cubic-bezier(.5,0,.2,1)}
+.hero .photo img.is-loaded{opacity:1}
+.hero .photo::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,7,10,.45) 0%,rgba(8,7,10,.15) 30%,rgba(8,7,10,.15) 55%,rgba(8,7,10,.78) 100%)}
+
+.hero-meta{position:relative;z-index:5;color:var(--cream);font-family:'Inter';font-size:10px;font-weight:400;letter-spacing:.42em;text-transform:uppercase;line-height:1.9;display:grid;gap:10px;justify-items:center;justify-self:center}
+.hero-meta .chip{font-family:'Cormorant Garamond';font-style:italic;font-size:13px;letter-spacing:.08em;text-transform:none;color:var(--accent);display:inline-block;border:1px solid rgba(200,168,113,.45);padding:6px 16px;border-radius:999px}
+.hero-meta .small{font-size:10px;line-height:1.9;color:var(--cream-soft)}
+
+.hero-text{position:relative;z-index:6;color:var(--cream);max-width:1240px;margin:0 auto;display:grid;justify-items:center;align-content:center;padding:24px 0}
+.hero-text .line{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(48px,8.5vw,148px);line-height:.96;letter-spacing:-.022em;color:var(--cream);text-shadow:0 8px 36px rgba(8,7,10,.6);margin:0;text-align:center}
+.hero-text .line.line-2{font-style:italic;color:var(--cream-soft)}
+.hero-text .sub{margin-top:28px;font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(16px,1.5vw,22px);line-height:1.55;color:rgba(244,236,222,.82);max-width:62ch;text-shadow:0 2px 18px rgba(8,7,10,.65);text-align:center}
+.hero-text .sub strong{font-weight:500;color:var(--cream);font-style:normal}
+
+.hero-cta{position:relative;z-index:6;display:flex;gap:20px;align-items:center;justify-content:center;font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--cream-soft);flex-wrap:wrap}
+.hero-cta .label{font-family:'Cormorant Garamond';font-style:italic;font-size:13px;letter-spacing:.04em;text-transform:none;color:var(--cream-soft);width:100%;text-align:center;margin-bottom:8px}
+.btn-primary,.btn-secondary{font-family:'Cormorant Garamond';font-style:italic;font-weight:400;font-size:18px;letter-spacing:0;text-transform:none;padding:12px 26px;border:1px solid var(--accent);border-radius:999px;color:var(--cream);background:rgba(8,7,10,.4);backdrop-filter:blur(8px);transition:background .3s,color .3s,gap .25s,border-color .3s;display:inline-flex;gap:14px;align-items:center}
+.btn-primary{background:var(--accent);color:var(--ink);border-color:var(--accent)}
+.btn-primary:hover{background:transparent;color:var(--accent);gap:24px}
+.btn-secondary:hover{background:var(--cream);color:var(--ink);border-color:var(--cream)}
+
+/* ═══════════════════════════ TICKER ═══════════════════════════ */
+.ticker-section{position:relative;padding:32px 0;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);background:rgba(16,13,17,.7);overflow:hidden}
+.ticker-track{display:flex;gap:48px;width:max-content;animation:tick 38s linear infinite;font-family:'Cormorant Garamond';font-style:italic;font-size:18px;color:var(--cream);letter-spacing:.04em;white-space:nowrap}
+.ticker-track span{display:inline-flex;gap:14px;align-items:center}
+.ticker-track .dot{color:var(--accent);font-size:9px}
+@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+
+/* ═══════════════════════════ STATS — Approach scene ═══════════════════════════ */
+.scene-stats{display:grid;align-items:center;justify-items:center;text-align:center}
+.scene-stats .photo{}
+.scene-stats .content{position:relative;z-index:5;padding:calc(var(--letterbox) + 80px) clamp(24px,5vw,72px) calc(var(--letterbox) + 80px);max-width:1640px;margin:0 auto;width:100%;text-align:center}
+.scene-stats .eyebrow{font-family:'Inter';font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:var(--accent);margin:0 auto 28px;display:inline-flex;gap:14px;align-items:center;justify-content:center}
+.scene-stats .eyebrow::before{content:"";display:inline-block;width:32px;height:1px;background:var(--accent)}
+.scene-stats h2{font-family:'Cormorant Garamond';font-weight:400;font-size:clamp(40px,6vw,108px);line-height:.98;letter-spacing:-.022em;color:#FFFFFF;max-width:18ch;margin:0 auto 64px;text-shadow:0 4px 28px rgba(8,7,10,.92),0 0 48px rgba(8,7,10,.65),0 1px 0 rgba(0,0,0,.5),0 2px 4px rgba(8,7,10,.5)}
+.scene-stats h2 em{font-style:italic;color:var(--accent)}
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:48px;align-items:start;justify-items:center;border-top:1px solid var(--rule);padding-top:48px;text-align:center;max-width:1240px;margin:0 auto}
+.stat{text-align:center}
+.stat .lbl{margin-left:auto;margin-right:auto}
+.stat{position:relative}
+.stat .num{font-family:'Cormorant Garamond';font-weight:400;font-size:clamp(52px,7vw,108px);line-height:1;letter-spacing:-.03em;color:#FFFFFF;text-shadow:0 4px 28px rgba(8,7,10,.92),0 0 42px rgba(8,7,10,.6),0 1px 0 rgba(0,0,0,.5),0 2px 4px rgba(8,7,10,.5)}
+.stat .num em{font-style:italic;color:var(--accent)}
+.stat .lbl{margin-top:14px;font-family:'Inter';font-size:11px;font-weight:500;letter-spacing:.32em;text-transform:uppercase;color:#FFFFFF;max-width:20ch;line-height:1.7;text-shadow:0 2px 12px rgba(8,7,10,.85),0 0 24px rgba(8,7,10,.55),0 1px 0 rgba(0,0,0,.4)}
+
+/* ═══════════════════════════ SERVICES — 3 scenes ═══════════════════════════ */
+.svc-scene{display:grid;align-items:center}
+.svc-scene .content{position:relative;z-index:5;padding:calc(var(--letterbox) + 80px) clamp(24px,5vw,72px) calc(var(--letterbox) + 80px);max-width:1640px;margin:0 auto;width:100%;display:grid;grid-template-columns:1fr 1.2fr;gap:80px;align-items:center}
+.svc-scene .left .eyebrow{font-family:'Inter';font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:var(--accent);margin-bottom:24px;display:flex;gap:14px;align-items:center}
+.svc-scene .left .eyebrow::before{content:"";display:inline-block;width:32px;height:1px;background:var(--accent)}
+.svc-scene .left .nm{font-family:'Cormorant Garamond';font-style:italic;font-size:24px;color:var(--cream-soft);margin-bottom:14px;letter-spacing:.06em}
+.svc-scene .left h3{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(44px,6vw,96px);line-height:.96;letter-spacing:-.022em;color:var(--cream);margin:0 0 32px;max-width:14ch;text-shadow:0 4px 28px rgba(8,7,10,.55)}
+.svc-scene .left h3 em{font-style:italic;color:var(--accent)}
+.svc-scene .left .closing{font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(18px,1.8vw,24px);line-height:1.45;color:var(--accent);max-width:36ch}
+.svc-scene .right ul{list-style:none;padding:0;margin:0;display:grid;gap:8px;font-family:'Inter';font-size:14px;line-height:1.6;color:rgba(244,236,222,.85)}
+.svc-scene .right li{padding:14px 0 14px 24px;border-top:1px solid var(--rule);position:relative}
+.svc-scene .right li:last-child{border-bottom:1px solid var(--rule)}
+.svc-scene .right li::before{content:"—";position:absolute;left:0;color:var(--accent);font-family:'Cormorant Garamond';font-style:italic}
+
+/* ═══════════════════════════ WORK — 3 cases vertical scenes ═══════════════════════════ */
+.work-scene{display:grid;align-items:center;justify-items:center;text-align:center}
+.work-scene .content{position:relative;z-index:5;padding:calc(var(--letterbox) + 80px) clamp(24px,5vw,72px) calc(var(--letterbox) + 80px);max-width:1640px;margin:0 auto;width:100%;text-align:center}
+.work-scene .nm{font-family:'Inter';font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:var(--accent);margin:0 auto 24px;display:inline-flex;gap:14px;align-items:center;justify-content:center}
+.work-scene .nm::before{content:"";display:inline-block;width:32px;height:1px;background:var(--accent)}
+.work-scene .meta{font-family:'Cormorant Garamond';font-style:italic;font-size:18px;color:var(--cream-soft);letter-spacing:.04em;margin-bottom:24px}
+.work-scene h3{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(44px,6.5vw,112px);line-height:.96;letter-spacing:-.022em;color:var(--cream);margin:0 auto 32px;max-width:14ch;text-shadow:0 4px 28px rgba(8,7,10,.55);text-align:center}
+.work-scene h3 em{font-style:italic;color:var(--accent)}
+.work-scene .body{font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(20px,2vw,28px);line-height:1.5;color:rgba(244,236,222,.86);max-width:54ch;margin:0 auto 40px;text-align:center}
+.work-scene .result-chip{display:inline-flex;align-items:center;gap:14px;padding:10px 22px;border:1px solid var(--accent);border-radius:999px;font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--accent);background:rgba(8,7,10,.4);backdrop-filter:blur(8px)}
+
+/* ═══════════════════════════ TESTIMONIALS — horizontal marquee inside cinema ═══════════════════════════ */
+.testi{padding:60px 0 50px;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule);background:var(--ink-2);overflow:hidden}
+.testi .head-row{max-width:1640px;margin:0 auto 36px;padding:0 clamp(24px,5vw,72px)}
+.testi .eyebrow{font-family:'Inter';font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:var(--accent);margin-bottom:24px;display:flex;gap:14px;align-items:center}
+.testi .eyebrow::before{content:"";display:inline-block;width:32px;height:1px;background:var(--accent)}
+.testi h2{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(40px,6vw,108px);line-height:.96;letter-spacing:-.022em;color:var(--cream);margin:0;max-width:18ch}
+.testi h2 em{font-style:italic;color:var(--accent)}
+.testi-marquee{position:relative;overflow:hidden;mask:linear-gradient(90deg,transparent 0%,#000 8%,#000 92%,transparent 100%)}
+.testi-track{display:flex;gap:36px;width:max-content;animation:slide-l 90s linear infinite;padding:8px 24px}
+.testi-track:hover{animation-play-state:paused}
+@keyframes slide-l{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.t-card{flex:0 0 clamp(320px,28vw,440px);padding:36px 32px;background:rgba(244,236,222,.04);border:1px solid var(--rule);display:flex;flex-direction:column;gap:24px;justify-content:space-between;min-height:280px;backdrop-filter:blur(4px)}
+.t-card .quote{font-family:'Cormorant Garamond';font-style:italic;font-weight:400;font-size:18px;line-height:1.5;color:var(--cream)}
+.t-card .quote::before{content:"\201C";font-family:'Cormorant Garamond';font-size:60px;line-height:0;color:var(--accent);vertical-align:-.34em;margin-right:6px}
+.t-card .author{font-family:'Cormorant Garamond';font-style:italic;font-weight:500;font-size:18px;color:var(--accent);letter-spacing:.04em}
+.t-card .role{margin-top:4px;font-family:'Inter';font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:var(--cream-dim)}
+
+/* ═══════════════════════════ PROCESS — Promenade horizontal pinned ═══════════════════════════ */
+.process-intro{padding:7vh clamp(24px,5vw,72px) 5vh;max-width:1640px;margin:0 auto}
+.process-intro .eyebrow{font-family:'Inter';font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:var(--accent);margin-bottom:32px;display:flex;gap:14px;align-items:center}
+.process-intro .eyebrow::before{content:"";display:inline-block;width:32px;height:1px;background:var(--accent)}
+.process-intro h2{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(48px,7vw,140px);line-height:.94;letter-spacing:-.022em;color:var(--cream);margin:0;max-width:14ch}
+.process-intro h2 em{font-style:italic;color:var(--accent)}
+.process-intro .lead{margin-top:32px;font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(18px,1.8vw,24px);color:var(--cream-soft);max-width:46ch;line-height:1.5}
+
+.process-strip{position:relative;height:100vh;overflow:hidden;background:var(--ink-2);border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.process-track{display:flex;height:100vh;will-change:transform}
+.process-panel{flex:0 0 100vw;height:100vh;position:relative;overflow:hidden;padding:calc(var(--letterbox) + 80px) clamp(24px,5vw,72px) calc(var(--letterbox) + 80px);display:grid;grid-template-columns:auto 1fr;gap:64px;align-items:center}
+.process-panel > *:not(.photo){position:relative;z-index:3}
+
+/* Photo background per panel (same day→night system as scenes) */
+.process-panel .photo{position:absolute;inset:0;z-index:0;overflow:hidden;--mp:0}
+.process-panel .photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 1.6s cubic-bezier(.5,0,.2,1)}
+.process-panel .photo img.is-loaded{opacity:1}
+.process-panel .photo .night{
+  z-index:1;
+  -webkit-mask-image:linear-gradient(265deg,black calc(var(--mp) * 110% - 5%),transparent calc(var(--mp) * 110% + 22%));
+  mask-image:linear-gradient(265deg,black calc(var(--mp) * 110% - 5%),transparent calc(var(--mp) * 110% + 22%));
+}
+.process-panel .photo::after{content:"";position:absolute;inset:0;z-index:2;background:linear-gradient(180deg,rgba(8,7,10,.32) 0%,transparent 22%,transparent 70%,rgba(8,7,10,.84) 100%);pointer-events:none}
+
+.process-panel .big-num{font-family:'Cormorant Garamond';font-weight:300;font-style:italic;font-size:clamp(180px,22vw,360px);line-height:.85;letter-spacing:-.04em;color:var(--accent);opacity:.9;text-shadow:0 4px 36px rgba(8,7,10,.7),0 0 60px rgba(8,7,10,.4)}
+.process-panel .body{max-width:46ch}
+.process-panel .nm{font-family:'Inter';font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:var(--accent);margin-bottom:24px;text-shadow:0 2px 12px rgba(8,7,10,.85),0 0 24px rgba(8,7,10,.55)}
+.process-panel h3{font-family:'Cormorant Garamond';font-weight:400;font-size:clamp(48px,6.5vw,108px);line-height:.96;letter-spacing:-.022em;color:#FFFFFF;margin:0 0 28px;text-shadow:0 4px 28px rgba(8,7,10,.92),0 0 48px rgba(8,7,10,.55),0 1px 0 rgba(0,0,0,.5),0 2px 4px rgba(8,7,10,.45)}
+.process-panel h3 em{font-style:italic;color:var(--cream)}
+.process-panel p{font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(20px,2.2vw,28px);line-height:1.5;color:rgba(244,236,222,.95);text-shadow:0 2px 14px rgba(8,7,10,.85),0 0 28px rgba(8,7,10,.5)}
+
+/* Process-intro standalone scene — full-bleed photo, centered text, normal vertical scroll (no horizontal pin) */
+.process-intro-scene{display:grid;align-items:center;justify-items:center;text-align:center}
+.process-intro-scene .content{position:relative;z-index:5;padding:calc(var(--letterbox) + 80px) clamp(24px,8vw,200px);max-width:1640px;margin:0 auto;width:100%;text-align:center}
+.process-intro-scene .nm{font-family:'Inter';font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:var(--accent);margin:0 auto 32px;display:inline-flex;gap:14px;align-items:center;justify-content:center}
+.process-intro-scene .nm::before{content:"";display:inline-block;width:32px;height:1px;background:var(--accent)}
+.process-intro-scene h2{font-family:'Cormorant Garamond';font-weight:400;font-size:clamp(48px,8vw,168px);line-height:.96;letter-spacing:-.022em;color:#FFFFFF;margin:0 auto;max-width:14ch;text-shadow:0 4px 28px rgba(8,7,10,.92),0 0 48px rgba(8,7,10,.55),0 1px 0 rgba(0,0,0,.5),0 2px 4px rgba(8,7,10,.45)}
+.process-intro-scene h2 em{font-style:italic;color:var(--accent)}
+.process-intro-scene .lead{margin:36px auto 0;font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(18px,1.8vw,24px);color:rgba(244,236,222,.95);max-width:48ch;line-height:1.5;text-shadow:0 2px 14px rgba(8,7,10,.85),0 0 28px rgba(8,7,10,.5)}
+
+.process-progress{position:absolute;top:50%;right:48px;transform:translateY(-50%);z-index:10;font-family:'Cormorant Garamond';font-style:italic;font-size:14px;color:var(--cream);letter-spacing:.04em;display:flex;flex-direction:column;gap:18px;text-align:right;align-items:flex-end;pointer-events:none}
+.process-progress .pages{font-size:32px;font-style:italic;letter-spacing:-.02em}
+.process-progress .pages em{color:var(--cream-soft);font-style:normal;font-weight:300}
+.process-progress .barwrap{width:1px;height:120px;background:rgba(244,236,222,.25)}
+.process-progress .bar{display:block;width:1px;background:var(--accent);transform-origin:top;transform:scaleY(0)}
+
+/* ═══════════════════════════ MANIFESTO — Margins silence (compact, no oversized vertical room) ═══════════════════════════ */
+.manifesto{padding:calc(var(--letterbox) + 10vh) clamp(24px,5vw,72px) calc(var(--letterbox) + 8vh);min-height:auto;display:grid;place-items:center;text-align:center;background:radial-gradient(60% 50% at 50% 50%,rgba(200,168,113,.05),transparent 70%),var(--ink)}
+.manifesto .eyebrow{font-family:'Inter';font-size:10px;letter-spacing:.5em;text-transform:uppercase;color:var(--accent);margin-bottom:36px}
+.manifesto .text{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(48px,8vw,144px);line-height:1.04;letter-spacing:-.025em;color:var(--cream);max-width:18ch}
+.manifesto .text em{font-style:italic;color:var(--accent)}
+.manifesto .sig{margin-top:36px;font-family:'Inter';font-size:10px;letter-spacing:.5em;text-transform:uppercase;color:var(--cream-dim)}
+
+/* ═══════════════════════════ CONTACT — Margins + Horizon fade ═══════════════════════════ */
+.contact{position:relative;width:100vw;min-height:100vh;overflow:hidden;display:grid;align-items:center}
+.contact .photo{position:absolute;top:var(--letterbox);bottom:var(--letterbox);left:0;right:0;overflow:hidden}
+.contact .photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 2s cubic-bezier(.5,0,.2,1)}
+.contact .photo img.is-loaded{opacity:1}
+.contact .photo::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,7,10,.5) 0%,rgba(8,7,10,.32) 50%,rgba(8,7,10,.78) 100%)}
+.contact .content{position:relative;z-index:5;padding:calc(var(--letterbox) + 48px) clamp(24px,5vw,72px) calc(var(--letterbox) + 48px);max-width:1640px;margin:0 auto;width:100%;text-align:center}
+.contact .eyebrow{font-family:'Inter';font-size:10px;letter-spacing:.5em;text-transform:uppercase;color:var(--accent);margin-bottom:36px}
+.contact h2{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(48px,8vw,160px);line-height:1.0;letter-spacing:-.022em;color:var(--cream);margin:0 auto;max-width:22ch;text-shadow:0 6px 32px rgba(8,7,10,.55)}
+.contact h2 em{font-style:italic;color:var(--accent)}
+.contact .body{margin:48px auto 0;font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(18px,1.8vw,24px);line-height:1.5;color:rgba(244,236,222,.85);max-width:48ch}
+.contact .channels{margin-top:64px;display:flex;justify-content:center;gap:24px;flex-wrap:wrap}
+.contact .reply{margin-top:36px;font-family:'Inter';font-size:10px;letter-spacing:.5em;text-transform:uppercase;color:var(--cream-soft)}
+.contact .reply .dot{color:var(--accent);font-size:9px;margin-right:8px}
+
+/* ═══════════════════════════ Concept badge (small) ═══════════════════════════ */
+.badge{position:fixed;left:24px;top:calc(var(--letterbox) + 16px);z-index:9996;font-family:'Cormorant Garamond';font-style:italic;font-size:13px;letter-spacing:.16em;color:var(--cream-dim);pointer-events:none}
+
+/* ═══════════════════════════ Mobile ═══════════════════════════ */
+@media(max-width:880px){
+  :root{--letterbox:6vh}
+  .cur,.cur-ring{display:none}
+  body{cursor:auto}a,button{cursor:pointer}
+  .head .center,.subtitle .c{display:none}
+  .head .right .nav-links{display:none}
+  .hero-text .line{font-size:48px}
+  .stats-grid{grid-template-columns:repeat(2,1fr);gap:36px}
+  .svc-scene .content,.scene-stats .content{grid-template-columns:1fr;gap:32px}
+  .scene-stats .content{padding-bottom:calc(var(--letterbox) + 48px)}
+  .process-panel{grid-template-columns:1fr;gap:24px}
+  .process-panel .big-num{font-size:120px}
+  .process-progress{display:none}
+  .badge{display:none}
+  .hero-meta{font-size:9px}
+  .hero-cta{flex-direction:column;align-items:flex-start;gap:14px}
+}
+</style>
+</head>
+<body>
+
+<div class="cur"></div><div class="cur-ring" id="curRing"></div>
+
+<!-- ═════ Permanent cinematic frame (Horizon DNA) ═════ -->
+<div class="letterbox top"></div>
+<div class="letterbox bot"></div>
+
+<header class="head">
+  <span class="brand">DEADLINE</span>
+  <span class="center">ISLAND · CINEMA  ·  N° 12  ·  2.39 : 1</span>
+  <div class="right">
+    <div class="nav-links">
+      <a href="#services"><span class="lang-ru">Услуги</span><span class="lang-en">Services</span></a>
+      <a href="#work"><span class="lang-ru">Кейсы</span><span class="lang-en">Work</span></a>
+      <a href="#process"><span class="lang-ru">Процесс</span><span class="lang-en">Process</span></a>
+      <a href="#contact"><span class="lang-ru">Связаться</span><span class="lang-en">Contact</span></a>
+    </div>
+    <div class="lang-toggle">
+      <button id="lang-ru" class="is-active">RU</button><span class="sep">·</span><button id="lang-en">EN</button>
+    </div>
+  </div>
+</header>
+
+<footer class="subtitle">
+  <span class="brand-mark">DEADLINE  ·  since 2025</span>
+  <span class="c"><span class="lang-ru">© 2025-2026 DEADLINE · сделано в Пхукете × Бангкоке</span><span class="lang-en">© 2025-2026 DEADLINE · forged in Phuket × Bangkok</span></span>
+  <div class="r">
+    <a href="https://t.me/deadline_corp">@deadline_corp</a>
+    <a href="mailto:corpdeadline@gmail.com">corpdeadline@gmail.com</a>
+  </div>
+</footer>
+
+<div class="progress" id="progress"></div>
+<div class="badge">ISLAND · CINEMA · master prototype</div>
+
+<!-- ═══════════════════════════ HERO ═══════════════════════════ -->
+<section class="hero" id="hero">
+  <div class="photo"><img src="https://images.unsplash.com/photo-1499678329028-101435549a4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
+
+  <div class="hero-meta">
+    <span class="chip">[ DEADLINE · EST. 2025 · PHUKET × BANGKOK ]</span>
+    <div class="small">
+      <span class="lang-ru">
+        // внедрение ии-инструментов<br>
+        // веб · автоматизация · ai<br>
+        // дедлайны нас боятся
+      </span>
+      <span class="lang-en">
+        // ai tools rollout<br>
+        // web · automation · ai<br>
+        // deadlines fear us
+      </span>
+    </div>
+  </div>
+
+  <div class="hero-text">
+    <p class="line line-1"><span class="lang-ru">Меньше слов.</span><span class="lang-en">Skip the talk.</span></p>
+    <p class="line line-2"><span class="lang-ru">Больше результата.</span><span class="lang-en">Deliver the impact.</span></p>
+    <p class="sub">
+      <span class="lang-ru"><strong>Веб · Автоматизация · AI-агенты</strong> в production — к согласованной дате, без сюрпризов в счёте. Без посредников, без brief-форм на 80 полей, без «давайте созвонимся обсудим формат созвона».</span>
+      <span class="lang-en"><strong>Web · Automation · AI agents</strong> in production — by the agreed date, no surprises on the invoice. No middlemen, no 80-field brief forms, no "let's schedule a call to discuss the call format".</span>
+    </p>
+  </div>
+
+  <div class="hero-cta">
+    <div class="label">
+      <span class="lang-ru">// листай дальше →</span>
+      <span class="lang-en">// scroll for the rest →</span>
+    </div>
+    <a href="#contact" class="btn-primary"><span class="lang-ru">Начать проект</span><span class="lang-en">Start a project</span></a>
+    <a href="#work" class="btn-secondary"><span class="lang-ru">Кейсы</span><span class="lang-en">See work</span></a>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ TICKER ═══════════════════════════ -->
+<section class="ticker-section">
+  <div class="ticker-track">
+    <span class="lang-ru"><span class="dot">●</span> 12+ проектов в production</span>
+    <span class="lang-ru"><span class="dot">●</span> 0 пропущенных дедлайнов</span>
+    <span class="lang-ru"><span class="dot">●</span> 100% возвращающихся клиентов</span>
+    <span class="lang-ru"><span class="dot">●</span> 4 года в строю</span>
+    <span class="lang-ru"><span class="dot">●</span> 8 индустрий</span>
+    <span class="lang-ru"><span class="dot">●</span> 0 воды в брифах</span>
+    <span class="lang-ru"><span class="dot">●</span> ответ за минуты</span>
+    <span class="lang-en"><span class="dot">●</span> 12+ projects shipped</span>
+    <span class="lang-en"><span class="dot">●</span> 0 missed deadlines</span>
+    <span class="lang-en"><span class="dot">●</span> 100% returning clients</span>
+    <span class="lang-en"><span class="dot">●</span> 4 years building</span>
+    <span class="lang-en"><span class="dot">●</span> 8 industries served</span>
+    <span class="lang-en"><span class="dot">●</span> 0 bullshit pitched</span>
+    <span class="lang-en"><span class="dot">●</span> replies in minutes</span>
+    <!-- duplicate for seamless loop -->
+    <span class="lang-ru"><span class="dot">●</span> 12+ проектов в production</span>
+    <span class="lang-ru"><span class="dot">●</span> 0 пропущенных дедлайнов</span>
+    <span class="lang-ru"><span class="dot">●</span> 100% возвращающихся клиентов</span>
+    <span class="lang-ru"><span class="dot">●</span> 4 года в строю</span>
+    <span class="lang-ru"><span class="dot">●</span> 8 индустрий</span>
+    <span class="lang-ru"><span class="dot">●</span> 0 воды в брифах</span>
+    <span class="lang-ru"><span class="dot">●</span> ответ за минуты</span>
+    <span class="lang-en"><span class="dot">●</span> 12+ projects shipped</span>
+    <span class="lang-en"><span class="dot">●</span> 0 missed deadlines</span>
+    <span class="lang-en"><span class="dot">●</span> 100% returning clients</span>
+    <span class="lang-en"><span class="dot">●</span> 4 years building</span>
+    <span class="lang-en"><span class="dot">●</span> 8 industries served</span>
+    <span class="lang-en"><span class="dot">●</span> 0 bullshit pitched</span>
+    <span class="lang-en"><span class="dot">●</span> replies in minutes</span>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ STATS — Approach scene ═══════════════════════════ -->
+<section class="scene scene-stats">
+  <div class="photo"><img src="https://images.unsplash.com/photo-1582719508461-905c673771fd?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
+  <div class="content">
+    <div class="eyebrow">— Numbers  ·  since 2025</div>
+    <h2><span class="lang-ru">Числа<br>без <em>лирики.</em></span><span class="lang-en">Numbers<br>without <em>poetry.</em></span></h2>
+    <div class="stats-grid">
+      <div class="stat">
+        <div class="num">12<em>+</em></div>
+        <div class="lbl"><span class="lang-ru">Проектов в production</span><span class="lang-en">Projects shipped to production</span></div>
+      </div>
+      <div class="stat">
+        <div class="num">0</div>
+        <div class="lbl"><span class="lang-ru">Пропущенных дедлайнов с первого дня</span><span class="lang-en">Missed deadlines since day one</span></div>
+      </div>
+      <div class="stat">
+        <div class="num">100<em>%</em></div>
+        <div class="lbl"><span class="lang-ru">Возвращаются или приводят знакомых</span><span class="lang-en">Returning clients or referrals</span></div>
+      </div>
+      <div class="stat">
+        <div class="num">8</div>
+        <div class="lbl"><span class="lang-ru">Индустрий и растёт</span><span class="lang-en">Industries served and counting</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ SERVICES — 3 scenes (Approach) ═══════════════════════════ -->
+<section class="scene svc-scene" id="services">
+  <div class="photo"><img src="https://images.unsplash.com/photo-1571896349842-33c89424de2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
+  <div class="content">
+    <div class="left">
+      <div class="eyebrow">— 01 / Services  ·  Web</div>
+      <div class="nm"><span class="lang-ru">// 01 · WEB</span><span class="lang-en">// 01 · WEB</span></div>
+      <h3><span class="lang-ru">Веб-<em>разработка.</em></span><span class="lang-en">Web <em>Development.</em></span></h3>
+      <p class="closing"><span class="lang-ru">Шипим продукт. Не «MVP for now».</span><span class="lang-en">We ship products. Not "MVP for now".</span></p>
+    </div>
+    <div class="right">
+      <ul class="lang-ru">
+        <li>Лендинги, веб-приложения, e-commerce, dashboards</li>
+        <li>Production-grade с первого commit'а — не demo</li>
+        <li>Стек выбираем под задачу, не под себя</li>
+        <li>SEO, performance, accessibility — из коробки</li>
+        <li>Тесты, CI/CD, observability — стандарт, не апгрейд</li>
+        <li>Поддержка после запуска — не «сдали и забыли»</li>
+        <li>Адаптив под любой экран — от смарт-часов до 4К-монитора</li>
+      </ul>
+      <ul class="lang-en">
+        <li>Landing pages, web apps, e-commerce, dashboards</li>
+        <li>Production-grade from the first commit — not a demo</li>
+        <li>We pick the stack for the task, not for ourselves</li>
+        <li>SEO, performance, accessibility — out of the box</li>
+        <li>Tests, CI/CD, observability — standard, not an upgrade</li>
+        <li>Post-launch support — not "shipped and forgotten"</li>
+        <li>Responsive on any screen — from smartwatch to 4K</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="scene svc-scene">
+  <div class="photo"><img src="https://images.unsplash.com/photo-1505228395891-9a51e7e86bf6?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
+  <div class="content">
+    <div class="left">
+      <div class="eyebrow">— 01 / Services  ·  Automation</div>
+      <div class="nm"><span class="lang-ru">// 02 · AUTOMATION</span><span class="lang-en">// 02 · AUTOMATION</span></div>
+      <h3><span class="lang-ru"><em>Автоматизация.</em></span><span class="lang-en"><em>Automation.</em></span></h3>
+      <p class="closing"><span class="lang-ru">Хорошая автоматизация — та, про которую забыл.</span><span class="lang-en">Good automation is the kind you forget about.</span></p>
+    </div>
+    <div class="right">
+      <ul class="lang-ru">
+        <li>Соединяем CRM, мессенджеры, базы и API</li>
+        <li>Убираем ручной труд там, где он не нужен</li>
+        <li>ROI считаем с первого месяца — каждая интеграция считаема</li>
+        <li>Не окупилось за 3 месяца — переделываем за свой счёт</li>
+        <li>Документируем каждый workflow — ты владеешь логикой</li>
+        <li>Алерты на сбои в реальном времени, не «узнаешь утром»</li>
+        <li>Без vendor lock-in: уходишь — забираешь всё с собой</li>
+      </ul>
+      <ul class="lang-en">
+        <li>Connecting CRMs, messengers, databases, and APIs</li>
+        <li>Killing manual work where it isn't needed</li>
+        <li>ROI tracked from month one — every integration is measurable</li>
+        <li>Doesn't pay off in 3 months — we rebuild it for free</li>
+        <li>Every workflow documented — you own the logic</li>
+        <li>Real-time failure alerts, not "you'll find out in the morning"</li>
+        <li>No vendor lock-in: leave anytime, take everything with you</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section class="scene svc-scene">
+  <div class="photo"><img src="https://images.unsplash.com/photo-1517824806704-9040b037703b?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
+  <div class="content">
+    <div class="left">
+      <div class="eyebrow">— 01 / Services  ·  AI Agents</div>
+      <div class="nm"><span class="lang-ru">// 03 · AI AGENTS</span><span class="lang-en">// 03 · AI AGENTS</span></div>
+      <h3><span class="lang-ru">AI-<em>агенты.</em></span><span class="lang-en">AI <em>Agents.</em></span></h3>
+      <p class="closing"><span class="lang-ru">Не chatbot. Production-assistant с метриками.</span><span class="lang-en">Not a chatbot. A production assistant with metrics.</span></p>
+    </div>
+    <div class="right">
+      <ul class="lang-ru">
+        <li>Чат-боты, голосовые ассистенты, RAG-системы</li>
+        <li>Автономные агенты — не игрушки и не demo</li>
+        <li>Трекинг затрат и качества каждого ответа</li>
+        <li>Эскалация на человека, где модель неуверенна</li>
+        <li>Versioning prompts — откатишься на любую версию</li>
+        <li>A/B-тесты моделей на твоих реальных данных</li>
+        <li>Multi-language из коробки — RU, EN, и далее по списку</li>
+      </ul>
+      <ul class="lang-en">
+        <li>Chatbots, voice assistants, RAG systems</li>
+        <li>Autonomous agents — not toys, not demos</li>
+        <li>Cost and quality tracking on every response</li>
+        <li>Escalation to a human where the model is unsure</li>
+        <li>Prompt versioning — roll back to any version</li>
+        <li>A/B tests of models on your real data</li>
+        <li>Multi-language out of the box — EN, RU, and the rest</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ WORK — 3 cases scenes ═══════════════════════════ -->
+<section class="scene work-scene" id="work">
+  <div class="photo"><img src="https://images.unsplash.com/photo-1547036967-23d11aacaee0?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
+  <div class="content">
+    <div class="nm">— 02 / Selected work  ·  N° 01</div>
+    <div class="meta">VRP — VIP Rental Phuket  ·  2026  ·  Web + AI</div>
+    <h3><span class="lang-ru">AI-консьерж <em>24/7.</em></span><span class="lang-en">AI concierge, <em>24/7.</em></span></h3>
+    <p class="body">
+      <span class="lang-ru">Next.js + GPT-4 концирж в чате booking-сайта. Закрывает 73% запросов без человека. Лендинг конверсит +32% за 2 месяца. Команда клиента управляет 80+ объектами одна.</span>
+      <span class="lang-en">Next.js + GPT-4 concierge inside the booking-site chat. Handles 73% of inquiries without a human. Landing page conversion +32% in two months. The client's team now runs 80+ properties alone.</span>
+    </p>
+    <span class="result-chip">+32% conversion</span>
+  </div>
+</section>
+
+<section class="scene work-scene">
+  <div class="photo"><img src="https://images.unsplash.com/photo-1469474968028-56623f02e42e?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
+  <div class="content">
+    <div class="nm">— 02 / Selected work  ·  N° 02</div>
+    <div class="meta">KeyDrop  ·  2025  ·  Automation + MiniApp</div>
+    <h3><span class="lang-ru">Telegram <em>MiniApp e-commerce.</em></span><span class="lang-en">Telegram <em>MiniApp e-commerce.</em></span></h3>
+    <p class="body">
+      <span class="lang-ru">Полная автоматизация выдачи Steam-кодов. 1 000+ заказов/мес без человека. Uptime 99.99% за 18 месяцев. Зарплата операторов — 0₽.</span>
+      <span class="lang-en">End-to-end automation of Steam-code delivery. 1,000+ orders/month, zero human ops. 99.99% uptime over 18 months. Operator payroll: $0.</span>
+    </p>
+    <span class="result-chip">99.99% uptime</span>
+  </div>
+</section>
+
+<section class="scene work-scene">
+  <div class="photo"><img src="https://images.unsplash.com/photo-1501785888041-af3ef285b470?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
+  <div class="content">
+    <div class="nm">— 02 / Selected work  ·  N° 03</div>
+    <div class="meta">RA Project  ·  2025-2026  ·  Data + AI</div>
+    <h3><span class="lang-ru">On-chain <em>аналитика.</em></span><span class="lang-en">On-chain <em>analytics.</em></span></h3>
+    <p class="body">
+      <span class="lang-ru">12 блокчейн-сетей, ClickHouse + Kafka, AI-классификация транзакций. От нуля до production за 14 недель. 41M+ блоков, 4 агента в проде.</span>
+      <span class="lang-en">12 blockchain networks, ClickHouse + Kafka, AI-driven transaction classification. From zero to production in 14 weeks. 41M+ blocks indexed, 4 agents in prod.</span>
+    </p>
+    <span class="result-chip">12 chains live</span>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ TESTIMONIALS ═══════════════════════════ -->
+<section class="testi" id="testimonials">
+  <div class="head-row">
+    <div class="eyebrow">— 03 / Reviews</div>
+    <h2><span class="lang-ru">Клиенты<br><em>возвращаются.</em></span><span class="lang-en">Clients<br><em>come back.</em></span></h2>
+  </div>
+  <div class="testi-marquee">
+    <div class="testi-track">
+      <!-- 13 cards × 2 for seamless loop -->
+      <div class="t-card"><p class="quote"><span class="lang-ru">За 6 недель закрыли проект, на который другая команда положила полгода. Уже планируем следующий — на этот раз с AI.</span><span class="lang-en">In six weeks they closed a project another team had been dragging for half a year. Already planning the next one — with AI this time.</span></p><div><div class="author">Андрей Т.</div><div class="role"><span class="lang-ru">Owner · Booking platform · Пхукет · 2026</span><span class="lang-en">Owner · Booking platform · Phuket · 2026</span></div></div></div>
+      <div class="t-card"><p class="quote"><span class="lang-ru">Сказали «к концу мая будет production» — был production. Парни знают что делают и объясняют без IT-жаргона.</span><span class="lang-en">Said "production by end of May" — production it was. They know what they're doing and explain it without IT jargon.</span></p><div><div class="author">Елизавета К.</div><div class="role"><span class="lang-ru">Operations Director · E-commerce · Бангкок · 2025</span><span class="lang-en">Operations Director · E-commerce · Bangkok · 2025</span></div></div></div>
+      <div class="t-card"><p class="quote"><span class="lang-ru">Production-grade инфраструктура по цене стартап-MVP. Не помню чтобы DevOps кто-то так серьёзно настраивал на проекте такого масштаба.</span><span class="lang-en">Production-grade infra at startup-MVP price. Don't remember anyone setting up DevOps this seriously on a project this size.</span></p><div><div class="author">Игорь Р.</div><div class="role"><span class="lang-ru">CTO · Crypto analytics · Remote · 2025</span><span class="lang-en">CTO · Crypto analytics · Remote · 2025</span></div></div></div>
+      <div class="t-card"><p class="quote"><span class="lang-ru">Запустили новый онбординг для платформы. От ТЗ до прода — 5 недель. Конверсия на регистрации +18% за первый месяц.</span><span class="lang-en">Launched the new onboarding flow. From spec to prod in 5 weeks. Sign-up conversion up +18% in the first month.</span></p><div><div class="author">Николай Б.</div><div class="role"><span class="lang-ru">Founder · EdTech · Москва · 2026</span><span class="lang-en">Founder · EdTech · Moscow · 2026</span></div></div></div>
+      <div class="t-card"><p class="quote"><span class="lang-ru">Срочный проект на горящем дедлайне — успели за 9 дней. Команда не подвела ни разу за два контракта подряд.</span><span class="lang-en">Urgent project on a burning deadline — done in 9 days. Two contracts in a row, zero misses.</span></p><div><div class="author">Александр К.</div><div class="role"><span class="lang-ru">Head of Trading · Fintech · Санкт-Петербург · 2025</span><span class="lang-en">Head of Trading · Fintech · St. Petersburg · 2025</span></div></div></div>
+      <div class="t-card"><p class="quote"><span class="lang-ru">Автоматизировали CRM с интеграцией WhatsApp Business. Менеджеры освободили 4 часа в день. Окупилось за месяц.</span><span class="lang-en">Automated the CRM with WhatsApp Business integration. Managers got back 4 hours a day. Paid off in a month.</span></p><div><div class="author">Айгерим Т.</div><div class="role"><span class="lang-ru">COO · Real estate · Алма-Ата · 2025</span><span class="lang-en">COO · Real estate · Almaty · 2025</span></div></div></div>
+      <div class="t-card"><p class="quote"><span class="lang-ru">Сделали tracking-платформу для нашей сети. Observability на уровне, какого мы у подрядчиков ещё не видели.</span><span class="lang-en">Built a tracking platform for our network. Observability at a level we hadn't seen from any contractor before.</span></p><div><div class="author">Дмитрий Ш.</div><div class="role"><span class="lang-ru">VP Operations · Logistics · Дубай · 2026</span><span class="lang-en">VP Operations · Logistics · Dubai · 2026</span></div></div></div>
+      <div class="t-card"><p class="quote"><span class="lang-ru">Запустили premium-сегмент магазина с Telegram MiniApp. Парни знают что делают и что предложить — а не только что выбрали в Figma.</span><span class="lang-en">Launched the premium segment with a Telegram MiniApp. They know what to do and what to suggest — not just what they picked in Figma.</span></p><div><div class="author">Анна М.</div><div class="role"><span class="lang-ru">Founder · Premium e-commerce · Гонконг · 2025</span><span class="lang-en">Founder · Premium e-commerce · Hong Kong · 2025</span></div></div></div>
+      <div class="t-card"><p class="quote"><span class="lang-ru">Интегрировали кассы с CRM и доставкой. Заказы летят на кухню без оператора. Возвращаемся за вторым проектом.</span><span class="lang-en">Integrated POS with CRM and delivery. Orders fly straight to the kitchen, no operator. Coming back for project number two.</span></p><div><div class="author">Леван М.</div><div class="role"><span class="lang-ru">Owner · Food delivery · Тбилиси · 2026</span><span class="lang-en">Owner · Food delivery · Tbilisi · 2026</span></div></div></div>
+      <div class="t-card"><p class="quote"><span class="lang-ru">Сайт + booking-система + AI-ассистент в чате. Получили production за 7 недель — точно к открытию сезона.</span><span class="lang-en">Site + booking + an AI assistant in chat. Production in 7 weeks — right on time for the season opener.</span></p><div><div class="author">Сергей В.</div><div class="role"><span class="lang-ru">Founder · HoReCa · Бали · 2025</span><span class="lang-en">Founder · HoReCa · Bali · 2025</span></div></div></div>
+      <div class="t-card"><p class="quote"><span class="lang-ru">Внедрили онлайн-консультации с записью и оплатой. Команда учла все GDPR-нюансы без единого напоминания.</span><span class="lang-en">Rolled out online consultations with bookings and payments. They handled every GDPR detail without a single reminder.</span></p><div><div class="author">Елена П.</div><div class="role"><span class="lang-ru">CTO · Healthcare · Лимасол · 2025</span><span class="lang-en">CTO · Healthcare · Limassol · 2025</span></div></div></div>
+      <div class="t-card"><p class="quote"><span class="lang-ru">Автоматизация склада + интеграция с 1С + дашборды для собственника. ROI считаем каждый месяц — пока окупает себя в 3 раза.</span><span class="lang-en">Warehouse automation + 1C integration + owner dashboards. ROI tracked monthly — currently paying back 3x.</span></p><div><div class="author">Виктор С.</div><div class="role"><span class="lang-ru">Owner · Manufacturing · Минск · 2025</span><span class="lang-en">Owner · Manufacturing · Minsk · 2025</span></div></div></div>
+      <div class="t-card"><p class="quote"><span class="lang-ru">Собрали единую систему отчётности для 12 наших клиентов. Сократили время на ручную сборку отчётов на 80%.</span><span class="lang-en">Built a unified reporting system for 12 of our clients. Cut manual report-assembly time by 80%.</span></p><div><div class="author">Мария Д.</div><div class="role"><span class="lang-ru">Founder · Marketing agency · Таллин · 2026</span><span class="lang-en">Founder · Marketing agency · Tallinn · 2026</span></div></div></div>
+      <!-- duplicate for seamless loop -->
+      <div class="t-card"><p class="quote"><span class="lang-ru">За 6 недель закрыли проект, на который другая команда положила полгода. Уже планируем следующий — на этот раз с AI.</span><span class="lang-en">In six weeks they closed a project another team had been dragging for half a year. Already planning the next one — with AI this time.</span></p><div><div class="author">Андрей Т.</div><div class="role"><span class="lang-ru">Owner · Booking platform · Пхукет · 2026</span><span class="lang-en">Owner · Booking platform · Phuket · 2026</span></div></div></div>
+      <div class="t-card"><p class="quote"><span class="lang-ru">Сказали «к концу мая будет production» — был production.</span><span class="lang-en">Said "production by end of May" — production it was.</span></p><div><div class="author">Елизавета К.</div><div class="role"><span class="lang-ru">Operations Director · E-commerce · Бангкок · 2025</span><span class="lang-en">Operations Director · E-commerce · Bangkok · 2025</span></div></div></div>
+      <div class="t-card"><p class="quote"><span class="lang-ru">Production-grade инфраструктура по цене стартап-MVP.</span><span class="lang-en">Production-grade infra at startup-MVP price.</span></p><div><div class="author">Игорь Р.</div><div class="role"><span class="lang-ru">CTO · Crypto analytics · Remote · 2025</span><span class="lang-en">CTO · Crypto analytics · Remote · 2025</span></div></div></div>
+      <div class="t-card"><p class="quote"><span class="lang-ru">Запустили новый онбординг для платформы.</span><span class="lang-en">Launched the new onboarding flow.</span></p><div><div class="author">Николай Б.</div><div class="role"><span class="lang-ru">Founder · EdTech · Москва · 2026</span><span class="lang-en">Founder · EdTech · Moscow · 2026</span></div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════ PROCESS — intro is now standalone vertical scene (smooth scroll like other scenes), then 4 stages in horizontal pin ═══════════════════════════ -->
+<section class="scene process-intro-scene" id="process">
+  <div class="photo"><img class="day" src="https://images.unsplash.com/photo-1582719508461-905c673771fd?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
+  <div class="content">
+    <div class="nm">— 04 / How we work</div>
+    <h2><span class="lang-ru">Как мы <em>шипим.</em></span><span class="lang-en">How we <em>ship.</em></span></h2>
+    <p class="lead"><span class="lang-ru">Четыре стадии — Discovery, Architecture, Sprint Build, Handoff. Каждая раскрывается на полный кадр.</span><span class="lang-en">Four stages — Discovery, Architecture, Sprint Build, Handoff. Each one unfolds in a full frame.</span></p>
+  </div>
+</section>
+
+<section class="process-strip" id="processStrip">
+  <div class="process-track" id="processTrack">
+
+    <div class="process-panel">
+      <div class="photo"><img class="day" src="https://images.unsplash.com/photo-1469474968028-56623f02e42e?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
+      <div class="big-num">01</div>
+      <div class="body">
+        <div class="nm">— Stage  ·  Discovery</div>
+        <h3><span class="lang-ru">Discovery.</span><span class="lang-en">Discovery.</span></h3>
+        <p><span class="lang-ru">2-3 дня. Без brief-форм и жаргона. Слушаем, рисуем, фиксируем — что нужно, кому, почему сейчас.</span><span class="lang-en">2-3 days. No brief forms, no jargon. We listen, sketch, document — what's needed, for whom, and why now.</span></p>
+      </div>
+    </div>
+
+    <div class="process-panel">
+      <div class="photo"><img class="day" src="https://images.unsplash.com/photo-1499678329028-101435549a4e?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
+      <div class="big-num">02</div>
+      <div class="body">
+        <div class="nm">— Stage  ·  Architecture</div>
+        <h3><span class="lang-ru">Architecture.</span><span class="lang-en">Architecture.</span></h3>
+        <p><span class="lang-ru">План, ТЗ, демо архитектуры. До первой строчки кода — никаких сюрпризов в счёте.</span><span class="lang-en">Plan, spec, architecture demo. Before the first line of code — no surprises on the invoice.</span></p>
+      </div>
+    </div>
+
+    <div class="process-panel">
+      <div class="photo"><img class="day" src="https://images.unsplash.com/photo-1547036967-23d11aacaee0?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
+      <div class="big-num">03</div>
+      <div class="body">
+        <div class="nm">— Stage  ·  Sprint Build</div>
+        <h3><span class="lang-ru">Sprint Build.</span><span class="lang-en">Sprint Build.</span></h3>
+        <p><span class="lang-ru">2-недельные итерации с demo каждый понедельник. Меняешь приоритеты — берём в следующий sprint без переторговки.</span><span class="lang-en">2-week iterations with a demo every Monday. Change priorities — we pull them into the next sprint, no renegotiation.</span></p>
+      </div>
+    </div>
+
+  </div>
+  <aside class="process-progress">
+    <div class="pages"><span id="pageN">01</span><em> / 03</em></div>
+    <div class="barwrap"><span class="bar" id="bar"></span></div>
+  </aside>
+</section>
+
+<!-- ═══════════════════════════ MANIFESTO — Margins silence ═══════════════════════════ -->
+<section class="manifesto">
+  <div class="eyebrow">— Manifesto</div>
+  <div class="text">
+    <span class="lang-ru">Мы — <em>DEADLINE.</em><br>У нас <em>ничего не горит.</em></span>
+    <span class="lang-en">We are <em>DEADLINE.</em><br>Nothing's <em>on fire here.</em></span>
+  </div>
+  <div class="sig">— DEADLINE  ·  since 2025</div>
+</section>
+
+<!-- ═══════════════════════════ CONTACT — Margins + Horizon fade ═══════════════════════════ -->
+<section class="contact" id="contact">
+  <div class="photo"><img src="https://images.unsplash.com/photo-1582719508461-905c673771fd?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
+  <div class="content">
+    <div class="eyebrow">— 05 / Contact</div>
+    <h2>
+      <span class="lang-ru">Пиши — <em>ответим раньше, чем уберёшь руки от клавиатуры.</em></span>
+      <span class="lang-en">Write — <em>we'll reply before your hands leave the keyboard.</em></span>
+    </h2>
+    <p class="body">
+      <span class="lang-ru">Опиши задачу одним сообщением. Без brief-форм, без «давайте созвонимся обсудим формат созвона». Берёмся за всё. План и срок прилетят прежде, чем ты допьёшь кофе.</span>
+      <span class="lang-en">Describe the task in one message. No brief forms, no "let's schedule a call to discuss the call format". We take everything on. The plan and the deadline will land before you finish your coffee.</span>
+    </p>
+    <div class="channels">
+      <a href="mailto:corpdeadline@gmail.com" class="btn-primary">corpdeadline@gmail.com</a>
+      <a href="https://t.me/deadline_corp" class="btn-secondary">@deadline_corp</a>
+    </div>
+    <div class="reply">
+      <span class="lang-ru"><span class="dot">●</span>Ответ за минуты</span>
+      <span class="lang-en"><span class="dot">●</span>Replies in minutes</span>
+    </div>
+  </div>
+</section>
+
+<script>
+gsap.registerPlugin(ScrollTrigger);
+const lenis=new Lenis({duration:1.15,easing:t=>1-Math.pow(1-t,3.4),smoothWheel:true,wheelMultiplier:0.95});
+lenis.on('scroll',ScrollTrigger.update);
+gsap.ticker.add(t=>lenis.raf(t*1000));
+gsap.ticker.lagSmoothing(0);
+
+// ─── Custom cursor ───
+const cur=document.querySelector('.cur'),ring=document.getElementById('curRing');
+let mx=innerWidth/2,my=innerHeight/2,rx=mx,ry=my;
+addEventListener('mousemove',e=>{mx=e.clientX;my=e.clientY;cur.style.left=mx+'px';cur.style.top=my+'px'});
+function crLoop(){rx+=(mx-rx)*.14;ry+=(my-ry)*.14;ring.style.left=rx+'px';ring.style.top=ry+'px';requestAnimationFrame(crLoop)}crLoop();
+document.querySelectorAll('a,button').forEach(el=>{
+  el.addEventListener('mouseenter',()=>ring.classList.add('is-hover'));
+  el.addEventListener('mouseleave',()=>ring.classList.remove('is-hover'));
+});
+
+// ─── Image fade-in + parallax ───
+document.querySelectorAll('.photo img').forEach(img=>{
+  if(img.complete)img.classList.add('is-loaded');
+  else img.addEventListener('load',()=>img.classList.add('is-loaded'));
+  img.addEventListener('error',()=>{img.parentElement.style.background='linear-gradient(160deg,#1a2228,#08070A)'});
+});
+document.querySelectorAll('.scene .photo img').forEach(img=>{
+  gsap.to(img,{yPercent:-7,ease:'none',scrollTrigger:{trigger:img.closest('.scene'),start:'top bottom',end:'bottom top',scrub:true}});
+});
+
+// ─── Entrance reveal: hero (gsap.from = animate FROM hidden TO computed — failsafe if JS hangs) ───
+gsap.from('.hero-meta',{y:14,opacity:0,duration:1.4,delay:0.4,ease:'power2.out'});
+gsap.from('.hero-text .line',{y:42,opacity:0,duration:1.4,stagger:0.14,delay:0.6,ease:'power3.out'});
+gsap.from('.hero-text .sub',{y:24,opacity:0,duration:1.2,delay:1.0,ease:'power3.out'});
+gsap.from('.hero-cta',{opacity:0,duration:1.2,delay:1.3,ease:'power2.out'});
+gsap.from('.hero-cta > *',{y:14,opacity:0,duration:0.9,stagger:0.08,delay:1.4,ease:'power2.out'});
+
+// ─── Stats + services + work scene reveals ───
+document.querySelectorAll('.scene-stats .content > *, .svc-scene .left > *, .svc-scene .right li, .work-scene .content > *').forEach(el=>{
+  gsap.from(el,{y:32,opacity:0,duration:1.0,ease:'power3.out',scrollTrigger:{trigger:el,start:'top 80%'}});
+});
+
+// ─── Testimonials head reveal ───
+gsap.from('.testi .head-row > *',{y:32,opacity:0,duration:1.2,stagger:0.1,ease:'power3.out',scrollTrigger:{trigger:'.testi',start:'top 78%'}});
+
+// ─── Process intro reveal ───
+gsap.from('.process-intro > *',{y:32,opacity:0,duration:1.2,stagger:0.1,ease:'power3.out',scrollTrigger:{trigger:'.process-intro',start:'top 75%'}});
+
+// ─── Manifesto + Contact reveals ───
+gsap.from('.manifesto > *',{y:32,opacity:0,duration:1.4,stagger:0.15,ease:'power3.out',scrollTrigger:{trigger:'.manifesto',start:'top 70%'}});
+gsap.from('.contact .content > *',{y:32,opacity:0,duration:1.4,stagger:0.12,ease:'power3.out',scrollTrigger:{trigger:'.contact',start:'top 70%'}});
+
+// ─── Process horizontal pin (desktop only) ───
+// Deferred via setTimeout so it's created AFTER all vertical scene pins have been set up
+// in nightLayer IIFE below. Without this defer, process-strip's trigger start/end gets locked in
+// at the OLD document height (before scene pin-spacers expand the page), causing phantom
+// captures and dark blocks at wrong scrollY positions.
+setTimeout(()=>{
+if(matchMedia('(min-width:881px)').matches){
+  const track=document.getElementById('processTrack');
+  const panels=[...track.querySelectorAll('.process-panel')];
+  const total=panels.length;
+  const scrollLen=(total-1)*innerWidth;
+
+  // Main horizontal pin
+  const procTween=gsap.to(track,{
+    x:-scrollLen,
+    ease:'none',
+    scrollTrigger:{
+      trigger:'#processStrip',
+      start:'top top',
+      end:'+='+scrollLen,
+      pin:true,
+      pinType:'transform',
+      scrub:0.9,
+      anticipatePin:1,
+      fastScrollEnd:true,
+      onUpdate:self=>{
+        const p=self.progress;
+        // counter: 01..04 across 4 stages (intro no longer here)
+        const idx=Math.min(Math.floor(p*total)+1,total);
+        document.getElementById('pageN').textContent=String(idx).padStart(2,'0');
+        document.getElementById('bar').style.transform='scaleY('+p+')';
+      }
+    }
+  });
+
+  // Per-panel day→night mask sweep tied to horizontal progress via containerAnimation
+  panels.forEach(panel=>{
+    const photo=panel.querySelector('.photo');
+    if(!photo)return;
+    ScrollTrigger.create({
+      trigger:panel,
+      start:'left center',  // when panel left edge crosses viewport center (panel entering active zone)
+      end:'right center',   // when panel right edge crosses center (panel exiting)
+      containerAnimation:procTween,
+      scrub:true,
+      onUpdate:self=>{
+        // Same hold→sweep→hold curve as vertical scenes
+        const p=self.progress;
+        // power1.inOut ease applied to middle portion
+        let mp;
+        if(p<0.18) mp=0;
+        else if(p>0.82) mp=1;
+        else {
+          const t=(p-0.18)/0.64;
+          mp=t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
+        }
+        photo.style.setProperty('--mp',mp.toFixed(4));
+      }
+    });
+  });
+  // Force a final refresh now that ALL pins (scene + horizontal process) are registered
+  ScrollTrigger.refresh(true);
+}
+},150); // end of deferred setTimeout — runs after nightLayer scene pins are created
+
+// ─── Scroll progress hairline ───
+const prog=document.getElementById('progress');
+function updProg(){const h=document.documentElement;const p=(h.scrollTop/(h.scrollHeight-h.clientHeight))*100;prog.style.width=p+'%'}
+lenis.on('scroll',updProg);
+
+// ─── Day→Night cinematic transition: pin per scene with scrub timeline ───
+// Each scene pins on viewport: HOLD full day → SWEEP R→L to night → HOLD full night → release.
+// Reverse-scroll reverses sweep (night→day L→R). User explicitly asked for this pin pattern.
+(function nightLayer(){
+  // NIGHT photo IDs in DOM order (querySelectorAll returns DOM order, not selector order)
+  // DOM: hero, stats, svc x3, work x3, process-intro-scene, process-panel x4, contact = 13 total
+  const NIGHT_IDS=[
+    '1535025183041-0991a977e25b', // 0  hero — bali aerial night
+    '1499002238440-d264edd596ec', // 1  stats — lit luxury villa at night
+    '1514565131-fce0801e5785',    // 2  svc web — tokyo night
+    '1519074002996-a69e7ac46a42', // 3  svc auto — maldives night
+    '1520250497591-112f2f40a3f4', // 4  svc ai — desert stars
+    '1502672260266-1c1ef2d93688', // 5  work vrp — coastal night
+    '1444703686981-a3abbc4d4fe3', // 6  work keydrop — forest night
+    '1487700160041-babef9c3cb55', // 7  work ra — milky way mountain
+    '1499002238440-d264edd596ec', // 8  process-intro-scene — lit villa night
+    '1444703686981-a3abbc4d4fe3', // 9  process-panel Discovery — forest night
+    '1535025183041-0991a977e25b', // 10 process-panel Architecture — bali aerial night
+    '1502672260266-1c1ef2d93688', // 11 process-panel Sprint Build — coastal night
+    '1502082553048-f009c37129b9'  // 12 contact — night city aerial
+  ];
+  // Fallback chain — diverse so multiple failed scenes don't all converge to one image
+  const FALLBACK_IDS=['1418065460487-3e41a6c84dc5','1473625247510-8ceb1760943f','1419242902214-272b3f66ee7a','1494500764479-0c8f2919a3d8','1493558103817-58b2924bce98','1518709268805-4e9042af9f23'];
+  const makeURL=id=>`https://images.unsplash.com/photo-${id}?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85`;
+
+  // Inject night <img> into each .photo (returns in DOM order — matches NIGHT_IDS above)
+  const photos=[...document.querySelectorAll('.hero .photo, .scene-stats .photo, .svc-scene .photo, .work-scene .photo, .process-intro-scene .photo, .process-panel .photo, .contact .photo')];
+  photos.forEach((p,i)=>{
+    const n=document.createElement('img');
+    n.className='night';n.alt='';
+    let fbIdx=0;
+    n.addEventListener('error',()=>{
+      if(fbIdx<FALLBACK_IDS.length){n.src=makeURL(FALLBACK_IDS[fbIdx++])}
+      else{n.style.display='none'}
+    });
+    n.addEventListener('load',()=>n.classList.add('is-loaded'));
+    n.src=makeURL(NIGHT_IDS[i]||NIGHT_IDS[0]);
+    p.appendChild(n);
+  });
+
+  // Desktop: ScrollTrigger pin + scrub timeline per scene
+  // Mobile: simple scroll-driven mask without pin (page would feel too slow on small screens)
+  if(matchMedia('(min-width:881px)').matches){
+    // No vertical pins — scenes flow normally, mask sweeps as scene traverses viewport.
+    // Eliminates pin-spacer dark gaps between sections AND removes "magnet snap" on entry/exit.
+    // start='top bottom' = sweep begins when scene's top enters viewport from below
+    // end='bottom top' = sweep ends when scene's bottom exits viewport from above
+    // Total trigger range = 200vh of scroll → plenty of time for smooth power2.inOut sweep
+    // power2.inOut ease naturally creates "hold day → sweep → hold night" without explicit stages.
+    photos.forEach(photo=>{
+      const scene=photo.closest('.hero,.scene,.contact');
+      if(!scene)return;
+      // Special-case: process-intro-scene's spacer creates ugly gap before process-strip
+      // (intro releases pin → 100vh dark padding → process-strip pin starts).
+      // Set pinSpacing:false ONLY for intro so it flows directly into process-strip.
+      const isProcessIntro=scene.classList.contains('process-intro-scene');
+      gsap.to(photo,{
+        '--mp':1,
+        ease:'power2.inOut',
+        scrollTrigger:{
+          trigger:scene,
+          start:'top top',
+          end:'+=100%',
+          pin:true,
+          pinSpacing:!isProcessIntro,  // true for all scenes (cinematic spacer) — EXCEPT intro
+          pinType:'transform',
+          scrub:0.8,
+          anticipatePin:1,
+          fastScrollEnd:true,
+          invalidateOnRefresh:true
+        }
+      });
+    });
+  } else {
+    // Mobile fallback — simple progress mask, no pin
+    function updateMasks(){
+      const vh=innerHeight;
+      photos.forEach(p=>{
+        const scene=p.closest('.hero,.scene,.contact');
+        if(!scene)return;
+        const r=scene.getBoundingClientRect();
+        const total=vh+r.height;
+        const traveled=vh-r.top;
+        const pr=Math.max(0,Math.min(1,traveled/total));
+        p.style.setProperty('--mp',pr.toFixed(4));
+      });
+    }
+    lenis.on('scroll',updateMasks);
+    addEventListener('resize',updateMasks);
+    updateMasks();
+  }
+})();
+
+// ─── Force ScrollTrigger to re-measure ALL pin positions after every pin trigger has been created.
+//     Without this, process-strip's pin trigger (created BEFORE scene pins) keeps stale start/end
+//     coords from the pre-scene-pin document height, causing phantom dark zones during scroll. ───
+requestAnimationFrame(()=>{
+  setTimeout(()=>{ScrollTrigger.refresh(true)},150);
+});
+
+// ─── Language toggle (matches site pattern) ───
+const lru=document.getElementById('lang-ru'),len=document.getElementById('lang-en');
+function setLang(en){
+  document.body.classList.toggle('lang-en',en);
+  document.documentElement.lang=en?'en':'ru';
+  lru.classList.toggle('is-active',!en);
+  len.classList.toggle('is-active',en);
+  try{localStorage.setItem('deadline-lang',en?'en':'ru')}catch(e){}
+}
+lru.addEventListener('click',()=>setLang(false));
+len.addEventListener('click',()=>setLang(true));
+try{
+  const stored=localStorage.getItem('deadline-lang');
+  if(stored==='en')setLang(true);
+  else if(!stored&&navigator.language&&navigator.language.startsWith('en'))setLang(true);
+}catch(e){}
+</script>
+</body>
+</html>

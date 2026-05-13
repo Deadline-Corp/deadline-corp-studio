@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DOSSIER · DEADLINE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;1,400&family=Inter:wght@200;300;400;500&family=JetBrains+Mono:wght@300;400&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+<style>
+:root{--paper:#EFE6D3;--paper-2:#E6DBC4;--ink:#1A1612;--ink-soft:rgba(26,22,18,.7);--rule:rgba(26,22,18,.18);--stamp:#8C2A1F;--accent:#5C6B47}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--paper);color:var(--ink);font-family:'Inter',sans-serif;font-weight:300;-webkit-font-smoothing:antialiased;overflow-x:hidden;cursor:none}
+img{display:block;max-width:100%}
+a{color:inherit;text-decoration:none}
+a,button{cursor:none}
+
+.cur{position:fixed;width:5px;height:5px;background:var(--ink);border-radius:50%;pointer-events:none;z-index:9999;transform:translate(-50%,-50%);mix-blend-mode:multiply}
+.cur-ring{position:fixed;width:30px;height:30px;border:1px solid var(--ink);border-radius:50%;pointer-events:none;z-index:9998;transform:translate(-50%,-50%);opacity:.3;transition:width .35s,height .35s,opacity .35s}
+.cur-ring.is-hover{width:52px;height:52px;opacity:.55}
+
+/* Paper grain — very subtle */
+body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='400'><filter id='p'><feTurbulence type='fractalNoise' baseFrequency='1.6' numOctaves='2'/><feColorMatrix values='0 0 0 0 0.35, 0 0 0 0 0.3, 0 0 0 0 0.22, 0 0 0 .1 0'/></filter><rect width='100%' height='100%' filter='url(%23p)'/></svg>");opacity:.45;mix-blend-mode:multiply}
+
+.shell{position:relative;z-index:1;max-width:1200px;margin:0 auto;padding:0 clamp(24px,4vw,56px)}
+
+/* Top — file header (typewriter feel) */
+.fhead{padding:48px 0 24px;display:grid;grid-template-columns:auto 1fr auto;gap:24px;align-items:center;border-bottom:1px solid var(--rule);font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft)}
+.fhead .brand{font-family:'EB Garamond';font-style:italic;font-weight:500;font-size:22px;letter-spacing:.04em;color:var(--ink);text-transform:none}
+.fhead .c{justify-self:center}
+.fhead .r{justify-self:end;display:flex;gap:24px}
+.fhead .r a{color:var(--ink);border-bottom:1px solid transparent;padding-bottom:2px;transition:border-color .25s}
+.fhead .r a:hover{border-bottom-color:var(--stamp)}
+
+/* Cover spread — folder feel */
+.cover{padding:80px 0 60px;display:grid;grid-template-columns:1fr 1fr;gap:64px;align-items:center;position:relative}
+.cover::after{content:"";position:absolute;left:50%;top:80px;bottom:60px;width:1px;background:repeating-linear-gradient(180deg,var(--rule) 0 8px,transparent 8px 14px)}
+.cover .left{position:relative}
+.cover .small{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:24px}
+.cover .small strong{color:var(--stamp);font-family:'JetBrains Mono';font-weight:500}
+.cover h1{font-family:'EB Garamond';font-weight:400;font-size:clamp(56px,8vw,124px);line-height:.94;letter-spacing:-.012em;margin:0;color:var(--ink);max-width:14ch}
+.cover h1 em{font-style:italic;color:var(--accent)}
+.cover .sub{margin-top:32px;font-family:'EB Garamond';font-style:italic;font-weight:400;font-size:20px;color:var(--ink-soft);max-width:42ch;line-height:1.5}
+.cover .meta{margin-top:48px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);line-height:1.9}
+.cover .meta strong{color:var(--ink);font-family:'EB Garamond';font-style:italic;font-weight:500;font-size:16px;letter-spacing:0;text-transform:none}
+
+/* Right — stamped photograph */
+.cover .right{position:relative}
+.cover .right .photo{position:relative;aspect-ratio:3/4;overflow:hidden;background:var(--paper-2);border:8px solid var(--paper);box-shadow:0 24px 64px -28px rgba(26,22,18,.4)}
+.cover .right .photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 1.4s cubic-bezier(.5,0,.2,1);filter:sepia(.12) contrast(1.02) saturate(.85)}
+.cover .right .photo img.is-loaded{opacity:1}
+
+/* Stamp (rotated) */
+.stamp{position:absolute;top:-22px;right:-32px;width:140px;height:140px;border:2px solid var(--stamp);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-direction:column;color:var(--stamp);font-family:'JetBrains Mono',monospace;letter-spacing:.18em;text-align:center;transform:rotate(-9deg);opacity:.78;mix-blend-mode:multiply;background:transparent}
+.stamp::before,.stamp::after{content:"";position:absolute;left:14%;right:14%;height:1.5px;background:var(--stamp);opacity:.65}
+.stamp::before{top:24%}.stamp::after{bottom:24%}
+.stamp .top{font-size:9px;letter-spacing:.32em;font-weight:500}
+.stamp .big{font-size:22px;letter-spacing:.18em;font-family:'EB Garamond';font-style:italic;margin:6px 0;font-weight:500;text-transform:none}
+.stamp .date{font-size:9px;letter-spacing:.32em;font-weight:400}
+
+/* Case-file rows */
+.cases{padding:48px 0 80px}
+.cases .lbl{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:var(--stamp);margin-bottom:48px;display:flex;gap:14px;align-items:center}
+.cases .lbl::before,.cases .lbl::after{content:"";flex:1;height:1px;background:var(--rule)}
+
+.case{display:grid;grid-template-columns:200px 1fr;gap:40px;padding:48px 0;border-top:1px solid var(--rule);align-items:start}
+.case:last-of-type{border-bottom:1px solid var(--rule)}
+.case .file{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:var(--ink-soft);line-height:1.9}
+.case .file strong{color:var(--ink);display:block;font-family:'EB Garamond';font-style:italic;font-weight:500;font-size:24px;letter-spacing:0;text-transform:none;margin-bottom:6px}
+.case .body{font-family:'EB Garamond';font-weight:400;font-size:18px;line-height:1.55;color:var(--ink)}
+.case .body h3{font-family:'EB Garamond';font-weight:400;font-size:clamp(28px,3.4vw,42px);line-height:1.05;letter-spacing:-.008em;margin:0 0 16px;color:var(--ink)}
+.case .body h3 em{font-style:italic;color:var(--accent)}
+.case .body p{margin:0 0 14px;color:var(--ink-soft)}
+.case .results{display:flex;gap:36px;margin-top:24px;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:var(--ink-soft);border-top:1px solid var(--rule);padding-top:18px}
+.case .results .v{font-family:'EB Garamond';font-style:italic;font-weight:500;font-size:22px;color:var(--ink);text-transform:none;letter-spacing:0;display:block;margin-bottom:6px}
+
+/* Closing — signed letter */
+.fin{padding:120px 0;border-top:1px solid var(--rule);text-align:left}
+.fin .salut{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--stamp);margin-bottom:32px}
+.fin .q{font-family:'EB Garamond';font-weight:400;font-size:clamp(40px,6vw,84px);line-height:1.05;letter-spacing:-.012em;color:var(--ink);max-width:18ch;margin:0}
+.fin .q em{font-style:italic;color:var(--accent)}
+.fin .sig{margin-top:64px;display:grid;grid-template-columns:1fr auto;align-items:end;border-top:1px solid var(--rule);padding-top:24px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft)}
+.fin .sig .channels{display:flex;flex-direction:column;gap:6px;text-align:right;font-family:'EB Garamond';font-style:italic;font-size:18px;text-transform:none;letter-spacing:0}
+.fin .sig .channels a{color:var(--ink);border-bottom:1px solid var(--rule);padding-bottom:3px;transition:border-color .35s}
+.fin .sig .channels a:hover{border-bottom-color:var(--stamp)}
+
+.colo{padding:32px 0 64px;border-top:1px solid var(--rule);display:flex;justify-content:space-between;font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:var(--ink-soft)}
+
+@media(max-width:880px){
+  .cover{grid-template-columns:1fr;gap:48px}
+  .cover::after{display:none}
+  .case{grid-template-columns:1fr;gap:16px}
+  .stamp{width:90px;height:90px;top:-16px;right:-12px}
+  .stamp .big{font-size:14px}
+  .fin .sig{grid-template-columns:1fr;gap:24px}
+  .fin .sig .channels{text-align:left}
+  .cur,.cur-ring{display:none}
+  body{cursor:auto}a,button{cursor:pointer}
+}
+</style>
+</head>
+<body>
+
+<div class="cur"></div><div class="cur-ring" id="curRing"></div>
+
+<div class="shell">
+
+<header class="fhead">
+  <span class="brand">DEADLINE</span>
+  <span class="c">DOSSIER · N° 12 · DEC 2026</span>
+  <div class="r">
+    <a href="mailto:corpdeadline@gmail.com">corpdeadline@gmail.com</a>
+    <a href="https://t.me/deadline_corp">@deadline_corp</a>
+  </div>
+</header>
+
+<section class="cover">
+  <div class="left">
+    <div class="small">File <strong>12 / 2026</strong>  ·  Issuing studio  ·  Since 2025</div>
+    <h1>Меньше слов.<br><em>Больше</em> результата.</h1>
+    <p class="sub">Досье студии — двенадцать дел, ноль смещённых сроков. Каждое дело — карточка, фотография, подпись, дата.</p>
+    <div class="meta">
+      <strong>DEADLINE</strong>
+      Studio  ·  Web · Automation · AI<br>
+      Since 2025  ·  Public file
+    </div>
+  </div>
+  <div class="right">
+    <div class="photo">
+      <img src="https://images.unsplash.com/photo-1582719508461-905c673771fd?ixlib=rb-4.0.3&auto=format&fit=crop&w=1600&q=85" alt="">
+    </div>
+    <div class="stamp">
+      <div class="top">DEADLINE</div>
+      <div class="big">Otgrouzheno</div>
+      <div class="date">12 / 2026</div>
+    </div>
+  </div>
+</section>
+
+<section class="cases">
+  <div class="lbl">— Case files</div>
+
+  <article class="case">
+    <div class="file">
+      File N°<strong>01</strong>
+      Phuket<br>
+      2026<br>
+      Web + AI
+    </div>
+    <div class="body">
+      <h3>VRP — <em>VIP Rental Phuket.</em></h3>
+      <p>Next.js + GPT-4 над живым инвентарём виллы. Колл-центр сократился до одного оператора. Восемьдесят объектов, один консьерж — у нас.</p>
+      <p>Релиз зафиксирован на четырнадцатое марта. Отгружено двенадцатого — двое суток форы на тест.</p>
+      <div class="results">
+        <div><span class="v">+32%</span>Conversion</div>
+        <div><span class="v">73%</span>Без оператора</div>
+        <div><span class="v">80+</span>Объектов</div>
+        <div><span class="v">10 нед</span>Срок</div>
+      </div>
+    </div>
+  </article>
+
+  <article class="case">
+    <div class="file">
+      File N°<strong>02</strong>
+      Telegram<br>
+      2025<br>
+      Automation
+    </div>
+    <div class="body">
+      <h3>KeyDrop — <em>Telegram MiniApp.</em></h3>
+      <p>Тысяча с лишним заказов в месяц. Восемнадцать месяцев в production без падений. Внутренний оператор закрывает только аномалии — три, может пять, в неделю.</p>
+      <div class="results">
+        <div><span class="v">1000+/мес</span>Заказов</div>
+        <div><span class="v">99.99%</span>Uptime</div>
+        <div><span class="v">18 мес</span>В production</div>
+      </div>
+    </div>
+  </article>
+
+  <article class="case">
+    <div class="file">
+      File N°<strong>03</strong>
+      On-chain<br>
+      2025-26<br>
+      AI + Data
+    </div>
+    <div class="body">
+      <h3>RA Project — <em>on-chain analytics.</em></h3>
+      <p>Двенадцать блокчейн-сетей, ClickHouse и Kafka в боевом режиме. Сорок один миллион блоков обработано. Четыре AI-агента в production вычитывают и нормализуют данные.</p>
+      <div class="results">
+        <div><span class="v">12</span>Сетей</div>
+        <div><span class="v">41M+</span>Блоков</div>
+        <div><span class="v">4</span>Агента в prod</div>
+      </div>
+    </div>
+  </article>
+
+  <article class="case">
+    <div class="file">
+      File N°<strong>04</strong>
+      Studio<br>
+      2025-26<br>
+      Web + Brand
+    </div>
+    <div class="body">
+      <h3>Studio Suite — <em>восемь микросайтов.</em></h3>
+      <p>Восемь брендовых микросайтов под кампании из одного design-system. Time-to-launch — два часа от конфига до GitHub Pages. Один токен-стэк держит восемь сайтов от расхождения.</p>
+      <div class="results">
+        <div><span class="v">8</span>Сайтов</div>
+        <div><span class="v">2 часа</span>Time-to-launch</div>
+        <div><span class="v">1</span>DS на все</div>
+      </div>
+    </div>
+  </article>
+</section>
+
+<section class="fin">
+  <div class="salut">— Closing  ·  Signed by the studio</div>
+  <p class="q">Мы — DEADLINE.<br><em>У нас ничего не горит.</em></p>
+  <div class="sig">
+    <span>Studio  ·  since 2025  ·  N° 12</span>
+    <div class="channels">
+      <a href="mailto:corpdeadline@gmail.com">corpdeadline@gmail.com</a>
+      <a href="https://t.me/deadline_corp">@deadline_corp</a>
+    </div>
+  </div>
+</section>
+
+<div class="colo">
+  <span>© 2025—2026</span>
+  <span>Concept 04 · Dossier</span>
+  <span>Public file</span>
+</div>
+
+</div>
+
+<script>
+gsap.registerPlugin(ScrollTrigger);
+const lenis=new Lenis({duration:1.4,easing:t=>1-Math.pow(1-t,3)});
+lenis.on('scroll',ScrollTrigger.update);gsap.ticker.add(t=>lenis.raf(t*1000));gsap.ticker.lagSmoothing(0);
+
+const cur=document.querySelector('.cur'),ring=document.getElementById('curRing');
+let mx=innerWidth/2,my=innerHeight/2,rx=mx,ry=my;
+addEventListener('mousemove',e=>{mx=e.clientX;my=e.clientY;cur.style.left=mx+'px';cur.style.top=my+'px'});
+function cr(){rx+=(mx-rx)*.14;ry+=(my-ry)*.14;ring.style.left=rx+'px';ring.style.top=ry+'px';requestAnimationFrame(cr)}cr();
+document.querySelectorAll('a,button').forEach(el=>{el.addEventListener('mouseenter',()=>ring.classList.add('is-hover'));el.addEventListener('mouseleave',()=>ring.classList.remove('is-hover'))});
+
+document.querySelectorAll('.cover .photo img').forEach(img=>{
+  if(img.complete)img.classList.add('is-loaded');
+  else img.addEventListener('load',()=>img.classList.add('is-loaded'));
+  img.addEventListener('error',()=>{img.parentElement.style.background='linear-gradient(160deg,#B8A485,#8A7558)'});
+});
+
+gsap.from('.cover .left > *',{y:32,opacity:0,duration:1.2,stagger:0.1,ease:'power3.out',delay:0.2});
+gsap.from('.cover .right .photo',{scale:0.96,opacity:0,duration:1.4,ease:'power3.out',delay:0.4});
+gsap.from('.stamp',{rotation:-30,opacity:0,duration:1.2,ease:'back.out(1.2)',delay:1.0});
+
+document.querySelectorAll('.case').forEach(c=>{
+  gsap.from(c.querySelectorAll('.file > *, .body > *'),{y:24,opacity:0,duration:1.0,stagger:0.05,ease:'power2.out',scrollTrigger:{trigger:c,start:'top 78%'}});
+});
+</script>
+</body>
+</html>

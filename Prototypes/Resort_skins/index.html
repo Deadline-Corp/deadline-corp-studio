@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>10 Resort skin concepts · Attempt 2 · DEADLINE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;1,300&family=Inter:wght@200;300;400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js"></script>
+<style>
+:root{--ink:#0F0D0A;--cream:#F4ECDE;--cream-soft:rgba(244,236,222,.62);--rule:rgba(244,236,222,.15);--accent:#C8A871}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--ink);color:var(--cream);font-family:'Inter',sans-serif;font-weight:300;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+
+.head{padding:48px clamp(24px,5vw,72px) 24px;display:grid;grid-template-columns:1fr auto 1fr;gap:24px;align-items:center;border-bottom:1px solid var(--rule);font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--cream)}
+.head .c{justify-self:center;font-family:'Cormorant Garamond';font-style:italic;font-size:14px;color:var(--accent);text-transform:none;letter-spacing:.04em}
+.head .r{justify-self:end;display:flex;gap:24px}
+
+.hero{padding:80px clamp(24px,5vw,72px) 60px;display:grid;grid-template-columns:1.2fr 1fr;gap:64px;align-items:end;border-bottom:1px solid var(--rule)}
+.hero h1{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(56px,8.5vw,150px);line-height:.92;letter-spacing:-.025em;color:var(--cream);max-width:14ch;margin:0}
+.hero h1 em{font-style:italic;color:var(--accent)}
+.hero .sub{font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(18px,1.8vw,24px);line-height:1.5;color:var(--cream-soft);max-width:42ch}
+
+.grid{padding:48px clamp(24px,5vw,72px) 80px;display:grid;grid-template-columns:repeat(2,1fr);gap:48px 32px}
+
+.card{position:relative;display:flex;flex-direction:column;background:#16110D;overflow:hidden;color:var(--cream);transition:transform .5s cubic-bezier(.2,.7,.3,1);text-decoration:none;border:1px solid var(--rule)}
+.card:hover{transform:translateY(-6px);border-color:var(--accent)}
+.thumb{position:relative;aspect-ratio:16/10;overflow:hidden;background:#0A0908}
+.thumb iframe{position:absolute;inset:0;width:200%;height:200%;transform:scale(.5);transform-origin:top left;border:0;pointer-events:none;background:#0A0908}
+.thumb::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,transparent 60%,rgba(10,9,8,.4) 100%);pointer-events:none}
+.thumb .open{position:absolute;right:14px;bottom:14px;z-index:3;background:rgba(15,13,10,.78);color:var(--cream);font-family:'Inter';font-size:10px;letter-spacing:.32em;text-transform:uppercase;padding:8px 14px;border-radius:999px;backdrop-filter:blur(8px);border:1px solid rgba(244,236,222,.2)}
+
+.meta{padding:28px 32px 32px;display:grid;gap:14px}
+.meta .row1{display:flex;justify-content:space-between;align-items:baseline;gap:14px;font-family:'Inter';font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:var(--cream-soft)}
+.meta .num{font-family:'Cormorant Garamond';font-style:italic;font-size:24px;color:var(--accent);letter-spacing:0;text-transform:none}
+.meta h3{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(28px,2.8vw,40px);line-height:1.04;letter-spacing:-.014em;margin:0;color:var(--cream)}
+.meta h3 em{font-style:italic;color:var(--accent)}
+.meta .dna{font-family:'Inter';font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:var(--cream-soft)}
+.meta .dna span{color:var(--accent)}
+.meta .desc{font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:15px;line-height:1.55;color:var(--cream-soft);margin:0}
+
+/* Light card variant for cream concepts */
+.card-light{background:#F5EDD8;color:#1A1410;border-color:rgba(26,20,16,.15)}
+.card-light:hover{border-color:#6B5A3F}
+.card-light .meta h3,.card-light .meta .num{color:#1A1410}
+.card-light .meta .num{color:#7E6B4A}
+.card-light .meta h3 em{color:#6B5A3F}
+.card-light .meta .row1,.card-light .meta .dna,.card-light .meta .desc{color:rgba(26,20,16,.7)}
+.card-light .meta .dna span{color:#7E6B4A}
+.card-light .thumb{background:#F5EDD8}
+.card-light .thumb iframe{background:#F5EDD8}
+.card-light .thumb .open{background:rgba(245,237,216,.92);color:#1A1410;border-color:rgba(26,20,16,.15)}
+
+.foot{padding:80px clamp(24px,5vw,72px) 64px;background:#08070A;border-top:1px solid var(--rule);display:grid;grid-template-columns:1.5fr 1fr;gap:32px;align-items:end}
+.foot h4{font-family:'Cormorant Garamond';font-weight:300;font-style:italic;font-size:clamp(28px,4vw,52px);line-height:1.05;margin:0;color:var(--cream);max-width:22ch}
+.foot h4 em{color:var(--accent)}
+.foot .ch{display:flex;flex-direction:column;gap:8px;font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;text-align:right}
+.foot .ch a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(200,168,113,.4);padding-bottom:3px;width:fit-content;justify-self:end}
+.foot .ch span{color:var(--cream-soft)}
+
+/* Attempt-1 archive notice */
+.archive-note{padding:32px clamp(24px,5vw,72px);background:#16110D;border-top:1px solid var(--rule);font-family:'Inter';font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--cream-soft);display:flex;justify-content:space-between;flex-wrap:wrap;gap:16px}
+.archive-note a{color:var(--accent);border-bottom:1px solid rgba(200,168,113,.35);padding-bottom:2px;text-transform:none;font-family:'Cormorant Garamond';font-style:italic;font-size:14px;letter-spacing:.04em}
+
+@media(max-width:880px){
+  .grid{grid-template-columns:1fr;gap:32px}
+  .hero{grid-template-columns:1fr;gap:32px}
+  .foot{grid-template-columns:1fr}.foot .ch{text-align:left}.foot .ch a{justify-self:start}
+  .head .c{display:none}.head .r{gap:18px}
+}
+</style>
+</head>
+<body>
+
+<header class="head">
+  <span>DEADLINE</span>
+  <span class="c">Attempt 2  ·  10 концептов  ·  Resort series</span>
+  <span style="justify-self:end">since 2025</span>
+</header>
+
+<section class="hero">
+  <h1>Тише. Темнее.<br><em>Дороже.</em></h1>
+  <p class="sub">Вторая итерация. Одна фотография, одна фраза, один тонкий элемент. Реальные кадры, премиум-сериф, smooth scroll, кастомный курсор. Без рамок, штампов и розеток.</p>
+</section>
+
+<section class="grid">
+
+  <a class="card" href="01_margins.html" target="_blank">
+    <div class="thumb"><iframe src="01_margins.html" loading="lazy" scrolling="no"></iframe><div class="open">Открыть →</div></div>
+    <div class="meta">
+      <div class="row1"><span class="num">.01</span><span>Aman pure silence</span></div>
+      <h3>Margins — <em>тишина</em></h3>
+      <div class="dna">Single photo  <span>·</span>  corner text  <span>·</span>  Cormorant</div>
+      <p class="desc">Одна большая фотография на полный экран, текст только в четырёх углах. Lenis-скролл, кастомный курсор-кольцо. Никакого декора.</p>
+    </div>
+  </a>
+
+  <a class="card" href="02_approach.html" target="_blank">
+    <div class="thumb"><iframe src="02_approach.html" loading="lazy" scrolling="no"></iframe><div class="open">Открыть →</div></div>
+    <div class="meta">
+      <div class="row1"><span class="num">.02</span><span>NIHI · slow vertical</span></div>
+      <h3>Approach — <em>медленный заход</em></h3>
+      <div class="dna">5 photos  <span>·</span>  one line each  <span>·</span>  parallax</div>
+      <p class="desc">Пять полноэкранных кадров с одной фразой на каждый. Дробь страниц в углу, фотографии медленно дышат. Курсор mix-blend difference.</p>
+    </div>
+  </a>
+
+  <a class="card card-light" href="03_provenance.html" target="_blank">
+    <div class="thumb"><iframe src="03_provenance.html" loading="lazy" scrolling="no"></iframe><div class="open">Открыть →</div></div>
+    <div class="meta">
+      <div class="row1"><span class="num">.03</span><span>Tate Modern catalogue</span></div>
+      <h3>Provenance — <em>каталог работ</em></h3>
+      <div class="dna">Cream  <span>·</span>  alternating photo+text  <span>·</span>  drop-cap caption</div>
+      <p class="desc">Каждая работа — провенанс: фотография слева, текст справа, специ-блок снизу. Чёткие подписи, тонкие правила. Дыхание журнала Aperture.</p>
+    </div>
+  </a>
+
+  <a class="card card-light" href="04_dossier.html" target="_blank">
+    <div class="thumb"><iframe src="04_dossier.html" loading="lazy" scrolling="no"></iframe><div class="open">Открыть →</div></div>
+    <div class="meta">
+      <div class="row1"><span class="num">.04</span><span>Studio dossier</span></div>
+      <h3>Dossier — <em>досье студии</em></h3>
+      <div class="dna">EB Garamond  <span>·</span>  monospace headers  <span>·</span>  sepia photo</div>
+      <p class="desc">Папка-досье на студию: file N° 01-04, монохромное фото с печатью, classified-style ниже. Sepia фильтр на снимке.</p>
+    </div>
+  </a>
+
+  <a class="card" href="05_promenade.html" target="_blank">
+    <div class="thumb"><iframe src="05_promenade.html" loading="lazy" scrolling="no"></iframe><div class="open">Открыть →</div></div>
+    <div class="meta">
+      <div class="row1"><span class="num">.05</span><span>GSAP horizontal pin</span></div>
+      <h3>Promenade — <em>прогулка вбок</em></h3>
+      <div class="dna">Horizontal pin  <span>·</span>  GSAP ScrollTrigger  <span>·</span>  vertical fraction</div>
+      <p class="desc">После вертикального intro скролл превращается в горизонтальную прогулку: четыре панорамы плывут вбок, дробь страниц на правой грани.</p>
+    </div>
+  </a>
+
+  <a class="card card-light" href="06_portrait.html" target="_blank">
+    <div class="thumb"><iframe src="06_portrait.html" loading="lazy" scrolling="no"></iframe><div class="open">Открыть →</div></div>
+    <div class="meta">
+      <div class="row1"><span class="num">.06</span><span>Rosewood portraiture</span></div>
+      <h3>Portrait — <em>портрет проекта</em></h3>
+      <div class="dna">Alternating 3:4  <span>·</span>  caption strips  <span>·</span>  parallax photo</div>
+      <p class="desc">Каждая работа — портрет: 3:4 вертикальное фото, рядом — заголовок, краткий текст, мини-результаты. Чередуется L→R / R→L.</p>
+    </div>
+  </a>
+
+  <a class="card" href="07_hours.html" target="_blank">
+    <div class="thumb"><iframe src="07_hours.html" loading="lazy" scrolling="no"></iframe><div class="open">Открыть →</div></div>
+    <div class="meta">
+      <div class="row1"><span class="num">.07</span><span>Day-in-the-life</span></div>
+      <h3>Hours — <em>один день, один релиз</em></h3>
+      <div class="dna">Live clock  <span>·</span>  timeline rail  <span>·</span>  JetBrains Mono details</div>
+      <p class="desc">Пять моментов одного дня в production: 06:04 рассвет, 12:47 первый booking, 22:49 двадцать первый. Живой часовой пояс в углу.</p>
+    </div>
+  </a>
+
+  <a class="card" href="08_horizon.html" target="_blank">
+    <div class="thumb"><iframe src="08_horizon.html" loading="lazy" scrolling="no"></iframe><div class="open">Открыть →</div></div>
+    <div class="meta">
+      <div class="row1"><span class="num">.08</span><span>CinemaScope 2.39:1</span></div>
+      <h3>Horizon — <em>кино-формат</em></h3>
+      <div class="dna">Letterbox bars  <span>·</span>  timecode  <span>·</span>  fade-to-black</div>
+      <p class="desc">Полный кинематик: чёрные letterbox-полосы сверху и снизу всегда, фотография в 2.39:1, тонкая subtitle-нота. Каждая секция — reel.</p>
+    </div>
+  </a>
+
+  <a class="card card-light" href="09_spread.html" target="_blank">
+    <div class="thumb"><iframe src="09_spread.html" loading="lazy" scrolling="no"></iframe><div class="open">Открыть →</div></div>
+    <div class="meta">
+      <div class="row1"><span class="num">.09</span><span>Book spread</span></div>
+      <h3>Spread — <em>книжный разворот</em></h3>
+      <div class="dna">EB Garamond  <span>·</span>  fold line  <span>·</span>  drop-cap</div>
+      <p class="desc">Настоящий двухстраничный разворот: слева — фотография с caption, справа — длинный текст с drop-cap и спецификацией. Punctured fold line по центру.</p>
+    </div>
+  </a>
+
+  <a class="card" href="10_terroir.html" target="_blank">
+    <div class="thumb"><iframe src="10_terroir.html" loading="lazy" scrolling="no"></iframe><div class="open">Открыть →</div></div>
+    <div class="meta">
+      <div class="row1"><span class="num">.10</span><span>Earth-tone duotone</span></div>
+      <h3>Terroir — <em>земляной тон</em></h3>
+      <div class="dna">Sepia duotone  <span>·</span>  copper accent  <span>·</span>  21:9 epigraph</div>
+      <p class="desc">Все фотографии в одном тоне — пепельная бронза. Палитра пришла из земли. Эпиграф 21:9, четыре работы 4:5, закрывающий разворот.</p>
+    </div>
+  </a>
+
+</section>
+
+<section class="foot">
+  <h4>Покликай каждый, выбери <em>1—3</em>. Под выбор пройдусь через ui-ux-pro-max → taste-skill → impeccable.</h4>
+  <div class="ch">
+    <span>since 2025  ·  N° 12</span>
+    <a href="mailto:corpdeadline@gmail.com">corpdeadline@gmail.com</a>
+    <a href="https://t.me/deadline_corp">@deadline_corp</a>
+  </div>
+</section>
+
+<div class="archive-note">
+  <span>Архив первой попытки сохранён в <a href="_attempt_1/">/_attempt_1/</a> — двенадцать вариантов с декоративным chrome и CSS-градиентами вместо фотографий.</span>
+  <span>Attempt 2  ·  2026-05-12</span>
+</div>
+
+<script>
+const lenis=new Lenis({duration:1.4,easing:t=>1-Math.pow(1-t,3)});
+function raf(t){lenis.raf(t);requestAnimationFrame(raf)}requestAnimationFrame(raf);
+</script>
+</body>
+</html>

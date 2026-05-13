@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>POSTCARDS · DEADLINE resort skin concept #02</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Italiana&family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --peach:#FEF3EC;
+  --peach-deep:#F8E2D0;
+  --paper:#FFF9F2;
+  --coral:#E5867B;
+  --coral-deep:#C9614F;
+  --grape:#2D2226;
+  --eucalyptus:#8D9C8F;
+  --sun:#C9A055;
+}
+*,*::before,*::after{box-sizing:border-box}
+html,body{margin:0;padding:0;background:var(--peach);color:var(--grape);font-family:'Inter',system-ui,sans-serif;font-weight:300;overflow-x:hidden}
+
+/* Paper texture */
+body::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='400' height='400'><filter id='p'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/><feColorMatrix values='0 0 0 0 0.5, 0 0 0 0 0.4, 0 0 0 0 0.3, 0 0 0 .35 0'/></filter><rect width='100%' height='100%' filter='url(%23p)'/></svg>");opacity:.18;mix-blend-mode:multiply}
+
+.shell{position:relative;z-index:1}
+
+/* Nav */
+.nav{padding:32px clamp(24px,5vw,72px);display:flex;justify-content:space-between;align-items:center;font-family:'Italiana',serif;color:var(--grape)}
+.brand{font-size:24px;letter-spacing:.42em}
+.nav-links{display:flex;gap:32px;font-family:'Cormorant Garamond',serif;font-style:italic;font-size:18px}
+.nav-links a{color:var(--grape);text-decoration:none;border-bottom:1px dotted transparent;padding-bottom:2px;transition:border-color .25s}
+.nav-links a:hover{border-bottom-color:var(--coral-deep)}
+
+/* Hero — passport style */
+.hero{padding:60px clamp(24px,5vw,72px) 80px;position:relative}
+.hero h1{font-family:'Italiana',serif;font-weight:400;font-size:clamp(64px,12vw,180px);line-height:.94;letter-spacing:-.015em;margin:0;color:var(--grape);max-width:14ch}
+.hero h1 .accent{font-family:'Cormorant Garamond',serif;font-style:italic;color:var(--coral-deep)}
+.hero .stamp{position:absolute;top:120px;right:8vw;width:180px;height:180px;border:3px solid var(--coral-deep);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-direction:column;color:var(--coral-deep);font-family:'Italiana',serif;letter-spacing:.18em;text-align:center;transform:rotate(-14deg);opacity:.78;mix-blend-mode:multiply;filter:contrast(1.1)}
+.hero .stamp::before,.hero .stamp::after{content:"";position:absolute;left:14%;right:14%;height:1px;background:var(--coral-deep);opacity:.45}
+.hero .stamp::before{top:24%}.hero .stamp::after{bottom:24%}
+.hero .stamp .top{font-size:14px;letter-spacing:.32em}
+.hero .stamp .big{font-size:34px;letter-spacing:.12em;font-family:'Italiana',serif;margin:8px 0}
+.hero .stamp .date{font-size:10px;letter-spacing:.28em;font-family:'Inter',sans-serif}
+.hero-sub{margin-top:40px;font-family:'Cormorant Garamond',serif;font-style:italic;font-size:clamp(20px,2.2vw,28px);max-width:46ch;line-height:1.45;color:rgba(45,34,38,.78)}
+.hero-meta{margin-top:48px;display:flex;gap:32px;font-family:'Inter',sans-serif;font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:rgba(45,34,38,.55);flex-wrap:wrap}
+.hero-meta strong{color:var(--coral-deep);font-weight:500}
+
+/* Bento — postcards grid */
+.bento{padding:60px clamp(24px,5vw,72px) 80px;display:grid;grid-template-columns:repeat(12,1fr);grid-auto-rows:120px;gap:20px}
+.card{position:relative;background:var(--paper);border-radius:6px;padding:28px 30px;box-shadow:0 18px 36px -22px rgba(45,34,38,.28),0 2px 0 rgba(255,255,255,.6) inset;transform:rotate(var(--r,0deg));transition:transform .4s cubic-bezier(.2,.7,.3,1),box-shadow .4s;cursor:pointer;overflow:hidden}
+.card:hover{transform:rotate(0) translateY(-6px) scale(1.015);box-shadow:0 32px 56px -22px rgba(45,34,38,.4)}
+.card::before{content:"";position:absolute;inset:0;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='200' height='200'><filter id='p'><feTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='2'/><feColorMatrix values='0 0 0 0 0.4, 0 0 0 0 0.3, 0 0 0 0 0.25, 0 0 0 .22 0'/></filter><rect width='100%' height='100%' filter='url(%23p)'/></svg>");opacity:.4;pointer-events:none;mix-blend-mode:multiply}
+.card>*{position:relative;z-index:1}
+.card .tag{display:inline-block;font-family:'Inter',sans-serif;font-size:10px;letter-spacing:.28em;text-transform:uppercase;color:var(--coral-deep);padding:3px 10px;border:1px solid var(--coral-deep);border-radius:999px;margin-bottom:12px}
+.card h3{font-family:'Italiana',serif;font-weight:400;font-size:clamp(28px,3vw,44px);line-height:1.02;letter-spacing:-.01em;margin:0 0 12px;color:var(--grape)}
+.card p{font-size:14px;line-height:1.6;color:rgba(45,34,38,.72);margin:0}
+
+/* Bento spans */
+.c1{grid-column:span 5;grid-row:span 3;--r:-1.4deg;background:linear-gradient(160deg,#FFF8EE,#FBE9D8)}
+.c2{grid-column:span 4;grid-row:span 2;--r:.9deg}
+.c3{grid-column:span 3;grid-row:span 2;--r:-.6deg;background:linear-gradient(140deg,#FAE6DD,#F4D2C5)}
+.c4{grid-column:span 4;grid-row:span 3;--r:1.2deg;background:linear-gradient(160deg,#F4EDD9,#EBDFC0)}
+.c5{grid-column:span 3;grid-row:span 2;--r:-1.6deg}
+.c6{grid-column:span 5;grid-row:span 2;--r:.6deg;background:linear-gradient(160deg,#FFF1E1,#F7DEC5)}
+.c-stat{display:flex;flex-direction:column;justify-content:flex-end}
+.c-stat .num{font-family:'Italiana',serif;font-size:clamp(56px,8vw,112px);line-height:.85;color:var(--grape);letter-spacing:-.03em}
+.c-stat .lbl{margin-top:8px;font-family:'Inter',sans-serif;font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:var(--coral-deep)}
+
+/* Falling leaves */
+.leaf{position:fixed;top:-50px;width:30px;height:30px;z-index:2;opacity:.55;pointer-events:none;animation:fall linear infinite}
+@keyframes fall{0%{transform:translateY(0) rotate(0deg) translateX(0)}50%{transform:translateY(50vh) rotate(180deg) translateX(40px)}100%{transform:translateY(110vh) rotate(360deg) translateX(-20px);opacity:0}}
+
+/* Manifesto */
+.manifesto{padding:160px clamp(24px,5vw,72px);text-align:center}
+.manifesto .quote{font-family:'Italiana',serif;font-size:clamp(48px,8vw,128px);line-height:.95;letter-spacing:-.015em;color:var(--grape);max-width:18ch;margin:0 auto}
+.manifesto .quote em{font-family:'Cormorant Garamond',serif;font-style:italic;color:var(--coral-deep)}
+.manifesto .sig{margin-top:48px;font-family:'Inter',sans-serif;font-size:11px;letter-spacing:.42em;color:var(--eucalyptus);text-transform:uppercase}
+
+/* Badge */
+.badge{position:fixed;left:24px;bottom:24px;z-index:60;font-family:'Italiana',serif;font-size:11px;letter-spacing:.4em;color:rgba(45,34,38,.55);background:rgba(255,249,242,.7);backdrop-filter:blur(12px);padding:10px 18px;border-radius:999px;border:1px solid rgba(201,97,79,.25)}
+
+@media(max-width:880px){
+  .bento{grid-template-columns:repeat(6,1fr)}
+  .c1,.c4{grid-column:span 6;grid-row:span 2;--r:0}
+  .c2,.c3,.c5,.c6{grid-column:span 6;grid-row:span 2;--r:0}
+  .hero .stamp{top:auto;right:8vw;bottom:-30px;width:120px;height:120px}
+  .hero .stamp .big{font-size:22px}
+}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="brand">D · E · A · D · L · I · N · E</div>
+  <div class="nav-links">
+    <a href="#">Услуги</a>
+    <a href="#">Кейсы</a>
+    <a href="#">Связаться</a>
+  </div>
+</nav>
+
+<section class="hero">
+  <h1>Postcards<br><span class="accent">from</span> Phuket</h1>
+  <div class="stamp">
+    <div class="top">DEADLINE</div>
+    <div class="big">ARRIVED</div>
+    <div class="date">DEC · 2026</div>
+  </div>
+  <p class="hero-sub">Меньше слов. Больше результата. Каждый кейс — открытка из production: визовая печать «доставлено», дата и подпись.</p>
+  <div class="hero-meta">
+    <span>// <strong>deadlines fear us</strong></span>
+    <span>since 2025</span>
+    <span>Concept 02 · Postcards</span>
+  </div>
+</section>
+
+<section class="bento">
+  <div class="card c1">
+    <span class="tag">Web · 2026</span>
+    <h3>VRP — VIP Rental Phuket</h3>
+    <p>Next.js + GPT-4 консьерж. +32% conversion, 73% запросов закрываются без человека, 80+ объектов в каталоге.</p>
+  </div>
+  <div class="card c2 c-stat">
+    <div class="num">12<span style="font-size:.55em">+</span></div>
+    <div class="lbl">Проектов в production</div>
+  </div>
+  <div class="card c3 c-stat">
+    <div class="num">0</div>
+    <div class="lbl">Сорванных дедлайнов</div>
+  </div>
+  <div class="card c4">
+    <span class="tag">Automation · 2025</span>
+    <h3>KeyDrop — Telegram MiniApp</h3>
+    <p>E-commerce с Steam-кодами. 1000+ заказов/мес, 99.99% uptime, 18 месяцев в проде без падения.</p>
+  </div>
+  <div class="card c5 c-stat">
+    <div class="num">100<span style="font-size:.55em">%</span></div>
+    <div class="lbl">Возвращаются</div>
+  </div>
+  <div class="card c6">
+    <span class="tag">AI · 2025-2026</span>
+    <h3>RA Project — on-chain analytics</h3>
+    <p>12 блокчейн-сетей, ClickHouse + Kafka, 41M+ блоков, 4 AI-агента в production.</p>
+  </div>
+</section>
+
+<section class="manifesto">
+  <p class="quote">Мы — DEADLINE.<br><em>У нас ничего не горит.</em></p>
+  <div class="sig">since 2025  ·  corpdeadline@gmail.com  ·  @deadline_corp</div>
+</section>
+
+<div class="badge">CONCEPT 02 · POSTCARDS</div>
+
+<script>
+// Spawn falling leaves
+(()=>{
+  const leafSvg = `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M16 2 C 8 8, 4 16, 8 28 C 14 22, 22 18, 26 6 C 22 8, 18 6, 16 2 Z" fill="%23E5867B" opacity=".75"/></svg>`;
+  const leafSvg2 = `<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg"><path d="M16 2 C 8 8, 4 16, 8 28 C 14 22, 22 18, 26 6 C 22 8, 18 6, 16 2 Z" fill="%238D9C8F" opacity=".75"/></svg>`;
+  const colors=[leafSvg,leafSvg2];
+  for(let i=0;i<8;i++){
+    const l=document.createElement('img');
+    l.className='leaf';
+    l.src='data:image/svg+xml;utf8,'+colors[i%2];
+    l.style.left=(Math.random()*100)+'vw';
+    l.style.animationDuration=(14+Math.random()*16)+'s';
+    l.style.animationDelay=(-Math.random()*20)+'s';
+    l.style.width=(18+Math.random()*22)+'px';
+    l.style.height=l.style.width;
+    document.body.appendChild(l);
+  }
+})();
+</script>
+</body>
+</html>

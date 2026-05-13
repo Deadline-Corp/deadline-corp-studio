@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MARGINS · DEADLINE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;1,300&family=Inter:wght@200;300;400&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<style>
+:root{--ink:#0A0908;--cream:#F4ECDE;--cream-soft:rgba(244,236,222,.62);--accent:#C8A871}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{background:var(--ink);color:var(--cream);font-family:'Inter',sans-serif;font-weight:300;-webkit-font-smoothing:antialiased;overflow-x:hidden;cursor:none}
+img{display:block;max-width:100%}
+
+/* Custom cursor */
+.cur{position:fixed;width:6px;height:6px;background:var(--cream);border-radius:50%;pointer-events:none;z-index:9999;transform:translate(-50%,-50%);mix-blend-mode:difference}
+.cur-ring{position:fixed;width:36px;height:36px;border:1px solid var(--cream);border-radius:50%;pointer-events:none;z-index:9998;transform:translate(-50%,-50%);mix-blend-mode:difference;opacity:.5;transition:width .35s,height .35s,opacity .35s}
+.cur-ring.is-hover{width:64px;height:64px;opacity:.8}
+
+a,button{cursor:none}
+a{color:inherit;text-decoration:none}
+
+/* Hero — single full-bleed image, text in corners */
+.stage{position:relative;width:100vw;height:100vh;overflow:hidden}
+.stage .photo{position:absolute;inset:0;background:linear-gradient(180deg,#1a2228 0%,#0a0908 100%);overflow:hidden}
+.stage .photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 1.8s cubic-bezier(.6,0,.2,1)}
+.stage .photo img.is-loaded{opacity:1}
+.stage .photo::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(10,9,8,.32) 0%,transparent 30%,transparent 60%,rgba(10,9,8,.65) 100%);pointer-events:none}
+
+/* Corner system — 4 zones, 1 line each */
+.corner{position:absolute;z-index:5;font-family:'Inter';font-size:11px;font-weight:400;letter-spacing:.32em;text-transform:uppercase;color:var(--cream);opacity:0}
+.tl{top:40px;left:40px}
+.tr{top:40px;right:40px;text-align:right}
+.bl{bottom:40px;left:40px}
+.br{bottom:40px;right:40px;text-align:right}
+
+/* Central monogram or single headline (very subtle, off-center) */
+.centerline{position:absolute;z-index:6;left:40px;right:auto;bottom:23%;max-width:46vw;color:var(--cream);opacity:0}
+.centerline h1{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(48px,7vw,128px);line-height:.94;letter-spacing:-.018em;color:var(--cream);text-shadow:0 4px 32px rgba(10,9,8,.55)}
+.centerline h1 em{font-style:italic;color:var(--cream-soft)}
+.centerline .sub{margin-top:18px;font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(15px,1.4vw,18px);color:var(--cream-soft);max-width:30ch;line-height:1.5}
+
+/* Page 2 — empty, just text */
+.silence{padding:42vh clamp(40px,8vw,200px) 30vh;max-width:1640px}
+.silence .lead{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(28px,4vw,64px);line-height:1.12;letter-spacing:-.014em;color:var(--cream);max-width:24ch;margin:0}
+.silence .lead em{font-style:italic;color:var(--accent)}
+
+/* Page 3 — second photo */
+.stage-2{position:relative;width:100vw;height:100vh;overflow:hidden;background:#0a0908}
+.stage-2 .photo{position:absolute;inset:0;overflow:hidden}
+.stage-2 .photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.stage-2 .caption{position:absolute;bottom:40px;left:40px;font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:16px;color:var(--cream-soft);max-width:32ch}
+
+/* Contact */
+.fin{padding:200px clamp(40px,8vw,200px) 120px;text-align:left;max-width:1640px}
+.fin .q{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(48px,7vw,112px);line-height:1.02;letter-spacing:-.022em;color:var(--cream);max-width:18ch}
+.fin .q em{font-style:italic;color:var(--accent)}
+.fin .chl{margin-top:64px;display:flex;flex-direction:column;gap:14px;font-family:'Inter';font-size:13px;letter-spacing:.18em;text-transform:uppercase;color:var(--cream-soft)}
+.fin .chl a{color:var(--cream);border-bottom:1px solid rgba(244,236,222,.3);padding-bottom:4px;display:inline-block;width:fit-content;transition:border-color .35s}
+.fin .chl a:hover{border-bottom-color:var(--accent)}
+.fin .meta{margin-top:96px;font-family:'Inter';font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:rgba(244,236,222,.4);display:flex;justify-content:space-between;border-top:1px solid rgba(244,236,222,.15);padding-top:24px}
+
+/* Light scroll cue */
+.cue{position:fixed;bottom:40px;left:50%;transform:translateX(-50%);z-index:50;font-family:'Cormorant Garamond';font-style:italic;font-size:13px;color:rgba(244,236,222,.55);opacity:1;transition:opacity .4s;mix-blend-mode:difference;pointer-events:none}
+.cue.is-hidden{opacity:0}
+
+@media(max-width:760px){
+  .tl,.tr,.bl,.br{font-size:10px;letter-spacing:.28em}
+  .tl{top:24px;left:24px}.tr{top:24px;right:24px}
+  .bl{bottom:24px;left:24px}.br{bottom:24px;right:24px}
+  .centerline{left:24px;right:24px;bottom:18%;max-width:none}
+  .silence{padding:30vh 24px 20vh}
+  .stage-2 .caption{left:24px;bottom:24px}
+  .fin{padding:140px 24px 80px}
+  .cur,.cur-ring{display:none}
+  body{cursor:auto}
+  a,button{cursor:pointer}
+}
+</style>
+</head>
+<body>
+
+<div class="cur"></div><div class="cur-ring" id="curRing"></div>
+
+<section class="stage">
+  <div class="photo">
+    <img src="https://images.unsplash.com/photo-1582719508461-905c673771fd?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt="">
+  </div>
+  <span class="corner tl">DEADLINE</span>
+  <span class="corner tr">SINCE 2025 · N° 12</span>
+  <div class="centerline">
+    <h1>Меньше слов.<br><em>Больше</em> результата.</h1>
+    <p class="sub">Web · automation · AI-agents в production к согласованной дате.</p>
+  </div>
+  <span class="corner bl">/ deadlines fear us</span>
+  <span class="corner br"><a href="mailto:corpdeadline@gmail.com">corpdeadline@gmail.com</a></span>
+</section>
+
+<div class="cue" id="cue">↓</div>
+
+<section class="silence">
+  <p class="lead">За десять недель мы развернули консьерж-AI на восемьдесят вилл. Колл-центр сократился до одного оператора. <em>Релиз — день в день.</em></p>
+</section>
+
+<section class="stage-2">
+  <div class="photo">
+    <img src="https://images.unsplash.com/photo-1571896349842-33c89424de2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt="">
+  </div>
+  <span class="caption">N° 01 — VRP, Phuket, 2026 · Next.js + GPT-4</span>
+</section>
+
+<section class="silence">
+  <p class="lead">Двенадцать проектов в production. Ноль сорванных дедлайнов. Это не лозунг — это <em>методология.</em></p>
+</section>
+
+<section class="stage-2">
+  <div class="photo">
+    <img src="https://images.unsplash.com/photo-1547036967-23d11aacaee0?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt="">
+  </div>
+  <span class="caption">N° 02 — KeyDrop, 2025 · Telegram MiniApp, 99.99% uptime</span>
+</section>
+
+<section class="fin">
+  <p class="q">Мы — DEADLINE.<br><em>У нас ничего не горит.</em></p>
+  <div class="chl">
+    <a href="mailto:corpdeadline@gmail.com">corpdeadline@gmail.com</a>
+    <a href="https://t.me/deadline_corp">@deadline_corp</a>
+  </div>
+  <div class="meta">
+    <span>© 2025—2026</span>
+    <span>Concept 01 · Margins</span>
+  </div>
+</section>
+
+<script>
+// Lenis smooth scroll
+const lenis=new Lenis({duration:1.4,easing:t=>1-Math.pow(1-t,3)});
+function raf(t){lenis.raf(t);requestAnimationFrame(raf)}requestAnimationFrame(raf);
+
+// Custom cursor with lerp
+const cur=document.querySelector('.cur');const ring=document.getElementById('curRing');
+let mx=window.innerWidth/2,my=window.innerHeight/2,rx=mx,ry=my;
+addEventListener('mousemove',e=>{mx=e.clientX;my=e.clientY;cur.style.left=mx+'px';cur.style.top=my+'px'});
+function cursorRaf(){rx+=(mx-rx)*0.14;ry+=(my-ry)*0.14;ring.style.left=rx+'px';ring.style.top=ry+'px';requestAnimationFrame(cursorRaf)}cursorRaf();
+document.querySelectorAll('a,button').forEach(el=>{
+  el.addEventListener('mouseenter',()=>ring.classList.add('is-hover'));
+  el.addEventListener('mouseleave',()=>ring.classList.remove('is-hover'));
+});
+
+// Image loaded fade
+document.querySelectorAll('.photo img').forEach(img=>{
+  if(img.complete)img.classList.add('is-loaded');
+  else img.addEventListener('load',()=>img.classList.add('is-loaded'));
+  img.addEventListener('error',()=>{img.parentElement.style.background='linear-gradient(160deg,#1a2228,#0a0908)'});
+});
+
+// Entrance reveals
+gsap.to('.corner',{opacity:1,duration:1.6,stagger:0.12,delay:0.4,ease:'power2.out'});
+gsap.to('.centerline',{opacity:1,y:0,duration:1.8,delay:0.9,ease:'power3.out'});
+gsap.from('.centerline h1, .centerline .sub',{y:24,opacity:0,duration:1.4,stagger:0.1,delay:1.0,ease:'power3.out'});
+
+// Hide scroll cue once user starts scrolling
+const cue=document.getElementById('cue');
+lenis.on('scroll',e=>{if(e.scroll>40)cue.classList.add('is-hidden')});
+</script>
+</body>
+</html>
