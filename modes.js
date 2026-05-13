@@ -796,34 +796,45 @@
     if (studioChrome) { studioChrome.remove(); studioChrome = null; }
   }
 
+  // (v3.5 2026-05-13) Island mode = "Resort" skin — the 4th of 4 skins.
+  // Loads Prototypes/Resort_skins/00_master.html into a full-viewport
+  // <iframe>. Partner's old sunset-island theatre (createIslandScene +
+  // injectIslandBirds + injectIslandChrome + injectThemeCursor) replaced
+  // entirely. Magic-toggle stays in body root, above the iframe via CSS
+  // z-index, so the user can keep cycling through skins.
   async function enterIsland() {
-    const scene = createIslandScene();
-    await wait(40);
-    scene.classList.add('is-silhouette-on');
-    await wait(550);
-    scene.classList.add('is-dawning');
-    await wait(1100);
-    scene.classList.add('is-flashing');
-    await wait(280);
+    overlay.style.background = '#08070A';
+    overlay.classList.add('is-visible');
+    await wait(380);
+
+    let frame = document.querySelector('.mx-resort-frame');
+    if (!frame) {
+      frame = document.createElement('iframe');
+      frame.className = 'mx-resort-frame';
+      frame.src = 'Prototypes/Resort_skins/00_master.html';
+      frame.setAttribute('title', 'DEADLINE — Resort');
+      frame.setAttribute('loading', 'eager');
+      document.body.appendChild(frame);
+    }
+
+    await wait(160);
     overlay.classList.remove('is-visible');
-    await wait(450);
-    scene.remove();
-    injectIslandBirds();
-    injectIslandChrome();
-    injectThemeCursor('island');
+    await wait(200);
+    overlay.style.background = '';
   }
 
   async function exitIsland() {
-    removeThemeCursor();
-    const scene = createIslandScene();
-    scene.classList.add('is-noon', 'is-silhouette-on');
+    overlay.style.background = '#08070A';
     overlay.classList.add('is-visible');
-    await wait(40);
-    scene.classList.add('is-falling');
-    await wait(700);
-    scene.remove();
-    removeIslandBirds();
-    removeIslandChrome();
+    await wait(380);
+
+    const frame = document.querySelector('.mx-resort-frame');
+    if (frame) frame.remove();
+
+    await wait(160);
+    overlay.classList.remove('is-visible');
+    await wait(200);
+    overlay.style.background = '';
   }
 
   // ═══════════════════════════════════════════════════════════════════════

@@ -11626,3 +11626,42 @@ html.mode-matrix #contact .btn-secondary {
    or in the v3.4 commit history.
    ═════════════════════════════════════════════════════════════════════ */
 
+/* ═══════════════════════════════════════════════════════════════════════
+   RESORT SKIN — 4th mode (v3.5, 2026-05-13)
+   Hosts Prototypes/Resort_skins/00_master.html in a full-viewport <iframe>.
+   Hides original page content while resort is active so user sees ONLY the
+   resort design. Magic-toggle (z:10000) stays clickable above iframe.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* The frame itself: full viewport, no border, behind magic-toggle */
+.mx-resort-frame {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  border: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  z-index: 100 !important;
+  background: #08070A !important;
+  display: block !important;
+}
+
+/* When in island/resort mode: hide ALL original DOM children of body
+   except magic-toggle, the resort iframe, and the overlay (used for
+   the enter/exit fade). Mode-indicator already hidden globally. */
+html.mode-island body > *:not(.magic-toggle):not(.mx-resort-frame):not(.mode-overlay):not(.mode-indicator):not(.island-bird):not(.island-bg):not(.island-chrome) {
+  display: none !important;
+}
+
+/* Body chrome in resort mode — dark ink background under iframe */
+html.mode-island,
+html.mode-island body {
+  background: #08070A !important;
+  overflow: hidden !important;
+  height: 100vh !important;
+}
+
+/* Magic-toggle remains visible — bumped to z-index above iframe. The
+   global terminator already sets it to 10000 which beats iframe's 100. */
+
