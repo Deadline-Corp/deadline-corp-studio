@@ -954,27 +954,33 @@ lenis.on('scroll',updProg);
 (function nightLayer(){
   // NIGHT photo IDs in DOM order (querySelectorAll returns DOM order, not selector order)
   // DOM: hero, stats, svc x3, work x3, process-intro-scene, process-panel x4, contact = 13 total
-  // (v3.7.11) Partner's NIGHT_IDS list — every comment was WRONG vs the
-  // actual Unsplash resolution. "lit villa" = lavender field. "milky way
-  // mountain" = plant in jar. "forest night" = Milky Way galaxy. "bali
-  // aerial" = sunrise birds. ALL replaced with verified resort day photos
-  // (verified by Playwright in this session). Mask sweep no longer "day→
-  // night" — it's "resort photo A → resort photo B". Lose the cinematic
-  // night-drama, gain 100% resort vibe with zero stock-stranger images.
+  // (v3.7.12) Final fix. Even my "verified" IDs from earlier audits were
+  // wrong — 1469474968028 = mountain forest (not resort), 1501785888041
+  // = either lake or urban (inconsistent). Restricting NIGHT_IDS to the
+  // SIX photo IDs that have visually rendered as classic resort/luxury-
+  // tropical in Playwright screenshots THIS session:
+  //   A  1499678329028 Vernazza / Cinque Terre village
+  //   B  1582719508461 Cinque Terre cliff
+  //   C  1540541338287 Maldives overwater bungalows
+  //   D  1506929562872 turquoise lagoon
+  //   E  1507525428034 Krabi karst + palms + thatched roof
+  //   F  1455587734955 sunset water aerial
+  // Each NIGHT_ID picked to differ from the scene's day photo so mask
+  // sweep is a visible transition between two resort frames.
   const NIGHT_IDS=[
-    '1455587734955-081b22074882', // 0  hero — sunset water aerial
-    '1547036967-23d11aacaee0',    // 1  stats — coastal aerial
-    '1469474968028-56623f02e42e', // 2  svc web — mountain valley clouds
-    '1501785888041-af3ef285b470', // 3  svc auto — Dolomites lake rowboat
-    '1455587734955-081b22074882', // 4  svc ai — sunset water aerial
-    '1540541338287-41700207dee6', // 5  work vrp — Maldives overwater
-    '1506929562872-bb421503ef21', // 6  work keydrop — turquoise lagoon
-    '1499678329028-101435549a4e', // 7  work ra — Vernazza village
-    '1469474968028-56623f02e42e', // 8  process-intro-scene — mountain valley
-    '1501785888041-af3ef285b470', // 9  process-panel Discovery — lake rowboat
-    '1499678329028-101435549a4e', // 10 process-panel Architecture — Vernazza
-    '1469474968028-56623f02e42e', // 11 process-panel Sprint Build — mountain valley
-    '1499678329028-101435549a4e'  // 12 contact — Vernazza
+    '1455587734955-081b22074882', // 0  hero (day=Vernazza)        → sunset water (F)
+    '1540541338287-41700207dee6', // 1  stats (day=sunset water)   → Maldives overwater (C)
+    '1506929562872-bb421503ef21', // 2  svc web (day=Maldives)     → turquoise lagoon (D)
+    '1455587734955-081b22074882', // 3  svc auto (day=lagoon)      → sunset water (F)
+    '1499678329028-101435549a4e', // 4  svc ai (day=Krabi karst)   → Vernazza (A)
+    '1507525428034-b723cf961d3e', // 5  work vrp                   → Krabi karst (E)
+    '1455587734955-081b22074882', // 6  work keydrop               → sunset water (F)
+    '1582719508461-905c673771fd', // 7  work ra                    → Cinque Terre cliff (B)
+    '1455587734955-081b22074882', // 8  process-intro-scene        → sunset water (F)
+    '1499678329028-101435549a4e', // 9  process-panel Discovery    → Vernazza (A)
+    '1582719508461-905c673771fd', // 10 process-panel Architecture → Cinque Terre cliff (B)
+    '1540541338287-41700207dee6', // 11 process-panel Sprint Build → Maldives overwater (C)
+    '1499678329028-101435549a4e'  // 12 contact (day=Cinque Terre) → Vernazza (A)
   ];
   // Fallback chain — diverse so multiple failed scenes don't all converge to one image
   const FALLBACK_IDS=['1418065460487-3e41a6c84dc5','1473625247510-8ceb1760943f','1419242902214-272b3f66ee7a','1494500764479-0c8f2919a3d8','1493558103817-58b2924bce98','1518709268805-4e9042af9f23'];
