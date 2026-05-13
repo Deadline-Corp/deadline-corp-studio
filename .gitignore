@@ -7,3 +7,9 @@ magic_toggle_test.mjs
 *.jpg
 *.mjs
 *_results.json
+
+# But DO ship intentional production PNGs (favicons, OG-image, app icons)
+!og-image.png
+!icon-*.png
+!favicon*.png
+!apple-touch-icon.png
