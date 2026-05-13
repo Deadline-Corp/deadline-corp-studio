@@ -350,6 +350,17 @@ body.lang-en :where(.lang-ru){display:none !important}
     top: 0 !important;
     bottom: 0 !important;
   }
+  /* (v3.7.7) Kill the 108% parallax-zoom on mobile. On portrait viewports
+     that 8% over-scale on top of object-fit:cover felt like a "blown up
+     low-quality photo" — subject got pushed past the frame and pixels
+     stretched. 100% lets the portrait-cropped Unsplash photo render at
+     its native resolution. */
+  .scene .photo img,
+  .hero .photo img,
+  .closing .photo img {
+    height: 100% !important;
+    will-change: auto !important;
+  }
 
   /* (v3.7.5) Headline italic-em overlap on phones. Cormorant Garamond
      italic glyphs have wide left/right overhang; combined with the
@@ -550,7 +561,7 @@ body.lang-en :where(.lang-ru){display:none !important}
 
 <!-- ═══════════════════════════ SERVICES — 3 scenes (Approach) ═══════════════════════════ -->
 <section class="scene svc-scene" id="services">
-  <div class="photo"><img src="https://images.unsplash.com/photo-1571896349842-33c89424de2d?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
+  <div class="photo"><img src="https://images.unsplash.com/photo-1540541338287-41700207dee6?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
   <div class="content">
     <div class="left">
       <div class="eyebrow">— 01 / Services  ·  Web</div>
@@ -582,7 +593,7 @@ body.lang-en :where(.lang-ru){display:none !important}
 </section>
 
 <section class="scene svc-scene">
-  <div class="photo"><img src="https://images.unsplash.com/photo-1518770660439-4636190af475?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
+  <div class="photo"><img src="https://images.unsplash.com/photo-1506929562872-bb421503ef21?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
   <div class="content">
     <div class="left">
       <div class="eyebrow">— 01 / Services  ·  Automation</div>
@@ -614,7 +625,7 @@ body.lang-en :where(.lang-ru){display:none !important}
 </section>
 
 <section class="scene svc-scene">
-  <div class="photo"><img src="https://images.unsplash.com/photo-1620712943543-bcc4688e7485?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
+  <div class="photo"><img src="https://images.unsplash.com/photo-1518709268805-4e9042af9f23?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
   <div class="content">
     <div class="left">
       <div class="eyebrow">— 01 / Services  ·  AI Agents</div>
@@ -1042,7 +1053,7 @@ lenis.on('scroll',updProg);
         u.searchParams.set('crop','focalpoint');
         u.searchParams.set('fp-x','0.5');
         u.searchParams.set('fp-y','0.58');
-        u.searchParams.set('q','80');
+        u.searchParams.set('q','85');  // v3.7.7 — match desktop quality
       }else{
         // Restore landscape (clean up any mobile-only focal-point keys)
         u.searchParams.set('w','2400');
