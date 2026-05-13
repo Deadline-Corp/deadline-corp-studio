@@ -331,6 +331,14 @@ body.lang-en :where(.lang-ru){display:none !important}
   .closing .sig{font-size:8.5px;letter-spacing:.4em}
   .testi{padding:calc(var(--letterbox) + 4vh) 20px calc(var(--letterbox) + 4vh)}
   .testi .quote{font-size:clamp(20px,5.5vw,28px);line-height:1.4}
+  /* (v3.7.3) Process section dropped on phone — horizontal pinned strip
+     doesn't carry on narrow viewports, intro headline orphan without it.
+     Hero / stats / services / work / testi / closing remain. Story still
+     reads. Re-enable later if a vertical fallback is built. */
+  .process-intro-scene,
+  .process-strip {
+    display: none !important;
+  }
 }
 
 /* ═══════════════════════════ Mobile photo composition (v3.7.2) ═══════════════════════════

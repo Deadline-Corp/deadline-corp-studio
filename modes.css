@@ -11774,4 +11774,45 @@ html.mode-island body {
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   MOBILE TEXT LEGIBILITY (v3.7.3, 2026-05-13)
+   Mobile audit found 9-10px text in nav / hero hint / chips. Bump to
+   12-13px minimum to pass legibility on real phones. Default skin only —
+   per-skin overrides already exist in matrix/noir/island.
+   ═══════════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  /* Nav chips (Услуги, Кейсы, Отзывы, Процесс, Контакты) */
+  html:not(.mode-matrix):not(.mode-island):not(.mode-noir) .nav-chips .btn-chip {
+    font-size: 12px !important;
+    padding: 8px 10px !important;
+  }
+  /* Hero meta badge "[ DEADLINE · EST. 2025 · ... ]" */
+  html:not(.mode-matrix):not(.mode-island):not(.mode-noir) .hero-meta .btn-chip-copper {
+    font-size: 12px !important;
+    padding: 8px 10px !important;
+  }
+  /* Hero meta small "// внедрение ИИ-инструментов" — bump from 10 to 12 */
+  html:not(.mode-matrix):not(.mode-island):not(.mode-noir) .hero-meta .small {
+    font-size: 12px !important;
+    line-height: 1.6 !important;
+  }
+  /* Footer brand-line / copyright */
+  html:not(.mode-matrix):not(.mode-island):not(.mode-noir) footer,
+  html:not(.mode-matrix):not(.mode-island):not(.mode-noir) footer span,
+  html:not(.mode-matrix):not(.mode-island):not(.mode-noir) footer a {
+    font-size: 12px !important;
+  }
+  /* RU|EN lang toggle */
+  html:not(.mode-matrix):not(.mode-island):not(.mode-noir) .lang-toggle button {
+    font-size: 12px !important;
+    padding: 8px 6px !important;
+    min-height: 44px !important;
+  }
+  /* Testimonial role + work meta */
+  html:not(.mode-matrix):not(.mode-island):not(.mode-noir) .testimonial-card .role,
+  html:not(.mode-matrix):not(.mode-island):not(.mode-noir) .case-meta {
+    font-size: 12px !important;
+  }
+}
+
 
