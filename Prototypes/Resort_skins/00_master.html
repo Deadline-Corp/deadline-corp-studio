@@ -957,9 +957,12 @@ lenis.on('scroll',updProg);
   const NIGHT_IDS=[
     '1535025183041-0991a977e25b', // 0  hero — bali aerial night
     '1499002238440-d264edd596ec', // 1  stats — lit luxury villa at night
-    '1514565131-fce0801e5785',    // 2  svc web — tokyo night
-    '1519074002996-a69e7ac46a42', // 3  svc auto — maldives night
-    '1520250497591-112f2f40a3f4', // 4  svc ai — desert stars
+    // (v3.7.9) Three night IDs swapped — old Tokyo skyline / laptop / desert
+    // Milky Way all read wrong in mobile portrait crop (overcropped sky,
+    // tech-stock laptop, near-pure black). Replaced with resort-luxe nights.
+    '1502672260266-1c1ef2d93688', // 2  svc web — coastal night (was tokyo skyline)
+    '1535025183041-0991a977e25b', // 3  svc auto — bali aerial night (was maldives laptop)
+    '1444703686981-a3abbc4d4fe3', // 4  svc ai — forest night (was desert milky way black)
     '1502672260266-1c1ef2d93688', // 5  work vrp — coastal night
     '1444703686981-a3abbc4d4fe3', // 6  work keydrop — forest night
     '1487700160041-babef9c3cb55', // 7  work ra — milky way mountain
