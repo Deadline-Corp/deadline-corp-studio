@@ -957,19 +957,21 @@ lenis.on('scroll',updProg);
   const NIGHT_IDS=[
     '1535025183041-0991a977e25b', // 0  hero — bali aerial night
     '1499002238440-d264edd596ec', // 1  stats — lit luxury villa at night
-    // (v3.7.9) Three night IDs swapped — old Tokyo skyline / laptop / desert
-    // Milky Way all read wrong in mobile portrait crop (overcropped sky,
-    // tech-stock laptop, near-pure black). Replaced with resort-luxe nights.
-    '1502672260266-1c1ef2d93688', // 2  svc web — coastal night (was tokyo skyline)
-    '1535025183041-0991a977e25b', // 3  svc auto — bali aerial night (was maldives laptop)
-    '1444703686981-a3abbc4d4fe3', // 4  svc ai — forest night (was desert milky way black)
-    '1502672260266-1c1ef2d93688', // 5  work vrp — coastal night
+    // (v3.7.10) ID 1502672260266 was labelled "coastal night" in partner's
+    // comment but on Unsplash it resolves to NYC sunset skyline — wrong vibe.
+    // Replaced all uses with safe resort-luxe nights (lit villa / forest /
+    // bali aerial / milky way mountain). 1519074002996 was "Maldives night"
+    // but resolves to a Macbook-on-desk photo — replaced everywhere.
+    '1499002238440-d264edd596ec', // 2  svc web — lit luxury villa night (was NYC skyline)
+    '1487700160041-babef9c3cb55', // 3  svc auto — milky way mountain (was laptop)
+    '1444703686981-a3abbc4d4fe3', // 4  svc ai — forest night
+    '1535025183041-0991a977e25b', // 5  work vrp — bali aerial night (was NYC skyline)
     '1444703686981-a3abbc4d4fe3', // 6  work keydrop — forest night
     '1487700160041-babef9c3cb55', // 7  work ra — milky way mountain
     '1499002238440-d264edd596ec', // 8  process-intro-scene — lit villa night
     '1444703686981-a3abbc4d4fe3', // 9  process-panel Discovery — forest night
     '1535025183041-0991a977e25b', // 10 process-panel Architecture — bali aerial night
-    '1502672260266-1c1ef2d93688', // 11 process-panel Sprint Build — coastal night
+    '1487700160041-babef9c3cb55', // 11 process-panel Sprint Build — milky way (was NYC skyline)
     '1502082553048-f009c37129b9'  // 12 contact — night city aerial
   ];
   // Fallback chain — diverse so multiple failed scenes don't all converge to one image
