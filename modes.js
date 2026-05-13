@@ -3746,10 +3746,13 @@
       const maxY = window.innerHeight - h - EDGE_MARGIN;
       x = Math.max(EDGE_MARGIN, Math.min(maxX, x));
       y = Math.max(EDGE_MARGIN, Math.min(maxY, y));
-      btn.style.left   = x + 'px';
-      btn.style.top    = y + 'px';
-      btn.style.right  = 'auto';
-      btn.style.bottom = 'auto';
+      // (v3.6.1) setProperty with 'important' priority — beats the many
+      // `top/right: ... !important` rules in modes.css that lock the
+      // default position. Without this, JS inline writes do nothing.
+      btn.style.setProperty('left',   x + 'px', 'important');
+      btn.style.setProperty('top',    y + 'px', 'important');
+      btn.style.setProperty('right',  'auto',  'important');
+      btn.style.setProperty('bottom', 'auto',  'important');
     }
 
     function loadSaved() {
