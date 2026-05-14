@@ -1,16 +1,16 @@
-/* DEADLINE — service worker v3.7.27 (2026-05-14)
+/* DEADLINE — service worker v3.7.28 (2026-05-14)
    Cache-first strategy for offline support after first load.
    Bump CACHE_VERSION whenever modes.css/modes.js/index.html change. */
 
-const CACHE_VERSION = 'deadline-v3.7.27';
+const CACHE_VERSION = 'deadline-v3.7.28';
 const CORE_ASSETS = [
   './',
   './index.html',
-  './modes.css?v=3.7.27',
-  './modes.js?v=3.7.27',
+  './modes.css?v=3.7.28',
+  './modes.js?v=3.7.28',
   './manifest.json',
   './icon.svg',
-  './Prototypes/Resort_skins/00_master.html?v=3.7.27',
+  './Prototypes/Resort_skins/00_master.html?v=3.7.28',
   // Mobile-optimized matrix video (smaller, almost-always-needed)
   './assets/video/morpheus-hero-720p.mp4'
 ];

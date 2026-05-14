@@ -250,22 +250,27 @@ body.lang-en :where(.lang-ru){display:none !important}
    everything. Manifesto headline up top (large editorial). Thin gold hair
    divider as visual breath. Contact h2 + CTAs centered below. Sig footer.
    ~1 mobile viewport total. ═══════════════════════════ */
-.closing{position:relative;width:100vw;min-height:100vh;overflow:hidden;display:grid;align-items:center}
+/* (v3.7.28) Hero parity: height:100vh (was min-height). On laptop viewports
+   (≤900px tall) the manifesto+divider+contact stack with original 108px text
+   + 36px gaps exceeded 100vh, so min-height let the block stretch past the
+   viewport. Lock height to 100vh and tighten typography/gap below so the
+   whole stack fits comfortably on a 768p laptop too. */
+.closing{position:relative;width:100vw;height:100vh;min-height:100vh;overflow:hidden;display:grid;align-items:center}
 .closing .photo{position:absolute;top:0;bottom:0;left:0;right:0;overflow:hidden}
 .closing .photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 2s cubic-bezier(.5,0,.2,1)}
 .closing .photo img.is-loaded{opacity:1}
 .closing .photo::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,7,10,.72) 0%,rgba(8,7,10,.45) 30%,rgba(8,7,10,.45) 65%,rgba(8,7,10,.88) 100%);pointer-events:none;z-index:2}
 
-.closing .content{position:relative;z-index:5;padding:calc(var(--letterbox) + 48px) clamp(24px,5vw,72px) calc(var(--letterbox) + 32px);max-width:760px;margin:0 auto;width:100%;text-align:center;display:flex;flex-direction:column;gap:36px;align-items:center}
+.closing .content{position:relative;z-index:5;padding:calc(var(--letterbox) + 28px) clamp(24px,5vw,72px) calc(var(--letterbox) + 24px);max-width:760px;margin:0 auto;width:100%;text-align:center;display:flex;flex-direction:column;gap:26px;align-items:center}
 
-.closing .manifesto-block{display:flex;flex-direction:column;align-items:center;gap:14px}
+.closing .manifesto-block{display:flex;flex-direction:column;align-items:center;gap:10px}
 .closing .manifesto-block .eyebrow{font-family:'Inter';font-size:10px;letter-spacing:.5em;text-transform:uppercase;color:var(--accent)}
-.closing .manifesto-block .text{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(40px,7vw,108px);line-height:1.04;letter-spacing:-.025em;color:var(--cream);max-width:16ch;text-shadow:0 6px 32px rgba(8,7,10,.65)}
+.closing .manifesto-block .text{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(36px,5.8vw,84px);line-height:1.04;letter-spacing:-.025em;color:var(--cream);max-width:16ch;text-shadow:0 6px 32px rgba(8,7,10,.65)}
 .closing .manifesto-block .text em{font-style:italic;color:var(--accent)}
 
-.closing .divider{width:1px;height:36px;background:linear-gradient(180deg,transparent 0%,var(--cream-soft) 50%,transparent 100%);margin:0 auto;opacity:.8}
+.closing .divider{width:1px;height:28px;background:linear-gradient(180deg,transparent 0%,var(--cream-soft) 50%,transparent 100%);margin:0 auto;opacity:.8}
 
-.closing .contact-block{display:flex;flex-direction:column;align-items:center;gap:22px;max-width:640px}
+.closing .contact-block{display:flex;flex-direction:column;align-items:center;gap:18px;max-width:640px}
 .closing .contact-block .eyebrow{font-family:'Inter';font-size:10px;letter-spacing:.5em;text-transform:uppercase;color:var(--accent)}
 .closing .contact-block h2{font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(20px,2.6vw,30px);line-height:1.35;color:var(--cream);max-width:32ch;text-shadow:0 4px 20px rgba(8,7,10,.55);margin:0}
 .closing .contact-block h2 em{font-style:italic;color:var(--accent)}
