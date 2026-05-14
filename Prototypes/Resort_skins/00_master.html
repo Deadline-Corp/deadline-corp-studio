@@ -70,9 +70,22 @@ body.lang-en :where(.lang-ru){display:none !important}
 .progress{position:fixed;top:var(--letterbox);left:0;height:1px;background:linear-gradient(90deg,var(--accent-deep),var(--accent));width:0;z-index:9994;transition:width .12s linear}
 
 /* ═══════════════════════════ COMMON SCENE FRAMING ═══════════════════════════ */
-.scene{position:relative;width:100vw;min-height:100vh;overflow:hidden}
-.scene .photo{position:absolute;top:var(--letterbox);bottom:var(--letterbox);left:0;right:0;overflow:hidden}
-.scene .photo img{position:absolute;inset:0;width:100%;height:108%;object-fit:cover;opacity:0;transition:opacity 2s cubic-bezier(.5,0,.2,1);will-change:transform}
+/* (v3.7.24) Hero parity: height:100vh (was min-height:100vh). With min-height,
+   scenes whose content exceeded 100vh (svc-scenes with 2-column lists, work-scenes
+   with long descriptions) grew taller, and the .photo inside grew with them — so
+   the night photo "extended below" the visible 100vh viewport during/after pin.
+   Locking height to 100vh forces every .scene to behave exactly like .hero. */
+.scene{position:relative;width:100vw;height:100vh;min-height:100vh;overflow:hidden}
+/* (v3.7.22) clip-path:inset(0) is the reliable fix for composited children
+   (night layer has mask-image → own GPU layer) escaping overflow:hidden when
+   the parent .scene receives a GSAP transform during ScrollTrigger pin.
+   clip-path clips at paint time, even for composited/fixed-position subtrees. */
+.scene .photo{position:absolute;top:var(--letterbox);bottom:var(--letterbox);left:0;right:0;overflow:hidden;clip-path:inset(0)}
+/* (v3.7.23) Hero parity: height:100% (was 108%) and no will-change:transform.
+   The 108% + GSAP yPercent:-7 parallax made every scene's day photo visually
+   "drift" 7% during scroll, so each scene looked like a different photo size
+   compared to the static hero. Parallax tween is also removed (see JS). */
+.scene .photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 2s cubic-bezier(.5,0,.2,1)}
 .scene .photo img.is-loaded{opacity:1}
 .scene .photo::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,7,10,.28) 0%,transparent 30%,transparent 60%,rgba(8,7,10,.78) 100%);pointer-events:none;z-index:2}
 
@@ -80,13 +93,19 @@ body.lang-en :where(.lang-ru){display:none !important}
 /* --mp set on parent .photo via JS, inherited here. Fallback 0 = night hidden. */
 .scene .photo,.hero .photo,.contact .photo{--mp:0}
 .scene .photo .night,.hero .photo .night,.contact .photo .night{
-  position:absolute;inset:0;width:100%;height:108%;object-fit:cover;opacity:0;
+  position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;
+  /* (v3.7.21) height:100% — was 108%. Night layer has no parallax GSAP tween so
+     the 8% overflow was dead space. Worse: mask-image promotes the element to its
+     own compositing layer; stacking will-change:transform on top could let that
+     layer escape overflow:hidden when the parent .scene has a GSAP transform
+     during pin, causing the night photo to visually extend below the scene. */
   transition:opacity 1.4s cubic-bezier(.5,0,.2,1);
-  z-index:1;will-change:transform;
+  z-index:1;
   -webkit-mask-image:linear-gradient(265deg, black calc(var(--mp) * 110% - 5%), transparent calc(var(--mp) * 110% + 22%));
   mask-image:linear-gradient(265deg, black calc(var(--mp) * 110% - 5%), transparent calc(var(--mp) * 110% + 22%));
 }
 .scene .photo .night.is-loaded,.hero .photo .night.is-loaded,.contact .photo .night.is-loaded{opacity:1}
+/* (v3.7.21) svc-web night is now a native landscape photo — no object-position override needed. */
 /* Hero/contact photo container needs z-index ordering: day=0 (default), night=1, overlay::after=2 */
 .hero .photo,.contact .photo{position:absolute}
 
@@ -843,9 +862,10 @@ document.querySelectorAll('.photo img').forEach(img=>{
   else img.addEventListener('load',()=>img.classList.add('is-loaded'));
   img.addEventListener('error',()=>{img.parentElement.style.background='linear-gradient(160deg,#1a2228,#08070A)'});
 });
-document.querySelectorAll('.scene .photo img').forEach(img=>{
-  gsap.to(img,{yPercent:-7,ease:'none',scrollTrigger:{trigger:img.closest('.scene'),start:'top bottom',end:'bottom top',scrub:true}});
-});
+// (v3.7.23) Parallax tween removed for hero parity. The yPercent:-7 translation
+// made scene day photos drift during scroll, which combined with height:108%
+// created the "different sized per block" look the hero never has. Hero never
+// had this tween; all .scene blocks now match.
 
 // (v3.7) safeFrom defined first so every reveal below is guarded.
 // Without guards GSAP emits "target not found" warnings every transition
@@ -957,11 +977,12 @@ lenis.on('scroll',updProg);
   const NIGHT_IDS=[
     '1535025183041-0991a977e25b', // 0  hero — bali aerial night
     '1499002238440-d264edd596ec', // 1  stats — lit luxury villa at night
-    // (v3.7.15) svc web + svc auto night IDs picked so DAY ≠ NIGHT
-    // (v3.7.14 set both = same photo as day → no visible mask sweep).
-    // Both replacements are verified-resort photos in different vibes
-    // than each scene's day photo, giving a real day→night transition.
-    '1499678329028-101435549a4e', // 2  svc web night  — Vernazza village (day = Maldives)
+    // (v3.7.22 2026-05-14) svc-web night: replaced close-up Key West trunk photo
+    // (1757010230553 — shot from below, showed only trunk fill-frame) with a
+    // wide-angle panoramic: ~10 full palm silhouettes base-to-fronds reflected
+    // in a still lagoon, orange-to-pink-to-blue sunset sky. Native landscape
+    // 4:3, full scenic composition — no extreme crop at object-fit:cover.
+    '1670811456186-e73d0ace9454', // 2  svc web night  — panoramic palm reflections, sunset lagoon (4:3 landscape)
     '1455587734955-081b22074882', // 3  svc auto night — sunset water aerial (day = lagoon)
     '1520250497591-112f2f40a3f4', // 4  svc ai — desert stars
     '1502672260266-1c1ef2d93688', // 5  work vrp — coastal night
@@ -1039,6 +1060,7 @@ lenis.on('scroll',updProg);
 (function portraitTune(){
   function tunePhoto(img){
     if(!img || !img.src) return;
+    if(img.dataset.skipTune) return;  // (v3.7.20) custom landscape-crop imgs opt out
     // Stash the original landscape URL once
     if(!img.dataset.origSrc) img.dataset.origSrc = img.src;
     const isMobile = matchMedia('(max-width:768px)').matches;
