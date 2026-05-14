@@ -483,20 +483,15 @@ body.lang-en :where(.lang-ru){display:none !important}
     margin-right: 0.08em;
   }
 
-  /* (v3.8.2) Service scenes — reset desktop transforms, keep content in bounds on phone ≤480px. */
-  .svc-scene {
-    height: auto !important;
-    min-height: auto !important;
-    overflow: visible !important;
-    align-items: flex-start !important;
-    padding-top: calc(var(--letterbox) + 20px) !important;
-  }
+  /* (v3.8.2) Service scenes — compact content on phone so it fits inside 100vh without overflow. */
   .svc-scene .left{transform:none !important;min-height:auto !important;padding-top:0;text-align:center;align-items:center}
   .svc-scene .left .eyebrow{display:none !important}
-  .svc-scene .left .closing{transform:none !important;margin-top:12px;position:relative}
-  .svc-scene .content{display:flex !important;flex-direction:column !important;gap:16px !important;padding:calc(var(--letterbox) + 24px) 16px calc(var(--letterbox) + 24px) !important}
+  .svc-scene .left .closing{transform:none !important;margin-top:6px;position:relative;font-size:clamp(11px,3vw,14px) !important}
+  .svc-scene .left h3{font-size:clamp(18px,5vw,28px) !important;margin:2px 0 4px !important;text-align:center !important}
+  .svc-scene .left .nm{text-align:center !important;font-size:9px !important;margin-bottom:2px !important;letter-spacing:0.3em !important}
+  .svc-scene .content{display:flex !important;flex-direction:column !important;gap:8px !important;padding:calc(var(--letterbox) + 16px) 14px calc(var(--letterbox) + 16px) !important}
   .svc-scene .right ul{display:flex !important;flex-wrap:wrap !important;justify-content:center !important;gap:4px !important;padding:0 !important}
-  .svc-scene .right li{display:inline-block !important;border:none !important;padding:4px 8px !important;font-size:12px !important;line-height:1.4 !important;background:rgba(255,255,255,0.06) !important;border-radius:4px !important}
+  .svc-scene .right li{display:inline-block !important;border:none !important;padding:3px 7px !important;font-size:11px !important;line-height:1.3 !important;background:rgba(255,255,255,0.06) !important;border-radius:4px !important}
   .svc-scene .right li::before{content:none !important}
 }
 
