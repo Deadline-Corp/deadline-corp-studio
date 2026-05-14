@@ -221,24 +221,32 @@
       activeRain.setAlpha(0);
       activeRain.start();
     }
+    // Make sure the overlay is up so the rain renders on the dark plate
+    // (defensive — exitX from the previous mode usually already added it).
+    overlay.classList.add('is-visible');
+
+    // Mirror exitMatrix theatre: fade-in → FAST top-to-bottom sweep → fade-out.
+    // Before this fix the entry ran at default speed 1× then slowed to 0.4×,
+    // so drops only crawled mid-screen and never reached the bottom. With
+    // setSpeed(3.2) the columns sweep the full viewport top→bottom for the
+    // 800 ms dwell, matching the way exitMatrix looks.
     await activeRain.fadeAlphaTo(1, 500);
-    await wait(700);
-    activeRain.setSpeed(0.4);
-    await activeRain.fadeAlphaTo(0.16, 600);
+    activeRain.setSpeed(3.2);
+    await wait(800);
+
+    // Inject the cinematic video backdrop NOW (under the still-visible
+    // overlay), so it's already playing when overlay fades to clear.
+    // (Status-bar chrome stays disabled per user feedback — clean canvas.)
+    injectMatrixVideo();
+    injectThemeCursor('matrix');
+
+    await activeRain.fadeAlphaTo(0, 500);
     overlay.classList.remove('is-visible');
     await wait(420);
 
-    // Ambient rain DISABLED per user — no falling chars over content.
-    // Destroy the rain canvas after the entrance animation.
     activeRain.destroy();
     activeRain = null;
     idleMatrixRain = null;
-
-    // (Status-bar chrome disabled per user feedback — clean canvas.)
-    // injectMatrixChrome();
-    // Inject cinematic video backdrop + themed cursor trail
-    injectMatrixVideo();
-    injectThemeCursor('matrix');
   }
 
   async function exitMatrix() {

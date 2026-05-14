@@ -1,13 +1,13 @@
-/* DEADLINE — service worker v3.7 (2026-05-13)
+/* DEADLINE — service worker v3.7.16 (2026-05-14)
    Cache-first strategy for offline support after first load.
    Bump CACHE_VERSION whenever modes.css/modes.js/index.html change. */
 
-const CACHE_VERSION = 'deadline-v3.7';
+const CACHE_VERSION = 'deadline-v3.7.16';
 const CORE_ASSETS = [
   './',
   './index.html',
-  './modes.css?v=3.7',
-  './modes.js?v=3.7',
+  './modes.css?v=3.7.16',
+  './modes.js?v=3.7.16',
   './manifest.json',
   './icon.svg',
   './Prototypes/Resort_skins/00_master.html?v=3.7',
