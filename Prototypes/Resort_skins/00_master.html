@@ -110,7 +110,10 @@ body.lang-en :where(.lang-ru){display:none !important}
 .hero .photo,.contact .photo{position:absolute}
 
 /* ═══════════════════════════ HERO (Margins style) ═══════════════════════════ */
-.hero{position:relative;width:100vw;height:100vh;overflow:hidden;display:grid;grid-template-rows:auto 1fr auto;padding:calc(var(--letterbox) + 32px) clamp(24px,5vw,72px) calc(var(--letterbox) + 36px);text-align:center;align-items:center}
+/* (v3.7.29) Padding compressed (top 32→18, bottom 36→22) so the whole hero
+   stack (meta + headline + sub + cta) breathes inside 100vh on laptop and
+   high-DPI scaled viewports, instead of getting clipped by overflow:hidden. */
+.hero{position:relative;width:100vw;height:100vh;overflow:hidden;display:grid;grid-template-rows:auto 1fr auto;padding:calc(var(--letterbox) + 18px) clamp(24px,5vw,72px) calc(var(--letterbox) + 22px);text-align:center;align-items:center}
 .hero .photo{position:absolute;top:var(--letterbox);bottom:var(--letterbox);left:0;right:0;overflow:hidden;z-index:0}
 .hero .photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 2.4s cubic-bezier(.5,0,.2,1)}
 .hero .photo img.is-loaded{opacity:1}
@@ -120,10 +123,10 @@ body.lang-en :where(.lang-ru){display:none !important}
 .hero-meta .chip{font-family:'Cormorant Garamond';font-style:italic;font-size:13px;letter-spacing:.08em;text-transform:none;color:var(--accent);display:inline-block;border:1px solid rgba(200,168,113,.45);padding:6px 16px;border-radius:999px}
 .hero-meta .small{font-size:10px;line-height:1.9;color:var(--cream-soft)}
 
-.hero-text{position:relative;z-index:6;color:var(--cream);max-width:1240px;margin:0 auto;display:grid;justify-items:center;align-content:center;padding:24px 0}
-.hero-text .line{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(48px,8.5vw,148px);line-height:.96;letter-spacing:-.022em;color:var(--cream);text-shadow:0 8px 36px rgba(8,7,10,.6);margin:0;text-align:center}
+.hero-text{position:relative;z-index:6;color:var(--cream);max-width:1240px;margin:0 auto;display:grid;justify-items:center;align-content:center;padding:12px 0}
+.hero-text .line{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(44px,7vw,108px);line-height:.96;letter-spacing:-.022em;color:var(--cream);text-shadow:0 8px 36px rgba(8,7,10,.6);margin:0;text-align:center}
 .hero-text .line.line-2{font-style:italic;color:var(--cream-soft)}
-.hero-text .sub{margin-top:28px;font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(16px,1.5vw,22px);line-height:1.55;color:rgba(244,236,222,.82);max-width:62ch;text-shadow:0 2px 18px rgba(8,7,10,.65);text-align:center}
+.hero-text .sub{margin-top:18px;font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(16px,1.5vw,22px);line-height:1.5;color:rgba(244,236,222,.82);max-width:62ch;text-shadow:0 2px 18px rgba(8,7,10,.65);text-align:center}
 .hero-text .sub strong{font-weight:500;color:var(--cream);font-style:normal}
 
 .hero-cta{position:relative;z-index:6;display:flex;gap:20px;align-items:center;justify-content:center;font-family:'Inter';font-size:11px;letter-spacing:.32em;text-transform:uppercase;color:var(--cream-soft);flex-wrap:wrap}
@@ -141,7 +144,7 @@ body.lang-en :where(.lang-ru){display:none !important}
 @keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 
 /* ═══════════════════════════ STATS — Approach scene ═══════════════════════════ */
-.scene-stats{display:grid;align-items:center;justify-items:center;text-align:center}
+.scene-stats{display:grid;align-content:center;align-items:center;justify-items:center;text-align:center}
 .scene-stats .photo{}
 .scene-stats .content{position:relative;z-index:5;padding:calc(var(--letterbox) + 80px) clamp(24px,5vw,72px) calc(var(--letterbox) + 80px);max-width:1640px;margin:0 auto;width:100%;text-align:center}
 .scene-stats .eyebrow{font-family:'Inter';font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:var(--accent);margin:0 auto 28px;display:inline-flex;gap:14px;align-items:center;justify-content:center}
@@ -157,22 +160,50 @@ body.lang-en :where(.lang-ru){display:none !important}
 .stat .lbl{margin-top:14px;font-family:'Inter';font-size:11px;font-weight:500;letter-spacing:.32em;text-transform:uppercase;color:#FFFFFF;max-width:20ch;line-height:1.7;text-shadow:0 2px 12px rgba(8,7,10,.85),0 0 24px rgba(8,7,10,.55),0 1px 0 rgba(0,0,0,.4)}
 
 /* ═══════════════════════════ SERVICES — 3 scenes ═══════════════════════════ */
-.svc-scene{display:grid;align-items:center}
-.svc-scene .content{position:relative;z-index:5;padding:calc(var(--letterbox) + 80px) clamp(24px,5vw,72px) calc(var(--letterbox) + 80px);max-width:1640px;margin:0 auto;width:100%;display:grid;grid-template-columns:1fr 1.2fr;gap:80px;align-items:center}
+/* (v3.7.34) Switched to flexbox centering — align-content:center on grid with
+   a single auto-sized row containing a single item didn't reliably push the row
+   to the container's vertical centre (Chrome leaves it at top). flex with
+   align-items:center + justify-content:center is the canonical "centre a single
+   child" pattern and works deterministically. */
+.svc-scene{display:flex;align-items:center;justify-content:center}
+/* (v3.7.29) Vertical padding 80→32 so the 2-col content sits centred within
+   100vh on laptops without overflow:hidden clipping the bottom rows of the
+   feature list. Horizontal padding unchanged. */
+/* (v3.7.31) align-items:center — keeps the left column (h3) vertically
+   balanced against the taller right column (feature list). v3.7.30's
+   align-items:start over-corrected and made the headline sit too high.
+   The new combination — align-content:center on .svc-scene + align-items:
+   center on .content — puts the headline at ~47% viewport height which
+   feels balanced, while the whole content block is centred in 100vh. */
+.svc-scene .content{position:relative;z-index:5;padding:calc(var(--letterbox) + 32px) clamp(24px,5vw,72px) calc(var(--letterbox) + 32px);max-width:1640px;margin:0 auto;width:100%;display:grid;grid-template-columns:1fr 1.2fr;gap:80px;align-items:center}
+/* (v3.7.37) Final geometry — left column spans the full photo area (70vh)
+   as a flex column. margin-top:auto on .closing (below) pushes it to the
+   bottom edge while eyebrow + nm + h3 stay anchored at the top. Result:
+   top text at top of photo, closing at bottom of photo, empty middle —
+   right list centres naturally in its taller-than-content cell. Replaces
+   the translateY/align-self/negative-margin stack from v3.7.32-36. */
+/* (v3.7.39) translateY(60px) — shifts the entire left column down by 60px so
+   both the top group (eyebrow + nm + h3) and the closing line move below the
+   letterbox into the photo area proper. Top group ends up around 32-38% vh,
+   closing around 77-83% vh on common viewports. */
+.svc-scene .left{min-height:50vh;display:flex;flex-direction:column;transform:translateY(225px)}
 .svc-scene .left .eyebrow{font-family:'Inter';font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:var(--accent);margin-bottom:24px;display:flex;gap:14px;align-items:center}
 .svc-scene .left .eyebrow::before{content:"";display:inline-block;width:32px;height:1px;background:var(--accent)}
 .svc-scene .left .nm{font-family:'Cormorant Garamond';font-style:italic;font-size:24px;color:var(--cream-soft);margin-bottom:14px;letter-spacing:.06em}
-.svc-scene .left h3{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(44px,6vw,96px);line-height:.96;letter-spacing:-.022em;color:var(--cream);margin:0 0 32px;max-width:14ch;text-shadow:0 4px 28px rgba(8,7,10,.55)}
+.svc-scene .left h3{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(40px,5vw,80px);line-height:.98;letter-spacing:-.022em;color:var(--cream);margin:0 0 24px;max-width:14ch;text-shadow:0 4px 28px rgba(8,7,10,.55)}
 .svc-scene .left h3 em{font-style:italic;color:var(--accent)}
-.svc-scene .left .closing{font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(18px,1.8vw,24px);line-height:1.45;color:var(--accent);max-width:36ch}
+/* (v3.7.37) margin-top:auto — flex push to the bottom of the stretched .left
+   column. Eyebrow + nm + h3 stay at the top of the column at their natural
+   positions; this single rule moves the closing line all the way down. */
+.svc-scene .left .closing{font-family:'Cormorant Garamond';font-style:italic;font-weight:300;font-size:clamp(18px,1.8vw,24px);line-height:1.45;color:var(--accent);max-width:36ch;margin-top:auto;transform:translateY(-105px)}
 .svc-scene .right ul{list-style:none;padding:0;margin:0;display:grid;gap:8px;font-family:'Inter';font-size:14px;line-height:1.6;color:rgba(244,236,222,.85)}
-.svc-scene .right li{padding:14px 0 14px 24px;border-top:1px solid var(--rule);position:relative}
+.svc-scene .right li{padding:10px 0 10px 24px;border-top:1px solid var(--rule);position:relative}
 .svc-scene .right li:last-child{border-bottom:1px solid var(--rule)}
 .svc-scene .right li::before{content:"—";position:absolute;left:0;color:var(--accent);font-family:'Cormorant Garamond';font-style:italic}
 
 /* ═══════════════════════════ WORK — 3 cases vertical scenes ═══════════════════════════ */
-.work-scene{display:grid;align-items:center;justify-items:center;text-align:center}
-.work-scene .content{position:relative;z-index:5;padding:calc(var(--letterbox) + 80px) clamp(24px,5vw,72px) calc(var(--letterbox) + 80px);max-width:1640px;margin:0 auto;width:100%;text-align:center}
+.work-scene{display:grid;align-content:center;align-items:center;justify-items:center;text-align:center}
+.work-scene .content{position:relative;z-index:5;padding:calc(var(--letterbox) + 32px) clamp(24px,5vw,72px) calc(var(--letterbox) + 32px);max-width:1640px;margin:0 auto;width:100%;text-align:center}
 .work-scene .nm{font-family:'Inter';font-size:10px;letter-spacing:.42em;text-transform:uppercase;color:var(--accent);margin:0 auto 24px;display:inline-flex;gap:14px;align-items:center;justify-content:center}
 .work-scene .nm::before{content:"";display:inline-block;width:32px;height:1px;background:var(--accent)}
 .work-scene .meta{font-family:'Cormorant Garamond';font-style:italic;font-size:18px;color:var(--cream-soft);letter-spacing:.04em;margin-bottom:24px}
@@ -255,7 +286,7 @@ body.lang-en :where(.lang-ru){display:none !important}
    + 36px gaps exceeded 100vh, so min-height let the block stretch past the
    viewport. Lock height to 100vh and tighten typography/gap below so the
    whole stack fits comfortably on a 768p laptop too. */
-.closing{position:relative;width:100vw;height:100vh;min-height:100vh;overflow:hidden;display:grid;align-items:center}
+.closing{position:relative;width:100vw;height:100vh;min-height:100vh;overflow:hidden;display:grid;align-content:center;align-items:center}
 .closing .photo{position:absolute;top:0;bottom:0;left:0;right:0;overflow:hidden}
 .closing .photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 2s cubic-bezier(.5,0,.2,1)}
 .closing .photo img.is-loaded{opacity:1}
