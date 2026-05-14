@@ -921,56 +921,67 @@ if(matchMedia('(min-width:881px)').matches){
   const track=document.getElementById('processTrack');
   const panels=[...track.querySelectorAll('.process-panel')];
   const total=panels.length;
-  const scrollLen=(total-1)*innerWidth;
 
-  // Main horizontal pin
-  const procTween=gsap.to(track,{
-    x:-scrollLen,
-    ease:'none',
+  // (v3.7.26) Sequential mask-then-slide timeline replaces the previous
+  // simultaneous animation. OLD behaviour: one continuous x-tween moved the
+  // track 3·innerWidth while per-panel ScrollTriggers ran the day→night mask
+  // sweep concurrently — so by the time a panel was centred the photo was
+  // already half-transitioned, and the next panel started sliding in before
+  // the current panel's mask finished. NEW behaviour, per panel:
+  //   1) HOLD — track frozen at this panel's x; --mp sweeps 0→1 to completion
+  //   2) SLIDE — track moves -innerWidth to bring the next panel into view
+  // After the last panel's mask there is no slide (timeline ends).
+  // Total scroll = N masks + (N-1) slides, each segment = innerWidth.
+  const maskDur = 1.0;
+  const slideDur = 1.0;
+  const totalDur = total * maskDur + (total - 1) * slideDur;
+  const totalScroll = totalDur * innerWidth;
+
+  const tl = gsap.timeline({
     scrollTrigger:{
       trigger:'#processStrip',
       start:'top top',
-      end:'+='+scrollLen,
+      end:'+='+totalScroll,
       pin:true,
       pinType:'transform',
       scrub:0.9,
       anticipatePin:1,
       fastScrollEnd:true,
+      invalidateOnRefresh:true,
       onUpdate:self=>{
         const p=self.progress;
-        // counter: 01..04 across 4 stages (intro no longer here)
-        const idx=Math.min(Math.floor(p*total)+1,total);
+        // Counter advances at the start of each panel's mask phase. Each
+        // panel "occupies" one full cycle (its mask + the slide TO the next).
+        // cycle = maskDur + slideDur; final panel has no trailing slide but
+        // Math.min clamps to `total`.
+        const t = p * totalDur;
+        const cycle = maskDur + slideDur;
+        const idx = Math.min(Math.floor(t / cycle) + 1, total);
         document.getElementById('pageN').textContent=String(idx).padStart(2,'0');
         document.getElementById('bar').style.transform='scaleY('+p+')';
       }
     }
   });
 
-  // Per-panel day→night mask sweep tied to horizontal progress via containerAnimation
-  panels.forEach(panel=>{
-    const photo=panel.querySelector('.photo');
-    if(!photo)return;
-    ScrollTrigger.create({
-      trigger:panel,
-      start:'left center',  // when panel left edge crosses viewport center (panel entering active zone)
-      end:'right center',   // when panel right edge crosses center (panel exiting)
-      containerAnimation:procTween,
-      scrub:true,
-      onUpdate:self=>{
-        // Same hold→sweep→hold curve as vertical scenes
-        const p=self.progress;
-        // power1.inOut ease applied to middle portion
-        let mp;
-        if(p<0.18) mp=0;
-        else if(p>0.82) mp=1;
-        else {
-          const t=(p-0.18)/0.64;
-          mp=t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2;
-        }
-        photo.style.setProperty('--mp',mp.toFixed(4));
-      }
+  panels.forEach((panel, i)=>{
+    const photo = panel.querySelector('.photo');
+    if(!photo) return;
+    // 1) Mask sweep — track stays at panel i's x position
+    tl.to(photo, {
+      '--mp': 1,
+      duration: maskDur,
+      ease: 'power1.inOut'
     });
+    // 2) Slide to panel i+1 (skipped after the last panel)
+    if(i < total - 1){
+      tl.to(track, {
+        x: -(i + 1) * innerWidth,
+        duration: slideDur,
+        ease: 'none'
+      });
+    }
   });
+
   // Force a final refresh now that ALL pins (scene + horizontal process) are registered
   ScrollTrigger.refresh(true);
 }
