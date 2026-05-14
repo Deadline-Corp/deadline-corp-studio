@@ -792,9 +792,22 @@ body.lang-en :where(.lang-ru){display:none !important}
       </div>
     </div>
 
+    <!-- (v3.7.25) Handoff panel — restores the 4th stage promised in the intro
+         lead ("Discovery, Architecture, Sprint Build, Handoff") and previously
+         hinted at in the JS comment ("counter: 01..04 across 4 stages"). -->
+    <div class="process-panel">
+      <div class="photo"><img class="day" src="https://images.unsplash.com/photo-1494500764479-0c8f2919a3d8?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85" alt=""></div>
+      <div class="big-num">04</div>
+      <div class="body">
+        <div class="nm">— Stage  ·  Handoff</div>
+        <h3><span class="lang-ru">Handoff.</span><span class="lang-en">Handoff.</span></h3>
+        <p><span class="lang-ru">Production deploy, прод-доступы, документация, обучение команды. Уходим красиво — без скрытых tech-debt сюрпризов через месяц.</span><span class="lang-en">Production deploy, prod credentials, documentation, team training. We leave clean — no hidden tech-debt surprises a month later.</span></p>
+      </div>
+    </div>
+
   </div>
   <aside class="process-progress">
-    <div class="pages"><span id="pageN">01</span><em> / 03</em></div>
+    <div class="pages"><span id="pageN">01</span><em> / 04</em></div>
     <div class="barwrap"><span class="bar" id="bar"></span></div>
   </aside>
 </section>
@@ -973,7 +986,7 @@ lenis.on('scroll',updProg);
 // Reverse-scroll reverses sweep (night→day L→R). User explicitly asked for this pin pattern.
 (function nightLayer(){
   // NIGHT photo IDs in DOM order (querySelectorAll returns DOM order, not selector order)
-  // DOM: hero, stats, svc x3, work x3, process-intro-scene, process-panel x4, contact = 13 total
+  // DOM: hero, stats, svc x3, work x3, process-intro-scene, process-panel x4, contact = 14 total
   const NIGHT_IDS=[
     '1535025183041-0991a977e25b', // 0  hero — bali aerial night
     '1499002238440-d264edd596ec', // 1  stats — lit luxury villa at night
@@ -992,7 +1005,8 @@ lenis.on('scroll',updProg);
     '1444703686981-a3abbc4d4fe3', // 9  process-panel Discovery — forest night
     '1535025183041-0991a977e25b', // 10 process-panel Architecture — bali aerial night
     '1502672260266-1c1ef2d93688', // 11 process-panel Sprint Build — coastal night
-    '1502082553048-f009c37129b9'  // 12 contact — night city aerial
+    '1473625247510-8ceb1760943f', // 12 process-panel Handoff — tropical dusk (v3.7.25)
+    '1502082553048-f009c37129b9'  // 13 contact — night city aerial
   ];
   // Fallback chain — diverse so multiple failed scenes don't all converge to one image
   const FALLBACK_IDS=['1418065460487-3e41a6c84dc5','1473625247510-8ceb1760943f','1419242902214-272b3f66ee7a','1494500764479-0c8f2919a3d8','1493558103817-58b2924bce98','1518709268805-4e9042af9f23'];
