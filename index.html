@@ -358,6 +358,7 @@
     font-family: 'Space Grotesk', sans-serif; font-weight: 700;
     font-size: 38px; line-height: 1.0; letter-spacing: -0.025em;
     margin-bottom: 16px; text-transform: uppercase;
+    color: var(--cream);
     text-shadow:
       3px 3px 0 var(--border-dark),
       5px 5px 0 rgba(10,8,5,0.25);
@@ -751,16 +752,30 @@
     .testimonial-card { width: 260px !important; }
   }
   @media (max-width: 480px) {
-    .sticker-card { padding: 18px !important; }
+    .sticker-card { padding: 18px !important; overflow: visible; }
     .sticker-card .svc-num { margin-bottom: 8px; }
     .sticker-card .svc-name {
       font-size: 19px !important; margin-bottom: 10px;
-      color: var(--cream);
+      color: var(--cream) !important;
       text-shadow: 1px 1px 0 var(--border-dark);
+      display: block !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+      overflow: visible;
+      position: relative;
+      z-index: 1;
+      line-height: 1.15;
     }
     .svc-bullets { margin-bottom: 12px; }
     .svc-bullets li { margin-bottom: 3px; line-height: 1.4; padding-left: 14px; }
-    .sticker-card .svc-closing { margin-top: 10px; padding-top: 10px; }
+    .sticker-card .svc-closing {
+      margin-top: 14px; padding-top: 12px;
+      display: block !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+      position: relative;
+      z-index: 1;
+    }
   }
 </style>
 </head>
