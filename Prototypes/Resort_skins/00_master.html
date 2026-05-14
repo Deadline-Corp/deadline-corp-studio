@@ -484,10 +484,14 @@ body.lang-en :where(.lang-ru){display:none !important}
   }
 
   /* (v3.8.2) Service scenes — reset desktop transforms, keep content in bounds on phone ≤480px. */
-  .svc-scene{padding:0 !important}
+  .svc-scene {
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    align-items: flex-start !important;
+    padding-top: calc(var(--letterbox) + 20px) !important;
+  }
   .svc-scene .left{transform:none !important;min-height:auto !important;padding-top:0;text-align:center;align-items:center}
-  .svc-scene .left h3{font-size:clamp(26px,7vw,38px) !important;margin:4px 0 8px !important;text-align:center !important}
-  .svc-scene .left .nm{text-align:center !important;font-size:11px !important;margin-bottom:4px !important}
   .svc-scene .left .eyebrow{display:none !important}
   .svc-scene .left .closing{transform:none !important;margin-top:12px;position:relative}
   .svc-scene .content{display:flex !important;flex-direction:column !important;gap:16px !important;padding:calc(var(--letterbox) + 24px) 16px calc(var(--letterbox) + 24px) !important}
