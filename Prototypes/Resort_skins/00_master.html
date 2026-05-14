@@ -1058,7 +1058,7 @@ lenis.on('scroll',updProg);
     '1502672260266-1c1ef2d93688', // 5  work vrp — coastal night
     '1444703686981-a3abbc4d4fe3', // 6  work keydrop — forest night
     '1487700160041-babef9c3cb55', // 7  work ra — milky way mountain
-    '1499002238440-d264edd596ec', // 8  process-intro-scene — lit villa night
+    '1757439402268-1da284675170', // 8  process-intro-scene — Costa Blanca villa pool at night (v3.7.49; was 1499002238440, dupe of stats night)
     '1444703686981-a3abbc4d4fe3', // 9  process-panel Discovery — forest night
     '1762254923872-5bdc4210eb90', // 10 process-panel Architecture — resort infinity pool at dusk (v3.7.27; was 1535025183041, duplicate with hero night)
     '1502672260266-1c1ef2d93688', // 11 process-panel Sprint Build — coastal night
@@ -1097,12 +1097,15 @@ lenis.on('scroll',updProg);
   // didn't "transition cinematically" — user noticed and asked to fix.
   const isDesktop = matchMedia('(min-width:881px)').matches;
   photos.forEach(photo=>{
-    const scene=photo.closest('.hero,.scene,.contact');
+    // (v3.7.48) Closest target now includes .closing (was .contact, which is
+    // the section's id but not its class — closest() takes selectors). And
+    // pinSpacing is now unconditional true: previously the process-intro-scene
+    // had pinSpacing:false to avoid a "dark gap" before process-strip in an
+    // earlier layout — but with current 100vh-locked scenes, the spacer is
+    // needed so the pin + mask sweep behaves identically to every other block.
+    // Without it, intro couldn't really "fix" on the viewport.
+    const scene=photo.closest('.hero,.scene,.closing');
     if(!scene)return;
-    // Special-case: process-intro-scene's spacer creates ugly gap before
-    // process-strip (intro releases pin → 100vh dark padding →
-    // process-strip pin starts). Set pinSpacing:false ONLY for intro.
-    const isProcessIntro=scene.classList.contains('process-intro-scene');
     gsap.to(photo,{
       '--mp':1,
       ease:'power2.inOut',
@@ -1111,7 +1114,7 @@ lenis.on('scroll',updProg);
         start:'top top',
         end: isDesktop ? '+=100%' : '+=60%',   // shorter hold on phone
         pin:true,
-        pinSpacing:!isProcessIntro,             // cinematic spacer except intro
+        pinSpacing:true,                        // cinematic spacer for every block
         // (v3.7.2) Mobile uses pinType:'fixed' to avoid transform-jitter
         // from dynamic URL bar resizes. Desktop keeps 'transform' (smoother).
         pinType: isDesktop ? 'transform' : 'fixed',
