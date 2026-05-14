@@ -101,7 +101,9 @@
     const ctx = canvas.getContext('2d', { alpha: true });
 
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const charSize = window.matchMedia('(max-width: 640px)').matches ? 14 : 16;
+    // Smaller charSize → more columns → denser rain fill.
+    // Desktop 1440px: ~110 columns (was ~90). Mobile 375px: ~34 (was ~26).
+    const charSize = window.matchMedia('(max-width: 640px)').matches ? 11 : 13;
 
     const charPool =
       '01アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン' +
@@ -134,9 +136,14 @@
 
       columns = Math.ceil(width / charSize);
       drops = new Array(columns).fill(0).map(() => ({
-        y: Math.random() * -height,
-        speed: 1 + Math.random() * 2.4,
-        len: 6 + Math.floor(Math.random() * 18),
+        // Pre-warm initial Y across the full viewport (some above,
+        // some already mid-screen, some near bottom) so the screen
+        // is populated with falling chars from frame 1. Without this
+        // all drops start above viewport, and the 2.2s entry-theatre
+        // window isn't long enough for them to reach the bottom.
+        y: Math.random() * (height * 1.6) - height * 0.5,
+        speed: 1.2 + Math.random() * 2.6,             // slightly faster (1.2-3.8)
+        len: 10 + Math.floor(Math.random() * 22),     // longer streams (10-32)
       }));
       easterColumn = Math.floor(columns * 0.34);
     }
