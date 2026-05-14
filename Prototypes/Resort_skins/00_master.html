@@ -483,14 +483,16 @@ body.lang-en :where(.lang-ru){display:none !important}
     margin-right: 0.08em;
   }
 
-  /* (v3.8.1) Service scenes — inline list items on phone ≤480px.
-     Lists display as centered inline tags instead of vertical column. */
-  .svc-scene .left{min-height:auto;transform:none;text-align:center;align-items:center}
-  .svc-scene .left h3{font-size:clamp(28px,8vw,44px);max-width:none}
-  .svc-scene .left .closing{font-size:clamp(14px,3.8vw,18px);margin-top:12px;transform:none;text-align:center}
-  .svc-scene .right ul{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 8px;text-align:center}
-  .svc-scene .right li{display:inline-block;padding:4px 10px;border:none !important;border-top:none !important;font-size:12px;line-height:1.4}
-  .svc-scene .right li:last-child{border-bottom:none !important}
+  /* (v3.8.2) Service scenes — reset desktop transforms, keep content in bounds on phone ≤480px. */
+  .svc-scene{padding:0 !important}
+  .svc-scene .left{transform:none !important;min-height:auto !important;padding-top:0;text-align:center;align-items:center}
+  .svc-scene .left h3{font-size:clamp(26px,7vw,38px) !important;margin:4px 0 8px !important;text-align:center !important}
+  .svc-scene .left .nm{text-align:center !important;font-size:11px !important;margin-bottom:4px !important}
+  .svc-scene .left .eyebrow{display:none !important}
+  .svc-scene .left .closing{transform:none !important;margin-top:12px;position:relative}
+  .svc-scene .content{display:flex !important;flex-direction:column !important;gap:16px !important;padding:calc(var(--letterbox) + 24px) 16px calc(var(--letterbox) + 24px) !important}
+  .svc-scene .right ul{display:flex !important;flex-wrap:wrap !important;justify-content:center !important;gap:4px !important;padding:0 !important}
+  .svc-scene .right li{display:inline-block !important;border:none !important;padding:4px 8px !important;font-size:12px !important;line-height:1.4 !important;background:rgba(255,255,255,0.06) !important;border-radius:4px !important}
   .svc-scene .right li::before{content:none !important}
 }
 
