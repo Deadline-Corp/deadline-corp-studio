@@ -398,13 +398,40 @@ body.lang-en :where(.lang-ru){display:none !important}
   .closing .sig{font-size:8.5px;letter-spacing:.4em}
   .testi{padding:calc(var(--letterbox) + 4vh) 20px calc(var(--letterbox) + 4vh)}
   .testi .quote{font-size:clamp(20px,5.5vw,28px);line-height:1.4}
-  /* (v3.7.3) Process section dropped on phone — horizontal pinned strip
-     doesn't carry on narrow viewports, intro headline orphan without it.
-     Hero / stats / services / work / testi / closing remain. Story still
-     reads. Re-enable later if a vertical fallback is built. */
-  .process-intro-scene,
+  /* (v3.8) Process section — vertical fallback on phone (was display:none).
+     Horizontal pinned strip doesn't work on narrow viewports, so panels
+     stack vertically with normal scroll. */
   .process-strip {
-    display: none !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  .process-track {
+    flex-direction: column !important;
+    height: auto !important;
+  }
+  .process-panel {
+    flex: 0 0 auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    grid-template-columns: 1fr !important;
+    gap: 20px !important;
+    padding: calc(var(--letterbox) + 40px) 20px calc(var(--letterbox) + 40px) !important;
+  }
+  .process-panel .big-num {
+    font-size: 72px !important;
+    line-height: .9;
+  }
+  .process-panel h3 {
+    font-size: clamp(28px, 8vw, 48px) !important;
+  }
+  .process-panel p {
+    font-size: clamp(16px, 4vw, 20px) !important;
+  }
+  .process-intro-scene .content {
+    padding: calc(var(--letterbox) + 40px) 20px !important;
+  }
+  .process-intro-scene h2 {
+    font-size: clamp(36px, 9vw, 56px) !important;
   }
 
   /* (v3.7.6) Photo FULL-BLEED inside scenes on mobile. Previous
