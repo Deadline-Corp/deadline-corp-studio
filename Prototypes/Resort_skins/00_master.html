@@ -91,8 +91,8 @@ body.lang-en :where(.lang-ru){display:none !important}
 
 /* ─── Night layer: same scene at night, revealed via scroll-driven mask sweep R→L ─── */
 /* --mp set on parent .photo via JS, inherited here. Fallback 0 = night hidden. */
-.scene .photo,.hero .photo,.contact .photo{--mp:0}
-.scene .photo .night,.hero .photo .night,.contact .photo .night{
+.scene .photo,.hero .photo,.closing .photo{--mp:0}
+.scene .photo .night,.hero .photo .night,.closing .photo .night{
   position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;
   /* (v3.7.21) height:100% — was 108%. Night layer has no parallax GSAP tween so
      the 8% overflow was dead space. Worse: mask-image promotes the element to its
@@ -104,10 +104,10 @@ body.lang-en :where(.lang-ru){display:none !important}
   -webkit-mask-image:linear-gradient(265deg, black calc(var(--mp) * 110% - 5%), transparent calc(var(--mp) * 110% + 22%));
   mask-image:linear-gradient(265deg, black calc(var(--mp) * 110% - 5%), transparent calc(var(--mp) * 110% + 22%));
 }
-.scene .photo .night.is-loaded,.hero .photo .night.is-loaded,.contact .photo .night.is-loaded{opacity:1}
+.scene .photo .night.is-loaded,.hero .photo .night.is-loaded,.closing .photo .night.is-loaded{opacity:1}
 /* (v3.7.21) svc-web night is now a native landscape photo — no object-position override needed. */
 /* Hero/contact photo container needs z-index ordering: day=0 (default), night=1, overlay::after=2 */
-.hero .photo,.contact .photo{position:absolute}
+.hero .photo,.closing .photo{position:absolute}
 
 /* ═══════════════════════════ HERO (Margins style) ═══════════════════════════ */
 /* (v3.7.29) Padding compressed (top 32→18, bottom 36→22) so the whole hero
@@ -286,20 +286,32 @@ body.lang-en :where(.lang-ru){display:none !important}
    + 36px gaps exceeded 100vh, so min-height let the block stretch past the
    viewport. Lock height to 100vh and tighten typography/gap below so the
    whole stack fits comfortably on a 768p laptop too. */
-.closing{position:relative;width:100vw;height:100vh;min-height:100vh;overflow:hidden;display:grid;align-content:center;align-items:center}
-.closing .photo{position:absolute;top:0;bottom:0;left:0;right:0;overflow:hidden}
+/* (v3.7.45) Added justify-items:center — without it the grid auto-flowed the
+   .content item to the column start (effectively the left edge), so manifesto +
+   contact text drifted off true horizontal centre. Now matches the same
+   place-items:center pattern .scene-stats and .work-scene use. */
+.closing{position:relative;width:100vw;height:100vh;min-height:100vh;overflow:hidden;display:grid;place-items:center;align-content:center}
+/* (v3.7.44) Photo respects letterbox bounds — same as .scene .photo. Previously
+   .closing .photo extended 0→100vh making the block visually feel bigger than
+   the other 100vh-locked scenes. Adding clip-path:inset(0) for the same
+   composited-night-layer overflow safety net as elsewhere. */
+.closing .photo{position:absolute;top:var(--letterbox);bottom:var(--letterbox);left:0;right:0;overflow:hidden;clip-path:inset(0)}
 .closing .photo img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 2s cubic-bezier(.5,0,.2,1)}
 .closing .photo img.is-loaded{opacity:1}
 .closing .photo::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(8,7,10,.72) 0%,rgba(8,7,10,.45) 30%,rgba(8,7,10,.45) 65%,rgba(8,7,10,.88) 100%);pointer-events:none;z-index:2}
 
-.closing .content{position:relative;z-index:5;padding:calc(var(--letterbox) + 28px) clamp(24px,5vw,72px) calc(var(--letterbox) + 24px);max-width:760px;margin:0 auto;width:100%;text-align:center;display:flex;flex-direction:column;gap:26px;align-items:center}
+/* (v3.7.46) Gap tightened 26→8 + divider hidden + manifesto-block gets a
+   compensating margin-top so the manifesto moves down to where the divider
+   used to start, contact-block stays put. Net: no "big space" between
+   "горит." and "— Contact". */
+.closing .content{position:relative;z-index:5;padding:calc(var(--letterbox) + 28px) clamp(24px,5vw,72px) calc(var(--letterbox) + 24px);max-width:760px;margin:0 auto;width:100%;text-align:center;display:flex;flex-direction:column;gap:8px;align-items:center}
 
-.closing .manifesto-block{display:flex;flex-direction:column;align-items:center;gap:10px}
+.closing .manifesto-block{display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:72px}
 .closing .manifesto-block .eyebrow{font-family:'Inter';font-size:10px;letter-spacing:.5em;text-transform:uppercase;color:var(--accent)}
 .closing .manifesto-block .text{font-family:'Cormorant Garamond';font-weight:300;font-size:clamp(36px,5.8vw,84px);line-height:1.04;letter-spacing:-.025em;color:var(--cream);max-width:16ch;text-shadow:0 6px 32px rgba(8,7,10,.65)}
 .closing .manifesto-block .text em{font-style:italic;color:var(--accent)}
 
-.closing .divider{width:1px;height:28px;background:linear-gradient(180deg,transparent 0%,var(--cream-soft) 50%,transparent 100%);margin:0 auto;opacity:.8}
+.closing .divider{display:none}
 
 .closing .contact-block{display:flex;flex-direction:column;align-items:center;gap:18px;max-width:640px}
 .closing .contact-block .eyebrow{font-family:'Inter';font-size:10px;letter-spacing:.5em;text-transform:uppercase;color:var(--accent)}
@@ -859,7 +871,6 @@ body.lang-en :where(.lang-ru){display:none !important}
   <div class="content">
 
     <div class="manifesto-block">
-      <div class="eyebrow">— Manifesto</div>
       <div class="text">
         <span class="lang-ru">Мы — <em>DEADLINE.</em><br>У нас <em>ничего не горит.</em></span>
         <span class="lang-en">We are <em>DEADLINE.</em><br>Nothing's <em>on fire here.</em></span>
@@ -869,7 +880,6 @@ body.lang-en :where(.lang-ru){display:none !important}
     <div class="divider" aria-hidden="true"></div>
 
     <div class="contact-block">
-      <div class="eyebrow">— Contact</div>
       <h2>
         <span class="lang-ru">Пиши — <em>ответим раньше, чем уберёшь руки от клавиатуры.</em></span>
         <span class="lang-en">Write — <em>we'll reply before your hands leave the keyboard.</em></span>
@@ -1060,7 +1070,11 @@ lenis.on('scroll',updProg);
   const makeURL=id=>`https://images.unsplash.com/photo-${id}?ixlib=rb-4.0.3&auto=format&fit=crop&w=2400&q=85`;
 
   // Inject night <img> into each .photo (returns in DOM order — matches NIGHT_IDS above)
-  const photos=[...document.querySelectorAll('.hero .photo, .scene-stats .photo, .svc-scene .photo, .work-scene .photo, .process-intro-scene .photo, .process-panel .photo, .contact .photo')];
+  // (v3.7.44) Switched .contact .photo → .closing .photo. The closing section has
+  // id="contact" but class="closing"; the class selector .contact was matching
+  // nothing, so the closing block never received a night layer or the day→night
+  // pin treatment the rest of the scenes have. NIGHT_IDS[13] now wires through.
+  const photos=[...document.querySelectorAll('.hero .photo, .scene-stats .photo, .svc-scene .photo, .work-scene .photo, .process-intro-scene .photo, .process-panel .photo, .closing .photo')];
   photos.forEach((p,i)=>{
     const n=document.createElement('img');
     n.className='night';n.alt='';
