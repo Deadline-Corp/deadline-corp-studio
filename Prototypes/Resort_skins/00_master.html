@@ -32,6 +32,12 @@ a,button{cursor:none}
 /* Language switching */
 body:not(.lang-en) :where(.lang-en){display:none !important}
 body.lang-en :where(.lang-ru){display:none !important}
+/* (v3.7.57) Stronger selectors for block-level lang-ul (the feature lists in
+   svc-scene .right). :where() has zero specificity, so .svc-scene .right ul
+   {display:grid} can win for non-important conflicts; below ensures the
+   inactive language list is always fully hidden regardless of grid display. */
+body:not(.lang-en) ul.lang-en,body:not(.lang-en) ol.lang-en{display:none !important}
+body.lang-en ul.lang-ru,body.lang-en ol.lang-ru{display:none !important}
 
 /* ─── Custom cursor ─── */
 .cur{position:fixed;width:5px;height:5px;background:var(--cream);border-radius:50%;pointer-events:none;z-index:10001;transform:translate(-50%,-50%);mix-blend-mode:difference}
@@ -291,11 +297,14 @@ body.lang-en :where(.lang-ru){display:none !important}
    + 36px gaps exceeded 100vh, so min-height let the block stretch past the
    viewport. Lock height to 100vh and tighten typography/gap below so the
    whole stack fits comfortably on a 768p laptop too. */
-/* (v3.7.45) Added justify-items:center — without it the grid auto-flowed the
-   .content item to the column start (effectively the left edge), so manifesto +
-   contact text drifted off true horizontal centre. Now matches the same
-   place-items:center pattern .scene-stats and .work-scene use. */
-.closing{position:relative;width:100vw;height:100vh;min-height:100vh;overflow:hidden;display:grid;place-items:center;align-content:center}
+/* (v3.7.63) Selector tightened from `.closing` to `section.closing` — the
+   class is also used on a `<p class="closing">` element inside .svc-scene
+   .left, and the bare-class rule was applying width:100vw + height:100vh +
+   overflow:hidden to that paragraph too. On mobile that made the paragraph
+   eat a full viewport of vertical space inside .left, pushing the feature
+   list below the fold. section.closing scopes to the actual closing section
+   only and leaves p.closing free to size to its content. */
+section.closing{position:relative;width:100vw;height:100vh;min-height:100vh;overflow:hidden;display:grid;place-items:center;align-content:center}
 /* (v3.7.44) Photo respects letterbox bounds — same as .scene .photo. Previously
    .closing .photo extended 0→100vh making the block visually feel bigger than
    the other 100vh-locked scenes. Adding clip-path:inset(0) for the same
@@ -364,6 +373,30 @@ body.lang-en :where(.lang-ru){display:none !important}
   .hero-text .line{font-size:48px}
   .stats-grid{grid-template-columns:repeat(2,1fr);gap:36px}
   .svc-scene .content,.scene-stats .content{grid-template-columns:1fr;gap:32px}
+  /* (v3.7.64) Mobile svc-scene — centred-like-hero/stats layout.
+     Content as a compact block stacked tightly (h3 → closing → 7 list items)
+     but the whole block is vertically centred in 100vh via flex centring on
+     .svc-scene, just like .hero and .scene-stats. Generous typography spacing
+     so it reads as elegant centred content, not a tight info dump. */
+  .svc-scene{align-items:center !important;justify-content:center !important}
+  .svc-scene .content{display:block !important;height:auto !important;padding:0 20px !important;text-align:center !important}
+  .svc-scene .left{display:block !important;flex:none !important;min-height:0 !important;transform:none !important;margin:0 !important;opacity:1 !important}
+  .svc-scene .left>*{opacity:1 !important;transform:none !important}
+  .svc-scene .left .eyebrow,.svc-scene .left .nm{display:none !important}
+  /* (v3.7.65) Type scale bumped to match block 2 (scene-stats) on mobile —
+     h3 → clamp 40-60 (was 32-48), closing italic → clamp 17-22 (was 15-18),
+     list → 13px (was 11). Whole stack reads larger and more confident,
+     matching the visual weight of the hero/stats headlines. */
+  .svc-scene .left h3{display:block !important;margin:0 !important;padding:0 !important;font-size:clamp(40px,10vw,60px) !important;line-height:1.0 !important;max-width:none !important;text-align:center !important;color:var(--cream) !important}
+  /* (v3.7.66) white-space:nowrap + no max-width — "Шипим продукт. Не «MVP for
+     now»." was breaking onto two lines because of the 30ch max. Single line
+     reads cleaner. Font clamped slightly lower (max 20 instead of 22) so it
+     fits horizontally on 320-360px viewports without overflowing. */
+  .svc-scene .left .closing{display:block !important;margin:18px auto 0 !important;padding:0 !important;transform:none !important;max-width:none !important;font-size:clamp(15px,4.2vw,20px) !important;text-align:center !important;line-height:1.4 !important;color:var(--accent) !important;font-style:italic !important;white-space:nowrap !important;width:auto !important;height:auto !important;min-height:0 !important;overflow:visible !important;position:static !important}
+  .svc-scene .right{display:block !important;margin:28px 0 0 0 !important;padding:0 !important;flex-shrink:0 !important}
+  .svc-scene .right ul{display:block !important;margin:0 auto !important;padding:0 !important;font-family:'Inter' !important;font-size:13px !important;font-weight:400 !important;line-height:1.65 !important;letter-spacing:.04em !important;color:rgba(244,236,222,.88) !important;text-align:center !important;max-width:36ch !important}
+  .svc-scene .right li{display:block !important;margin:5px 0 !important;padding:0 !important;border:none !important;background:none !important;list-style:none !important;opacity:1 !important;transform:none !important}
+  .svc-scene .right li::before{display:none !important;content:none !important}
   .scene-stats .content{padding-bottom:calc(var(--letterbox) + 48px)}
   .process-panel{grid-template-columns:1fr;gap:24px}
   .process-panel .big-num{font-size:120px}
@@ -493,13 +526,11 @@ body.lang-en :where(.lang-ru){display:none !important}
     margin-right: 0.08em;
   }
 
-  /* (v3.8.2) Service scenes — only reset transforms so text stays inside 100vh. No font/block size changes. */
-  .svc-scene .left{transform:none !important}
-  .svc-scene .left .closing{transform:none !important}
-  .svc-scene .left .eyebrow{display:none !important}
-  .svc-scene .right li::before{content:none !important}
-  .svc-scene .right ul{display:flex !important;flex-wrap:wrap !important;justify-content:center !important;gap:4px !important;padding:0 !important}
-  .svc-scene .right li{display:inline-block !important;border:none !important;padding:3px 7px !important;background:rgba(255,255,255,0.06) !important;border-radius:4px !important}
+  /* (v3.7.60) Removed stale v3.8.2 override that styled .svc-scene .right li
+     as inline pills with semi-transparent background + border-radius. That
+     block had !important on display:flex/wrap and inline-block, beating the
+     v3.7.59 mobile rules and creating the "ghost cards" look. All svc-scene
+     mobile styling now lives in the @media(max-width:880px) block above. */
 }
 
 /* ═══════════════════════════ Mobile photo composition (v3.7.2) ═══════════════════════════
@@ -986,7 +1017,17 @@ safeFrom('.hero-cta',{opacity:0,duration:1.2,delay:1.3,ease:'power2.out'});
 safeFrom('.hero-cta > *',{y:14,opacity:0,duration:0.9,stagger:0.08,delay:1.4,ease:'power2.out'});
 
 // ─── Stats + services + work scene reveals ───
-document.querySelectorAll('.scene-stats .content > *, .svc-scene .left > *, .svc-scene .right li, .work-scene .content > *').forEach(el=>{
+// (v3.7.62) Skip svc-scene .left children + .right li in the gsap.from
+// reveal animation on mobile — on small viewports the elements sit at the
+// top of the block and the 'top 80%' trigger sometimes never fires
+// reliably, leaving them stuck at opacity:0. CSS !important also wasn't
+// fully overriding gsap's inline styles. Hero/stats/work scenes still get
+// the animation because their layout is taller / more central.
+const _isMobile_reveal = matchMedia('(max-width:880px)').matches;
+const _revealSel = _isMobile_reveal
+  ? '.scene-stats .content > *, .work-scene .content > *'
+  : '.scene-stats .content > *, .svc-scene .left > *, .svc-scene .right li, .work-scene .content > *';
+document.querySelectorAll(_revealSel).forEach(el=>{
   gsap.from(el,{y:32,opacity:0,duration:1.0,ease:'power3.out',scrollTrigger:{trigger:el,start:'top 80%'}});
 });
 
