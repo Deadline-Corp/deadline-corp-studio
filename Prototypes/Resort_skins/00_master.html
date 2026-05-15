@@ -342,6 +342,11 @@ body.lang-en :where(.lang-ru){display:none !important}
 
 /* ═══════════════════════════ Mobile (tablet ≤880px) ═══════════════════════════ */
 @media(max-width:880px){
+  /* (v3.7.54) Hide the entire "Как мы шипим" intro + 4-panel process strip on
+     mobile per user request — UX on phones felt unwieldy with horizontal-pin
+     scrolling 4 panels. The JS pin setup is also guarded below so no
+     phantom scroll spacers get inserted. */
+  .process-intro-scene,.process-strip{display:none !important}
   /* (v3.7.2) Use dvh (dynamic viewport height) so the letterbox bar and
      scene heights DON'T shift when mobile address-bar slides in/out.
      This was the jitter source on pinned scenes — when URL bar collapsed,
@@ -997,11 +1002,16 @@ safeFrom('.closing .contact-block > *',  {y:32,opacity:0,duration:1.4,stagger:0.
 safeFrom('.closing .divider',            {scaleY:0,opacity:0,duration:1.2,ease:'power3.out',scrollTrigger:{trigger:'.closing',start:'top 65%'},transformOrigin:'center top'});
 safeFrom('.closing .sig',                {y:14,opacity:0,duration:1.0,delay:.4,ease:'power2.out',scrollTrigger:{trigger:'.closing .sig',start:'top 92%'}});
 
-// ─── Process horizontal pin (desktop only) ───
+// ─── Process horizontal pin (desktop + mobile, v3.7.53) ───
 // Deferred via setTimeout so it's created AFTER all vertical scene pins have been set up
 // in nightLayer IIFE below. Without this defer, process-strip's trigger start/end gets locked in
 // at the OLD document height (before scene pin-spacers expand the page), causing phantom
 // captures and dark blocks at wrong scrollY positions.
+// (v3.7.54) Re-gated to desktop only — process-intro-scene + process-strip are
+// hidden on mobile (display:none in mobile media query), so we MUST skip pin
+// setup on phones; otherwise GSAP tries to pin a 0-height element and inserts
+// phantom scroll spacers. v3.7.53 had enabled mobile pin but the user wanted
+// these sections gone from phones entirely.
 setTimeout(()=>{
 if(matchMedia('(min-width:881px)').matches){
   const track=document.getElementById('processTrack');
@@ -1018,8 +1028,12 @@ if(matchMedia('(min-width:881px)').matches){
   //   2) SLIDE — track moves -innerWidth to bring the next panel into view
   // After the last panel's mask there is no slide (timeline ends).
   // Total scroll = N masks + (N-1) slides, each segment = innerWidth.
-  const maskDur = 1.0;
-  const slideDur = 1.0;
+  // (v3.7.53) Tighter timing on mobile so the total horizontal scroll doesn't
+  // feel like an infinite tunnel. Desktop: 7·innerWidth (≈13440px on 1920w).
+  // Mobile:  4.2·innerWidth (≈1500px on 360w) — still cinematic, not punishing.
+  const isMobile = matchMedia('(max-width:880px)').matches;
+  const maskDur  = isMobile ? 0.6 : 1.0;
+  const slideDur = isMobile ? 0.6 : 1.0;
   const totalDur = total * maskDur + (total - 1) * slideDur;
   const totalScroll = totalDur * innerWidth;
 
@@ -1146,6 +1160,10 @@ lenis.on('scroll',updProg);
     // Without it, intro couldn't really "fix" on the viewport.
     const scene=photo.closest('.hero,.scene,.closing');
     if(!scene)return;
+    // (v3.7.54) Skip pin setup for hidden scenes (e.g. process-intro-scene on
+    // mobile — it's display:none, getBoundingClientRect would return 0 and
+    // the pin would inject a phantom 0-height spacer).
+    if(getComputedStyle(scene).display==='none')return;
     gsap.to(photo,{
       '--mp':1,
       ease:'power2.inOut',
