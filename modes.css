@@ -11803,4 +11803,21 @@ html.mode-island body {
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   2026-05-17 — Matrix nav, mobile centering
+   On phones only, DEADLINE + «Talk to us» were stuck flush-left because
+   the container's inline `justify-content:space-between` left both items
+   pulled apart inside a narrow box that also reserved 80px on the right
+   for the fixed magic-toggle — visually they read as left-stacked.
+   Fix: centre the surviving flex items as a single tight group. Magic-
+   toggle is position:fixed so it doesn't compete for layout space.
+   ═══════════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  html.mode-matrix .nav-bar > .container {
+    justify-content: center !important;
+    gap: 16px !important;
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+}
 
