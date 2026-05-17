@@ -835,7 +835,7 @@
       // Chrome aggressively caches HTML loaded inside iframes, even
       // when ETag/Last-Modified would otherwise invalidate. Bump this
       // string whenever 00_master.html is meaningfully edited.
-      frame.src = 'Prototypes/Resort_skins/00_master.html?v=3.7.66';
+      frame.src = 'Prototypes/Resort_skins/00_master.html?v=3.7.67';
       frame.setAttribute('title', 'DEADLINE — Resort');
       frame.setAttribute('loading', 'eager');
       document.body.appendChild(frame);

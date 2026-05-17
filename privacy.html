@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Privacy Policy — DEADLINE</title>
+<meta name="description" content="Политика конфиденциальности DEADLINE — что мы собираем, зачем и как храним.">
+<meta name="robots" content="index, follow">
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#161208;
+    --surface:#1F1A0F;
+    --border-dark:#0A0805;
+    --cream:#F0E8D5;
+    --cream-dim:rgba(240,232,213,.62);
+    --mute:#8A7E64;
+    --copper:#C76A2D;
+    --sand:#D9A057;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--bg);color:var(--cream);font-family:'Inter','Space Grotesk',system-ui,sans-serif;font-weight:400;line-height:1.65;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+  a{color:var(--copper);text-decoration:none;border-bottom:1px solid transparent;transition:border-color .2s ease,color .2s ease}
+  a:hover{color:var(--sand);border-bottom-color:var(--sand)}
+
+  /* Language toggle (same pattern as main site) */
+  body:not(.lang-en) :where(.lang-en){display:none !important}
+  body.lang-en :where(.lang-ru){display:none !important}
+
+  .nav{
+    position:sticky;top:0;z-index:10;
+    background:var(--bg);
+    border-bottom:1px solid rgba(240,232,213,.08);
+    padding:16px clamp(20px,5vw,48px);
+    display:flex;align-items:center;justify-content:space-between;gap:16px;
+    font-family:'Space Grotesk','Inter',sans-serif;
+  }
+  .nav .brand{font-weight:700;font-size:16px;letter-spacing:.18em;color:var(--cream);text-transform:uppercase}
+  .nav .brand a{color:var(--cream);border-bottom:0}
+  .nav .lang{display:inline-flex;gap:8px;font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.32em;text-transform:uppercase}
+  .nav .lang button{background:transparent;border:0;color:var(--mute);font:inherit;letter-spacing:inherit;text-transform:uppercase;cursor:pointer;padding:6px 4px}
+  .nav .lang button.is-active{color:var(--copper)}
+  .nav .lang .sep{color:var(--mute);opacity:.4;padding:6px 0}
+  .nav .back{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:var(--mute)}
+  .nav .back:hover{color:var(--copper)}
+
+  .wrap{max-width:760px;margin:0 auto;padding:48px clamp(20px,5vw,48px) 96px}
+
+  .eyebrow{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.5em;text-transform:uppercase;color:var(--copper);margin-bottom:18px}
+  h1{font-family:'Space Grotesk','Inter',sans-serif;font-weight:700;font-size:clamp(34px,5vw,56px);line-height:1.05;letter-spacing:-.015em;color:var(--cream);margin-bottom:14px}
+  .updated{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.24em;text-transform:uppercase;color:var(--mute);margin-bottom:48px}
+
+  h2{font-family:'Space Grotesk','Inter',sans-serif;font-weight:500;font-size:clamp(20px,2.4vw,26px);line-height:1.25;color:var(--cream);margin:48px 0 16px;letter-spacing:-.008em}
+  h2 .num{font-family:'JetBrains Mono',monospace;font-size:13px;letter-spacing:.24em;color:var(--copper);margin-right:10px;display:inline-block;vertical-align:1px}
+
+  p{margin-bottom:14px;color:var(--cream-dim);font-size:15px;line-height:1.7}
+  strong{color:var(--cream);font-weight:500}
+  ul{list-style:none;padding:0;margin:8px 0 18px}
+  ul li{padding-left:20px;position:relative;margin-bottom:8px;color:var(--cream-dim);font-size:15px;line-height:1.7}
+  ul li::before{content:'·';color:var(--copper);position:absolute;left:6px;top:0;font-weight:700;font-size:18px}
+
+  .summary{
+    background:var(--surface);
+    border-left:3px solid var(--copper);
+    padding:18px 22px;
+    margin:24px 0 36px;
+    border-radius:2px;
+  }
+  .summary p{margin:0;color:var(--cream);font-size:14px;line-height:1.6}
+  .summary p + p{margin-top:6px}
+
+  .contact-block{
+    background:var(--surface);
+    border:1px solid rgba(240,232,213,.08);
+    padding:24px 22px;
+    margin-top:48px;
+    border-radius:2px;
+  }
+  .contact-block h3{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.4em;text-transform:uppercase;color:var(--copper);margin-bottom:12px;font-weight:500}
+  .contact-block p{margin-bottom:6px;font-size:14px}
+
+  footer{
+    border-top:1px solid rgba(240,232,213,.08);
+    padding:24px clamp(20px,5vw,48px);
+    text-align:center;
+    font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--mute);
+  }
+  footer a{color:var(--copper);border:0;margin:0 8px}
+
+  @media(max-width:520px){
+    .wrap{padding:32px 18px 64px}
+    h2{margin:36px 0 12px}
+  }
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="brand"><a href="./">DEADLINE</a></div>
+  <div style="display:flex;align-items:center;gap:24px">
+    <div class="lang" role="group" aria-label="Language">
+      <button data-lang="ru" class="is-active" aria-pressed="true">RU</button>
+      <span class="sep">·</span>
+      <button data-lang="en" aria-pressed="false">EN</button>
+    </div>
+    <a href="./" class="back">
+      <span class="lang-ru">← на главную</span>
+      <span class="lang-en">← home</span>
+    </a>
+  </div>
+</nav>
+
+<main class="wrap">
+
+  <div class="eyebrow">
+    <span class="lang-ru">Документ</span>
+    <span class="lang-en">Document</span>
+  </div>
+  <h1>
+    <span class="lang-ru">Политика конфиденциальности</span>
+    <span class="lang-en">Privacy Policy</span>
+  </h1>
+  <div class="updated">
+    <span class="lang-ru">Действует с 13 мая 2026</span>
+    <span class="lang-en">Effective 13 May 2026</span>
+  </div>
+
+  <div class="summary">
+    <p>
+      <span class="lang-ru"><strong>TL;DR.</strong> Мы — DEADLINE. Собираем только то, что ты сам пишешь нам в email или Telegram, чтобы ответить на твою заявку и сделать проект. Не продаём данные. Не передаём третьим лицам. По запросу — удалим всё.</span>
+      <span class="lang-en"><strong>TL;DR.</strong> We are DEADLINE. We collect only what you write to us by email or Telegram, to reply to your inquiry and run the project. We don't sell data. We don't share with third parties. On request — we delete everything.</span>
+    </p>
+  </div>
+
+  <!-- 1 -->
+  <h2><span class="num">01</span>
+    <span class="lang-ru">Кто мы</span>
+    <span class="lang-en">Who we are</span>
+  </h2>
+  <p>
+    <span class="lang-ru">DEADLINE — команда разработки веба, автоматизаций и AI-агентов. Этот документ описывает, как мы обращаемся с твоими данными, когда ты пишешь нам или становишься клиентом.</span>
+    <span class="lang-en">DEADLINE is a team building web products, automations and AI agents. This document describes how we handle your data when you contact us or become a client.</span>
+  </p>
+  <p>
+    <span class="lang-ru">Контакты для любых вопросов о данных: <a href="mailto:corpdeadline@gmail.com">corpdeadline@gmail.com</a> или <a href="https://t.me/deadline_corp">@deadline_corp</a> в Telegram.</span>
+    <span class="lang-en">Data-related questions: <a href="mailto:corpdeadline@gmail.com">corpdeadline@gmail.com</a> or <a href="https://t.me/deadline_corp">@deadline_corp</a> on Telegram.</span>
+  </p>
+
+  <!-- 2 -->
+  <h2><span class="num">02</span>
+    <span class="lang-ru">Какие данные мы собираем</span>
+    <span class="lang-en">What data we collect</span>
+  </h2>
+  <p>
+    <span class="lang-ru">Только то, что ты сам нам отправил при первом контакте и в дальнейшей переписке:</span>
+    <span class="lang-en">Only what you send us yourself when reaching out, and in any follow-up correspondence:</span>
+  </p>
+  <ul>
+    <li>
+      <span class="lang-ru"><strong>Контакты:</strong> email и/или Telegram-ник, имя, при желании — телефон или другой мессенджер.</span>
+      <span class="lang-en"><strong>Contacts:</strong> email and/or Telegram handle, name, optionally phone or other messenger.</span>
+    </li>
+    <li>
+      <span class="lang-ru"><strong>Описание задачи:</strong> текст заявки, прикреплённые брифы, ссылки, скриншоты — всё, что ты сам прислал.</span>
+      <span class="lang-en"><strong>Task brief:</strong> the text of your inquiry, any attached briefs, links, screenshots — whatever you sent us.</span>
+    </li>
+    <li>
+      <span class="lang-ru"><strong>Реквизиты компании</strong> (если переходим к договору): название юр.лица, ИНН, банковские данные — для счёта.</span>
+      <span class="lang-en"><strong>Company details</strong> (when we move to a contract): legal entity name, tax ID, banking info — for invoicing.</span>
+    </li>
+    <li>
+      <span class="lang-ru"><strong>Технические данные сайта:</strong> базовые анонимные логи (IP, user-agent, referrer) от GitHub Pages, на котором сайт размещён. Мы не используем cookie для трекинга и не подключаем аналитические системы вроде Google Analytics / Yandex Metrika.</span>
+      <span class="lang-en"><strong>Site technical data:</strong> anonymous server logs (IP, user-agent, referrer) from GitHub Pages, which hosts the site. We don't use tracking cookies and don't connect analytics tools like Google Analytics / Yandex Metrika.</span>
+    </li>
+  </ul>
+
+  <!-- 3 -->
+  <h2><span class="num">03</span>
+    <span class="lang-ru">Зачем мы это собираем</span>
+    <span class="lang-en">Why we collect it</span>
+  </h2>
+  <ul>
+    <li>
+      <span class="lang-ru">Ответить на твою заявку и обсудить задачу.</span>
+      <span class="lang-en">Reply to your inquiry and discuss the task.</span>
+    </li>
+    <li>
+      <span class="lang-ru">Подготовить коммерческое предложение, договор и счёт.</span>
+      <span class="lang-en">Prepare a proposal, contract and invoice.</span>
+    </li>
+    <li>
+      <span class="lang-ru">Вести проект до production: переписка, демо, передача результатов.</span>
+      <span class="lang-en">Run the project through to production: messaging, demos, handover.</span>
+    </li>
+    <li>
+      <span class="lang-ru">Выполнить требования закона — налоговая, бухгалтерская отчётность по подписанным договорам.</span>
+      <span class="lang-en">Comply with applicable law — tax and accounting reporting on signed contracts.</span>
+    </li>
+  </ul>
+  <p>
+    <span class="lang-ru">Никакого маркетинга на твоих данных. Не делаем массовых рассылок. Не передаём данные в рекламные системы.</span>
+    <span class="lang-en">No marketing on your data. No bulk newsletters. We don't pass data into ad networks.</span>
+  </p>
+
+  <!-- 4 -->
+  <h2><span class="num">04</span>
+    <span class="lang-ru">Сколько храним</span>
+    <span class="lang-en">Retention</span>
+  </h2>
+  <ul>
+    <li>
+      <span class="lang-ru"><strong>Заявки без договора</strong> — до 12 месяцев с даты последнего сообщения. Затем удаляем.</span>
+      <span class="lang-en"><strong>Inquiries without a contract</strong> — up to 12 months from the last message, then deleted.</span>
+    </li>
+    <li>
+      <span class="lang-ru"><strong>Данные клиентов с подписанным договором</strong> — в течение срока договора плюс срок, требуемый налоговым/гражданским законодательством (обычно 5 лет для бухгалтерии).</span>
+      <span class="lang-en"><strong>Client data under signed contract</strong> — for the contract term plus the period required by tax/civil law (typically 5 years for accounting records).</span>
+    </li>
+    <li>
+      <span class="lang-ru"><strong>Любые данные по запросу</strong> — удаляем раньше срока, если ты попросишь.</span>
+      <span class="lang-en"><strong>Any data on request</strong> — deleted earlier than the term above whenever you ask.</span>
+    </li>
+  </ul>
+
+  <!-- 5 -->
+  <h2><span class="num">05</span>
+    <span class="lang-ru">Кому передаём</span>
+    <span class="lang-en">Who we share with</span>
+  </h2>
+  <p>
+    <span class="lang-ru">Никому, кроме случаев, когда без этого не обойтись для работы:</span>
+    <span class="lang-en">Nobody, except where necessary for the work:</span>
+  </p>
+  <ul>
+    <li>
+      <span class="lang-ru"><strong>Сервисы, через которые мы общаемся</strong> — Gmail (Google), Telegram. Они обрабатывают сообщения по своим политикам.</span>
+      <span class="lang-en"><strong>Communication services</strong> — Gmail (Google), Telegram. They process messages under their own policies.</span>
+    </li>
+    <li>
+      <span class="lang-ru"><strong>Хостинг проекта</strong> — облако и инструменты, которые мы согласовали с тобой в рамках договора (например, AWS, Vercel, Cloudflare).</span>
+      <span class="lang-en"><strong>Project hosting</strong> — cloud and tools agreed upon with you in the contract (e.g. AWS, Vercel, Cloudflare).</span>
+    </li>
+    <li>
+      <span class="lang-ru"><strong>Бухгалтерия и налоговые органы</strong> — только при наличии подписанного договора и в объёме, требуемом законом.</span>
+      <span class="lang-en"><strong>Accounting and tax authorities</strong> — only under a signed contract, only to the extent required by law.</span>
+    </li>
+  </ul>
+  <p>
+    <span class="lang-ru">Никаких продаж данных третьим лицам. Никаких маркетинговых партнёров.</span>
+    <span class="lang-en">No data sales to third parties. No marketing partners.</span>
+  </p>
+
+  <!-- 6 -->
+  <h2><span class="num">06</span>
+    <span class="lang-ru">Cookies и аналитика</span>
+    <span class="lang-en">Cookies & analytics</span>
+  </h2>
+  <p>
+    <span class="lang-ru">Сайт не ставит куки для трекинга и не использует системы аналитики. Локальные настройки (выбранный язык, позиция кнопки смены скина) сохраняются в твоём браузере через <code>localStorage</code> и никуда не отправляются.</span>
+    <span class="lang-en">The site sets no tracking cookies and uses no analytics platforms. Local preferences (chosen language, magic-toggle position) are stored in your browser via <code>localStorage</code> and never sent anywhere.</span>
+  </p>
+
+  <!-- 7 -->
+  <h2><span class="num">07</span>
+    <span class="lang-ru">Твои права</span>
+    <span class="lang-en">Your rights</span>
+  </h2>
+  <p>
+    <span class="lang-ru">Ты можешь в любой момент:</span>
+    <span class="lang-en">At any moment you can:</span>
+  </p>
+  <ul>
+    <li>
+      <span class="lang-ru">Узнать, какие именно данные о тебе у нас есть.</span>
+      <span class="lang-en">Ask what specific data we hold about you.</span>
+    </li>
+    <li>
+      <span class="lang-ru">Попросить исправить неверные данные.</span>
+      <span class="lang-en">Request correction of inaccurate data.</span>
+    </li>
+    <li>
+      <span class="lang-ru">Попросить удалить данные полностью (с учётом ограничений п. 04 — счета и договоры по закону).</span>
+      <span class="lang-en">Request full deletion (subject to section 04 limits — invoices and contracts must be kept by law).</span>
+    </li>
+    <li>
+      <span class="lang-ru">Отозвать согласие на обработку.</span>
+      <span class="lang-en">Withdraw your consent to processing.</span>
+    </li>
+    <li>
+      <span class="lang-ru">Получить копию своих данных в читаемом формате.</span>
+      <span class="lang-en">Receive a copy of your data in a readable format.</span>
+    </li>
+  </ul>
+  <p>
+    <span class="lang-ru">Любой такой запрос — на <a href="mailto:corpdeadline@gmail.com">corpdeadline@gmail.com</a>. Ответим в течение 14 дней.</span>
+    <span class="lang-en">Any such request — to <a href="mailto:corpdeadline@gmail.com">corpdeadline@gmail.com</a>. We respond within 14 days.</span>
+  </p>
+
+  <!-- 8 -->
+  <h2><span class="num">08</span>
+    <span class="lang-ru">Безопасность</span>
+    <span class="lang-en">Security</span>
+  </h2>
+  <p>
+    <span class="lang-ru">Доступ к перепискам имеет только команда DEADLINE через личные учётные записи с двухфакторной аутентификацией. Файлы клиентов хранятся в закрытых рабочих репозиториях. Передача данных идёт по HTTPS.</span>
+    <span class="lang-en">Only the DEADLINE team accesses correspondence, via personal accounts with two-factor authentication. Client files are stored in private working repositories. Data transmission uses HTTPS.</span>
+  </p>
+
+  <!-- 9 -->
+  <h2><span class="num">09</span>
+    <span class="lang-ru">Изменения политики</span>
+    <span class="lang-en">Changes to this policy</span>
+  </h2>
+  <p>
+    <span class="lang-ru">Если мы поменяем эти правила — обновим дату в начале документа и, при существенных изменениях, дополнительно напишем тебе на email, если ты наш клиент.</span>
+    <span class="lang-en">If we change these rules, we'll update the date at the top of the document and, for material changes, also email you directly if you are a client.</span>
+  </p>
+
+  <!-- 10 -->
+  <h2><span class="num">10</span>
+    <span class="lang-ru">Применимое право и споры</span>
+    <span class="lang-en">Applicable law and disputes</span>
+  </h2>
+  <p>
+    <span class="lang-ru">К отношениям применяется законодательство страны фактического договора между DEADLINE и клиентом. Если у тебя есть жалоба и мы не смогли договориться напрямую — ты можешь обратиться в соответствующий регулятор по защите персональных данных в твоей юрисдикции.</span>
+    <span class="lang-en">Relations are governed by the law of the country specified in the signed contract between DEADLINE and the client. If you have a complaint we could not resolve directly, you may approach the relevant personal-data regulator in your jurisdiction.</span>
+  </p>
+
+  <div class="contact-block">
+    <h3>
+      <span class="lang-ru">Связаться по поводу данных</span>
+      <span class="lang-en">Data inquiries</span>
+    </h3>
+    <p>Email: <a href="mailto:corpdeadline@gmail.com">corpdeadline@gmail.com</a></p>
+    <p>Telegram: <a href="https://t.me/deadline_corp">@deadline_corp</a></p>
+  </div>
+
+</main>
+
+<footer>
+  © 2025-2026 DEADLINE ·
+  <a href="./">
+    <span class="lang-ru">главная</span>
+    <span class="lang-en">home</span>
+  </a> ·
+  <a href="mailto:corpdeadline@gmail.com">corpdeadline@gmail.com</a> ·
+  <a href="https://t.me/deadline_corp">@deadline_corp</a>
+</footer>
+
+<script>
+  // Bilingual toggle — mirror main site behavior
+  (function(){
+    const KEY='deadline-lang';
+    const body=document.body;
+    function set(lang){
+      body.classList.toggle('lang-en', lang==='en');
+      document.documentElement.lang = lang;
+      document.querySelectorAll('.nav .lang button').forEach(b=>{
+        const active = b.dataset.lang===lang;
+        b.classList.toggle('is-active', active);
+        b.setAttribute('aria-pressed', active);
+      });
+      try{ localStorage.setItem(KEY, lang); }catch(e){}
+      if(lang==='en' && !location.hash) location.hash='#en';
+      if(lang==='ru' && location.hash==='#en') history.replaceState(null,'',location.pathname);
+    }
+    // Detect initial
+    let init = 'ru';
+    try{
+      const saved = localStorage.getItem(KEY);
+      if(saved==='en'||saved==='ru') init = saved;
+    }catch(e){}
+    if(location.hash==='#en') init='en';
+    set(init);
+    // Wire buttons
+    document.querySelectorAll('.nav .lang button').forEach(b=>{
+      b.addEventListener('click', ()=> set(b.dataset.lang));
+    });
+  })();
+</script>
+
+</body>
+</html>
