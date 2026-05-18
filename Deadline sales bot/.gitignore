@@ -1,0 +1,42 @@
+# Secrets
+.env
+.env.local
+*.key
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# Build / dist
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Chroma DB (regenerated from kb/)
+chroma_db/
+
+# Sentence-transformers cache
+.cache/
+~/.cache/huggingface/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Railway
+.railway/

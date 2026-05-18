@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Deadline Bot — Local Test Page</title>
+<style>
+  body {
+    margin: 0; padding: 40px;
+    background: #161208; color: #f4ecd8;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    min-height: 100vh;
+  }
+  h1 { font-weight: 400; letter-spacing: 0.02em; }
+  p { line-height: 1.6; max-width: 600px; }
+  code { background: #252010; padding: 2px 6px; border-radius: 3px; }
+  .note { color: #8a7d5f; font-size: 14px; }
+</style>
+</head>
+<body>
+  <h1>// Deadline Bot — локальная тестовая страница</h1>
+  <p>Эта страница нужна только для разработки виджета. На проде виджет встраивается на <code>deadline-corp.github.io</code> одной строкой:</p>
+  <p><code>&lt;script src="widget.js" defer&gt;&lt;/script&gt;</code></p>
+  <p class="note">// чтобы поговорить с ботом — нажми на полоску в правом нижнем углу.</p>
+  <p class="note">// если бот возвращает «ошибка связи» — убедись что <code>uvicorn main:app --reload</code> запущен и в widget.js указан правильный API_URL.</p>
+
+<script>
+  // Для локальной разработки указываем localhost
+  window.DEADLINE_BOT_API = "http://localhost:8000/chat";
+</script>
+<script src="widget.js" defer></script>
+</body>
+</html>
