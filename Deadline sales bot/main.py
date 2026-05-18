@@ -283,9 +283,32 @@ async def chat(req: ChatRequest):
     if not session["handoff_done"]:
         handoff_data = await check_handoff(history)
         if handoff_data:
-            await send_telegram_brief(req.session_id, handoff_data, history)
-            session["handoff_done"] = True
-            handoff_triggered = True
+            # Hard guard: do NOT fire a brief if no real contact was captured.
+            # The classifier (small LLM, fallback model) sometimes returns
+            # ready_for_handoff=true even when lead_contact is empty or is
+            # just a channel name like "telegram" / "в телегу".
+            contact = (handoff_data.get("lead_contact") or "").strip()
+            contact_lower = contact.lower()
+            CHANNEL_NOISE = {
+                "", "telegram", "telega", "тг", "в telegram", "в телегу",
+                "в личку", "в тг", "email", "почта", "phone", "телефон",
+                "не оставил", "не указан", "—", "-", "n/a", "none", "null",
+            }
+            looks_like_real_address = (
+                contact.startswith("@") and len(contact) > 1  # Telegram @username
+                or "@" in contact and "." in contact  # email
+                or sum(c.isdigit() for c in contact) >= 7  # phone-ish
+            )
+
+            if contact_lower in CHANNEL_NOISE or not looks_like_real_address:
+                log.info(
+                    f"[{req.session_id[:8]}] classifier said ready_for_handoff=true "
+                    f"but contact={contact!r} is empty/channel-only — suppressing brief"
+                )
+            else:
+                await send_telegram_brief(req.session_id, handoff_data, history)
+                session["handoff_done"] = True
+                handoff_triggered = True
 
     return ChatResponse(answer=answer, handoff=handoff_triggered, session_id=req.session_id)
 
