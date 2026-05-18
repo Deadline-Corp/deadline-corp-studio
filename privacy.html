@@ -6,7 +6,33 @@
 <title>Privacy Policy — DEADLINE</title>
 <meta name="description" content="Политика конфиденциальности DEADLINE — что мы собираем, зачем и как храним.">
 <meta name="robots" content="index, follow">
+<link rel="canonical" href="https://deadlinecorp.com/privacy.html">
+
+<!-- Bilingual -->
+<link rel="alternate" hreflang="ru" href="https://deadlinecorp.com/privacy.html">
+<link rel="alternate" hreflang="en" href="https://deadlinecorp.com/privacy.html?lang=en">
+<link rel="alternate" hreflang="x-default" href="https://deadlinecorp.com/privacy.html">
+
+<!-- Open Graph + Twitter -->
+<meta property="og:title" content="Privacy Policy — DEADLINE">
+<meta property="og:description" content="Что мы собираем, зачем и как храним.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://deadlinecorp.com/privacy.html">
+<meta property="og:image" content="https://deadlinecorp.com/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:site_name" content="DEADLINE">
+<meta property="og:locale" content="ru_RU">
+<meta property="og:locale:alternate" content="en_US">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Privacy Policy — DEADLINE">
+<meta name="twitter:description" content="Что мы собираем, зачем и как храним.">
+<meta name="twitter:image" content="https://deadlinecorp.com/og-image.png">
+
 <link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="alternate icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="alternate icon" type="image/png" sizes="512x512" href="icon-512.png">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500&family=Inter:wght@300;400;500&display=swap" rel="stylesheet">
@@ -351,7 +377,7 @@
 </footer>
 
 <script>
-  // Bilingual toggle — mirror main site behavior
+  // Bilingual toggle — mirrors main site (?lang=en query param, not #en hash)
   (function(){
     const KEY='deadline-lang';
     const body=document.body;
@@ -364,16 +390,25 @@
         b.setAttribute('aria-pressed', active);
       });
       try{ localStorage.setItem(KEY, lang); }catch(e){}
-      if(lang==='en' && !location.hash) location.hash='#en';
-      if(lang==='ru' && location.hash==='#en') history.replaceState(null,'',location.pathname);
+      const url = new URL(location.href);
+      if(lang==='en') url.searchParams.set('lang','en');
+      else url.searchParams.delete('lang');
+      const newHash = url.hash === '#en' ? '' : url.hash;
+      history.replaceState(null,'',url.pathname + (url.search || '') + newHash);
     }
-    // Detect initial
+    // Detect initial: ?lang= > legacy #en > localStorage > default RU
     let init = 'ru';
-    try{
-      const saved = localStorage.getItem(KEY);
-      if(saved==='en'||saved==='ru') init = saved;
-    }catch(e){}
-    if(location.hash==='#en') init='en';
+    const qLang = new URLSearchParams(location.search).get('lang');
+    if(qLang === 'en' || qLang === 'ru') {
+      init = qLang;
+    } else if(location.hash === '#en') {
+      init = 'en';
+    } else {
+      try{
+        const saved = localStorage.getItem(KEY);
+        if(saved==='en'||saved==='ru') init = saved;
+      }catch(e){}
+    }
     set(init);
     // Wire buttons
     document.querySelectorAll('.nav .lang button').forEach(b=>{

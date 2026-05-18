@@ -3,30 +3,49 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DEADLINE — Веб, автоматизация и AI-агенты под ключ</title>
+
+<!-- SEO basics -->
+<title>DEADLINE — Веб, автоматизация, AI-агенты</title>
 <meta name="description" content="DEADLINE — Web, automation, AI-agents в production к согласованной дате. Мы держим deadlines.">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<link rel="canonical" href="https://deadlinecorp.com/">
+
+<!-- Bilingual: RU primary, EN via ?lang=en query param -->
+<link rel="alternate" hreflang="ru" href="https://deadlinecorp.com/">
+<link rel="alternate" hreflang="en" href="https://deadlinecorp.com/?lang=en">
+<link rel="alternate" hreflang="x-default" href="https://deadlinecorp.com/">
+
+<!-- Open Graph + Twitter (absolute URLs for previews) -->
 <meta property="og:title" content="DEADLINE — Web · Automation · AI Agents">
 <meta property="og:description" content="Мы — DEADLINE. У нас ничего не горит.">
 <meta property="og:type" content="website">
-<meta property="og:image" content="og-image.png">
+<meta property="og:url" content="https://deadlinecorp.com/">
+<meta property="og:image" content="https://deadlinecorp.com/og-image.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
-<meta property="og:url" content="https://deadlinecorp.com/">
+<meta property="og:image:alt" content="DEADLINE — Web, Automation, AI Agents agency">
+<meta property="og:site_name" content="DEADLINE">
+<meta property="og:locale" content="ru_RU">
+<meta property="og:locale:alternate" content="en_US">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="DEADLINE — Web · Automation · AI Agents">
 <meta name="twitter:description" content="Мы — DEADLINE. У нас ничего не горит.">
-<meta name="twitter:image" content="og-image.png">
+<meta name="twitter:image" content="https://deadlinecorp.com/og-image.png">
+<meta name="twitter:image:alt" content="DEADLINE — Web, Automation, AI Agents agency">
+
 <meta name="theme-color" content="#161208">
 
-<!-- Favicon — inline SVG (4-pointed star on dark, brand-matched) -->
+<!-- Favicon — SVG primary, PNG fallback, apple-touch-icon for iOS home-screen -->
 <link rel="icon" type="image/svg+xml" href="icon.svg">
-<link rel="alternate icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='14' fill='%2300A8E8'/><path d='M32 8 L35 27 L52 32 L35 37 L32 56 L29 37 L12 32 L29 27 Z' fill='%23ffffff'/></svg>">
+<link rel="alternate icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="alternate icon" type="image/png" sizes="512x512" href="icon-512.png">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
 
 <!-- PWA manifest -->
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&family=Manrope:wght@300;400;500;700&family=Inter:wght@100;200;300;400;500;600&family=Share+Tech+Mono&family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,600&family=Caveat:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;1,400;1,600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@100;200;300;400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="modes.css?v=3.7.68">
 <!-- GSAP + ScrollTrigger: industry-standard animation runtime for premium
      reveal/scroll sequences in noir/vault/kinetic modes. Loads before
@@ -791,6 +810,49 @@
     }
   }
 </style>
+
+<!-- JSON-LD: Organization + WebSite + ProfessionalService -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://deadlinecorp.com/#organization",
+      "name": "DEADLINE",
+      "alternateName": "Deadline Corp",
+      "url": "https://deadlinecorp.com/",
+      "logo": "https://deadlinecorp.com/icon.svg",
+      "image": "https://deadlinecorp.com/og-image.png",
+      "description": "Web, automation, AI-agents в production к согласованной дате.",
+      "foundingDate": "2025",
+      "email": "corpdeadline@gmail.com",
+      "sameAs": [
+        "https://t.me/deadline_corp",
+        "https://github.com/Deadline-Corp"
+      ],
+      "areaServed": ["RU", "TH", "Worldwide"],
+      "knowsAbout": ["Web Development", "Automation", "AI Agents", "Telegram MiniApp", "On-chain Analytics"]
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://deadlinecorp.com/#website",
+      "url": "https://deadlinecorp.com/",
+      "name": "DEADLINE",
+      "publisher": { "@id": "https://deadlinecorp.com/#organization" },
+      "inLanguage": ["ru-RU", "en-US"]
+    },
+    {
+      "@type": "ProfessionalService",
+      "@id": "https://deadlinecorp.com/#service",
+      "name": "DEADLINE — Web · Automation · AI Agents",
+      "provider": { "@id": "https://deadlinecorp.com/#organization" },
+      "serviceType": ["Web Development", "Automation", "AI Agent Development"],
+      "areaServed": "Worldwide"
+    }
+  ]
+}
+</script>
 </head>
 <body>
 
@@ -868,9 +930,9 @@
   </div>
 
   <div class="hero-text">
-    <p class="line line-1">
+    <h1 class="line line-1">
       <span class="lang-ru">Меньше слов.</span><span class="lang-en">Skip the talk.</span>
-    </p>
+    </h1>
     <p class="line line-2">
       <span class="lang-ru">Больше результата.</span><span class="lang-en">Deliver the impact.</span>
     </p>
@@ -1743,7 +1805,9 @@
     });
   }
 
-  // === LANGUAGE TOGGLE (RU default, EN via class on body, persists in URL hash + localStorage) ===
+  // === LANGUAGE TOGGLE (RU default, EN via ?lang=en query param + localStorage) ===
+  // Why query param, not #en hash: Google strips URL fragments, so #en never gave
+  // EN a separately-indexable URL. ?lang=en does.
   (function() {
     const buttons = document.querySelectorAll('.lang-toggle button[data-lang]');
     function setLang(lang) {
@@ -1756,18 +1820,23 @@
         b.setAttribute('aria-pressed', active ? 'true' : 'false');
       });
       try { localStorage.setItem('deadline-lang', lang); } catch(e) {}
-      // reflect in URL hash without scroll
-      if (isEn) {
-        if (location.hash !== '#en') history.replaceState(null, '', '#en');
-      } else if (location.hash === '#en') {
-        history.replaceState(null, '', location.pathname + location.search);
-      }
+      // reflect in URL query without scroll
+      const url = new URL(location.href);
+      if (isEn) url.searchParams.set('lang', 'en');
+      else url.searchParams.delete('lang');
+      // strip legacy #en hash
+      const newHash = url.hash === '#en' ? '' : url.hash;
+      history.replaceState(null, '', url.pathname + (url.search || '') + newHash);
     }
     buttons.forEach(b => b.addEventListener('click', () => setLang(b.dataset.lang)));
-    // init from hash > localStorage > browser language > default RU
+    // init priority: ?lang= query > legacy #en hash > localStorage > navigator > default RU
     let initial = 'ru';
-    if (location.hash === '#en') initial = 'en';
-    else {
+    const qLang = new URLSearchParams(location.search).get('lang');
+    if (qLang === 'en' || qLang === 'ru') {
+      initial = qLang;
+    } else if (location.hash === '#en') {
+      initial = 'en';
+    } else {
       try {
         const saved = localStorage.getItem('deadline-lang');
         if (saved === 'en' || saved === 'ru') initial = saved;
