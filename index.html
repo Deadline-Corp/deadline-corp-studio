@@ -27,13 +27,13 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&family=Manrope:wght@300;400;500;700&family=Inter:wght@100;200;300;400;500;600&family=Share+Tech+Mono&family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,600&family=Caveat:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,400;0,600;1,400;1,600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="modes.css?v=3.7.67">
+<link rel="stylesheet" href="modes.css?v=3.7.68">
 <!-- GSAP + ScrollTrigger: industry-standard animation runtime for premium
      reveal/scroll sequences in noir/vault/kinetic modes. Loads before
      modes.js so the global `gsap` is ready when mode-init runs. -->
 <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
-<script defer src="modes.js?v=3.7.67"></script>
+<script defer src="modes.js?v=3.7.68"></script>
 <style>
   /* ═════ DESIGN TOKENS (Forge palette) ═════ */
   :root {
@@ -195,6 +195,19 @@
     text-transform: uppercase; margin-bottom: 14px;
   }
   .hero-cta a + a { margin-left: 14px; }
+  .cta-consent {
+    margin-top: 14px; font-size: 11px; color: var(--mute);
+    letter-spacing: 0.04em; line-height: 1.6; max-width: 360px; text-align: right;
+  }
+  .cta-consent a { color: var(--copper); text-decoration: none; border-bottom: 1px solid rgba(199,106,45,0.4); }
+  .cta-consent a:hover { color: var(--sand); border-bottom-color: var(--sand); }
+  .contact-consent {
+    margin-top: 18px; font-family: 'Inter', system-ui, sans-serif;
+    font-size: 12px; color: var(--mute); letter-spacing: 0.02em;
+    line-height: 1.6; max-width: 520px; margin-left: auto; margin-right: auto;
+  }
+  .contact-consent a { color: var(--copper); text-decoration: none; border-bottom: 1px solid rgba(199,106,45,0.4); }
+  .contact-consent a:hover { color: var(--sand); border-bottom-color: var(--sand); }
   .hero-text {
     position: relative; z-index: 3;
     text-align: center;
@@ -848,6 +861,10 @@
     <a href="#work" class="btn-secondary">
       <span class="lang-ru">Кейсы</span><span class="lang-en">See work</span>
     </a>
+    <div class="cta-consent">
+      <span class="lang-ru">Нажимая кнопку, ты соглашаешься с <a href="privacy.html">политикой конфиденциальности</a>.</span>
+      <span class="lang-en">By clicking you accept the <a href="privacy.html">privacy policy</a>.</span>
+    </div>
   </div>
 
   <div class="hero-text">
@@ -1656,6 +1673,10 @@
       <div style="margin-top: 36px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--mute); letter-spacing: 0.16em; text-transform: uppercase;">
         <span class="lang-ru">● Ответ за минуты</span>
         <span class="lang-en">● Replies in minutes</span>
+      </div>
+      <div class="contact-consent">
+        <span class="lang-ru">Нажимая email или Telegram, ты соглашаешься с <a href="privacy.html">политикой конфиденциальности</a>.</span>
+        <span class="lang-en">By clicking email or Telegram you accept the <a href="privacy.html">privacy policy</a>.</span>
       </div>
     </div>
   </div>

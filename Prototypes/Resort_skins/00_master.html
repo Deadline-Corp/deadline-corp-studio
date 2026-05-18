@@ -337,6 +337,9 @@ section.closing{position:relative;width:100vw;height:100vh;min-height:100vh;over
 @keyframes dotpulse{0%,100%{opacity:.35;transform:scale(1)}50%{opacity:1;transform:scale(1.18)}}
 
 .closing .sig{font-family:'Inter';font-size:9px;letter-spacing:.5em;text-transform:uppercase;color:var(--cream-dim);margin-top:8px}
+.closing .consent{font-family:'Inter';font-size:11px;line-height:1.6;color:var(--cream-dim);max-width:380px;margin:8px auto 0;text-align:center}
+.closing .consent a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(200,168,113,0.45);transition:color .25s,border-color .25s}
+.closing .consent a:hover{color:var(--cream);border-bottom-color:var(--cream)}
 
 /* Legacy .manifesto and .contact rules kept harmless — selectors no longer
    match new HTML. Removing them risks accidentally breaking any unrelated
@@ -968,6 +971,10 @@ section.closing{position:relative;width:100vw;height:100vh;min-height:100vh;over
       <div class="reply">
         <span class="lang-ru"><span class="dot">●</span>Ответ за минуты</span>
         <span class="lang-en"><span class="dot">●</span>Replies in minutes</span>
+      </div>
+      <div class="consent">
+        <span class="lang-ru">Нажимая email или Telegram, ты соглашаешься с <a href="../../privacy.html">политикой конфиденциальности</a>.</span>
+        <span class="lang-en">By clicking email or Telegram you accept the <a href="../../privacy.html">privacy policy</a>.</span>
       </div>
     </div>
 
