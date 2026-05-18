@@ -248,6 +248,70 @@ async def health():
     }
 
 
+# ----------------------------------------------------------------------------
+# Lead form endpoint — receives submissions from deadlinecorp.com/lead-form/
+# Forwards a structured message to the configured Telegram chat.
+# ----------------------------------------------------------------------------
+
+class LeadFormRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200)
+    contact: str = Field(..., min_length=1, max_length=200)
+    need: str = Field("", max_length=500)
+    business: str = Field("", max_length=300)
+    when: str = Field("", max_length=50)
+    source: str = Field("direct", max_length=100)
+    campaign: str = Field("", max_length=200)
+    timestamp: str = Field("", max_length=64)
+
+
+async def send_lead_to_telegram(lead: LeadFormRequest) -> bool:
+    """Forward lead-form submission to Telegram. Returns True on success."""
+    token = settings.telegram_bot_token
+    chat_id = settings.telegram_chat_id
+    if not token or not chat_id:
+        log.warning("Telegram not configured — lead received but not forwarded")
+        return False
+
+    text = (
+        f"🔥 НОВЫЙ ЛИД С САЙТА\n"
+        f"━━━━━━━━━━━━━━━━━━\n\n"
+        f"👤 Имя: {lead.name}\n"
+        f"📱 Контакт: {lead.contact}\n"
+        f"🎯 Хочет: {lead.need or '—'}\n"
+        f"🏢 Бизнес: {lead.business or '—'}\n"
+        f"⏰ Срок: {lead.when or '—'}\n\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"📊 UTM: {lead.source} / {lead.campaign or 'no-campaign'}\n"
+        f"🕐 {lead.timestamp or 'now'}\n"
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": chat_id, "text": text, "disable_web_page_preview": True},
+            )
+            if r.status_code != 200:
+                log.warning(f"Telegram returned {r.status_code}: {r.text}")
+                return False
+            log.info(f"Lead from {lead.name} forwarded to Telegram")
+            return True
+    except Exception as e:
+        log.error(f"Telegram send failed for lead: {e}")
+        return False
+
+
+@app.post("/lead-submit")
+async def lead_submit(lead: LeadFormRequest):
+    """
+    Accepts form data from deadlinecorp.com/lead-form/.
+    Forwards to Telegram. Always returns 200 to the form (avoid leaking errors to user).
+    """
+    success = await send_lead_to_telegram(lead)
+    log.info(f"Lead received: {lead.name} | {lead.contact} | need={lead.need!r}")
+    return {"ok": True, "delivered": success}
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
     if vectorstore is None:
