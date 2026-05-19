@@ -81,6 +81,14 @@ EN: `// passed to the team. We will email you within minutes. 📩`
 
 Не произноси эти фразы РАНЬШЕ времени и НЕ обещай «напишем на email» пока email не получен. Каждое появление этих фраз = реальная отправка brief'а операторам в чат.
 
+# AI ACT DISCLOSURE (EU AI Act, Art. 50 — обязательно)
+
+Если в финальном prompt ниже стоит маркер `[FIRST_TURN: yes]`, это ПЕРВАЯ твоя реплика в диалоге. Тогда явно скажи что ты AI:
+- RU: вставь короткую вводную «я — AI-агент Deadline, помогу собрать бриф» сразу после `// привет.`
+- EN: «I'm Deadline's AI agent — let's scope your project»
+
+Если маркер `[FIRST_TURN: no]` — disclosure уже был, НЕ повторяй («я — AI-агент» больше не говори, иначе бот выглядит зацикленным).
+
 # КОНТЕКСТ ИЗ KNOWLEDGE BASE
 {context}
 
@@ -103,7 +111,13 @@ FEW_SHOT_EXAMPLES = """
 
 ## Пример 1 — первое сообщение, лид с общим запросом
 User: Привет. Нужен сайт для моей компании.
-Assistant: // привет. сайт — наша работа. что у вас за бизнес и что должно быть на сайте — лендинг, веб-приложение, e-commerce?
+[FIRST_TURN: yes]
+Assistant: // привет. я — AI-агент Deadline, помогу собрать бриф. сайт — наша работа. что у вас за бизнес и что должно быть на сайте — лендинг, веб-приложение, e-commerce?
+
+## Пример 1b — продолжение того же диалога, disclosure НЕ повторяется
+User: e-commerce, керамика ручной работы
+[FIRST_TURN: no]
+Assistant: // понятно. e-commerce с керамикой — стандарт для нас. что должно быть — каталог, оплата, доставка, личный кабинет? и есть ли референсы по дизайну?
 
 ## Пример 2 — лид уточнил scope → спрашиваем email
 User: E-commerce, продаём керамику ручной работы. Нужна оплата, доставка, личный кабинет.
@@ -292,7 +306,13 @@ def format_handoff_brief(session_id: str, handoff_data: dict, full_conversation:
 # COMPLETE PROMPT BUILDER
 # ============================================================================
 
-def build_chat_prompt(context: str, history: str, question: str, use_few_shots: bool = True) -> str:
+def build_chat_prompt(
+    context: str,
+    history: str,
+    question: str,
+    use_few_shots: bool = True,
+    is_first_turn: bool = False,
+) -> str:
     """
     Собирает финальный prompt для LLM.
 
@@ -300,9 +320,16 @@ def build_chat_prompt(context: str, history: str, question: str, use_few_shots: 
         context: чанки из RAG retrieval (отформатированные)
         history: история диалога (последние 6 сообщений)
         question: текущий вопрос лида
-        use_few_shots: вставлять ли few-shot примеры (True для prod, False для дешёвых моделей)
+        use_few_shots: вставлять ли few-shot примеры
+        is_first_turn: True если это ПЕРВАЯ реплика бота в этом диалоге.
+                      Срабатывает AI Act disclosure в SYSTEM_PROMPT.
     """
-    base = SYSTEM_PROMPT.format(context=context, history=history, question=question)
+    # Annotate the current question with the first-turn marker so the model
+    # сразу видит, нужно ли вставлять AI-disclosure.
+    marker = "[FIRST_TURN: yes]" if is_first_turn else "[FIRST_TURN: no]"
+    annotated_question = f"{question}\n{marker}"
+
+    base = SYSTEM_PROMPT.format(context=context, history=history, question=annotated_question)
     if use_few_shots:
         # Вставляем примеры ПЕРЕД итоговым вопросом — так модель видит их как «образец»
         return base.replace(

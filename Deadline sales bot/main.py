@@ -47,6 +47,15 @@ from channels.telegram import (
     parse_telegram_webhook,
     send_telegram_reply,
 )
+from channels.messenger import (
+    parse_messenger_webhook,
+    send_messenger_reply,
+)
+from channels.instagram import (
+    parse_instagram_webhook,
+    send_instagram_reply,
+)
+from channels.utils import verify_meta_signature
 
 
 # ============================================================================
@@ -63,6 +72,17 @@ class Settings(BaseSettings):
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
     email_notify: Optional[str] = None
+    # Meta (Instagram + Messenger). Set in Meta App dashboard:
+    # - META_VERIFY_TOKEN: any random string, must match what you enter in
+    #   App Dashboard → Webhooks → Verify Token
+    # - META_APP_SECRET: from App Settings → Basic → App Secret. Used to
+    #   verify X-Hub-Signature-256 on every incoming webhook.
+    # - META_PAGE_ACCESS_TOKEN: from Messenger → Settings → Access Tokens.
+    #   Same token sends both Messenger and IG DM replies (IG is linked to
+    #   the same Facebook Page).
+    meta_verify_token: Optional[str] = None
+    meta_app_secret: Optional[str] = None
+    meta_page_access_token: Optional[str] = None
     allowed_origins: str = "https://deadlinecorp.com,https://www.deadlinecorp.com,https://deadline-corp.github.io,http://localhost:3000,http://localhost:5500,http://127.0.0.1:5500"
     log_level: str = "INFO"
 
@@ -352,7 +372,17 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         [f"{m.role}: {m.content}" for m in history_for_prompt[-12:]]
     ) or "(новый диалог)"
 
-    prompt = build_chat_prompt(context=context, history=history_str, question=req.content)
+    # First-turn detection for AI Act Art. 50 disclosure. If after appending
+    # the user message we have exactly 1 message in the conversation, this
+    # is the lead's first ever message → bot must identify as AI in its reply.
+    is_first_turn = len(recent) == 1
+
+    prompt = build_chat_prompt(
+        context=context,
+        history=history_str,
+        question=req.content,
+        is_first_turn=is_first_turn,
+    )
 
     # 6. LLM
     answer = await call_llm(prompt)
@@ -480,6 +510,186 @@ async def telegram_webhook(request: Request, db: Session = Depends(get_db)):
     )
 
     return {"ok": True}
+
+
+# ============================================================================
+# Meta webhooks — Facebook Messenger + Instagram DM
+# ============================================================================
+# Two endpoints share most of the logic. The split is for clarity (different
+# channels, different log prefixes) and so Meta's dashboard config maps 1:1.
+#
+# Meta webhook protocol (for both Messenger and Instagram):
+#   GET /webhooks/{channel}?hub.mode=subscribe&hub.verify_token=X&hub.challenge=Y
+#       → if X matches META_VERIFY_TOKEN → return body = Y (raw text)
+#   POST /webhooks/{channel} with X-Hub-Signature-256 header
+#       → verify HMAC against META_APP_SECRET
+#       → parse → /message → reply via Send API
+
+from fastapi.responses import PlainTextResponse
+
+
+def _meta_verify_challenge(mode: str, token: str, challenge: str) -> Optional[str]:
+    """Return the challenge string if mode and token match, else None."""
+    if mode == "subscribe" and settings.meta_verify_token and token == settings.meta_verify_token:
+        return challenge
+    return None
+
+
+@app.get("/webhooks/messenger")
+async def messenger_webhook_verify(request: Request):
+    """One-time webhook verification when adding the URL in Meta App dashboard."""
+    params = request.query_params
+    challenge = _meta_verify_challenge(
+        params.get("hub.mode", ""),
+        params.get("hub.verify_token", ""),
+        params.get("hub.challenge", ""),
+    )
+    if challenge is None:
+        log.warning("messenger verify failed: bad mode or token")
+        raise HTTPException(403, "verification failed")
+    return PlainTextResponse(challenge)
+
+
+@app.get("/webhooks/instagram")
+async def instagram_webhook_verify(request: Request):
+    """One-time webhook verification when adding the URL in Meta App dashboard."""
+    params = request.query_params
+    challenge = _meta_verify_challenge(
+        params.get("hub.mode", ""),
+        params.get("hub.verify_token", ""),
+        params.get("hub.challenge", ""),
+    )
+    if challenge is None:
+        log.warning("instagram verify failed: bad mode or token")
+        raise HTTPException(403, "verification failed")
+    return PlainTextResponse(challenge)
+
+
+@app.post("/webhooks/messenger")
+async def messenger_webhook(request: Request, db: Session = Depends(get_db)):
+    """Receive a Messenger update, verify signature, parse, route through
+    /message, reply via Send API. Always returns 200 (Meta retries on failure)."""
+    body = await request.body()
+
+    if not verify_meta_signature(
+        settings.meta_app_secret,
+        request.headers.get("x-hub-signature-256"),
+        body,
+    ):
+        # Refuse silently — never tell an attacker which check failed
+        return {"ok": True}
+
+    try:
+        payload = json.loads(body)
+    except Exception as e:
+        log.warning(f"messenger_webhook: invalid JSON — {e}")
+        return {"ok": True}
+
+    normalized = parse_messenger_webhook(payload)
+    if normalized is None:
+        return {"ok": True}
+
+    msg_req = MessageRequest(
+        channel=normalized.channel,
+        external_id=normalized.external_id,
+        content=normalized.content,
+        username=normalized.username,
+        channel_conversation_id=normalized.channel_conversation_id,
+    )
+
+    try:
+        resp = await _handle_message(msg_req, db)
+    except Exception as e:
+        log.error(f"messenger_webhook: _handle_message failed — {e}")
+        return {"ok": True}
+
+    await send_messenger_reply(
+        settings.meta_page_access_token,
+        normalized.channel_conversation_id,
+        resp.answer,
+    )
+    return {"ok": True}
+
+
+@app.post("/webhooks/instagram")
+async def instagram_webhook(request: Request, db: Session = Depends(get_db)):
+    """Receive an Instagram DM update — same flow as Messenger."""
+    body = await request.body()
+
+    if not verify_meta_signature(
+        settings.meta_app_secret,
+        request.headers.get("x-hub-signature-256"),
+        body,
+    ):
+        return {"ok": True}
+
+    try:
+        payload = json.loads(body)
+    except Exception as e:
+        log.warning(f"instagram_webhook: invalid JSON — {e}")
+        return {"ok": True}
+
+    normalized = parse_instagram_webhook(payload)
+    if normalized is None:
+        return {"ok": True}
+
+    msg_req = MessageRequest(
+        channel=normalized.channel,
+        external_id=normalized.external_id,
+        content=normalized.content,
+        username=normalized.username,
+        channel_conversation_id=normalized.channel_conversation_id,
+    )
+
+    try:
+        resp = await _handle_message(msg_req, db)
+    except Exception as e:
+        log.error(f"instagram_webhook: _handle_message failed — {e}")
+        return {"ok": True}
+
+    await send_instagram_reply(
+        settings.meta_page_access_token,
+        normalized.channel_conversation_id,
+        resp.answer,
+    )
+    return {"ok": True}
+
+
+# ============================================================================
+# /metrics — read-only ops view (no auth — internal tool only for now)
+# ============================================================================
+
+@app.get("/metrics")
+async def metrics(db: Session = Depends(get_db)):
+    """Aggregate counts useful for daily ops review. Phase 2 will add basic-auth
+    or a `?token=...` guard before this endpoint is exposed widely."""
+    from sqlalchemy import func as sql_func, select as sql_select
+    from db.models import Customer, Conversation as ConvRow
+
+    total_customers = db.execute(sql_select(sql_func.count()).select_from(Customer)).scalar()
+    total_conversations = db.execute(sql_select(sql_func.count()).select_from(ConvRow)).scalar()
+    total_messages = db.execute(sql_select(sql_func.count()).select_from(MessageRow)).scalar()
+    handoffs_done = db.execute(
+        sql_select(sql_func.count()).select_from(ConvRow).where(ConvRow.handoff_done == True)  # noqa: E712
+    ).scalar()
+
+    by_channel = db.execute(
+        sql_select(ConvRow.channel, sql_func.count()).group_by(ConvRow.channel)
+    ).fetchall()
+    by_status = db.execute(
+        sql_select(ConvRow.status, sql_func.count()).group_by(ConvRow.status)
+    ).fetchall()
+
+    return {
+        "totals": {
+            "customers": total_customers,
+            "conversations": total_conversations,
+            "messages": total_messages,
+            "handoffs": handoffs_done,
+        },
+        "by_channel": {row[0]: row[1] for row in by_channel},
+        "by_status": {row[0]: row[1] for row in by_status},
+    }
 
 
 # ----------------------------------------------------------------------------
