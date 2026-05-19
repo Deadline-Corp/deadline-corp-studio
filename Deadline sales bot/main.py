@@ -258,6 +258,7 @@ class LeadFormRequest(BaseModel):
     contact: str = Field(..., min_length=1, max_length=200)
     need: str = Field("", max_length=500)
     business: str = Field("", max_length=300)
+    task: str = Field("", max_length=2000)  # optional free-text description
     when: str = Field("", max_length=50)
     source: str = Field("direct", max_length=100)
     campaign: str = Field("", max_length=200)
@@ -303,6 +304,9 @@ async def send_lead_to_telegram(lead: LeadFormRequest) -> bool:
                 creative_human = f"\n🎨 Креатив: {label}"
                 break
 
+    # Optional task description — only show if filled in
+    task_block = f"\n📝 Описание задачи:\n{lead.task.strip()}\n" if lead.task and lead.task.strip() else ""
+
     text = (
         f"{header}\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
@@ -310,7 +314,8 @@ async def send_lead_to_telegram(lead: LeadFormRequest) -> bool:
         f"📱 Контакт: {lead.contact}\n"
         f"🎯 Хочет: {lead.need or '—'}\n"
         f"🏢 Бизнес: {lead.business or '—'}\n"
-        f"⏰ Срок: {lead.when or '—'}\n\n"
+        f"⏰ Срок: {lead.when or '—'}"
+        f"{task_block}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"📊 Источник: {lead.source} / {lead.campaign or 'no-campaign'}"
         f"{creative_human}\n"

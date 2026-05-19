@@ -260,6 +260,11 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
   </div>
 
   <div class="field">
+    <label for="task">Опиши задачу <span style="color:var(--muted);text-transform:none;letter-spacing:normal;font-weight:400">(по желанию)</span></label>
+    <textarea id="task" name="task" rows="3" placeholder="Например: нужен бот в Telegram который сам отвечает на стандартные вопросы клиентов и записывает на приём. Уже есть Google-календарь, нужна интеграция." style="width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:14px 16px;font-family:inherit;font-size:15px;outline:none;transition:border 0.15s;resize:vertical;min-height:80px"></textarea>
+  </div>
+
+  <div class="field">
     <label>Когда нужно</label>
     <div class="check-group">
       <label class="check"><input type="radio" name="when" value="urgent"> В этом месяце</label>
@@ -317,6 +322,7 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
       contact: formData.get('contact'),
       need: Array.from(formData.getAll('need')).join(', '),
       business: formData.get('business') || '',
+      task: formData.get('task') || '',
       when: formData.get('when') || '',
       timestamp: new Date().toISOString(),
       source: new URLSearchParams(window.location.search).get('utm_source') || 'direct',
