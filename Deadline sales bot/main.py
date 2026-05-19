@@ -49,11 +49,15 @@ from channels.telegram import (
 )
 from channels.messenger import (
     parse_messenger_webhook,
+    parse_messenger_comment_webhook,
     send_messenger_reply,
+    send_messenger_comment_reply,
 )
 from channels.instagram import (
     parse_instagram_webhook,
+    parse_instagram_comment_webhook,
     send_instagram_reply,
+    send_instagram_comment_reply,
 )
 from channels.utils import verify_meta_signature
 
@@ -160,15 +164,19 @@ if CHROMA_DIR.exists():
 class MessageRequest(BaseModel):
     channel: str = Field(..., description="website | telegram | instagram | messenger")
     external_id: str = Field(..., min_length=1, max_length=200,
-                             description="Channel-side user id: tg_user_id / ig_psid / session_id")
+                             description="Channel-side user id: tg_user_id / ig_psid / session_id / commenter_id")
     content: str = Field(..., min_length=1, max_length=4000)
     email: Optional[str] = Field(None, max_length=320)
     username: Optional[str] = Field(None, max_length=200, description="@handle for display")
     channel_conversation_id: Optional[str] = Field(
         None, max_length=200,
-        description="Channel-native thread id (Telegram chat_id, IG thread_id). "
+        description="Channel-native thread id (Telegram chat_id, IG thread_id, post id for comments). "
                     "For website, pass session_id.",
     )
+    # message_type: "dm" (private direct message — full sales flow) OR
+    # "comment" (public comment under a post — short reply + redirect to DM,
+    # NO handoff, NO email ask).
+    message_type: str = Field("dm", pattern="^(dm|comment)$")
     extra_meta: Optional[dict] = None
 
 
@@ -377,16 +385,21 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     # is the lead's first ever message → bot must identify as AI in its reply.
     is_first_turn = len(recent) == 1
 
+    # Comment mode (public IG/FB comment, not private DM). Triggers short
+    # reply + redirect-to-DM; no email ask; no handoff brief.
+    is_comment_mode = req.message_type == "comment"
+
     prompt = build_chat_prompt(
         context=context,
         history=history_str,
         question=req.content,
         is_first_turn=is_first_turn,
+        is_comment_mode=is_comment_mode,
     )
 
     # 6. LLM
     answer = await call_llm(prompt)
-    log.info(f"[{str(conversation.id)[:8]}/{req.channel}] A: {answer[:200]}")
+    log.info(f"[{str(conversation.id)[:8]}/{req.channel}/{req.message_type}] A: {answer[:200]}")
 
     # 7. Persist assistant reply
     append_message(db, conversation.id, role="assistant", content=answer)
@@ -395,8 +408,10 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     #    Email is the only mandatory contact: it's stable identity, while
     #    Telegram @username is mutable and would break our identity mapping
     #    if the user later renames it.
+    #    SKIP entirely for public comments — contacts are not exchanged in
+    #    public threads, and operator briefs there would be noise.
     handoff_triggered = False
-    if not conversation.handoff_done:
+    if not conversation.handoff_done and not is_comment_mode:
         all_recent = get_recent_messages(db, conversation.id, limit=20)
         history_dicts = _messages_to_dicts(all_recent)
         handoff_data = await check_handoff(history_dicts)
@@ -567,8 +582,13 @@ async def instagram_webhook_verify(request: Request):
 
 @app.post("/webhooks/messenger")
 async def messenger_webhook(request: Request, db: Session = Depends(get_db)):
-    """Receive a Messenger update, verify signature, parse, route through
-    /message, reply via Send API. Always returns 200 (Meta retries on failure)."""
+    """Receive a Page-scoped Meta update. Routes both DMs (messaging.message)
+    and feed comments (changes.field=feed item=comment) through /message and
+    replies via the correct Graph API endpoint.
+
+    Always returns 200 — Meta retries on non-200 and we don't want loops on
+    transient internal errors. All real errors are logged.
+    """
     body = await request.body()
 
     if not verify_meta_signature(
@@ -576,7 +596,6 @@ async def messenger_webhook(request: Request, db: Session = Depends(get_db)):
         request.headers.get("x-hub-signature-256"),
         body,
     ):
-        # Refuse silently — never tell an attacker which check failed
         return {"ok": True}
 
     try:
@@ -585,7 +604,9 @@ async def messenger_webhook(request: Request, db: Session = Depends(get_db)):
         log.warning(f"messenger_webhook: invalid JSON — {e}")
         return {"ok": True}
 
-    normalized = parse_messenger_webhook(payload)
+    # Try DM first, then comment. parse_* return None when the event doesn't
+    # match — order doesn't matter except for cost (DM is more common).
+    normalized = parse_messenger_webhook(payload) or parse_messenger_comment_webhook(payload)
     if normalized is None:
         return {"ok": True}
 
@@ -595,6 +616,8 @@ async def messenger_webhook(request: Request, db: Session = Depends(get_db)):
         content=normalized.content,
         username=normalized.username,
         channel_conversation_id=normalized.channel_conversation_id,
+        message_type=normalized.message_type,
+        extra_meta=normalized.extra_meta,
     )
 
     try:
@@ -603,17 +626,29 @@ async def messenger_webhook(request: Request, db: Session = Depends(get_db)):
         log.error(f"messenger_webhook: _handle_message failed — {e}")
         return {"ok": True}
 
-    await send_messenger_reply(
-        settings.meta_page_access_token,
-        normalized.channel_conversation_id,
-        resp.answer,
-    )
+    # Dispatch reply through the right Graph API surface.
+    if normalized.message_type == "comment":
+        comment_id = (normalized.extra_meta or {}).get("comment_id", "")
+        await send_messenger_comment_reply(
+            settings.meta_page_access_token, comment_id, resp.answer,
+        )
+    else:
+        await send_messenger_reply(
+            settings.meta_page_access_token,
+            normalized.channel_conversation_id,
+            resp.answer,
+        )
     return {"ok": True}
 
 
 @app.post("/webhooks/instagram")
 async def instagram_webhook(request: Request, db: Session = Depends(get_db)):
-    """Receive an Instagram DM update — same flow as Messenger."""
+    """Receive an IG-scoped Meta update. Routes both DMs (messaging.message)
+    and comments (changes.field=comments) through /message and replies via
+    the correct Graph API endpoint.
+
+    Always returns 200 — same rationale as the Messenger handler.
+    """
     body = await request.body()
 
     if not verify_meta_signature(
@@ -629,7 +664,7 @@ async def instagram_webhook(request: Request, db: Session = Depends(get_db)):
         log.warning(f"instagram_webhook: invalid JSON — {e}")
         return {"ok": True}
 
-    normalized = parse_instagram_webhook(payload)
+    normalized = parse_instagram_webhook(payload) or parse_instagram_comment_webhook(payload)
     if normalized is None:
         return {"ok": True}
 
@@ -639,6 +674,8 @@ async def instagram_webhook(request: Request, db: Session = Depends(get_db)):
         content=normalized.content,
         username=normalized.username,
         channel_conversation_id=normalized.channel_conversation_id,
+        message_type=normalized.message_type,
+        extra_meta=normalized.extra_meta,
     )
 
     try:
@@ -647,11 +684,17 @@ async def instagram_webhook(request: Request, db: Session = Depends(get_db)):
         log.error(f"instagram_webhook: _handle_message failed — {e}")
         return {"ok": True}
 
-    await send_instagram_reply(
-        settings.meta_page_access_token,
-        normalized.channel_conversation_id,
-        resp.answer,
-    )
+    if normalized.message_type == "comment":
+        comment_id = (normalized.extra_meta or {}).get("comment_id", "")
+        await send_instagram_comment_reply(
+            settings.meta_page_access_token, comment_id, resp.answer,
+        )
+    else:
+        await send_instagram_reply(
+            settings.meta_page_access_token,
+            normalized.channel_conversation_id,
+            resp.answer,
+        )
     return {"ok": True}
 
 
