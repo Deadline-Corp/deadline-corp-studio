@@ -94,14 +94,14 @@
   root.id = "dl-bot";
   root.innerHTML = `
     <div id="dl-bot-header">
-      <span>// DEADLINE · скажи задачу одним сообщением</span>
+      <span>// DEADLINE · опишите задачу одним сообщением</span>
       <span id="dl-bot-toggle">↕</span>
     </div>
     <div id="dl-bot-msg">
-      <div class="dl-msg b">// привет. опиши задачу одним сообщением — план и срок прилетят раньше чем уберёшь руки от клавиатуры.</div>
+      <div class="dl-msg b">// Здравствуйте. Опишите задачу одним сообщением — план и срок придут раньше, чем вы уберёте руки от клавиатуры.</div>
     </div>
     <div id="dl-bot-wrap">
-      <input id="dl-inp" placeholder="Напиши задачу..." autocomplete="off" />
+      <input id="dl-inp" placeholder="Опишите задачу..." autocomplete="off" />
       <button id="dl-btn" aria-label="Send">→</button>
     </div>
   `;
@@ -157,9 +157,9 @@
 
       if (!r.ok) {
         if (r.status === 503) {
-          addMsg("// сервис временно недоступен. напиши напрямую в Telegram @deadline_corp", "b");
+          addMsg("// Сервис временно недоступен. Напишите напрямую в Telegram @deadline_corp", "b");
         } else {
-          addMsg("// ошибка связи. напиши в Telegram @deadline_corp", "b");
+          addMsg("// Ошибка связи. Напишите в Telegram @deadline_corp", "b");
         }
         return;
       }
@@ -169,13 +169,13 @@
       if (data.handoff) {
         const isEng = /[a-zA-Z]/.test(text) && !/[а-яА-Я]/.test(text);
         const msg = isEng
-          ? "📩 passed to team. reply in Telegram @deadline_corp within minutes."
-          : "📩 передал команде. ответ в Telegram @deadline_corp в течение минут.";
+          ? "📩 Passed to the team. We will email you within minutes."
+          : "📩 Передал команде. Напишем на email в течение минут.";
         addMsg(msg, "sys");
       }
     } catch (e) {
       hideTyping();
-      addMsg("// сбой связи. напиши в Telegram @deadline_corp", "b");
+      addMsg("// Сбой связи. Напишите в Telegram @deadline_corp", "b");
       console.error("[dl-bot]", e);
     } finally {
       $btn.disabled = false;
