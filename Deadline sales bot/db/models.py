@@ -1,0 +1,228 @@
+"""SQLAlchemy ORM модели для Deadline Sales Bot.
+
+Дизайн:
+- UUID PK везде (легче для будущей миграции в multi-tenant)
+- Все таблицы в схеме public (default)
+- `embedding` — pgvector тип, размерность 1024 (bge-m3)
+- HNSW индексы на embedding создаются через миграцию alembic, не здесь
+- Все timestamps в UTC (TIMESTAMPTZ)
+
+См. также: docs/multi-channel-roadmap.md → "Identity Resolution" для бизнес-смысла полей.
+"""
+
+import enum
+import uuid
+from datetime import datetime
+from typing import Optional
+
+from sqlalchemy import (
+    String,
+    Text,
+    DateTime,
+    ForeignKey,
+    UniqueConstraint,
+    Index,
+    Enum as SQLEnum,
+    JSON,
+)
+from sqlalchemy.dialects.postgresql import UUID, JSONB
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.sql import func
+from pgvector.sqlalchemy import Vector
+
+
+EMBEDDING_DIM = 1024  # bge-m3
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+# ============================================================================
+# ENUMS
+# ============================================================================
+
+
+class ChannelEnum(str, enum.Enum):
+    """Каналы, через которые лид может связаться."""
+    WEBSITE = "website"
+    TELEGRAM = "telegram"
+    INSTAGRAM = "instagram"
+    MESSENGER = "messenger"      # FB Messenger
+    WHATSAPP = "whatsapp"        # Phase 2
+    EMAIL = "email"              # Phase 2
+    TIKTOK = "tiktok"            # Phase 4+
+    LINE = "line"                # Phase 4+
+
+
+class RoleEnum(str, enum.Enum):
+    """Кто написал сообщение."""
+    USER = "user"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"
+    OPERATOR = "operator"        # Когда живой человек ответил вместо бота
+
+
+class ConversationStatusEnum(str, enum.Enum):
+    """Состояние диалога."""
+    OPEN = "open"
+    HANDED_OFF = "handed_off"    # Передан команде, бот молчит
+    RESOLVED = "resolved"        # Диалог закрыт
+    ABANDONED = "abandoned"      # Клиент пропал, не реактивируется
+
+
+# ============================================================================
+# CUSTOMER — главный идентификатор лида
+# ============================================================================
+
+
+class Customer(Base):
+    __tablename__ = "customers"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    email: Mapped[Optional[str]] = mapped_column(String(320), unique=True, nullable=True, index=True)
+    name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
+    first_channel: Mapped[Optional[str]] = mapped_column(SQLEnum(ChannelEnum, native_enum=False), nullable=True)
+
+    # UTM-параметры для отслеживания источника трафика (ad campaigns)
+    utm_source: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    utm_campaign: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    utm_medium: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    utm_content: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+
+    # Произвольные данные о клиенте (компания, размер, индустрия, ...) — заполняется по ходу диалога
+    profile_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    identities: Mapped[list["ChannelIdentity"]] = relationship(
+        back_populates="customer", cascade="all, delete-orphan"
+    )
+    conversations: Mapped[list["Conversation"]] = relationship(
+        back_populates="customer", cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:
+        return f"<Customer id={self.id} email={self.email}>"
+
+
+# ============================================================================
+# CHANNEL IDENTITY — маппинг внешнего ID → внутренний customer
+# ============================================================================
+
+
+class ChannelIdentity(Base):
+    __tablename__ = "channel_identities"
+    __table_args__ = (
+        UniqueConstraint("channel", "external_id", name="uq_channel_external_id"),
+        Index("ix_channel_identity_lookup", "channel", "external_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    customer_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("customers.id", ondelete="CASCADE"), nullable=False
+    )
+    channel: Mapped[str] = mapped_column(SQLEnum(ChannelEnum, native_enum=False), nullable=False)
+    external_id: Mapped[str] = mapped_column(String(200), nullable=False)  # tg_user_id, ig_psid, и т.д.
+    username: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)  # @ivan_petrov для удобства
+    linked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    customer: Mapped["Customer"] = relationship(back_populates="identities")
+
+    def __repr__(self) -> str:
+        return f"<ChannelIdentity {self.channel}:{self.external_id} → customer={self.customer_id}>"
+
+
+# ============================================================================
+# CONVERSATION — отдельный диалог (один customer может иметь много диалогов)
+# ============================================================================
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    customer_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    channel: Mapped[str] = mapped_column(SQLEnum(ChannelEnum, native_enum=False), nullable=False, index=True)
+    # ID диалога на платформе (для IG/FB — thread_id, для Telegram — chat_id, для сайта — session_id)
+    channel_conversation_id: Mapped[Optional[str]] = mapped_column(String(200), nullable=True, index=True)
+
+    status: Mapped[str] = mapped_column(
+        SQLEnum(ConversationStatusEnum, native_enum=False),
+        default=ConversationStatusEnum.OPEN,
+        nullable=False,
+        index=True,
+    )
+    summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # rolling LLM summary
+    handoff_done: Mapped[bool] = mapped_column(default=False, nullable=False)
+
+    last_message_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    customer: Mapped["Customer"] = relationship(back_populates="conversations")
+    messages: Mapped[list["Message"]] = relationship(
+        back_populates="conversation", cascade="all, delete-orphan", order_by="Message.created_at"
+    )
+
+    def __repr__(self) -> str:
+        return f"<Conversation {self.id} channel={self.channel} status={self.status}>"
+
+
+# ============================================================================
+# MESSAGE — отдельная реплика
+# ============================================================================
+
+
+class Message(Base):
+    __tablename__ = "messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    role: Mapped[str] = mapped_column(SQLEnum(RoleEnum, native_enum=False), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    # Метаданные сообщения: channel_msg_id, attachments, voice_duration_sec, ...
+    extra_meta: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    embedding: Mapped[Optional[list[float]]] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    conversation: Mapped["Conversation"] = relationship(back_populates="messages")
+
+    def __repr__(self) -> str:
+        return f"<Message {self.role}: {self.content[:50]}>"
+
+
+# ============================================================================
+# KB CHUNKS — заменяет Chroma vector store
+# ============================================================================
+
+
+class KBChunk(Base):
+    __tablename__ = "kb_chunks"
+    __table_args__ = (
+        Index("ix_kb_chunks_source", "source"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source: Mapped[str] = mapped_column(String(200), nullable=False)  # имя файла KB (e.g. "05_case_vrp.md")
+    chunk_index: Mapped[int] = mapped_column(default=0, nullable=False)  # порядковый номер чанка в файле
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    extra_meta: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    embedding: Mapped[Optional[list[float]]] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"<KBChunk source={self.source}#{self.chunk_index}>"

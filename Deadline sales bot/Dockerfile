@@ -30,4 +30,6 @@ RUN python ingest.py
 ENV PORT=8000
 EXPOSE 8000
 
-CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
+# Migrations run in RUNTIME (not buildtime — at build, DATABASE_URL is not yet
+# injected by Railway). Idempotent: alembic skips already-applied revisions.
+CMD alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}

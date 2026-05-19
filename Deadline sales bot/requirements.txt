@@ -9,9 +9,18 @@ httpx==0.27.2
 langchain==0.3.7
 langchain-openai==0.2.5
 langchain-chroma==0.1.4
+langchain-postgres==0.0.12
 langchain-huggingface==0.1.2
 langchain-text-splitters==0.3.2
 
 # Vector DB + embeddings
 chromadb==0.5.18
 sentence-transformers==3.2.1
+
+# Postgres + pgvector (Week 1: migrate from Chroma)
+sqlalchemy==2.0.35
+psycopg2-binary==2.9.10
+# pgvector pinned to 0.2.5 to match langchain-postgres==0.0.12 constraint.
+# Both 0.2.5 and 0.3.6 expose the SQLAlchemy `Vector` type used in db/models.py.
+pgvector==0.2.5
+alembic==1.13.3
