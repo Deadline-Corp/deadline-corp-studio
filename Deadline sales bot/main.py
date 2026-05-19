@@ -1,10 +1,11 @@
-"""
-Deadline Sales Bot — FastAPI backend.
+"""Deadline Sales Bot — FastAPI backend.
 
 Endpoints:
-    POST /chat       — main chat endpoint used by the website widget
-    GET  /health     — liveness probe (Railway uses this)
-    GET  /sessions   — quick debug view of active sessions (dev only)
+    POST /message            — universal entry point (any channel)
+    POST /chat               — DEPRECATED alias for the website widget
+    POST /webhooks/telegram  — Telegram Bot API inbound webhook
+    POST /lead-submit        — lead-form submission (separate flow)
+    GET  /health             — liveness probe
 
 Run locally:
     uvicorn main:app --reload --port 8000
@@ -12,25 +13,40 @@ Run locally:
 Deploy to Railway: see README.md
 """
 
-import os
 import json
 import logging
-import uuid
 from pathlib import Path
 from typing import Optional
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
+from sqlalchemy.orm import Session
 
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_openai import ChatOpenAI
 
 from prompts import build_chat_prompt, HANDOFF_CHECK_PROMPT, format_handoff_brief
+
+# DB-backed services (Day 3-4 migration from in-memory SESSIONS dict + Chroma)
+from db.connection import get_db, check_connection
+from db.models import Message as MessageRow
+from db.vector import similarity_search as pgvector_search
+from services.identity import resolve_or_create_customer
+from services.conversations import (
+    get_or_create_conversation,
+    append_message,
+    get_recent_messages,
+    mark_handoff_done,
+)
+from channels.telegram import (
+    parse_telegram_webhook,
+    send_telegram_reply,
+)
 
 
 # ============================================================================
@@ -71,7 +87,7 @@ EMBEDDING_MODEL = "BAAI/bge-m3"
 # APP + MIDDLEWARE
 # ============================================================================
 
-app = FastAPI(title="Deadline Sales Bot", version="0.1.0")
+app = FastAPI(title="Deadline Sales Bot", version="0.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -82,14 +98,10 @@ app.add_middleware(
 
 
 # ============================================================================
-# LLM CLIENTS (OpenRouter — OpenAI-compatible API)
+# LLM CLIENTS (Ollama Cloud — OpenAI-compatible API)
 # ============================================================================
 
 def make_llm(model_name: str, *, temperature: float = 0.2, max_tokens: int = 1200) -> ChatOpenAI:
-    # Ollama Cloud — OpenAI-compatible endpoint at /v1/chat/completions, Bearer auth.
-    # max_tokens bumped to 1200: reasoning-capable cloud models (qwen3.5, glm-4.6, gpt-oss)
-    # split the budget between hidden `reasoning` and visible `content` — too little and
-    # content comes back empty.
     return ChatOpenAI(
         model=model_name,
         api_key=settings.ollama_api_key,
@@ -97,25 +109,17 @@ def make_llm(model_name: str, *, temperature: float = 0.2, max_tokens: int = 120
         temperature=temperature,
         max_tokens=max_tokens,
         timeout=60,
-        default_headers={
-            "X-Title": "Deadline Sales Bot",
-        },
+        default_headers={"X-Title": "Deadline Sales Bot"},
     )
 
 primary_llm = make_llm(settings.llm_model)
 fallback_llm = make_llm(settings.llm_fallback_model)
-# Handoff-классификатору тоже нужно ≥1000 токенов: reasoning сожрёт большую часть бюджета,
-# на JSON-ответ должно остаться. temperature=0 для детерминированного классификатора.
 handoff_llm = make_llm(settings.llm_fallback_model, temperature=0.0, max_tokens=1000)
 
 
 # ============================================================================
-# VECTOR STORE
+# VECTOR STORE — Chroma kept loaded only as a backstop. /message uses pgvector.
 # ============================================================================
-
-if not CHROMA_DIR.exists():
-    log.error(f"Chroma DB not found at {CHROMA_DIR}. Run `python ingest.py` first.")
-    # Не падаем — даём приложению запуститься, /health работает, /chat вернёт 503
 
 embeddings = HuggingFaceEmbeddings(
     model_name=EMBEDDING_MODEL,
@@ -125,27 +129,41 @@ embeddings = HuggingFaceEmbeddings(
 vectorstore: Optional[Chroma] = None
 if CHROMA_DIR.exists():
     vectorstore = Chroma(persist_directory=str(CHROMA_DIR), embedding_function=embeddings)
-    log.info(f"Loaded Chroma DB from {CHROMA_DIR}")
+    log.info(f"Loaded Chroma DB from {CHROMA_DIR} (legacy backstop)")
 
 
 # ============================================================================
-# SESSION STORE (in-memory; OK for MVP, заменишь на Redis позже)
+# MODELS — Pydantic request/response shapes
 # ============================================================================
 
-# session_id -> {"history": [...], "handoff_done": bool}
-SESSIONS: dict[str, dict] = {}
+# Universal multi-channel message
+class MessageRequest(BaseModel):
+    channel: str = Field(..., description="website | telegram | instagram | messenger")
+    external_id: str = Field(..., min_length=1, max_length=200,
+                             description="Channel-side user id: tg_user_id / ig_psid / session_id")
+    content: str = Field(..., min_length=1, max_length=4000)
+    email: Optional[str] = Field(None, max_length=320)
+    username: Optional[str] = Field(None, max_length=200, description="@handle for display")
+    channel_conversation_id: Optional[str] = Field(
+        None, max_length=200,
+        description="Channel-native thread id (Telegram chat_id, IG thread_id). "
+                    "For website, pass session_id.",
+    )
+    extra_meta: Optional[dict] = None
 
-def get_session(session_id: str) -> dict:
-    return SESSIONS.setdefault(session_id, {"history": [], "handoff_done": False})
+
+class MessageResponse(BaseModel):
+    answer: str
+    handoff: bool = False
+    customer_id: str
+    conversation_id: str
 
 
-# ============================================================================
-# MODELS
-# ============================================================================
-
+# Legacy /chat shape (kept for the website widget — widget.js sends this)
 class ChatRequest(BaseModel):
     session_id: str = Field(..., min_length=1, max_length=128)
     message: str = Field(..., min_length=1, max_length=4000)
+
 
 class ChatResponse(BaseModel):
     answer: str
@@ -157,7 +175,7 @@ class ChatResponse(BaseModel):
 # LLM CALL with fallback on failure
 # ============================================================================
 
-async def call_llm(prompt: str, *, max_tokens: int = 400) -> str:
+async def call_llm(prompt: str) -> str:
     """Try primary model; fall back to secondary on error or timeout."""
     try:
         response = await primary_llm.ainvoke(prompt)
@@ -176,21 +194,18 @@ async def call_llm(prompt: str, *, max_tokens: int = 400) -> str:
 # HANDOFF DETECTION
 # ============================================================================
 
-async def check_handoff(history: list[dict]) -> Optional[dict]:
-    """
-    Ask the classifier whether the conversation is ready for handoff.
-    Returns None if not ready; returns parsed dict (project_type, task_summary, ...) if ready.
-    """
-    if len(history) < 2:
+async def check_handoff(history_dicts: list[dict]) -> Optional[dict]:
+    """Run the classifier over conversation history. Returns parsed JSON
+    dict if ready_for_handoff=true, else None."""
+    if len(history_dicts) < 2:
         return None
 
-    conversation = "\n".join([f"{m['role']}: {m['content']}" for m in history])
+    conversation = "\n".join([f"{m['role']}: {m['content']}" for m in history_dicts])
     prompt = HANDOFF_CHECK_PROMPT.format(conversation=conversation)
 
     try:
         response = await handoff_llm.ainvoke(prompt)
         raw = response.content.strip()
-        # Удаляем markdown-обёртку если модель её добавила
         raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
         data = json.loads(raw)
     except (json.JSONDecodeError, Exception) as e:
@@ -202,23 +217,68 @@ async def check_handoff(history: list[dict]) -> Optional[dict]:
     return None
 
 
+import re
+
+# Pragmatic email regex — local@domain.tld with no whitespace. Not RFC 5322
+# strict (those regexes are 600 chars and rarely needed for capture/validate).
+EMAIL_REGEX = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+
+
+def _is_valid_email(s: str) -> bool:
+    """Defense-in-depth predicate: even if classifier marks ready_for_handoff,
+    we will not fire Telegram brief unless a valid email was captured.
+
+    Policy (decided 2026-05-19): email is the ONLY mandatory contact.
+    Telegram @username is mutable and breaks identity if user renames it.
+    Phone is also accepted as additional info but does not gate handoff.
+    """
+    if not s:
+        return False
+    return bool(EMAIL_REGEX.match(s.strip()))
+
+
+def _extract_email_from_handoff(handoff_data: dict) -> str:
+    """Pull the email from classifier output, tolerant of both the new
+    `lead_email` field and the pre-2026-05-19 `lead_contact` field where
+    email might have landed."""
+    candidate = (handoff_data.get("lead_email") or "").strip()
+    if _is_valid_email(candidate):
+        return candidate
+
+    # Backward-compat: old classifier returned a single `lead_contact` field
+    legacy = (handoff_data.get("lead_contact") or "").strip()
+    if _is_valid_email(legacy):
+        return legacy
+    return ""
+
+
+def _messages_to_dicts(messages: list[MessageRow]) -> list[dict]:
+    """Convert DB Message rows to the simple list[dict] shape that
+    check_handoff and send_telegram_brief expect."""
+    return [
+        {
+            "role": m.role.value if hasattr(m.role, "value") else str(m.role),
+            "content": m.content,
+        }
+        for m in messages
+    ]
+
+
 # ============================================================================
-# TELEGRAM NOTIFICATION
+# TELEGRAM HANDOFF BRIEF (to operator chat) — unchanged signature
 # ============================================================================
 
-async def send_telegram_brief(session_id: str, handoff_data: dict, history: list[dict]) -> None:
-    """Send handoff brief to Telegram. No-op if token/chat_id not configured."""
+async def send_telegram_brief(session_id: str, handoff_data: dict, history_dicts: list[dict]) -> None:
+    """Send the handoff brief to the configured operator Telegram chat.
+    No-op if token/chat_id not configured (logged)."""
     token = settings.telegram_bot_token
     chat_id = settings.telegram_chat_id
     if not token or not chat_id:
-        log.info("Telegram not configured — skipping notification")
+        log.info("Telegram not configured — skipping handoff brief")
         return
 
-    conversation = "\n".join([f"{m['role']}: {m['content']}" for m in history])
-    text = format_handoff_brief(session_id, handoff_data, conversation)
-
-    # Telegram limit ~4096 chars per message
-    text = text[:4000]
+    conversation = "\n".join([f"{m['role']}: {m['content']}" for m in history_dicts])
+    text = format_handoff_brief(session_id, handoff_data, conversation)[:4000]
 
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -227,11 +287,127 @@ async def send_telegram_brief(session_id: str, handoff_data: dict, history: list
                 json={"chat_id": chat_id, "text": text, "disable_web_page_preview": True},
             )
             if r.status_code != 200:
-                log.warning(f"Telegram returned {r.status_code}: {r.text}")
+                log.warning(f"Telegram brief returned {r.status_code}: {r.text[:200]}")
             else:
-                log.info(f"Sent Telegram brief for session {session_id[:8]}")
+                log.info(f"Sent Telegram brief for conversation {session_id[:8]}")
     except Exception as e:
-        log.error(f"Telegram send failed: {e}")
+        log.error(f"Telegram brief send failed: {e}")
+
+
+# ============================================================================
+# CORE — universal message handler (the brains of /message and /chat alias)
+# ============================================================================
+
+async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
+    """Pipeline:
+      1. Identity: (channel, external_id, email?) → Customer (existing or new)
+      2. Conversation: get_or_create_conversation per channel thread
+      3. Persist the user message
+      4. RAG retrieval via pgvector
+      5. Build LLM prompt with DB-stored history (last 12 messages)
+      6. LLM call
+      7. Persist assistant message
+      8. Handoff check + (if real contact) fire brief + mark conversation HANDED_OFF
+      9. Commit transaction once at the end
+    """
+    customer = resolve_or_create_customer(
+        db,
+        channel=req.channel,
+        external_id=req.external_id,
+        email=req.email,
+        username=req.username,
+    )
+
+    # For website widget, channel_conversation_id == session_id (which is also external_id).
+    # For TG/IG/FB, it's the channel-side thread id (chat_id, thread_id).
+    conv_thread_id = req.channel_conversation_id or req.external_id
+    conversation = get_or_create_conversation(
+        db,
+        customer_id=customer.id,
+        channel=req.channel,
+        channel_conversation_id=conv_thread_id,
+    )
+
+    # Persist user message before RAG so it's in the history if anything fails after
+    append_message(
+        db, conversation.id, role="user",
+        content=req.content, extra_meta=req.extra_meta,
+    )
+
+    log.info(f"[{str(conversation.id)[:8]}/{req.channel}] Q: {req.content[:200]}")
+
+    # 4. RAG over kb_chunks via pgvector
+    docs = pgvector_search(req.content, k=4)
+    context = "\n\n".join([
+        f"[source: {d.metadata.get('source', '?')}]\n{d.page_content}" for d in docs
+    ])
+
+    # 5. History from DB. get_recent_messages returns chronological order.
+    # Pull 13 to include the just-appended user message; drop it for the
+    # "history before this question" string.
+    recent = get_recent_messages(db, conversation.id, limit=13)
+    history_for_prompt = recent[:-1] if recent else []
+    # Trim to last 12 entries for prompt budget (6 turns of user+assistant)
+    history_str = "\n".join(
+        [f"{m.role}: {m.content}" for m in history_for_prompt[-12:]]
+    ) or "(новый диалог)"
+
+    prompt = build_chat_prompt(context=context, history=history_str, question=req.content)
+
+    # 6. LLM
+    answer = await call_llm(prompt)
+    log.info(f"[{str(conversation.id)[:8]}/{req.channel}] A: {answer[:200]}")
+
+    # 7. Persist assistant reply
+    append_message(db, conversation.id, role="assistant", content=answer)
+
+    # 8. Handoff — gated on a real email (policy 2026-05-19).
+    #    Email is the only mandatory contact: it's stable identity, while
+    #    Telegram @username is mutable and would break our identity mapping
+    #    if the user later renames it.
+    handoff_triggered = False
+    if not conversation.handoff_done:
+        all_recent = get_recent_messages(db, conversation.id, limit=20)
+        history_dicts = _messages_to_dicts(all_recent)
+        handoff_data = await check_handoff(history_dicts)
+        if handoff_data:
+            email = _extract_email_from_handoff(handoff_data)
+            if email:
+                # Persist email on the customer (idempotent if already set).
+                # update_email also handles cross-channel merges if another
+                # customer happens to own the same email.
+                try:
+                    from services.identity import update_email
+                    update_email(db, customer.id, email)
+                except Exception as e:
+                    log.warning(
+                        f"[{str(conversation.id)[:8]}] update_email failed: {e}"
+                    )
+
+                await send_telegram_brief(str(conversation.id), handoff_data, history_dicts)
+                mark_handoff_done(db, conversation.id)
+                handoff_triggered = True
+            else:
+                # Build a small diagnostic so logs show why we suppressed
+                preview = {
+                    k: handoff_data.get(k)
+                    for k in ("lead_email", "lead_contact", "lead_telegram_username", "lead_phone")
+                    if handoff_data.get(k)
+                }
+                log.info(
+                    f"[{str(conversation.id)[:8]}] classifier ready but no valid email — "
+                    f"suppressed. fields={preview!r}"
+                )
+
+    # 9. Commit the whole turn atomically
+    db.commit()
+
+    return MessageResponse(
+        answer=answer,
+        handoff=handoff_triggered,
+        customer_id=str(customer.id),
+        conversation_id=str(conversation.id),
+    )
 
 
 # ============================================================================
@@ -243,14 +419,73 @@ async def health():
     return {
         "ok": True,
         "vectorstore_loaded": vectorstore is not None,
+        "db_connected": check_connection(),
         "model": settings.llm_model,
-        "active_sessions": len(SESSIONS),
     }
 
 
+@app.post("/message", response_model=MessageResponse)
+async def message_endpoint(req: MessageRequest, db: Session = Depends(get_db)):
+    """Universal channel-agnostic chat entry point."""
+    return await _handle_message(req, db)
+
+
+@app.post("/chat", response_model=ChatResponse)
+async def chat(req: ChatRequest, db: Session = Depends(get_db)):
+    """DEPRECATED alias for the website widget. Identical externally to v0.1.0 —
+    keeps the widget on deadlinecorp.com working unchanged."""
+    msg_req = MessageRequest(
+        channel="website",
+        external_id=req.session_id,
+        content=req.message,
+        channel_conversation_id=req.session_id,
+    )
+    resp = await _handle_message(msg_req, db)
+    return ChatResponse(answer=resp.answer, handoff=resp.handoff, session_id=req.session_id)
+
+
+@app.post("/webhooks/telegram")
+async def telegram_webhook(request: Request, db: Session = Depends(get_db)):
+    """Telegram Bot API webhook. Telegram retries on non-200, so we always
+    return 200 even on parse/LLM failures (errors are logged)."""
+    try:
+        payload = await request.json()
+    except Exception as e:
+        log.warning(f"telegram_webhook: invalid JSON — {e}")
+        return {"ok": True}
+
+    normalized = parse_telegram_webhook(payload)
+    if normalized is None:
+        return {"ok": True}  # non-text update, skip silently
+
+    msg_req = MessageRequest(
+        channel=normalized.channel,
+        external_id=normalized.external_id,
+        content=normalized.content,
+        username=normalized.username,
+        channel_conversation_id=normalized.channel_conversation_id,
+    )
+
+    try:
+        resp = await _handle_message(msg_req, db)
+    except Exception as e:
+        log.error(f"telegram_webhook: _handle_message failed — {e}")
+        return {"ok": True}
+
+    # Send reply to the SAME chat the user wrote from
+    await send_telegram_reply(
+        settings.telegram_bot_token,
+        normalized.channel_conversation_id,
+        resp.answer,
+    )
+
+    return {"ok": True}
+
+
 # ----------------------------------------------------------------------------
-# Lead form endpoint — receives submissions from deadlinecorp.com/lead-form/
-# Forwards a structured message to the configured Telegram chat.
+# Lead form endpoint — kept from commit 117e617, independent flow.
+# Receives submissions from deadlinecorp.com/lead-form/ and forwards a
+# structured message to the configured Telegram operator chat.
 # ----------------------------------------------------------------------------
 
 class LeadFormRequest(BaseModel):
@@ -340,103 +575,11 @@ async def send_lead_to_telegram(lead: LeadFormRequest) -> bool:
 
 @app.post("/lead-submit")
 async def lead_submit(lead: LeadFormRequest):
-    """
-    Accepts form data from deadlinecorp.com/lead-form/.
-    Forwards to Telegram. Always returns 200 to the form (avoid leaking errors to user).
-    """
+    """Accepts form data from deadlinecorp.com/lead-form/.
+    Always returns 200 (we don't want to leak errors to the form UI)."""
     success = await send_lead_to_telegram(lead)
     log.info(f"Lead received: {lead.name} | {lead.contact} | need={lead.need!r}")
     return {"ok": True, "delivered": success}
-
-
-@app.post("/chat", response_model=ChatResponse)
-async def chat(req: ChatRequest):
-    if vectorstore is None:
-        raise HTTPException(503, "Vector DB not initialized. Run `python ingest.py` first.")
-
-    session = get_session(req.session_id)
-    history = session["history"]
-
-    log.info(f"[{req.session_id[:8]}] Q: {req.message[:200]}")
-
-    # 1. RAG retrieval
-    docs = vectorstore.similarity_search(req.message, k=4)
-    context = "\n\n".join([
-        f"[source: {d.metadata.get('source', '?')}]\n{d.page_content}"
-        for d in docs
-    ])
-
-    # 2. Build prompt with history (last 6 turns max)
-    recent = history[-6:]
-    history_str = "\n".join([f"{m['role']}: {m['content']}" for m in recent]) or "(новый диалог)"
-    prompt = build_chat_prompt(context=context, history=history_str, question=req.message)
-
-    # 3. LLM call
-    answer = await call_llm(prompt)
-    log.info(f"[{req.session_id[:8]}] A: {answer[:200]}")
-
-    # 4. Update history
-    history.append({"role": "user", "content": req.message})
-    history.append({"role": "assistant", "content": answer})
-
-    # 5. Handoff check (only if not already handed off)
-    handoff_triggered = False
-    if not session["handoff_done"]:
-        handoff_data = await check_handoff(history)
-        if handoff_data:
-            # Hard guard: do NOT fire a brief if no real contact was captured.
-            # The classifier (small LLM, fallback model) sometimes returns
-            # ready_for_handoff=true even when lead_contact is empty or is
-            # just a channel name like "telegram" / "в телегу".
-            contact = (handoff_data.get("lead_contact") or "").strip()
-            contact_lower = contact.lower()
-            CHANNEL_NOISE = {
-                "", "telegram", "telega", "тг", "в telegram", "в телегу",
-                "в личку", "в тг", "email", "почта", "phone", "телефон",
-                "не оставил", "не указан", "—", "-", "n/a", "none", "null",
-            }
-            looks_like_real_address = (
-                contact.startswith("@") and len(contact) > 1  # Telegram @username
-                or "@" in contact and "." in contact  # email
-                or sum(c.isdigit() for c in contact) >= 7  # phone-ish
-            )
-
-            if contact_lower in CHANNEL_NOISE or not looks_like_real_address:
-                log.info(
-                    f"[{req.session_id[:8]}] classifier said ready_for_handoff=true "
-                    f"but contact={contact!r} is empty/channel-only — suppressing brief"
-                )
-            else:
-                await send_telegram_brief(req.session_id, handoff_data, history)
-                session["handoff_done"] = True
-                handoff_triggered = True
-
-    return ChatResponse(answer=answer, handoff=handoff_triggered, session_id=req.session_id)
-
-
-@app.get("/sessions")
-async def list_sessions():
-    """Debug endpoint — list active sessions (do not expose in prod without auth)."""
-    return {
-        "count": len(SESSIONS),
-        "sessions": {
-            sid: {
-                "messages": len(s["history"]),
-                "handoff_done": s["handoff_done"],
-                "preview": s["history"][:2] if s["history"] else [],
-            }
-            for sid, s in SESSIONS.items()
-        }
-    }
-
-
-@app.delete("/sessions/{session_id}")
-async def reset_session(session_id: str):
-    """Wipe a single session (useful when testing)."""
-    if session_id in SESSIONS:
-        del SESSIONS[session_id]
-        return {"deleted": session_id}
-    raise HTTPException(404, "Session not found")
 
 
 # ============================================================================
@@ -448,7 +591,8 @@ async def startup():
     log.info("=" * 60)
     log.info(f"Deadline Sales Bot v{app.version}")
     log.info(f"Model:    {settings.llm_model} (fallback: {settings.llm_fallback_model})")
-    log.info(f"Chroma:   {'loaded' if vectorstore else 'NOT LOADED — run ingest.py'}")
+    log.info(f"Chroma:   {'loaded' if vectorstore else 'NOT LOADED (legacy)'}")
+    log.info(f"Postgres: {'connected' if check_connection() else 'NOT CONNECTED'}")
     log.info(f"Telegram: {'configured' if settings.telegram_bot_token else 'NOT configured'}")
     log.info(f"Origins:  {settings.allowed_origins}")
     log.info("=" * 60)
