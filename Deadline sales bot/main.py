@@ -272,8 +272,39 @@ async def send_lead_to_telegram(lead: LeadFormRequest) -> bool:
         log.warning("Telegram not configured — lead received but not forwarded")
         return False
 
+    # Source-based header — мгновенно видно откуда лид
+    source = (lead.source or "direct").lower()
+    if source == "meta":
+        header = "📢 ЛИД ИЗ META РЕКЛАМЫ"
+    elif source in ("google", "google_ads"):
+        header = "🔍 ЛИД ИЗ GOOGLE РЕКЛАМЫ"
+    elif source in ("tiktok",):
+        header = "🎵 ЛИД ИЗ TIKTOK РЕКЛАМЫ"
+    elif source == "direct":
+        header = "🌐 ПРЯМОЙ ЛИД (без рекламы)"
+    else:
+        header = f"🔥 ЛИД ({source.upper()})"
+
+    # Расшифровка нашего utm_content в человекочитаемый формат
+    creative_labels = {
+        "01_typographic": "Универсальный (расчёт за 24ч)",
+        "02_dentistry":   "Стоматологии (AI-бот)",
+        "03_wanted":      "Ищем предпринимателей",
+        "08_no_markup":   "Без наценки агентств",
+        "05_idea":        "Идея → Продакшен",
+        "06_team":        "Опытная команда + цифры",
+        "07_question":    "Знаешь сколько стоит?",
+        "04_checklist":   "Чек-лист услуг",
+    }
+    creative_human = ""
+    if lead.campaign:
+        for key, label in creative_labels.items():
+            if key in lead.campaign:
+                creative_human = f"\n🎨 Креатив: {label}"
+                break
+
     text = (
-        f"🔥 НОВЫЙ ЛИД С САЙТА\n"
+        f"{header}\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
         f"👤 Имя: {lead.name}\n"
         f"📱 Контакт: {lead.contact}\n"
@@ -281,7 +312,8 @@ async def send_lead_to_telegram(lead: LeadFormRequest) -> bool:
         f"🏢 Бизнес: {lead.business or '—'}\n"
         f"⏰ Срок: {lead.when or '—'}\n\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"📊 UTM: {lead.source} / {lead.campaign or 'no-campaign'}\n"
+        f"📊 Источник: {lead.source} / {lead.campaign or 'no-campaign'}"
+        f"{creative_human}\n"
         f"🕐 {lead.timestamp or 'now'}\n"
     )
 
