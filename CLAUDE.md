@@ -205,3 +205,35 @@ For automation: load a personal access token from a local env file (NOT committe
 This file is a working snapshot. The verbatim source-of-truth knowledge lives in MemPalace (`wing=vault`, `room=decisions_design`, drawers filed 2026-05-11). To re-pull: `mempalace_search query="Deadline project"` or `mempalace_search query="deadline site pending tasks"`.
 
 Related MemPalace tunnels: `vault/decisions_design` ↔ project repo. Knowledge graph entities: `DEADLINE` (project), `Deadline-Corp` (GitHub org).
+
+---
+
+## 14. Daily diary (mandatory for any Deadline session)
+
+**Rule set 2026-05-19 by user.** Any Claude session working in this repo must mirror progress into a daily diary file. Canonical location is Obsidian Vault.
+
+**Where**
+- Folder: `D:/Obsidian/Vault/Vault/Business/Projects/Deadline/Daily_Diary/`
+- One file per date: `YYYY-MM-DD.md` (e.g. `2026-05-19.md`)
+- File H1: `# YYYY-MM-DD — День_недели` (RU day-of-week so it scans naturally for the user)
+- Vault is auto-committed and auto-pushed by Obsidian Git plugin every 5 min. **DO NOT** run any `git` commands inside `D:/Obsidian/Vault/` — just `Write`/`Edit` files.
+
+**When**
+- After every **logical step** — append an entry. Logical step = a unit of work you would describe out loud as "we shipped X" (feature deployed, migration applied, prompt fix verified). NOT every tool call / every read.
+- At **end of session** — append a one-paragraph EOD summary at the bottom.
+
+**Entry format (per step)**
+```
+## HH:MM — Title in imperative
+- short bullet on what was done
+- what was verified (curl output, test result)
+- link to commit SHA or Railway deployment id
+```
+
+**EOD summary format**
+One paragraph (Russian, since user reads in RU), 2-4 sentences, plain text (no headings, no bullets). What is concretely DONE today + what is the next step / blocker. Scan-readable for the user opening it in the morning.
+
+**History**
+Originally tried Notion (page `35cc12e0...`, sub-page Belikov) on 2026-05-19. Failed: MCP server is logged in to Eon Stacks Wiki workspace (where RA-Project lives), while user's "Дневник" page is in his personal workspace. Either reconfigure MCP with a personal-workspace token or keep Obsidian as canonical. We chose Obsidian — synced automatically, no MCP fragility, version-controlled by Obsidian Git.
+
+**Rule lives in**: this file + MemPalace drawer `deadline/rules/e44aea33fbc8a8327579ed70` (note: the drawer still references Notion — superseded by this section).
