@@ -75,7 +75,17 @@ class Settings(BaseSettings):
     llm_fallback_model: str = "glm-4.6:cloud"
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
+    # Telegram operator supergroup (forum-mode). Created by team in TG, bot
+    # added as admin with manage_topics. Each lead gets a topic; team can
+    # take over a conversation from the bot via inline button.
+    # chat_id is negative for supergroups (e.g. -1001234567890).
+    telegram_operator_group_id: Optional[str] = None
     email_notify: Optional[str] = None
+    # Groq for voice transcription (Whisper-large-v3 via OpenAI-compatible
+    # endpoint). Free tier covers small volumes. Get a key at console.groq.com.
+    # If unset, Telegram voice messages get an apologetic "напишите текстом"
+    # reply instead of being transcribed.
+    groq_api_key: Optional[str] = None
     # Meta (Instagram + Messenger). Set in Meta App dashboard:
     # - META_VERIFY_TOKEN: any random string, must match what you enter in
     #   App Dashboard → Webhooks → Verify Token
@@ -499,9 +509,15 @@ async def telegram_webhook(request: Request, db: Session = Depends(get_db)):
         log.warning(f"telegram_webhook: invalid JSON — {e}")
         return {"ok": True}
 
-    normalized = parse_telegram_webhook(payload)
+    # parse_telegram_webhook is async now — it downloads + transcribes voice
+    # in-line via Groq Whisper when message.voice is present.
+    normalized = await parse_telegram_webhook(
+        payload,
+        bot_token=settings.telegram_bot_token,
+        groq_api_key=settings.groq_api_key,
+    )
     if normalized is None:
-        return {"ok": True}  # non-text update, skip silently
+        return {"ok": True}  # unsupported update type (sticker/photo/etc.)
 
     msg_req = MessageRequest(
         channel=normalized.channel,
@@ -509,6 +525,8 @@ async def telegram_webhook(request: Request, db: Session = Depends(get_db)):
         content=normalized.content,
         username=normalized.username,
         channel_conversation_id=normalized.channel_conversation_id,
+        message_type=normalized.message_type,
+        extra_meta=normalized.extra_meta,
     )
 
     try:
