@@ -283,10 +283,128 @@ async def set_telegram_webhook(token: str, url: str) -> dict:
     """Configure Telegram to POST every update to `url`. Idempotent. Returns
     the Telegram response dict. Call from a script after deploy, not on every
     container start (Bot API rate-limits setWebhook).
+
+    `allowed_updates` includes `message` and `callback_query` because operators
+    interact with the bot via inline buttons in the forum-supergroup.
     """
     async with httpx.AsyncClient(timeout=10) as client:
         r = await client.post(
             f"{TELEGRAM_API_BASE}/bot{token}/setWebhook",
-            json={"url": url, "allowed_updates": ["message"]},
+            json={
+                "url": url,
+                "allowed_updates": ["message", "callback_query"],
+            },
         )
     return r.json()
+
+
+# ============================================================================
+# Forum-supergroup helpers (Phase B — operator visibility)
+#
+# Telegram forum mode lets a single supergroup host hundreds of "topics" —
+# sub-channels each with their own thread. We use one topic per lead so
+# operators see every conversation as a separate chat inside one TG group.
+#
+# Bot must be added to the supergroup as ADMIN with `manage_topics` right,
+# otherwise createForumTopic returns 400 BAD_REQUEST.
+# ============================================================================
+
+
+async def create_forum_topic(
+    token: str,
+    supergroup_id: str,
+    name: str,
+    icon_color: Optional[int] = None,
+) -> Optional[int]:
+    """Create a new forum topic in `supergroup_id`. Returns message_thread_id.
+
+    `icon_color` is one of the seven Telegram-allowed colors:
+    7322096 (red), 16766590 (orange), 13338331 (yellow), 9367192 (green),
+    16749490 (cyan), 16478047 (blue), 14638336 (purple). We rotate by
+    channel for visual scanability.
+    """
+    if not token or not supergroup_id or not name:
+        return None
+    payload = {"chat_id": supergroup_id, "name": name[:128]}
+    if icon_color is not None:
+        payload["icon_color"] = icon_color
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                f"{TELEGRAM_API_BASE}/bot{token}/createForumTopic",
+                json=payload,
+            )
+        if r.status_code != 200:
+            log.warning(f"createForumTopic {r.status_code}: {r.text[:200]}")
+            return None
+        data = r.json()
+        if not data.get("ok"):
+            log.warning(f"createForumTopic non-ok: {data}")
+            return None
+        return data.get("result", {}).get("message_thread_id")
+    except Exception as e:
+        log.error(f"createForumTopic exception: {e}")
+        return None
+
+
+async def send_to_topic(
+    token: str,
+    supergroup_id: str,
+    message_thread_id: int,
+    text: str,
+    reply_markup: Optional[dict] = None,
+) -> bool:
+    """sendMessage into a specific forum topic. Returns True on success.
+
+    `reply_markup` accepts standard Bot API inline keyboard format:
+        {"inline_keyboard": [[{"text":"...", "callback_data":"..."}]]}
+    """
+    if not token or not supergroup_id or message_thread_id is None or not text:
+        return False
+    payload = {
+        "chat_id": supergroup_id,
+        "message_thread_id": message_thread_id,
+        "text": text[:4000],
+        "disable_web_page_preview": True,
+    }
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                f"{TELEGRAM_API_BASE}/bot{token}/sendMessage",
+                json=payload,
+            )
+        if r.status_code != 200:
+            log.warning(f"send_to_topic {r.status_code}: {r.text[:200]}")
+            return False
+        return True
+    except Exception as e:
+        log.error(f"send_to_topic exception: {e}")
+        return False
+
+
+async def answer_callback_query(
+    token: str,
+    callback_query_id: str,
+    text: Optional[str] = None,
+) -> bool:
+    """Acknowledge a callback_query (inline button tap). MUST be called for
+    every callback_query within 30s or Telegram retries. `text` shows as a
+    transient toast notification at the top of the operator's screen.
+    """
+    if not token or not callback_query_id:
+        return False
+    payload = {"callback_query_id": callback_query_id}
+    if text:
+        payload["text"] = text[:200]
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                f"{TELEGRAM_API_BASE}/bot{token}/answerCallbackQuery",
+                json=payload,
+            )
+        return r.status_code == 200
+    except Exception as e:
+        log.error(f"answer_callback_query exception: {e}")
+        return False

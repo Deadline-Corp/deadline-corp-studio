@@ -34,7 +34,8 @@ from prompts import build_chat_prompt, HANDOFF_CHECK_PROMPT, format_handoff_brie
 
 # DB-backed services (Day 3-4 migration from in-memory SESSIONS dict + Chroma)
 from db.connection import get_db, check_connection
-from db.models import Message as MessageRow
+from db.models import Message as MessageRow, Conversation as ConvRow, ConversationStatusEnum
+from uuid import UUID as PyUUID
 from db.vector import similarity_search as pgvector_search
 from services.identity import resolve_or_create_customer
 from services.conversations import (
@@ -42,10 +43,16 @@ from services.conversations import (
     append_message,
     get_recent_messages,
     mark_handoff_done,
+    link_forum_topic,
+    find_conversation_by_topic,
+    set_operator_takeover,
 )
 from channels.telegram import (
     parse_telegram_webhook,
     send_telegram_reply,
+    create_forum_topic,
+    send_to_topic,
+    answer_callback_query,
 )
 from channels.messenger import (
     parse_messenger_webhook,
@@ -366,13 +373,63 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         channel_conversation_id=conv_thread_id,
     )
 
+    # Lazy-create a forum topic in the operator supergroup on first message
+    # of this conversation. Topic name = "<channel>: <username or short id>".
+    # Skip silently if TELEGRAM_OPERATOR_GROUP_ID isn't configured (the team
+    # is fine reading conversations elsewhere or just in DB).
+    if (
+        settings.telegram_operator_group_id
+        and settings.telegram_bot_token
+        and not conversation.forum_topic_id
+        and not conversation.handoff_done  # don't open topics for already-closed convs
+    ):
+        topic_label = req.username or req.email or req.external_id[:20]
+        topic_name = f"{req.channel}: {topic_label}"
+        new_topic_id = await create_forum_topic(
+            settings.telegram_bot_token,
+            settings.telegram_operator_group_id,
+            topic_name,
+        )
+        if new_topic_id is not None:
+            link_forum_topic(db, conversation.id, new_topic_id)
+
     # Persist user message before RAG so it's in the history if anything fails after
     append_message(
         db, conversation.id, role="user",
         content=req.content, extra_meta=req.extra_meta,
     )
 
-    log.info(f"[{str(conversation.id)[:8]}/{req.channel}] Q: {req.content[:200]}")
+    log.info(f"[{str(conversation.id)[:8]}/{req.channel}/{req.message_type}] Q: {req.content[:200]}")
+
+    # Mirror the user message to the operator topic (📥 incoming).
+    # Voice messages get a 🎙️ icon hint so operators see at a glance that
+    # it was transcribed (not typed).
+    if conversation.forum_topic_id and settings.telegram_operator_group_id and settings.telegram_bot_token:
+        is_voice = isinstance(req.extra_meta, dict) and req.extra_meta.get("source") == "voice"
+        prefix = f"📥 [{req.channel}{'🎙️' if is_voice else ''}]"
+        await send_to_topic(
+            settings.telegram_bot_token,
+            settings.telegram_operator_group_id,
+            conversation.forum_topic_id,
+            f"{prefix} {req.content[:3900]}",
+        )
+
+    # ---- OPERATOR TAKEOVER: skip LLM and let the human reply manually ----
+    # When takeover is on, the bot must NOT respond on its own. We persist
+    # the lead's message + mirror it to the topic (above) and return an
+    # empty answer — the caller (webhook handler) sees handoff=False and
+    # answer="" and skips sending anything to the lead. The operator then
+    # types in the topic and the dedicated operator-message handler forwards
+    # their reply to the lead. Re-enabled via the inline 🤖 Release button.
+    if conversation.operator_takeover:
+        log.info(f"[{str(conversation.id)[:8]}] operator_takeover=true — skipping LLM")
+        db.commit()
+        return MessageResponse(
+            answer="",  # caller must not send this to lead
+            handoff=False,
+            customer_id=str(customer.id),
+            conversation_id=str(conversation.id),
+        )
 
     # 4. RAG over kb_chunks via pgvector
     docs = pgvector_search(req.content, k=4)
@@ -413,6 +470,24 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
 
     # 7. Persist assistant reply
     append_message(db, conversation.id, role="assistant", content=answer)
+
+    # Mirror bot reply to operator topic (📤 outgoing) with a takeover button.
+    # The button payload encodes the conversation id so the callback handler
+    # in /webhooks/telegram knows which conversation to flip.
+    if conversation.forum_topic_id and settings.telegram_operator_group_id and settings.telegram_bot_token:
+        button_text = "👤 Возьму на себя"
+        callback_data = f"takeover:{conversation.id}"
+        await send_to_topic(
+            settings.telegram_bot_token,
+            settings.telegram_operator_group_id,
+            conversation.forum_topic_id,
+            f"📤 {answer[:3900]}",
+            reply_markup={
+                "inline_keyboard": [[
+                    {"text": button_text, "callback_data": callback_data}
+                ]]
+            },
+        )
 
     # 8. Handoff — gated on a real email (policy 2026-05-19).
     #    Email is the only mandatory contact: it's stable identity, while
@@ -499,25 +574,175 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
     return ChatResponse(answer=resp.answer, handoff=resp.handoff, session_id=req.session_id)
 
 
+async def _handle_operator_callback(callback: dict, db: Session) -> None:
+    """Inline-button taps from operators. The `callback_data` payload encodes
+    the conversation id; supported actions: `takeover:<conv_id>` toggles
+    operator_takeover for that conversation.
+    """
+    cb_id = callback.get("id")
+    data = callback.get("data", "")
+    token = settings.telegram_bot_token
+
+    if not data.startswith("takeover:"):
+        await answer_callback_query(token, cb_id, text="Unknown action")
+        return
+
+    try:
+        conv_id = PyUUID(data.split(":", 1)[1])
+    except (ValueError, IndexError):
+        await answer_callback_query(token, cb_id, text="Bad conversation id")
+        return
+
+    conv = db.get(ConvRow, conv_id)
+    if conv is None:
+        await answer_callback_query(token, cb_id, text="Conversation not found")
+        return
+
+    new_state = not conv.operator_takeover
+    set_operator_takeover(db, conv_id, new_state)
+    db.commit()
+
+    toast = (
+        "👤 Принято. Пишите в тему — бот пересылает лиду."
+        if new_state
+        else "🤖 Освободил. Бот снова отвечает сам."
+    )
+    await answer_callback_query(token, cb_id, text=toast)
+
+    if conv.forum_topic_id and settings.telegram_operator_group_id:
+        state_msg = (
+            "🔔 OPERATOR TAKEOVER ON — каждое сообщение в теме идёт лиду напрямую. "
+            "Команды: /release — снять takeover · /close — закрыть · /note <текст> — внутренняя пометка."
+            if new_state
+            else "🔔 OPERATOR RELEASED — бот снова отвечает автономно."
+        )
+        await send_to_topic(
+            token,
+            settings.telegram_operator_group_id,
+            conv.forum_topic_id,
+            state_msg,
+        )
+
+
+async def _handle_operator_message(msg: dict, db: Session) -> None:
+    """Operator wrote in a forum topic in the operator supergroup. We:
+      - skip if it's our own bot's mirror message (is_bot=True),
+      - handle commands /release, /close, /note,
+      - otherwise forward the text to the lead's original channel and
+        persist it as role=operator in the conversation.
+    """
+    from_user = msg.get("from") or {}
+    if from_user.get("is_bot"):
+        return  # don't loop on our own mirrored messages
+
+    text = (msg.get("text") or "").strip()
+    if not text:
+        return
+
+    topic_id = msg.get("message_thread_id")
+    if not topic_id:
+        return
+
+    conv = find_conversation_by_topic(db, topic_id)
+    if conv is None:
+        log.warning(f"operator message in topic {topic_id}: no matching conversation")
+        return
+
+    op_label = from_user.get("username") or from_user.get("first_name") or "operator"
+    token = settings.telegram_bot_token
+
+    # ---- commands ----
+    if text.startswith("/release"):
+        set_operator_takeover(db, conv.id, False)
+        db.commit()
+        await send_to_topic(token, settings.telegram_operator_group_id, topic_id,
+                            "🤖 Бот снова отвечает автономно.")
+        return
+
+    if text.startswith("/close"):
+        conv.status = ConversationStatusEnum.CLOSED.value
+        db.commit()
+        await send_to_topic(token, settings.telegram_operator_group_id, topic_id,
+                            "🔒 Conversation closed.")
+        return
+
+    if text.startswith("/note"):
+        note = text[len("/note"):].strip()
+        if note:
+            append_message(db, conv.id, role="system",
+                           content=f"[NOTE by {op_label}] {note}")
+            db.commit()
+        return
+
+    # ---- forward to lead ----
+    delivered = False
+    if conv.channel == "telegram" and conv.channel_conversation_id:
+        delivered = await send_telegram_reply(token, conv.channel_conversation_id, text)
+    elif conv.channel == "instagram" and conv.channel_conversation_id:
+        delivered = await send_instagram_reply(
+            settings.meta_page_access_token, conv.channel_conversation_id, text)
+    elif conv.channel == "messenger" and conv.channel_conversation_id:
+        delivered = await send_messenger_reply(
+            settings.meta_page_access_token, conv.channel_conversation_id, text)
+    else:
+        # Website — no push. Message just lives in DB; the widget will see
+        # it on the next /chat poll (Phase 2: switch widget to long-poll or SSE).
+        log.info(f"[{str(conv.id)[:8]}] operator wrote on channel={conv.channel} (no push, stored only)")
+        delivered = True
+
+    append_message(
+        db, conv.id, role="operator", content=text,
+        extra_meta={"by": op_label, "delivered": delivered},
+    )
+    db.commit()
+
+
 @app.post("/webhooks/telegram")
 async def telegram_webhook(request: Request, db: Session = Depends(get_db)):
-    """Telegram Bot API webhook. Telegram retries on non-200, so we always
-    return 200 even on parse/LLM failures (errors are logged)."""
+    """Telegram Bot API webhook. Three roles share one URL:
+      1. callback_query → operator tapped an inline button in the operator group
+      2. message in operator supergroup topic → operator wrote a reply for a lead
+      3. message in a private chat → lead's incoming DM (text or voice)
+    Always returns 200 (Telegram retries on non-200, we don't want loops).
+    """
     try:
         payload = await request.json()
     except Exception as e:
         log.warning(f"telegram_webhook: invalid JSON — {e}")
         return {"ok": True}
 
-    # parse_telegram_webhook is async now — it downloads + transcribes voice
-    # in-line via Groq Whisper when message.voice is present.
+    # 1. Inline button taps (callback_query)
+    if callback := payload.get("callback_query"):
+        try:
+            await _handle_operator_callback(callback, db)
+        except Exception as e:
+            log.error(f"_handle_operator_callback failed: {e}")
+        return {"ok": True}
+
+    msg = payload.get("message") or {}
+    chat = msg.get("chat") or {}
+
+    # 2. Message in the operator supergroup (a forum topic)
+    if (
+        chat.get("type") == "supergroup"
+        and settings.telegram_operator_group_id
+        and str(chat.get("id")) == str(settings.telegram_operator_group_id)
+        and msg.get("message_thread_id")
+    ):
+        try:
+            await _handle_operator_message(msg, db)
+        except Exception as e:
+            log.error(f"_handle_operator_message failed: {e}")
+        return {"ok": True}
+
+    # 3. Lead's DM — existing flow (voice transcription happens in parser)
     normalized = await parse_telegram_webhook(
         payload,
         bot_token=settings.telegram_bot_token,
         groq_api_key=settings.groq_api_key,
     )
     if normalized is None:
-        return {"ok": True}  # unsupported update type (sticker/photo/etc.)
+        return {"ok": True}
 
     msg_req = MessageRequest(
         channel=normalized.channel,
@@ -535,12 +760,13 @@ async def telegram_webhook(request: Request, db: Session = Depends(get_db)):
         log.error(f"telegram_webhook: _handle_message failed — {e}")
         return {"ok": True}
 
-    # Send reply to the SAME chat the user wrote from
-    await send_telegram_reply(
-        settings.telegram_bot_token,
-        normalized.channel_conversation_id,
-        resp.answer,
-    )
+    # If operator_takeover is on, _handle_message returns empty answer → skip send.
+    if resp.answer:
+        await send_telegram_reply(
+            settings.telegram_bot_token,
+            normalized.channel_conversation_id,
+            resp.answer,
+        )
 
     return {"ok": True}
 

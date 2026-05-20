@@ -154,3 +154,64 @@ def mark_handoff_done(db: Session, conversation_id: UUID) -> Conversation:
     conversation.status = ConversationStatusEnum.HANDED_OFF.value
     db.flush()
     return conversation
+
+
+# ============================================================================
+# Operator takeover (Phase B) — Telegram forum-supergroup integration
+# ============================================================================
+
+
+def link_forum_topic(
+    db: Session,
+    conversation_id: UUID,
+    topic_id: int,
+) -> Conversation:
+    """Record the Telegram forum topic id we created for this conversation.
+
+    The topic_id is the `message_thread_id` from createForumTopic Bot API
+    response. Once set, every subsequent user message + bot reply gets
+    mirrored into that topic for the operator team to read.
+    """
+    conversation = db.get(Conversation, conversation_id)
+    if conversation is None:
+        raise ValueError(f"Conversation {conversation_id} not found")
+    conversation.forum_topic_id = topic_id
+    db.flush()
+    return conversation
+
+
+def find_conversation_by_topic(
+    db: Session,
+    topic_id: int,
+) -> Optional[Conversation]:
+    """Reverse lookup: operator wrote in a topic — which conversation is it?
+
+    Used by /webhooks/telegram when chat.type == 'supergroup' and there's
+    a message_thread_id: we need to find which lead this thread belongs to
+    so we can forward the operator's message back to that lead.
+
+    Returns None if no conversation is linked to that topic (e.g. operator
+    wrote in a stale archived topic — bot should ignore).
+    """
+    return db.execute(
+        select(Conversation).where(Conversation.forum_topic_id == topic_id)
+    ).scalar_one_or_none()
+
+
+def set_operator_takeover(
+    db: Session,
+    conversation_id: UUID,
+    enabled: bool,
+) -> Conversation:
+    """Toggle the takeover flag.
+
+    When True: the next /message call will skip the LLM entirely. The
+    operator must reply manually in the forum topic — the bot only forwards
+    those replies to the lead. When False: bot resumes autonomous replies.
+    """
+    conversation = db.get(Conversation, conversation_id)
+    if conversation is None:
+        raise ValueError(f"Conversation {conversation_id} not found")
+    conversation.operator_takeover = enabled
+    db.flush()
+    return conversation

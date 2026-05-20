@@ -163,6 +163,21 @@ class Conversation(Base):
     summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # rolling LLM summary
     handoff_done: Mapped[bool] = mapped_column(default=False, nullable=False)
 
+    # Operator takeover (Phase B): when True, the bot stops replying to the
+    # lead on its own — every assistant reply must come from a human in the
+    # operator forum-supergroup. Toggled via the "👤 Возьму на себя" inline
+    # button under each bot reply in the lead's topic.
+    operator_takeover: Mapped[bool] = mapped_column(default=False, nullable=False, index=True)
+    # Telegram forum topic id (within TELEGRAM_OPERATOR_GROUP_ID supergroup).
+    # Lazily created on the first message of each conversation; all subsequent
+    # lead messages and bot replies are mirrored there for the team to read
+    # and to take over from. NULL = no topic yet (lazy-init not run, group
+    # not configured, or topic creation failed).
+    forum_topic_id: Mapped[Optional[int]] = mapped_column(
+        nullable=True, index=True,
+        comment="Telegram forum topic id in the operator supergroup",
+    )
+
     last_message_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
