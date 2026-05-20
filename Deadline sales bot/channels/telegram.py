@@ -279,6 +279,27 @@ async def send_telegram_reply(token: str, chat_id: str, text: str) -> bool:
         return False
 
 
+async def send_typing_action(token: str, chat_id: str) -> None:
+    """Show "печатает..." indicator in the lead's chat for ~5 seconds.
+
+    Cheap fire-and-forget — we don't await the result strictly and we don't
+    fail the request if it errors. Telegram's typing indicator vanishes after
+    5s on its own, so if the LLM takes longer we'd need to re-trigger; for
+    MVP one call is enough because most replies fit under 5s.
+    """
+    if not token or not chat_id:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=5) as client:
+            await client.post(
+                f"{TELEGRAM_API_BASE}/bot{token}/sendChatAction",
+                json={"chat_id": chat_id, "action": "typing"},
+            )
+    except Exception as e:
+        # Non-fatal — typing is purely cosmetic
+        log.debug(f"sendChatAction failed (non-fatal): {e}")
+
+
 async def set_telegram_webhook(token: str, url: str) -> dict:
     """Configure Telegram to POST every update to `url`. Idempotent. Returns
     the Telegram response dict. Call from a script after deploy, not on every

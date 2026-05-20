@@ -50,6 +50,7 @@ from services.conversations import (
 from channels.telegram import (
     parse_telegram_webhook,
     send_telegram_reply,
+    send_typing_action,
     create_forum_topic,
     send_to_topic,
     answer_callback_query,
@@ -401,17 +402,23 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
 
     log.info(f"[{str(conversation.id)[:8]}/{req.channel}/{req.message_type}] Q: {req.content[:200]}")
 
-    # Mirror the user message to the operator topic (📥 incoming).
-    # Voice messages get a 🎙️ icon hint so operators see at a glance that
-    # it was transcribed (not typed).
+    # Mirror the user message to the operator topic.
+    # Format: "📥 LEAD · @username  (🎙️ 12s)\n<text>"  — label on a separate
+    # line from content so operators see who's talking before they read the
+    # message itself. Username falls back to TG#<id> when not available.
     if conversation.forum_topic_id and settings.telegram_operator_group_id and settings.telegram_bot_token:
         is_voice = isinstance(req.extra_meta, dict) and req.extra_meta.get("source") == "voice"
-        prefix = f"📥 [{req.channel}{'🎙️' if is_voice else ''}]"
+        lead_label = req.username or f"{req.channel.upper()}#{req.external_id}"
+        voice_hint = ""
+        if is_voice:
+            dur = (req.extra_meta or {}).get("duration_sec", 0)
+            voice_hint = f"  🎙️ {dur}s" if dur else "  🎙️"
+        mirror_in = f"📥 LEAD · {lead_label}{voice_hint}\n{req.content[:3700]}"
         await send_to_topic(
             settings.telegram_bot_token,
             settings.telegram_operator_group_id,
             conversation.forum_topic_id,
-            f"{prefix} {req.content[:3900]}",
+            mirror_in,
         )
 
     # ---- OPERATOR TAKEOVER: skip LLM and let the human reply manually ----
@@ -464,6 +471,17 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         is_comment_mode=is_comment_mode,
     )
 
+    # Show "печатает..." indicator in the lead's Telegram chat while the LLM
+    # is generating. Disappears on its own in 5s or when we send the reply.
+    # Fire-and-forget — purely cosmetic, never fails the request.
+    if (
+        req.channel == "telegram"
+        and req.message_type != "comment"
+        and req.channel_conversation_id
+        and settings.telegram_bot_token
+    ):
+        await send_typing_action(settings.telegram_bot_token, req.channel_conversation_id)
+
     # 6. LLM
     answer = await call_llm(prompt)
     log.info(f"[{str(conversation.id)[:8]}/{req.channel}/{req.message_type}] A: {answer[:200]}")
@@ -471,17 +489,18 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     # 7. Persist assistant reply
     append_message(db, conversation.id, role="assistant", content=answer)
 
-    # Mirror bot reply to operator topic (📤 outgoing) with a takeover button.
-    # The button payload encodes the conversation id so the callback handler
-    # in /webhooks/telegram knows which conversation to flip.
+    # Mirror bot reply to operator topic with a takeover button.
+    # Format: "📤 BOT\n<answer>"  — same convention as the LEAD mirror so
+    # operators scan the thread by first line of each post.
     if conversation.forum_topic_id and settings.telegram_operator_group_id and settings.telegram_bot_token:
         button_text = "👤 Возьму на себя"
         callback_data = f"takeover:{conversation.id}"
+        mirror_out = f"📤 BOT\n{answer[:3900]}"
         await send_to_topic(
             settings.telegram_bot_token,
             settings.telegram_operator_group_id,
             conversation.forum_topic_id,
-            f"📤 {answer[:3900]}",
+            mirror_out,
             reply_markup={
                 "inline_keyboard": [[
                     {"text": button_text, "callback_data": callback_data}
