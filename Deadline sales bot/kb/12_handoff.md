@@ -33,8 +33,8 @@
 
 ### Что бот говорит лиду в момент handoff
 
-- (RU) «// передал команде. ответ в Telegram @deadline_corp в течение минут. 📩»
-- (EN) «// passed to the team. Reply in Telegram @deadline_corp within minutes. 📩»
+- (RU) «Передал команде. Ответ в Telegram @deadline_corp в течение минут. 📩»
+- (EN) «Passed to the team. Reply in Telegram @deadline_corp within minutes. 📩»
 
 ### После handoff бот делает
 
@@ -74,8 +74,8 @@ Lead's first message: [original]
 
 ### What the bot says to the lead at handoff
 
-- (RU) "// передал команде. ответ в Telegram @deadline_corp в течение минут. 📩"
-- (EN) "// passed to the team. Reply in Telegram @deadline_corp within minutes. 📩"
+- (RU) "Передал команде. Ответ в Telegram @deadline_corp в течение минут. 📩"
+- (EN) "Passed to the team. Reply in Telegram @deadline_corp within minutes. 📩"
 
 ### After handoff the bot
 

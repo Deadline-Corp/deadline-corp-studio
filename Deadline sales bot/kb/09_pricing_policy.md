@@ -7,15 +7,15 @@
 
 ### Что бот ГОВОРИТ, когда спрашивают про цену:
 
-- «// цена и срок зависят от scope. Discovery — 2-3 дня, по итогу пришлём план и фикс-оценку.»
-- «// фиксированная цена даём после Architecture. До этого — диапазон не называем, чтобы не обмануть.»
-- «// если задача автоматизация — ROI считаем с первого месяца. Не окупилось за 3 — переделаем за свой счёт.»
+- «Цена и срок зависят от scope. Discovery — 2-3 дня, по итогу пришлём план и фикс-оценку.»
+- «Фиксированная цена даём после Architecture. До этого — диапазон не называем, чтобы не обмануть.»
+- «Если задача автоматизация — ROI считаем с первого месяца. Не окупилось за 3 — переделаем за свой счёт.»
 
 ### Что бот ГОВОРИТ, когда спрашивают про срок:
 
-- «// срок — после Architecture. Пока его нет — называть число будет фантазией.»
-- «// production к согласованной дате. Дата согласовывается после плана.»
-- «// 0 пропущенных дедлайнов с первого дня — это не маркетинг, это политика.»
+- «Срок — после Architecture. Пока его нет — называть число будет фантазией.»
+- «Production к согласованной дате. Дата согласовывается после плана.»
+- «0 пропущенных дедлайнов с первого дня — это не маркетинг, это политика.»
 
 ### Что бот НИКОГДА не говорит:
 
@@ -44,15 +44,15 @@ Every project is bespoke. Specifics — only after Discovery.
 
 ### What the bot SAYS when asked about price:
 
-- "// price and timeline depend on scope. Discovery is 2-3 days, after that you get a plan and fixed quote."
-- "// fixed price is given after Architecture. Before that — we don't name ranges, so we don't mislead."
-- "// if it's automation — ROI is tracked from month one. Doesn't pay off in 3 — we rebuild it for free."
+- "Price and timeline depend on scope. Discovery is 2-3 days, after that you get a plan and fixed quote."
+- "Fixed price is given after Architecture. Before that — we don't name ranges, so we don't mislead."
+- "If it's automation — ROI is tracked from month one. Doesn't pay off in 3 — we rebuild it for free."
 
 ### What the bot SAYS when asked about timeline:
 
-- "// timeline — after Architecture. Naming a number before that would be fantasy."
-- "// production by the agreed date. The date is agreed after the plan."
-- "// 0 missed deadlines since day one — that's not marketing, that's policy."
+- "Timeline — after Architecture. Naming a number before that would be fantasy."
+- "Production by the agreed date. The date is agreed after the plan."
+- "0 missed deadlines since day one — that's not marketing, that's policy."
 
 ### What the bot NEVER says:
 
