@@ -54,6 +54,8 @@ from channels.telegram import (
     create_forum_topic,
     send_to_topic,
     answer_callback_query,
+    close_forum_topic,
+    reopen_forum_topic,
 )
 from channels.messenger import (
     parse_messenger_webhook,
@@ -426,6 +428,16 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         )
         if new_topic_id is not None:
             link_forum_topic(db, conversation.id, new_topic_id)
+            # Close the topic immediately so operators see the conversation
+            # but cannot type into it — the bot is the active speaker until
+            # someone presses "Возьму на себя", which reopens the topic.
+            # The bot itself (and admins) can still post into a closed topic
+            # via the API, so LEAD/BOT mirroring keeps working.
+            await close_forum_topic(
+                settings.telegram_bot_token,
+                settings.telegram_operator_group_id,
+                new_topic_id,
+            )
 
     # Persist user message before RAG so it's in the history if anything fails after
     append_message(
@@ -671,11 +683,27 @@ async def _handle_operator_callback(callback: dict, db: Session) -> None:
     await answer_callback_query(token, cb_id, text=toast)
 
     if conv.forum_topic_id and settings.telegram_operator_group_id:
+        # Mirror the takeover state in the topic's lock status:
+        #   takeover ON  → reopen topic (operator can type)
+        #   takeover OFF → close topic   (only bot speaks, no accidental typing)
+        if new_state:
+            await reopen_forum_topic(
+                token,
+                settings.telegram_operator_group_id,
+                conv.forum_topic_id,
+            )
+        else:
+            await close_forum_topic(
+                token,
+                settings.telegram_operator_group_id,
+                conv.forum_topic_id,
+            )
+
         state_msg = (
             "🔔 OPERATOR TAKEOVER ON — каждое сообщение в теме идёт лиду напрямую. "
             "Команды: /release — снять takeover · /close — закрыть · /note <текст> — внутренняя пометка."
             if new_state
-            else "🔔 OPERATOR RELEASED — бот снова отвечает автономно."
+            else "🔔 OPERATOR RELEASED — бот снова отвечает автономно. Тема снова закрыта для ввода."
         )
         await send_to_topic(
             token,
@@ -716,8 +744,14 @@ async def _handle_operator_message(msg: dict, db: Session) -> None:
     if text.startswith("/release"):
         set_operator_takeover(db, conv.id, False)
         db.commit()
+        # Re-close the topic so the bot speaker mode is reflected in UI:
+        # operators can no longer type into this conversation until they
+        # press "Возьму на себя" again.
+        await close_forum_topic(
+            token, settings.telegram_operator_group_id, topic_id,
+        )
         await send_to_topic(token, settings.telegram_operator_group_id, topic_id,
-                            "🤖 Бот снова отвечает автономно.")
+                            "🤖 Бот снова отвечает автономно. Тема закрыта для ввода — нажмите «Возьму на себя» чтобы снова перехватить.")
         return
 
     if text.startswith("/close"):

@@ -405,6 +405,66 @@ async def send_to_topic(
         return False
 
 
+async def close_forum_topic(
+    token: str,
+    supergroup_id: str,
+    message_thread_id: int,
+) -> bool:
+    """Close a forum topic so members cannot send messages into it.
+
+    Telegram UI hides the message-input field for non-admin members of a
+    closed topic, which is exactly the UX we want for the operator inbox:
+    while operator_takeover is OFF, the bot is the only active speaker —
+    operators read but can't accidentally type into the lead's conversation.
+
+    Bot itself (and supergroup admins with can_manage_topics) can still post
+    into a closed topic via the API, so mirroring of LEAD/BOT messages keeps
+    working. Idempotent: calling close on an already-closed topic returns OK.
+    """
+    if not token or not supergroup_id or message_thread_id is None:
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                f"{TELEGRAM_API_BASE}/bot{token}/closeForumTopic",
+                json={"chat_id": supergroup_id, "message_thread_id": message_thread_id},
+            )
+        if r.status_code != 200:
+            log.warning(f"close_forum_topic {r.status_code}: {r.text[:200]}")
+            return False
+        return True
+    except Exception as e:
+        log.error(f"close_forum_topic exception: {e}")
+        return False
+
+
+async def reopen_forum_topic(
+    token: str,
+    supergroup_id: str,
+    message_thread_id: int,
+) -> bool:
+    """Re-open a previously closed forum topic. Restores the message-input
+    field for all members. Used when an operator presses "Возьму на себя"
+    so they can start typing replies that will be forwarded to the lead.
+    Idempotent: calling reopen on an already-open topic returns OK.
+    """
+    if not token or not supergroup_id or message_thread_id is None:
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                f"{TELEGRAM_API_BASE}/bot{token}/reopenForumTopic",
+                json={"chat_id": supergroup_id, "message_thread_id": message_thread_id},
+            )
+        if r.status_code != 200:
+            log.warning(f"reopen_forum_topic {r.status_code}: {r.text[:200]}")
+            return False
+        return True
+    except Exception as e:
+        log.error(f"reopen_forum_topic exception: {e}")
+        return False
+
+
 async def answer_callback_query(
     token: str,
     callback_query_id: str,
