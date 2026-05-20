@@ -298,16 +298,49 @@ def _extract_email_from_handoff(handoff_data: dict) -> str:
     return ""
 
 
+import re as _re_normalize
+
+_LEGACY_PREFIX_RE = _re_normalize.compile(r'^\s*(?://+|>>+|—+)\s*')
+
+
+def _normalize_bot_reply(text: str) -> str:
+    """Defense-in-depth: enforce the post-2026-05-20 reply convention on
+    every assistant message, regardless of what the LLM actually returned.
+
+    Convention:
+      - No leading marker prefix (`// `, `>> `, `— ` and similar from the
+        old slash-comment style)
+      - First character is uppercase if it's a letter
+
+    Why this exists:
+      Even with an updated SYSTEM_PROMPT and few-shots, the LLM can copy
+      the legacy `// ` + lowercase style from older bot replies still
+      sitting in the conversation history. We make the new convention
+      binding by stripping/capitalizing the model output AND by
+      transforming assistant history before feeding it back to the model
+      (see usage in `_messages_to_dicts` and history_str builder).
+    """
+    if not text:
+        return text
+    t = _LEGACY_PREFIX_RE.sub('', text)
+    if t and t[0].islower():
+        t = t[0].upper() + t[1:]
+    return t
+
+
 def _messages_to_dicts(messages: list[MessageRow]) -> list[dict]:
     """Convert DB Message rows to the simple list[dict] shape that
-    check_handoff and send_telegram_brief expect."""
-    return [
-        {
-            "role": m.role.value if hasattr(m.role, "value") else str(m.role),
-            "content": m.content,
-        }
-        for m in messages
-    ]
+    check_handoff and send_telegram_brief expect. Assistant messages are
+    passed through `_normalize_bot_reply` so legacy `// `-prefixed history
+    does not contaminate downstream prompts."""
+    out: list[dict] = []
+    for m in messages:
+        role = m.role.value if hasattr(m.role, "value") else str(m.role)
+        content = m.content
+        if role == "assistant":
+            content = _normalize_bot_reply(content)
+        out.append({"role": role, "content": content})
+    return out
 
 
 # ============================================================================
@@ -449,9 +482,15 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     # "history before this question" string.
     recent = get_recent_messages(db, conversation.id, limit=13)
     history_for_prompt = recent[:-1] if recent else []
-    # Trim to last 12 entries for prompt budget (6 turns of user+assistant)
+    # Trim to last 12 entries for prompt budget (6 turns of user+assistant).
+    # Assistant messages pass through _normalize_bot_reply so legacy
+    # `// `-prefixed history doesn't seed the LLM with the old style.
+    def _line_for_prompt(m: MessageRow) -> str:
+        role = m.role.value if hasattr(m.role, "value") else str(m.role)
+        content = _normalize_bot_reply(m.content) if role == "assistant" else m.content
+        return f"{role}: {content}"
     history_str = "\n".join(
-        [f"{m.role}: {m.content}" for m in history_for_prompt[-12:]]
+        [_line_for_prompt(m) for m in history_for_prompt[-12:]]
     ) or "(новый диалог)"
 
     # First-turn detection for AI Act Art. 50 disclosure. If after appending
@@ -483,10 +522,13 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         await send_typing_action(settings.telegram_bot_token, req.channel_conversation_id)
 
     # 6. LLM
-    answer = await call_llm(prompt)
+    raw_answer = await call_llm(prompt)
+    # Defense-in-depth: enforce the no-prefix + capitalize-first-letter
+    # convention regardless of what the LLM returned. See _normalize_bot_reply.
+    answer = _normalize_bot_reply(raw_answer)
     log.info(f"[{str(conversation.id)[:8]}/{req.channel}/{req.message_type}] A: {answer[:200]}")
 
-    # 7. Persist assistant reply
+    # 7. Persist assistant reply (normalized form — keeps DB clean for future reads)
     append_message(db, conversation.id, role="assistant", content=answer)
 
     # Mirror bot reply to operator topic with a takeover button.
