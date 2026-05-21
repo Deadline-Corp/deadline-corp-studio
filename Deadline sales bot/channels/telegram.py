@@ -135,6 +135,11 @@ async def transcribe_voice(
                 files=files,
                 data=data,
             )
+        # Memory hygiene: drop refs to the multipart payload immediately —
+        # for long voice (200s+) the audio buffer can be 3-5 MB. We don't
+        # want it lingering until the next natural GC cycle while the
+        # subsequent RAG/LLM pipeline allocates more memory.
+        del files, data
         if r.status_code != 200:
             log.warning(f"groq transcribe {r.status_code}: {r.text[:200]}")
             return None

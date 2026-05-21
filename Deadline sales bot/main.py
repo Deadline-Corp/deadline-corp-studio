@@ -13,14 +13,17 @@ Run locally:
 Deploy to Railway: see README.md
 """
 
+import gc
 import json
 import logging
+import time
+from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request, Depends
+from fastapi import FastAPI, HTTPException, Request, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
@@ -33,7 +36,7 @@ from langchain_openai import ChatOpenAI
 from prompts import build_chat_prompt, HANDOFF_CHECK_PROMPT, format_handoff_brief
 
 # DB-backed services (Day 3-4 migration from in-memory SESSIONS dict + Chroma)
-from db.connection import get_db, check_connection
+from db.connection import get_db, check_connection, session_scope
 from db.models import Message as MessageRow, Conversation as ConvRow, ConversationStatusEnum
 from uuid import UUID as PyUUID
 from db.vector import similarity_search as pgvector_search
@@ -792,13 +795,161 @@ async def _handle_operator_message(msg: dict, db: Session) -> None:
     db.commit()
 
 
+# ============================================================================
+# Telegram webhook — fast-200 + dedup + BackgroundTasks
+# ============================================================================
+# Why this architecture (incident 2026-05-20 08:34 UTC):
+#   Telegram webhook has a ~10-second handler timeout. For a long voice
+#   message: Whisper transcription (~3-5s) + RAG (~100ms) + LLM call (2-5s)
+#   + handoff classifier (2-3s) → 8-13s total → Telegram considers the
+#   webhook failed → retries the SAME update_id → second handler instance
+#   starts processing the same payload concurrently → two bge-m3 / Whisper
+#   contexts in RAM → OOM kill → container down for hours.
+#
+# Fix: return 200 OK in <100ms (no work in the request handler), schedule
+# the actual processing as a BackgroundTask that runs AFTER the response is
+# sent. Telegram is happy (fast 200), no retries. As a defense-in-depth
+# layer, dedup by update_id in an in-memory TTL set so even if a retry
+# slips through (network blip, deploy gap), the second handler exits early.
+
+# In-memory dedup state. Single-process FastAPI on Railway — no need for
+# Redis or cross-instance coordination yet. OrderedDict maps
+# update_id -> timestamp. FIFO insertion order is preserved.
+_PROCESSED_UPDATES: "OrderedDict[int, float]" = OrderedDict()
+# Telegram normally retries within 30-90 seconds. 5 min TTL is generous
+# without growing unbounded.
+_DEDUP_MAX_AGE_SEC = 300
+# Hard cap on dedup set size — protects against pathological burst patterns
+# where TTL hasn't caught up. ~30KB of RAM at most.
+_DEDUP_MAX_SIZE = 1000
+
+
+def _seen_update(update_id: Optional[int]) -> bool:
+    """Mark `update_id` as processed and return whether we'd seen it before.
+
+    - Fresh update_id → store with current timestamp, return False
+    - Repeat update_id → return True without re-storing
+    - update_id is None → return False, do NOT store (Telegram occasionally
+      omits the field on malformed payloads; we don't want a None-key entry
+      to swallow ALL future Nones as "duplicates")
+
+    Eviction sweeps run on every call:
+      1. TTL: drop any entries older than _DEDUP_MAX_AGE_SEC
+      2. Size cap: if still over _DEDUP_MAX_SIZE, FIFO-evict oldest
+    """
+    if update_id is None:
+        return False
+
+    now = time.time()
+    # TTL sweep: pop from the front (oldest) while too old.
+    while _PROCESSED_UPDATES:
+        oldest_id = next(iter(_PROCESSED_UPDATES))
+        if _PROCESSED_UPDATES[oldest_id] < now - _DEDUP_MAX_AGE_SEC:
+            _PROCESSED_UPDATES.popitem(last=False)
+        else:
+            break
+
+    # Already seen? Quick exit.
+    if update_id in _PROCESSED_UPDATES:
+        return True
+
+    # Size cap: evict oldest before inserting if we're at/above capacity.
+    while len(_PROCESSED_UPDATES) >= _DEDUP_MAX_SIZE:
+        _PROCESSED_UPDATES.popitem(last=False)
+
+    _PROCESSED_UPDATES[update_id] = now
+    return False
+
+
+async def _process_telegram_update(payload: dict) -> None:
+    """Heavy-lifting handler for a Telegram update — runs in a BackgroundTask
+    AFTER the webhook has returned 200 OK to Telegram. Opens its own DB
+    session via `session_scope` because the request-scoped session from
+    Depends(get_db) is already closed by the time we run.
+
+    All exceptions caught and logged — there's no one to return them to here.
+    The webhook caller has already responded 200. Re-raising would just spam
+    the FastAPI background-task error log and not change client behavior.
+    """
+    try:
+        with session_scope() as db:
+            # 1. Inline button taps (callback_query) — operator pressed
+            # "Возьму на себя" / "Освободить" on a bot reply.
+            if callback := payload.get("callback_query"):
+                try:
+                    await _handle_operator_callback(callback, db)
+                except Exception as e:
+                    log.error(f"_handle_operator_callback failed: {e}", exc_info=True)
+                return
+
+            msg = payload.get("message") or {}
+            chat = msg.get("chat") or {}
+
+            # 2. Operator wrote in a forum topic of the operator supergroup
+            # (during takeover) — forward to the lead.
+            if (
+                chat.get("type") == "supergroup"
+                and settings.telegram_operator_group_id
+                and str(chat.get("id")) == str(settings.telegram_operator_group_id)
+                and msg.get("message_thread_id")
+            ):
+                try:
+                    await _handle_operator_message(msg, db)
+                except Exception as e:
+                    log.error(f"_handle_operator_message failed: {e}", exc_info=True)
+                return
+
+            # 3. Lead's DM — full pipeline (voice transcription happens in
+            # parse_telegram_webhook, then RAG + LLM + handoff in _handle_message)
+            normalized = await parse_telegram_webhook(
+                payload,
+                bot_token=settings.telegram_bot_token,
+                groq_api_key=settings.groq_api_key,
+            )
+            if normalized is None:
+                return
+
+            msg_req = MessageRequest(
+                channel=normalized.channel,
+                external_id=normalized.external_id,
+                content=normalized.content,
+                username=normalized.username,
+                channel_conversation_id=normalized.channel_conversation_id,
+                message_type=normalized.message_type,
+                extra_meta=normalized.extra_meta,
+            )
+
+            try:
+                resp = await _handle_message(msg_req, db)
+            except Exception as e:
+                log.error(f"_process_telegram_update: _handle_message failed — {e}", exc_info=True)
+                return
+
+            # If operator_takeover is on, _handle_message returns empty answer → skip send.
+            if resp.answer:
+                await send_telegram_reply(
+                    settings.telegram_bot_token,
+                    normalized.channel_conversation_id,
+                    resp.answer,
+                )
+    finally:
+        # Memory hygiene: force GC after each update so heavy objects
+        # (Whisper audio buffer, RAG embeddings, LLM payload, retrieved KB
+        # chunks) are reclaimed immediately, not at the next natural GC
+        # cycle. Without this, burst loads (3-4 voice messages back to back)
+        # caused RAM to creep up and eventually OOM.
+        gc.collect()
+
+
 @app.post("/webhooks/telegram")
-async def telegram_webhook(request: Request, db: Session = Depends(get_db)):
-    """Telegram Bot API webhook. Three roles share one URL:
-      1. callback_query → operator tapped an inline button in the operator group
-      2. message in operator supergroup topic → operator wrote a reply for a lead
-      3. message in a private chat → lead's incoming DM (text or voice)
-    Always returns 200 (Telegram retries on non-200, we don't want loops).
+async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
+    """Telegram Bot API webhook — returns 200 OK in <100ms regardless of
+    payload type. Heavy work runs in BackgroundTasks. See module-level
+    docstring above for the architectural rationale.
+
+    Defense-in-depth dedup on update_id: even if Telegram retries (network
+    blip, deploy gap, our background task crashed mid-flight), the second
+    delivery exits early without re-processing the same payload.
     """
     try:
         payload = await request.json()
@@ -806,63 +957,14 @@ async def telegram_webhook(request: Request, db: Session = Depends(get_db)):
         log.warning(f"telegram_webhook: invalid JSON — {e}")
         return {"ok": True}
 
-    # 1. Inline button taps (callback_query)
-    if callback := payload.get("callback_query"):
-        try:
-            await _handle_operator_callback(callback, db)
-        except Exception as e:
-            log.error(f"_handle_operator_callback failed: {e}")
-        return {"ok": True}
+    update_id = payload.get("update_id")
+    if _seen_update(update_id):
+        log.info(f"telegram_webhook: dedup hit for update_id={update_id}")
+        return {"ok": True, "dedup": True}
 
-    msg = payload.get("message") or {}
-    chat = msg.get("chat") or {}
-
-    # 2. Message in the operator supergroup (a forum topic)
-    if (
-        chat.get("type") == "supergroup"
-        and settings.telegram_operator_group_id
-        and str(chat.get("id")) == str(settings.telegram_operator_group_id)
-        and msg.get("message_thread_id")
-    ):
-        try:
-            await _handle_operator_message(msg, db)
-        except Exception as e:
-            log.error(f"_handle_operator_message failed: {e}")
-        return {"ok": True}
-
-    # 3. Lead's DM — existing flow (voice transcription happens in parser)
-    normalized = await parse_telegram_webhook(
-        payload,
-        bot_token=settings.telegram_bot_token,
-        groq_api_key=settings.groq_api_key,
-    )
-    if normalized is None:
-        return {"ok": True}
-
-    msg_req = MessageRequest(
-        channel=normalized.channel,
-        external_id=normalized.external_id,
-        content=normalized.content,
-        username=normalized.username,
-        channel_conversation_id=normalized.channel_conversation_id,
-        message_type=normalized.message_type,
-        extra_meta=normalized.extra_meta,
-    )
-
-    try:
-        resp = await _handle_message(msg_req, db)
-    except Exception as e:
-        log.error(f"telegram_webhook: _handle_message failed — {e}")
-        return {"ok": True}
-
-    # If operator_takeover is on, _handle_message returns empty answer → skip send.
-    if resp.answer:
-        await send_telegram_reply(
-            settings.telegram_bot_token,
-            normalized.channel_conversation_id,
-            resp.answer,
-        )
-
+    # Schedule the heavy work. FastAPI runs background tasks AFTER the
+    # response is sent — Telegram sees 200 immediately, no timeout, no retry.
+    background_tasks.add_task(_process_telegram_update, payload)
     return {"ok": True}
 
 
