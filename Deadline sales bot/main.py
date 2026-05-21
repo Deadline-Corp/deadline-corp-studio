@@ -1341,6 +1341,7 @@ class LeadFormRequest(BaseModel):
     source: str = Field("direct", max_length=100)
     campaign: str = Field("", max_length=200)
     timestamp: str = Field("", max_length=64)
+    lang: str = Field("ru", max_length=5)  # ru | en — landing page language
 
 
 async def send_lead_to_telegram(lead: LeadFormRequest) -> bool:
@@ -1363,6 +1364,10 @@ async def send_lead_to_telegram(lead: LeadFormRequest) -> bool:
         header = "🌐 ПРЯМОЙ ЛИД (без рекламы)"
     else:
         header = f"🔥 ЛИД ({source.upper()})"
+
+    # Language flag — на каком языке отвечать клиенту
+    lang_flag = "🇬🇧 ОТВЕЧАТЬ НА АНГЛИЙСКОМ" if (lead.lang or "ru").lower() == "en" else "🇷🇺 RU"
+    header = f"{header}  ·  {lang_flag}"
 
     # Расшифровка нашего utm_content в человекочитаемый формат
     creative_labels = {
