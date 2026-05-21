@@ -13,6 +13,7 @@ Run locally:
 Deploy to Railway: see README.md
 """
 
+import asyncio
 import gc
 import json
 import logging
@@ -23,7 +24,7 @@ from typing import Optional
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request, Depends, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
@@ -942,10 +943,17 @@ async def _process_telegram_update(payload: dict) -> None:
 
 
 @app.post("/webhooks/telegram")
-async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
+async def telegram_webhook(request: Request):
     """Telegram Bot API webhook — returns 200 OK in <100ms regardless of
-    payload type. Heavy work runs in BackgroundTasks. See module-level
-    docstring above for the architectural rationale.
+    payload type. Heavy work runs in a true fire-and-forget asyncio task.
+    See module-level docstring above for the architectural rationale.
+
+    Why asyncio.create_task instead of FastAPI BackgroundTasks:
+      Starlette's BackgroundTasks keep the HTTP connection OPEN until the
+      task completes, which defeats the whole point — client (Telegram)
+      still waits for our 10+ second pipeline. asyncio.create_task schedules
+      the task in the running event loop and lets the response close the
+      connection immediately while the task runs concurrently.
 
     Defense-in-depth dedup on update_id: even if Telegram retries (network
     blip, deploy gap, our background task crashed mid-flight), the second
@@ -962,9 +970,10 @@ async def telegram_webhook(request: Request, background_tasks: BackgroundTasks):
         log.info(f"telegram_webhook: dedup hit for update_id={update_id}")
         return {"ok": True, "dedup": True}
 
-    # Schedule the heavy work. FastAPI runs background tasks AFTER the
-    # response is sent — Telegram sees 200 immediately, no timeout, no retry.
-    background_tasks.add_task(_process_telegram_update, payload)
+    # Fire-and-forget: response closes the connection immediately, task
+    # continues in the event loop. We deliberately do NOT await — that
+    # would re-introduce the blocking-until-done behaviour we just fixed.
+    asyncio.create_task(_process_telegram_update(payload))
     return {"ok": True}
 
 
