@@ -145,9 +145,21 @@ def parse_instagram_comment_webhook(payload: dict) -> Optional[NormalizedMessage
     return None
 
 
-async def send_instagram_reply(page_access_token: str, recipient_igsid: str, text: str) -> bool:
+async def send_instagram_reply(
+    page_access_token: str,
+    recipient_igsid: str,
+    text: str,
+    *,
+    messaging_type: str = "RESPONSE",
+    tag: Optional[str] = None,
+) -> bool:
     """Send a DM reply through the Send API (IG uses the same /me/messages
     endpoint as Messenger, with the same Page Access Token of the linked Page).
+
+    Default `messaging_type="RESPONSE"` works only within the 24-hour window
+    since the lead's last message. For operator replies that may land beyond
+    24h, pass `messaging_type="MESSAGE_TAG"` + `tag="HUMAN_AGENT"` to extend
+    the window to 7 days (requires `human_agent` permission on the Meta App).
     """
     if not page_access_token:
         log.error("instagram: META_PAGE_ACCESS_TOKEN not set — cannot reply")
@@ -156,20 +168,23 @@ async def send_instagram_reply(page_access_token: str, recipient_igsid: str, tex
         return False
 
     text = text[:1900]
+    payload: dict = {
+        "recipient": {"id": recipient_igsid},
+        "messaging_type": messaging_type,
+        "message": {"text": text},
+    }
+    if messaging_type == "MESSAGE_TAG" and tag:
+        payload["tag"] = tag
 
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             r = await client.post(
                 f"{GRAPH_API_BASE}/me/messages",
                 params={"access_token": page_access_token},
-                json={
-                    "recipient": {"id": recipient_igsid},
-                    "messaging_type": "RESPONSE",
-                    "message": {"text": text},
-                },
+                json=payload,
             )
         if r.status_code != 200:
-            log.warning(f"instagram send {r.status_code}: {r.text[:200]}")
+            log.warning(f"instagram send {r.status_code} (type={messaging_type} tag={tag}): {r.text[:200]}")
             return False
         return True
     except Exception as e:

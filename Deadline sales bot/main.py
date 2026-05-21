@@ -61,6 +61,8 @@ from channels.telegram import (
     answer_callback_query,
     close_forum_topic,
     reopen_forum_topic,
+    extract_attachment,
+    forward_attachment,
 )
 from channels.messenger import (
     parse_messenger_webhook,
@@ -114,6 +116,12 @@ class Settings(BaseSettings):
     meta_page_access_token: Optional[str] = None
     allowed_origins: str = "https://deadlinecorp.com,https://www.deadlinecorp.com,https://deadline-corp.github.io,http://localhost:3000,http://localhost:5500,http://127.0.0.1:5500"
     log_level: str = "INFO"
+    # Optional bearer-token gate for /metrics. If unset, /metrics is open
+    # (development convenience). If set, every /metrics request must carry
+    # `Authorization: Bearer <token>` matching this value. Use a long random
+    # string in production — even though /metrics has no PII, leaking
+    # operational counts to competitors is bad hygiene.
+    metrics_auth_token: Optional[str] = None
 
     class Config:
         env_file = ".env"
@@ -654,19 +662,25 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
 
 async def _handle_operator_callback(callback: dict, db: Session) -> None:
     """Inline-button taps from operators. The `callback_data` payload encodes
-    the conversation id; supported actions: `takeover:<conv_id>` toggles
-    operator_takeover for that conversation.
+    an action and a conversation id, separated by `:`. Supported actions:
+      - `takeover:<conv_id>` — TOGGLE operator_takeover (attached under each
+         bot reply, so operators flip into takeover with one tap and back
+         with the same button if they change their mind)
+      - `release:<conv_id>` — FORCE operator_takeover off (attached under
+         each operator-forwarded message during takeover, so the team can
+         return the conversation to the bot with one tap, no /release typing)
     """
     cb_id = callback.get("id")
     data = callback.get("data", "")
     token = settings.telegram_bot_token
 
-    if not data.startswith("takeover:"):
+    action, _, conv_id_str = data.partition(":")
+    if action not in ("takeover", "release"):
         await answer_callback_query(token, cb_id, text="Unknown action")
         return
 
     try:
-        conv_id = PyUUID(data.split(":", 1)[1])
+        conv_id = PyUUID(conv_id_str)
     except (ValueError, IndexError):
         await answer_callback_query(token, cb_id, text="Bad conversation id")
         return
@@ -676,7 +690,15 @@ async def _handle_operator_callback(callback: dict, db: Session) -> None:
         await answer_callback_query(token, cb_id, text="Conversation not found")
         return
 
-    new_state = not conv.operator_takeover
+    # takeover: toggle. release: force OFF (idempotent).
+    if action == "takeover":
+        new_state = not conv.operator_takeover
+    else:  # release
+        new_state = False
+        if conv.operator_takeover is False:
+            # Already released — give a friendly toast and skip state churn
+            await answer_callback_query(token, cb_id, text="Уже на боте.")
+            return
     set_operator_takeover(db, conv_id, new_state)
     db.commit()
 
@@ -729,9 +751,14 @@ async def _handle_operator_message(msg: dict, db: Session) -> None:
     if from_user.get("is_bot"):
         return  # don't loop on our own mirrored messages
 
-    text = (msg.get("text") or "").strip()
-    if not text:
-        return
+    # Text or caption — both treated as the operator's textual reply.
+    # Caption applies when the operator sends media (photo/voice/etc.) with
+    # an explanatory line attached.
+    text = (msg.get("text") or msg.get("caption") or "").strip()
+    attachment = extract_attachment(msg)
+
+    if not text and not attachment:
+        return  # service messages, joined/left events, etc.
 
     topic_id = msg.get("message_thread_id")
     if not topic_id:
@@ -746,7 +773,11 @@ async def _handle_operator_message(msg: dict, db: Session) -> None:
     token = settings.telegram_bot_token
 
     # ---- commands ----
-    if text.startswith("/release"):
+    # Commands are text-only — if the operator attached media to a slash
+    # command, we ignore the command intent and treat it as a regular media
+    # forward with caption (text). This matches Telegram's UX where slash
+    # commands are typed alone.
+    if text and not attachment and text.startswith("/release"):
         set_operator_takeover(db, conv.id, False)
         db.commit()
         # Re-close the topic so the bot speaker mode is reflected in UI:
@@ -759,14 +790,14 @@ async def _handle_operator_message(msg: dict, db: Session) -> None:
                             "🤖 Бот снова отвечает автономно. Тема закрыта для ввода — нажмите «Возьму на себя» чтобы снова перехватить.")
         return
 
-    if text.startswith("/close"):
+    if text and not attachment and text.startswith("/close"):
         conv.status = ConversationStatusEnum.CLOSED.value
         db.commit()
         await send_to_topic(token, settings.telegram_operator_group_id, topic_id,
                             "🔒 Conversation closed.")
         return
 
-    if text.startswith("/note"):
+    if text and not attachment and text.startswith("/note"):
         note = text[len("/note"):].strip()
         if note:
             append_message(db, conv.id, role="system",
@@ -775,15 +806,64 @@ async def _handle_operator_message(msg: dict, db: Session) -> None:
         return
 
     # ---- forward to lead ----
+    # Text path goes through the channel-specific reply helper (Telegram /
+    # Instagram / Messenger / website). Media attachments currently work
+    # only for Telegram leads — Meta channels (IG/FB) require an explicit
+    # attachment upload via /me/message_attachments which is a separate
+    # implementation. For now we log if an attachment was sent but the lead
+    # is on Meta — operator sees the topic mirror and knows to follow up.
+    #
+    # For Meta text replies we use HUMAN_AGENT message tag so operator
+    # replies work even beyond Meta's standard 24-hour reply window.
+    # HUMAN_AGENT extends the window to 7 days. Requires the `human_agent`
+    # permission on the Meta App (Standard Access in App Review).
     delivered = False
     if conv.channel == "telegram" and conv.channel_conversation_id:
-        delivered = await send_telegram_reply(token, conv.channel_conversation_id, text)
+        if attachment:
+            attachment_type, file_id, _ = attachment
+            delivered = await forward_attachment(
+                token, conv.channel_conversation_id,
+                attachment_type, file_id,
+                caption=text or None,
+            )
+            log.info(
+                f"[{str(conv.id)[:8]}] operator forwarded {attachment_type} "
+                f"to telegram lead (delivered={delivered})"
+            )
+        else:
+            delivered = await send_telegram_reply(token, conv.channel_conversation_id, text)
     elif conv.channel == "instagram" and conv.channel_conversation_id:
-        delivered = await send_instagram_reply(
-            settings.meta_page_access_token, conv.channel_conversation_id, text)
+        if attachment:
+            log.warning(
+                f"[{str(conv.id)[:8]}] operator sent {attachment[0]} to IG lead — "
+                f"attachment forwarding not implemented for Meta channels yet "
+                f"(would need /me/message_attachments upload). Operator should send text only."
+            )
+            delivered = False
+        else:
+            delivered = await send_instagram_reply(
+                settings.meta_page_access_token,
+                conv.channel_conversation_id,
+                text,
+                messaging_type="MESSAGE_TAG",
+                tag="HUMAN_AGENT",
+            )
     elif conv.channel == "messenger" and conv.channel_conversation_id:
-        delivered = await send_messenger_reply(
-            settings.meta_page_access_token, conv.channel_conversation_id, text)
+        if attachment:
+            log.warning(
+                f"[{str(conv.id)[:8]}] operator sent {attachment[0]} to Messenger lead — "
+                f"attachment forwarding not implemented for Meta channels yet "
+                f"(would need /me/message_attachments upload). Operator should send text only."
+            )
+            delivered = False
+        else:
+            delivered = await send_messenger_reply(
+                settings.meta_page_access_token,
+                conv.channel_conversation_id,
+                text,
+                messaging_type="MESSAGE_TAG",
+                tag="HUMAN_AGENT",
+            )
     else:
         # Website — no push. Message just lives in DB; the widget will see
         # it on the next /chat poll (Phase 2: switch widget to long-poll or SSE).
@@ -795,6 +875,29 @@ async def _handle_operator_message(msg: dict, db: Session) -> None:
         extra_meta={"by": op_label, "delivered": delivered},
     )
     db.commit()
+
+    # Attach an inline "Вернуть боту" button so the operator can release
+    # the conversation back to the bot with one tap, without typing /release.
+    # We send this as a separate confirmation message under the operator's
+    # input so it's visually anchored to their reply. The release callback
+    # is handled in _handle_operator_callback (action="release").
+    if conv.forum_topic_id and settings.telegram_operator_group_id and token:
+        delivery_emoji = "✅" if delivered else "⚠️"
+        confirm_text = (
+            f"{delivery_emoji} Доставлено лиду." if delivered
+            else f"{delivery_emoji} НЕ доставлено (см. логи)."
+        )
+        await send_to_topic(
+            token,
+            settings.telegram_operator_group_id,
+            conv.forum_topic_id,
+            confirm_text,
+            reply_markup={
+                "inline_keyboard": [[
+                    {"text": "🤖 Вернуть боту", "callback_data": f"release:{conv.id}"}
+                ]]
+            },
+        )
 
 
 # ============================================================================
@@ -1164,13 +1267,35 @@ async def instagram_webhook(request: Request, db: Session = Depends(get_db)):
 
 
 # ============================================================================
-# /metrics — read-only ops view (no auth — internal tool only for now)
+# /metrics — read-only ops view, optional bearer-token gate
 # ============================================================================
 
+def _verify_metrics_token(request: Request) -> None:
+    """FastAPI dependency that enforces bearer-token auth on /metrics when
+    METRICS_AUTH_TOKEN env var is set. If unset, the endpoint is open
+    (development mode — convenient for local smoke testing).
+
+    Production setup: generate `openssl rand -hex 32`, store in Railway as
+    METRICS_AUTH_TOKEN, then call:
+        curl -H "Authorization: Bearer <token>" .../metrics
+    """
+    expected = settings.metrics_auth_token
+    if not expected:
+        return  # endpoint is open in dev mode
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Bearer token required")
+    if auth.split(None, 1)[1].strip() != expected:
+        raise HTTPException(status_code=403, detail="Invalid token")
+
+
 @app.get("/metrics")
-async def metrics(db: Session = Depends(get_db)):
-    """Aggregate counts useful for daily ops review. Phase 2 will add basic-auth
-    or a `?token=...` guard before this endpoint is exposed widely."""
+async def metrics(
+    _: None = Depends(_verify_metrics_token),
+    db: Session = Depends(get_db),
+):
+    """Aggregate counts useful for daily ops review. Bearer-token guarded
+    when METRICS_AUTH_TOKEN is configured in env."""
     from sqlalchemy import func as sql_func, select as sql_select
     from db.models import Customer, Conversation as ConvRow
 

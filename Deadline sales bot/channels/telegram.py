@@ -284,6 +284,115 @@ async def send_telegram_reply(token: str, chat_id: str, text: str) -> bool:
         return False
 
 
+# Map of attachment-type → Bot API method. Used by forward_attachment to
+# re-send a file via its file_id (Telegram caches uploads — no re-upload needed
+# when forwarding between chats handled by the same bot).
+_ATTACHMENT_METHODS = {
+    "voice": "sendVoice",
+    "photo": "sendPhoto",
+    "document": "sendDocument",
+    "video": "sendVideo",
+    "audio": "sendAudio",
+    "animation": "sendAnimation",
+    "sticker": "sendSticker",
+    "video_note": "sendVideoNote",
+}
+
+# Map of attachment-type → name of the file-id field in the API request body.
+# Most endpoints use the attachment type as the field name (sendPhoto wants
+# `photo`, sendVoice wants `voice`). All match except none right now —
+# kept as a separate dict in case Telegram adds a quirky endpoint later.
+_ATTACHMENT_FIELDS = {
+    "voice": "voice",
+    "photo": "photo",
+    "document": "document",
+    "video": "video",
+    "audio": "audio",
+    "animation": "animation",
+    "sticker": "sticker",
+    "video_note": "video_note",
+}
+
+
+async def forward_attachment(
+    token: str,
+    chat_id: str,
+    attachment_type: str,
+    file_id: str,
+    caption: Optional[str] = None,
+) -> bool:
+    """Forward a media attachment to a Telegram chat by its file_id.
+
+    Telegram caches every uploaded file under a permanent file_id. As long as
+    the same bot owns the file (received it via webhook or sent it), it can
+    re-send it to any chat by reusing the file_id — no download/upload cycle
+    needed. We use this for operator → lead forwarding: when an operator
+    sends voice/photo/document in the operator topic, we grab the file_id
+    from the webhook payload and call sendVoice/sendPhoto/sendDocument
+    against the lead's chat.
+
+    Returns True on success.
+
+    `attachment_type` must be one of the keys in _ATTACHMENT_METHODS.
+    `caption` is optional text that displays under the media (≤1024 chars).
+    Stickers and video_notes do not accept captions — caption is ignored.
+    """
+    method = _ATTACHMENT_METHODS.get(attachment_type)
+    field = _ATTACHMENT_FIELDS.get(attachment_type)
+    if not method or not field:
+        log.warning(f"forward_attachment: unsupported type '{attachment_type}'")
+        return False
+    if not token or not chat_id or not file_id:
+        return False
+
+    payload: dict = {"chat_id": chat_id, field: file_id}
+    # Stickers and video_notes can't have captions per Bot API docs
+    if caption and attachment_type not in ("sticker", "video_note"):
+        payload["caption"] = caption[:1024]
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.post(
+                f"{TELEGRAM_API_BASE}/bot{token}/{method}",
+                json=payload,
+            )
+        if r.status_code != 200:
+            log.warning(f"forward_attachment {method} {r.status_code}: {r.text[:200]}")
+            return False
+        return True
+    except Exception as e:
+        log.error(f"forward_attachment {method} exception: {e}")
+        return False
+
+
+def extract_attachment(msg: dict) -> Optional[tuple[str, str, Optional[str]]]:
+    """Inspect a Telegram message payload for a media attachment.
+
+    Returns a tuple (attachment_type, file_id, caption) if found, else None.
+    Photos arrive as an array of sizes — we pick the LAST entry which is
+    always the highest-resolution variant.
+    """
+    if not isinstance(msg, dict):
+        return None
+    caption = (msg.get("caption") or "").strip() or None
+
+    # Photo arrives as array — pick the largest (last) variant
+    if photos := msg.get("photo"):
+        if isinstance(photos, list) and photos:
+            largest = photos[-1]
+            file_id = largest.get("file_id") if isinstance(largest, dict) else None
+            if file_id:
+                return ("photo", file_id, caption)
+
+    # All other types: single object with file_id
+    for key in ("voice", "document", "video", "audio", "animation", "sticker", "video_note"):
+        obj = msg.get(key)
+        if isinstance(obj, dict) and obj.get("file_id"):
+            return (key, obj["file_id"], caption)
+
+    return None
+
+
 async def send_typing_action(token: str, chat_id: str) -> None:
     """Show "печатает..." indicator in the lead's chat for ~5 seconds.
 

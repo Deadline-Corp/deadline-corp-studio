@@ -41,6 +41,21 @@ class Base(DeclarativeBase):
 # ============================================================================
 # ENUMS
 # ============================================================================
+#
+# KNOWN QUIRK — Enum storage case (deferred fix, see drawer 2026-05-20):
+#   SQLAlchemy with `native_enum=False` stores Enum.NAME (uppercase, e.g.
+#   'TELEGRAM') in the underlying VARCHAR column, NOT Enum.value (lowercase
+#   'telegram'). This means:
+#     - ORM queries work transparently (e.g. ConvRow.channel == 'telegram'
+#       still matches because SQLAlchemy maps the enum on read/write).
+#     - Raw SQL like `SELECT * FROM conversations WHERE channel='telegram'`
+#       returns ZERO rows — must use uppercase: `... WHERE channel='TELEGRAM'`.
+#
+#   To switch to lowercase storage we'd need: (1) `values_callable=lambda x:
+#   [e.value for e in x]` on every SQLEnum constructor, (2) an Alembic data
+#   migration `UPDATE conversations SET channel = LOWER(channel)` for all
+#   three tables that use these enums. Deferred because mixed-format storage
+#   during deploy gaps is worse than the current consistent-uppercase state.
 
 
 class ChannelEnum(str, enum.Enum):
