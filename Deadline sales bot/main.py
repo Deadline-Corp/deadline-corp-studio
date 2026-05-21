@@ -17,6 +17,7 @@ import asyncio
 import gc
 import json
 import logging
+import threading
 import time
 from collections import OrderedDict
 from pathlib import Path
@@ -942,18 +943,28 @@ async def _process_telegram_update(payload: dict) -> None:
         gc.collect()
 
 
+def _process_in_thread(payload: dict) -> None:
+    """Thread entry point — spins up its own asyncio event loop because the
+    main event loop is back to serving FastAPI requests by the time we run.
+
+    Why a thread instead of asyncio.create_task on the main loop:
+      The pipeline calls bge-m3 embeddings (CPU-bound, ~100-300ms on cold
+      first call) which BLOCK the asyncio event loop. While blocked, the
+      response can't be flushed to the socket, so Telegram (and curl)
+      keeps the connection open and waits — exactly the bug we're fixing.
+      A separate OS thread with its own event loop is fully decoupled.
+    """
+    try:
+        asyncio.run(_process_telegram_update(payload))
+    except Exception as e:
+        log.error(f"_process_in_thread crashed: {e}", exc_info=True)
+
+
 @app.post("/webhooks/telegram")
 async def telegram_webhook(request: Request):
     """Telegram Bot API webhook — returns 200 OK in <100ms regardless of
-    payload type. Heavy work runs in a true fire-and-forget asyncio task.
-    See module-level docstring above for the architectural rationale.
-
-    Why asyncio.create_task instead of FastAPI BackgroundTasks:
-      Starlette's BackgroundTasks keep the HTTP connection OPEN until the
-      task completes, which defeats the whole point — client (Telegram)
-      still waits for our 10+ second pipeline. asyncio.create_task schedules
-      the task in the running event loop and lets the response close the
-      connection immediately while the task runs concurrently.
+    payload type. Heavy work runs in a separate OS thread (see
+    _process_in_thread above).
 
     Defense-in-depth dedup on update_id: even if Telegram retries (network
     blip, deploy gap, our background task crashed mid-flight), the second
@@ -970,10 +981,14 @@ async def telegram_webhook(request: Request):
         log.info(f"telegram_webhook: dedup hit for update_id={update_id}")
         return {"ok": True, "dedup": True}
 
-    # Fire-and-forget: response closes the connection immediately, task
-    # continues in the event loop. We deliberately do NOT await — that
-    # would re-introduce the blocking-until-done behaviour we just fixed.
-    asyncio.create_task(_process_telegram_update(payload))
+    # Spawn a daemon thread for the heavy pipeline. Daemon=True so the
+    # thread doesn't block process shutdown if Railway sends SIGTERM mid-task.
+    threading.Thread(
+        target=_process_in_thread,
+        args=(payload,),
+        daemon=True,
+        name=f"tg-update-{update_id}",
+    ).start()
     return {"ok": True}
 
 
