@@ -86,7 +86,28 @@ from channels.utils import verify_meta_signature
 load_dotenv()
 
 class Settings(BaseSettings):
-    ollama_api_key: str
+    # ---- LLM provider selection ----
+    # We prefer OpenRouter because it gives us a single OpenAI-compatible
+    # API surface in front of many model providers (Anthropic, Meta, Google,
+    # DeepSeek, Qwen, etc.) with one billing account. Ollama Cloud was the
+    # original primary but hit a weekly free-tier limit on 2026-05-23, after
+    # which we wired OpenRouter as the active provider.
+    #
+    # Selection rule (in get_llm_config below): if OPENROUTER_API_KEY is set,
+    # use OpenRouter with openrouter_model / openrouter_fallback_model. Else
+    # fall back to the legacy Ollama config (ollama_api_key + llm_model).
+    openrouter_api_key: Optional[str] = None
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    # Default model: Llama 3.3 70B Instruct — strong on RU/EN, OpenAI-style
+    # tool-following, ~$0.30/1M tokens at OpenRouter list price. Change via
+    # OPENROUTER_MODEL env var without code changes.
+    openrouter_model: str = "meta-llama/llama-3.3-70b-instruct"
+    # Fallback: DeepSeek Chat v3.1 — cheap (~$0.14/1M), good multilingual,
+    # works when llama hits provider-specific throttling.
+    openrouter_fallback_model: str = "deepseek/deepseek-chat"
+
+    # ---- Legacy Ollama Cloud (kept so the switch can be reversed in 1 env var) ----
+    ollama_api_key: Optional[str] = None
     ollama_base_url: str = "https://ollama.com/v1"
     llm_model: str = "qwen3.5:397b-cloud"
     llm_fallback_model: str = "glm-4.6:cloud"
@@ -155,23 +176,66 @@ app.add_middleware(
 
 
 # ============================================================================
-# LLM CLIENTS (Ollama Cloud — OpenAI-compatible API)
+# LLM CLIENTS — provider selection by env var (OpenRouter preferred, Ollama fallback)
 # ============================================================================
 
+def _resolve_llm_config() -> tuple[str, str, str, str, str]:
+    """Pick the active LLM provider based on which env keys are present.
+
+    Returns a tuple (provider_label, api_key, base_url, primary_model, fallback_model).
+    OpenRouter wins if its key is set (intentional — Ollama Cloud free tier
+    has weekly limits that hit production traffic). Fallback path keeps the
+    legacy Ollama config working if OPENROUTER_API_KEY is unset.
+    """
+    if settings.openrouter_api_key:
+        return (
+            "openrouter",
+            settings.openrouter_api_key,
+            settings.openrouter_base_url,
+            settings.openrouter_model,
+            settings.openrouter_fallback_model,
+        )
+    if settings.ollama_api_key:
+        return (
+            "ollama",
+            settings.ollama_api_key,
+            settings.ollama_base_url,
+            settings.llm_model,
+            settings.llm_fallback_model,
+        )
+    # Neither configured — fail loudly at import time so deployment doesn't
+    # silently start with no working LLM.
+    raise RuntimeError(
+        "No LLM provider configured. Set OPENROUTER_API_KEY (preferred) "
+        "or OLLAMA_API_KEY in env."
+    )
+
+
+_LLM_PROVIDER, _LLM_API_KEY, _LLM_BASE_URL, _LLM_PRIMARY_MODEL, _LLM_FALLBACK_MODEL = _resolve_llm_config()
+
+
 def make_llm(model_name: str, *, temperature: float = 0.2, max_tokens: int = 1200) -> ChatOpenAI:
+    """Build a ChatOpenAI client pointed at the currently-active provider.
+    OpenRouter recommends HTTP-Referer + X-Title headers for attribution and
+    rate-limit class; harmless when sent to Ollama Cloud (it ignores them).
+    """
     return ChatOpenAI(
         model=model_name,
-        api_key=settings.ollama_api_key,
-        base_url=settings.ollama_base_url,
+        api_key=_LLM_API_KEY,
+        base_url=_LLM_BASE_URL,
         temperature=temperature,
         max_tokens=max_tokens,
         timeout=60,
-        default_headers={"X-Title": "Deadline Sales Bot"},
+        default_headers={
+            "HTTP-Referer": "https://deadlinecorp.com",
+            "X-Title": "Deadline Sales Bot",
+        },
     )
 
-primary_llm = make_llm(settings.llm_model)
-fallback_llm = make_llm(settings.llm_fallback_model)
-handoff_llm = make_llm(settings.llm_fallback_model, temperature=0.0, max_tokens=1000)
+primary_llm = make_llm(_LLM_PRIMARY_MODEL)
+fallback_llm = make_llm(_LLM_FALLBACK_MODEL)
+handoff_llm = make_llm(_LLM_FALLBACK_MODEL, temperature=0.0, max_tokens=1000)
+log.info(f"LLM provider: {_LLM_PROVIDER} · primary={_LLM_PRIMARY_MODEL} · fallback={_LLM_FALLBACK_MODEL}")
 
 
 # ============================================================================
@@ -242,7 +306,7 @@ async def call_llm(prompt: str) -> str:
         response = await primary_llm.ainvoke(prompt)
         return response.content.strip()
     except Exception as e:
-        log.warning(f"Primary LLM ({settings.llm_model}) failed: {e}. Falling back.")
+        log.warning(f"Primary LLM ({_LLM_PRIMARY_MODEL}) failed: {e}. Falling back.")
         try:
             response = await fallback_llm.ainvoke(prompt)
             return response.content.strip()
@@ -636,7 +700,8 @@ async def health():
         "ok": True,
         "vectorstore_loaded": vectorstore is not None,
         "db_connected": check_connection(),
-        "model": settings.llm_model,
+        "model": _LLM_PRIMARY_MODEL,
+        "llm_provider": _LLM_PROVIDER,
     }
 
 
@@ -1438,7 +1503,7 @@ async def lead_submit(lead: LeadFormRequest):
 async def startup():
     log.info("=" * 60)
     log.info(f"Deadline Sales Bot v{app.version}")
-    log.info(f"Model:    {settings.llm_model} (fallback: {settings.llm_fallback_model})")
+    log.info(f"Model:    {_LLM_PRIMARY_MODEL} (fallback: {_LLM_FALLBACK_MODEL}) via {_LLM_PROVIDER}")
     log.info(f"Chroma:   {'loaded' if vectorstore else 'NOT LOADED (legacy)'}")
     log.info(f"Postgres: {'connected' if check_connection() else 'NOT CONNECTED'}")
     log.info(f"Telegram: {'configured' if settings.telegram_bot_token else 'NOT configured'}")

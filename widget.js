@@ -94,11 +94,11 @@
   root.id = "dl-bot";
   root.innerHTML = `
     <div id="dl-bot-header">
-      <span>// DEADLINE · опишите задачу одним сообщением</span>
+      <span>DEADLINE · Опишите задачу одним сообщением</span>
       <span id="dl-bot-toggle">↕</span>
     </div>
     <div id="dl-bot-msg">
-      <div class="dl-msg b">// привет. опишите задачу одним сообщением — план и срок прилетят раньше, чем уберёте руки от клавиатуры.</div>
+      <div class="dl-msg b">Привет. Опишите задачу одним сообщением — план и срок прилетят раньше, чем уберёте руки от клавиатуры.</div>
     </div>
     <div id="dl-bot-wrap">
       <input id="dl-inp" placeholder="Опишите задачу..." autocomplete="off" />
@@ -157,9 +157,9 @@
 
       if (!r.ok) {
         if (r.status === 503) {
-          addMsg("// сервис временно недоступен. напишите в Telegram @deadline_corp", "b");
+          addMsg("Сервис временно недоступен. Напишите в Telegram @deadline_corp", "b");
         } else {
-          addMsg("// ошибка связи. напишите в Telegram @deadline_corp", "b");
+          addMsg("Ошибка связи. Напишите в Telegram @deadline_corp", "b");
         }
         return;
       }
@@ -169,13 +169,13 @@
       if (data.handoff) {
         const isEng = /[a-zA-Z]/.test(text) && !/[а-яА-Я]/.test(text);
         const msg = isEng
-          ? "📩 passed to the team. we will email you within minutes."
-          : "📩 передал команде. напишем на email в течение минут.";
+          ? "📩 Passed to the team. We will email you within minutes."
+          : "📩 Передал команде. Напишем на email в течение минут.";
         addMsg(msg, "sys");
       }
     } catch (e) {
       hideTyping();
-      addMsg("// сбой связи. напишите в Telegram @deadline_corp", "b");
+      addMsg("Сбой связи. Напишите в Telegram @deadline_corp", "b");
       console.error("[dl-bot]", e);
     } finally {
       $btn.disabled = false;
