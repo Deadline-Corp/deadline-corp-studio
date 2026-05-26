@@ -177,8 +177,52 @@ async def _worker_loop(queue: asyncio.Queue[CRMEvent], adapter: CRMAdapter) -> N
             queue.task_done()
 
 
+def _resolve_pending_contact_id(customer_id: str) -> str:
+    """Look up the real CRM contact_id from DB.
+
+    Used by events enqueued with contact_id='pending' — the writeback
+    from an earlier upsert_contact event should have populated
+    Customer.crm_contact_id by the time the worker gets here. If not,
+    raise so retry backoff kicks in (writeback may still be in flight).
+    """
+    from db.connection import session_scope
+    from db.models import Customer
+    from uuid import UUID
+
+    with session_scope() as s:
+        cust = s.query(Customer).filter(Customer.id == UUID(customer_id)).first()
+        if cust and cust.crm_contact_id:
+            return cust.crm_contact_id
+    raise RuntimeError(
+        f"contact_id still pending for customer {customer_id} — "
+        f"writeback from upsert_contact not yet applied"
+    )
+
+
+def _resolve_pending_deal_id(conversation_id: str) -> str:
+    """Look up the real CRM deal_id from DB."""
+    from db.connection import session_scope
+    from db.models import Conversation
+    from uuid import UUID
+
+    with session_scope() as s:
+        conv = s.query(Conversation).filter(Conversation.id == UUID(conversation_id)).first()
+        if conv and conv.crm_deal_id:
+            return conv.crm_deal_id
+    raise RuntimeError(
+        f"deal_id still pending for conversation {conversation_id} — "
+        f"writeback from create_deal not yet applied"
+    )
+
+
 async def _dispatch(ev: CRMEvent, adapter: CRMAdapter) -> None:
-    """Translate event type → adapter call."""
+    """Translate event type → adapter call.
+
+    Events that depend on a CRM-side id resolved by an earlier event in
+    the FIFO (contact_id, deal_id marked as 'pending') are lazy-resolved
+    from DB via _resolve_pending_*. If the prior event's writeback hasn't
+    landed yet, those resolvers raise and we let retry backoff buy time.
+    """
     p = ev.payload
     if ev.type == "upsert_contact":
         contact_id = await adapter.upsert_contact(p["lead"])
@@ -189,30 +233,51 @@ async def _dispatch(ev: CRMEvent, adapter: CRMAdapter) -> None:
         return
 
     if ev.type == "create_deal":
-        deal_id = await adapter.create_deal(p["deal"], p["contact_id"])
+        contact_id = p["contact_id"]
+        if contact_id == "pending":
+            contact_id = _resolve_pending_contact_id(ev.customer_id)
+        deal_id = await adapter.create_deal(p["deal"], contact_id)
         cb = p.get("on_deal_id")
         if cb is not None:
             cb(deal_id)
         return
 
     if ev.type == "update_deal_stage":
+        deal_id = p["deal_id"]
+        if deal_id == "pending":
+            deal_id = _resolve_pending_deal_id(p["conversation_id"])
         await adapter.update_deal_stage(
-            p["deal_id"], p["stage"], p.get("lost_reason"),
+            deal_id, p["stage"], p.get("lost_reason"),
         )
         return
 
     if ev.type == "update_lead_temperature":
-        await adapter.update_lead_temperature(p["contact_id"], p["temperature"])
+        contact_id = p["contact_id"]
+        if contact_id == "pending":
+            contact_id = _resolve_pending_contact_id(ev.customer_id)
+        await adapter.update_lead_temperature(contact_id, p["temperature"])
         return
 
     if ev.type == "log_message":
-        await adapter.log_message(p["msg"], p["contact_id"])
+        contact_id = p["contact_id"]
+        if contact_id == "pending":
+            contact_id = _resolve_pending_contact_id(ev.customer_id)
+        await adapter.log_message(p["msg"], contact_id)
         return
 
     if ev.type == "create_task":
+        contact_id = p["contact_id"]
+        if contact_id == "pending":
+            contact_id = _resolve_pending_contact_id(ev.customer_id)
+        deal_id_raw = p.get("deal_id")
+        deal_id = None
+        if deal_id_raw == "pending":
+            deal_id = _resolve_pending_deal_id(p["conversation_id"])
+        elif deal_id_raw:
+            deal_id = deal_id_raw
         task_id = await adapter.create_task(
-            contact_id=p["contact_id"],
-            deal_id=p.get("deal_id"),
+            contact_id=contact_id,
+            deal_id=deal_id,
             title=p["title"],
             due_at=p["due_at"],
             category=p.get("category", "callback"),
@@ -279,11 +344,15 @@ def make_create_deal_event(
 def make_update_stage_event(
     customer_id: str, deal_id: str, stage: LeadStage,
     lost_reason: Optional[LostReason] = None,
+    conversation_id: Optional[str] = None,
 ) -> CRMEvent:
     return CRMEvent(
         type="update_deal_stage",
         customer_id=customer_id,
-        payload={"deal_id": deal_id, "stage": stage, "lost_reason": lost_reason},
+        payload={
+            "deal_id": deal_id, "stage": stage, "lost_reason": lost_reason,
+            "conversation_id": conversation_id,  # needed for lazy resolution when deal_id="pending"
+        },
     )
 
 
@@ -312,6 +381,7 @@ def make_create_task_event(
     title: str, due_at: datetime,
     category: TaskCategory = "callback",
     description: Optional[str] = None,
+    conversation_id: Optional[str] = None,
     on_task_id=None,
 ) -> CRMEvent:
     return CRMEvent(
@@ -320,6 +390,7 @@ def make_create_task_event(
         payload={
             "contact_id": contact_id,
             "deal_id": deal_id,
+            "conversation_id": conversation_id,  # needed for lazy resolution when deal_id="pending"
             "title": title,
             "due_at": due_at,
             "category": category,

@@ -134,15 +134,12 @@ def dispatch_message_log(
 ) -> None:
     """Mirror one message into the CRM contact timeline.
 
-    Skipped silently if we don't yet have a crm_contact_id (worker
-    hasn't processed the upsert event yet). This is acceptable because:
-      - The bot's own Postgres has the truth in `messages` table
-      - Once the upsert finishes, all subsequent messages flow
-      - For backfilling the gap, an admin script can replay from
-        Conversation.crm_deal_id once it's populated
+    If crm_contact_id is None (writeback not yet applied), we enqueue with
+    contact_id='pending' — the worker lazy-resolves it from DB and retries
+    until the upsert_contact event's writeback lands. This way the first
+    message of a brand-new lead still ends up in the timeline.
     """
-    if not crm_contact_id or crm_contact_id == "pending":
-        return  # CRM-side contact not yet resolved
+    contact_id = crm_contact_id if crm_contact_id else "pending"
     msg = MessageLog(
         lead_id=str(customer_id),
         conversation_id=str(conversation_id),
@@ -153,7 +150,7 @@ def dispatch_message_log(
         metadata=metadata or {},
     )
     enqueue(make_log_message_event(
-        customer_id=str(customer_id), msg=msg, contact_id=crm_contact_id,
+        customer_id=str(customer_id), msg=msg, contact_id=contact_id,
     ))
 
 
@@ -163,15 +160,22 @@ def dispatch_stage_change(
     crm_deal_id: Optional[str],
     new_stage: str,
     lost_reason: Optional[str] = None,
+    conversation_id: Optional[str] = None,
 ) -> None:
-    """Push a funnel-stage transition to the CRM deal."""
-    if not crm_deal_id or crm_deal_id == "pending":
-        return
+    """Push a funnel-stage transition to the CRM deal.
+
+    deal_id='pending' is used when the create_deal event hasn't completed yet —
+    common when a handoff fires on the very first message. The worker will
+    lazy-resolve it from Conversation.crm_deal_id when create_deal's writeback
+    has applied. conversation_id is required for that resolution.
+    """
+    deal_id = crm_deal_id if crm_deal_id else "pending"
     enqueue(make_update_stage_event(
         customer_id=str(customer_id),
-        deal_id=crm_deal_id,
+        deal_id=deal_id,
         stage=new_stage,  # type: ignore[arg-type]
         lost_reason=lost_reason,  # type: ignore[arg-type]
+        conversation_id=conversation_id,
     ))
 
 
@@ -182,11 +186,10 @@ def dispatch_temperature_change(
     new_temperature: str,
 ) -> None:
     """Push a temperature change to the CRM contact custom property."""
-    if not crm_contact_id or crm_contact_id == "pending":
-        return
+    contact_id = crm_contact_id if crm_contact_id else "pending"
     enqueue(make_update_temperature_event(
         customer_id=str(customer_id),
-        contact_id=crm_contact_id,
+        contact_id=contact_id,
         temperature=new_temperature,  # type: ignore[arg-type]
     ))
 
@@ -200,15 +203,23 @@ def dispatch_operator_task(
     category: str = "callback",
     due_in_minutes: int = 15,
     description: Optional[str] = None,
+    conversation_id: Optional[str] = None,
 ) -> None:
-    """Create an operator task in the CRM. Used after handoff, dunning, etc."""
-    if not crm_contact_id or crm_contact_id == "pending":
-        return
+    """Create an operator task in the CRM. Used after handoff, dunning, etc.
+
+    Both contact_id and deal_id may be 'pending' — the worker resolves
+    them lazily from DB. conversation_id is needed for deal_id resolution.
+    """
+    contact_id = crm_contact_id if crm_contact_id else "pending"
+    deal_id_for_event: Optional[str] = (
+        crm_deal_id if crm_deal_id else ("pending" if conversation_id else None)
+    )
     due_at = datetime.now(timezone.utc) + timedelta(minutes=due_in_minutes)
     enqueue(make_create_task_event(
         customer_id=str(customer_id),
-        contact_id=crm_contact_id,
-        deal_id=(crm_deal_id if crm_deal_id and crm_deal_id != "pending" else None),
+        contact_id=contact_id,
+        deal_id=deal_id_for_event,
+        conversation_id=conversation_id,
         title=title,
         due_at=due_at,
         category=category,  # type: ignore[arg-type]
@@ -311,11 +322,13 @@ def dispatch_on_message_turn(
                 customer_id=customer_id,
                 crm_deal_id=deal_id,
                 new_stage="qualified",
+                conversation_id=str(conversation.id),
             )
             dispatch_operator_task(
                 customer_id=customer_id,
                 crm_contact_id=contact_id,
                 crm_deal_id=deal_id,
+                conversation_id=str(conversation.id),
                 title=f"Take over lead — {customer.name or customer.email or 'unknown'}",
                 category="qualification",
                 due_in_minutes=15,
