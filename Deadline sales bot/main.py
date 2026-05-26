@@ -52,9 +52,10 @@ from services.conversations import (
     find_conversation_by_topic,
     set_operator_takeover,
 )
-# Tenant + CRM (Phase 1, 2026-05-26 — see ADR v1.3 in Obsidian Vault)
+# Tenant + CRM (Phase 1+7, 2026-05-26 — see ADR v1.3 in Obsidian Vault)
 from services.tenant import load_tenant, Tenant
 from services.crm import build_adapter, CRMAdapter
+from services import crm_queue as crm_queue
 from channels.telegram import (
     parse_telegram_webhook,
     send_telegram_reply,
@@ -1816,5 +1817,22 @@ async def startup():
         log.info(f"CRM:      {crm_adapter.provider_name} (enabled={settings.crm_enabled}, healthy={crm_ok})")
     except Exception as exc:  # noqa: BLE001
         log.warning(f"CRM:      {crm_adapter.provider_name} health-check failed: {exc}")
+    # Start the CRM event queue worker only when CRM is enabled — keeps the
+    # bot's hot path zero-cost when CRM is off. Worker is a single asyncio
+    # task that drains the queue forever; on shutdown we join it.
+    if settings.crm_enabled:
+        await crm_queue.start_worker(crm_adapter)
+        log.info(f"CRM queue: worker running")
+    else:
+        log.info(f"CRM queue: not started (crm_enabled=False)")
     log.info(f"Origins:  {settings.allowed_origins}")
     log.info("=" * 60)
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    """Drain the CRM queue best-effort before the worker is killed."""
+    if crm_queue.is_running():
+        log.info("Shutting down — draining CRM queue...")
+        await crm_queue.stop_worker(timeout=5.0)
+        log.info("CRM queue drained")

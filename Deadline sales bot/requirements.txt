@@ -30,3 +30,4 @@ alembic==1.13.3
 # Dev / testing — kept in main requirements so Railway image can run pytest
 # on demand for ops debugging. ~200 KB total, negligible image bloat.
 pytest==8.3.3
+pytest-asyncio==0.24.0
