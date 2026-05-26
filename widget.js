@@ -211,3 +211,341 @@
     sessionId: SESSION_ID,
   };
 })();
+
+
+/**
+ * Deadline Sales Bot — TRAINER WIDGET (opt-in)
+ *
+ * Activates only when the URL contains ?admin=<TRAINING_AUTH_TOKEN>.
+ * Renders a second widget on the left side of the page where an operator
+ * can: paste a past conversation snippet, describe what was wrong, get a
+ * proposed rule + sample response from the trainer LLM, iterate via
+ * feedback, and approve the final version to be saved to the bot's memory
+ * (the `training_corrections` table). Saved rules influence every future
+ * bot reply through RAG retrieval.
+ *
+ * Backend endpoints used (see main.py /admin/training/*):
+ *   POST /admin/training/draft   — start session, get first proposal
+ *   POST /admin/training/refine  — iterate with operator feedback
+ *   POST /admin/training/approve — persist the latest proposal
+ *   POST /admin/training/discard — abandon without saving
+ *   GET  /admin/training/list    — list current rules
+ *
+ * All require `Authorization: Bearer <token>` header.
+ */
+(function () {
+  "use strict";
+
+  // ----- Activation gate: only mount if ?admin=<token> is in URL -----
+  const URL_PARAMS = new URLSearchParams(window.location.search);
+  const ADMIN_TOKEN = URL_PARAMS.get("admin");
+  if (!ADMIN_TOKEN) return;  // not in admin mode → don't render anything
+
+  // Detect API base URL — same host as the regular widget's /chat endpoint
+  const BASE_URL = (
+    (typeof window !== "undefined" && window.DEADLINE_BOT_API) ||
+    "https://deadline-sales-bot-production.up.railway.app/chat"
+  ).replace(/\/chat\/?$/, "");
+
+  // Auth header for every training fetch
+  const authHeaders = () => ({
+    "Content-Type": "application/json",
+    "Authorization": "Bearer " + ADMIN_TOKEN,
+  });
+
+  // Live session state — null until first draft, then UUID returned by backend
+  let sessionId = null;
+
+  // ============================================================
+  // STYLES — visually distinct from the client widget (orange accent)
+  // ============================================================
+  const trainerStyles = `
+    #dl-trainer {
+      position: fixed;
+      left: 14px;
+      bottom: 14px;
+      width: 380px;
+      max-width: calc(100vw - 28px);
+      max-height: calc(100vh - 28px);
+      background: #1a0f08;
+      color: #f5e6d3;
+      border: 1px solid #c98a3a;
+      border-radius: 10px;
+      font: 14px/1.45 ui-monospace, SFMono-Regular, "Cascadia Code", Menlo, Consolas, monospace;
+      z-index: 99998;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.55);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    #dl-trainer.collapsed > .dl-trainer-body { display: none; }
+    .dl-trainer-header {
+      padding: 10px 12px;
+      background: #2a1810;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #c98a3a;
+    }
+    .dl-trainer-header strong { color: #ffb86b; }
+    .dl-trainer-body { padding: 12px; overflow-y: auto; max-height: 60vh; }
+    .dl-trainer-section { margin-bottom: 14px; }
+    .dl-trainer-label { display: block; margin-bottom: 4px; color: #ffb86b; font-size: 12px; }
+    .dl-trainer-textarea, .dl-trainer-input {
+      width: 100%;
+      background: #0d0805;
+      color: #f5e6d3;
+      border: 1px solid #4a3220;
+      border-radius: 6px;
+      padding: 8px;
+      font: inherit;
+      box-sizing: border-box;
+      resize: vertical;
+    }
+    .dl-trainer-textarea { min-height: 80px; }
+    .dl-trainer-btn {
+      background: #c98a3a;
+      color: #1a0f08;
+      border: 0;
+      padding: 8px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font: inherit;
+      font-weight: 600;
+      margin-right: 6px;
+      margin-top: 4px;
+    }
+    .dl-trainer-btn:hover { background: #e0a050; }
+    .dl-trainer-btn.secondary { background: #4a3220; color: #f5e6d3; }
+    .dl-trainer-btn:disabled { opacity: 0.5; cursor: wait; }
+    .dl-trainer-proposal {
+      background: #0d0805;
+      border-left: 3px solid #ffb86b;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      border-radius: 4px;
+      white-space: pre-wrap;
+    }
+    .dl-trainer-proposal h4 { margin: 0 0 4px; color: #ffb86b; font-size: 12px; text-transform: uppercase; }
+    .dl-trainer-status {
+      padding: 8px;
+      background: #0d0805;
+      border-radius: 4px;
+      color: #9ec99c;
+      margin-bottom: 8px;
+    }
+    .dl-trainer-error { color: #ff8a8a; }
+  `;
+  const trainerStyleEl = document.createElement("style");
+  trainerStyleEl.textContent = trainerStyles;
+  document.head.appendChild(trainerStyleEl);
+
+  // ============================================================
+  // DOM
+  // ============================================================
+  const tRoot = document.createElement("div");
+  tRoot.id = "dl-trainer";
+  tRoot.innerHTML = `
+    <div class="dl-trainer-header" id="dl-trainer-header">
+      <strong>🎓 TRAINER · обучение бота</strong>
+      <span id="dl-trainer-toggle">▼</span>
+    </div>
+    <div class="dl-trainer-body" id="dl-trainer-body">
+      <div class="dl-trainer-section">
+        <label class="dl-trainer-label">Шаг 1 — Диалог где бот ответил не так</label>
+        <textarea class="dl-trainer-textarea" id="dl-trainer-dialog" placeholder="user: сколько стоит сайт?
+assistant: цена от $2000
+user: дорого..."></textarea>
+      </div>
+      <div class="dl-trainer-section">
+        <label class="dl-trainer-label">Шаг 2 — Что было не так / как надо</label>
+        <textarea class="dl-trainer-textarea" id="dl-trainer-note" placeholder="Бот не должен называть конкретную сумму без Discovery. Надо было предложить разобраться с задачей и узнать email."></textarea>
+      </div>
+      <div class="dl-trainer-section">
+        <button class="dl-trainer-btn" id="dl-trainer-draft-btn">Получить вариант</button>
+        <button class="dl-trainer-btn secondary" id="dl-trainer-list-btn">📚 Список правил</button>
+      </div>
+      <div id="dl-trainer-proposals"></div>
+    </div>
+  `;
+  document.body.appendChild(tRoot);
+
+  const $tBody = document.getElementById("dl-trainer-body");
+  const $tHeader = document.getElementById("dl-trainer-header");
+  const $tToggle = document.getElementById("dl-trainer-toggle");
+  const $tDialog = document.getElementById("dl-trainer-dialog");
+  const $tNote = document.getElementById("dl-trainer-note");
+  const $tDraftBtn = document.getElementById("dl-trainer-draft-btn");
+  const $tListBtn = document.getElementById("dl-trainer-list-btn");
+  const $tProposals = document.getElementById("dl-trainer-proposals");
+
+  // ============================================================
+  // HELPERS
+  // ============================================================
+  function showStatus(text, isError) {
+    const el = document.createElement("div");
+    el.className = "dl-trainer-status" + (isError ? " dl-trainer-error" : "");
+    el.textContent = text;
+    $tProposals.appendChild(el);
+    $tBody.scrollTop = $tBody.scrollHeight;
+  }
+
+  function renderProposal(p) {
+    const wrap = document.createElement("div");
+    wrap.className = "dl-trainer-proposal";
+    wrap.innerHTML = `
+      <h4>Предложенное правило</h4>
+      <div>${escapeHtml(p.proposed_rule || "(пусто)")}</div>
+      <h4 style="margin-top:8px;">Пример ответа бота</h4>
+      <div>${escapeHtml(p.proposed_response || "(пусто)")}</div>
+      <h4 style="margin-top:8px;">Вопрос от тренера</h4>
+      <div style="color:#ffb86b;">${escapeHtml(p.confirmation_question || "Подходит?")}</div>
+      <div style="margin-top:10px;">
+        <button class="dl-trainer-btn" data-act="approve">✓ Сохранить</button>
+        <button class="dl-trainer-btn secondary" data-act="discard">✗ Отменить</button>
+      </div>
+      <div style="margin-top:8px;">
+        <input type="text" class="dl-trainer-input" placeholder="...или подскажи как надо иначе" data-act="refine-input"/>
+        <button class="dl-trainer-btn" data-act="refine" style="margin-top:4px;">↻ Новый вариант</button>
+      </div>
+    `;
+    wrap.querySelector('[data-act="approve"]').addEventListener("click", () => approveSession(wrap));
+    wrap.querySelector('[data-act="discard"]').addEventListener("click", () => discardSession(wrap));
+    wrap.querySelector('[data-act="refine"]').addEventListener("click", () => {
+      const inp = wrap.querySelector('[data-act="refine-input"]');
+      refineSession(inp.value.trim());
+    });
+    $tProposals.appendChild(wrap);
+    $tBody.scrollTop = $tBody.scrollHeight;
+  }
+
+  function escapeHtml(s) {
+    if (!s) return "";
+    return String(s).replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    }[c]));
+  }
+
+  async function postJSON(path, body) {
+    const r = await fetch(BASE_URL + path, {
+      method: "POST",
+      headers: authHeaders(),
+      body: JSON.stringify(body),
+    });
+    if (!r.ok) {
+      const text = await r.text().catch(() => "");
+      throw new Error("HTTP " + r.status + ": " + text.slice(0, 200));
+    }
+    return r.json();
+  }
+
+  // ============================================================
+  // ACTIONS
+  // ============================================================
+  async function startDraft() {
+    const dialog = $tDialog.value.trim();
+    const note = $tNote.value.trim();
+    if (!dialog || !note) {
+      showStatus("Нужно заполнить и диалог, и комментарий", true);
+      return;
+    }
+    $tDraftBtn.disabled = true;
+    $tDraftBtn.textContent = "Думаю...";
+    try {
+      const proposal = await postJSON("/admin/training/draft", {
+        dialog, correction_note: note,
+      });
+      sessionId = proposal.session_id;
+      renderProposal(proposal);
+    } catch (e) {
+      showStatus("Ошибка: " + e.message, true);
+    } finally {
+      $tDraftBtn.disabled = false;
+      $tDraftBtn.textContent = "Получить вариант";
+    }
+  }
+
+  async function refineSession(feedback) {
+    if (!sessionId) {
+      showStatus("Сначала получите первый вариант (Шаг 1)", true);
+      return;
+    }
+    if (!feedback) {
+      showStatus("Опишите что изменить в варианте", true);
+      return;
+    }
+    try {
+      const proposal = await postJSON("/admin/training/refine", {
+        session_id: sessionId, operator_feedback: feedback,
+      });
+      renderProposal(proposal);
+    } catch (e) {
+      showStatus("Ошибка: " + e.message, true);
+    }
+  }
+
+  async function approveSession(blockEl) {
+    if (!sessionId) return;
+    try {
+      const result = await postJSON("/admin/training/approve", {
+        session_id: sessionId, created_by: "admin",
+      });
+      showStatus("✓ Сохранено! ID правила: " + result.correction_id.slice(0, 8));
+      sessionId = null;
+      $tDialog.value = "";
+      $tNote.value = "";
+    } catch (e) {
+      showStatus("Ошибка сохранения: " + e.message, true);
+    }
+  }
+
+  async function discardSession(blockEl) {
+    if (sessionId) {
+      try {
+        await postJSON("/admin/training/discard", { session_id: sessionId });
+      } catch (_) { /* not fatal */ }
+    }
+    sessionId = null;
+    showStatus("Отменено. Можно начать новый разбор.");
+  }
+
+  async function listRules() {
+    try {
+      const r = await fetch(BASE_URL + "/admin/training/list?limit=20", { headers: authHeaders() });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const data = await r.json();
+      showStatus("Активных правил: " + data.count);
+      data.rules.slice(0, 10).forEach((rule) => {
+        const el = document.createElement("div");
+        el.className = "dl-trainer-proposal";
+        el.innerHTML = `
+          <h4>Правило · ${escapeHtml(rule.channel || "все каналы")}</h4>
+          <div>${escapeHtml(rule.guidance)}</div>
+          ${rule.suggested_response ? `<h4 style="margin-top:6px;">Пример</h4><div>${escapeHtml(rule.suggested_response)}</div>` : ""}
+          <div style="margin-top:4px; color:#888; font-size:11px;">${escapeHtml(rule.created_at || "")}</div>
+        `;
+        $tProposals.appendChild(el);
+      });
+      $tBody.scrollTop = $tBody.scrollHeight;
+    } catch (e) {
+      showStatus("Ошибка загрузки правил: " + e.message, true);
+    }
+  }
+
+  // ============================================================
+  // EVENTS
+  // ============================================================
+  $tHeader.addEventListener("click", () => {
+    tRoot.classList.toggle("collapsed");
+    $tToggle.textContent = tRoot.classList.contains("collapsed") ? "▲" : "▼";
+  });
+  $tDraftBtn.addEventListener("click", startDraft);
+  $tListBtn.addEventListener("click", listRules);
+
+  // Expose for debugging
+  window.DeadlineTrainer = {
+    sessionId: () => sessionId,
+    listRules,
+  };
+})();

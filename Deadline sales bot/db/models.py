@@ -256,3 +256,84 @@ class KBChunk(Base):
 
     def __repr__(self) -> str:
         return f"<KBChunk source={self.source}#{self.chunk_index}>"
+
+
+class TrainingCorrection(Base):
+    """Operator-supplied corrections that adjust how the bot should respond
+    in similar future situations. Populated through the /admin/training UI
+    when a human reviews a past conversation, marks a bot reply as wrong,
+    and approves a better alternative.
+
+    How it's used at inference time (see services/training.retrieve and
+    main._handle_message): embed the lead's current message with bge-m3,
+    similarity-search the top-K active corrections, inject them into the
+    SYSTEM_PROMPT as a "LESSONS FROM PAST CORRECTIONS" block. Lessons take
+    precedence over generic KB style and few-shot examples because they
+    come from a real reviewer pointing at a real failure mode.
+
+    Versioning: corrections are never hard-deleted. To replace a rule, set
+    `is_active=False` on the old one and link `superseded_by_id` to the
+    new one. This keeps an audit trail and avoids race conditions where a
+    stale conversation might still depend on the old rule mid-flight.
+    """
+    __tablename__ = "training_corrections"
+    __table_args__ = (
+        # Filter active corrections quickly (hot path in similarity_search)
+        Index("ix_training_corrections_active", "is_active"),
+        # Per-channel tuning: a website lead might need different reply
+        # style than a Telegram lead, so a correction can be channel-scoped
+        Index("ix_training_corrections_channel", "channel"),
+        # HNSW index on embedding is created in the alembic migration
+        # (Vector type needs the index_type='hnsw' clause in raw SQL)
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    # The situation that triggered the correction — typically the last 3-6
+    # messages from the original conversation, formatted as plain text:
+    #   user: ...
+    #   assistant: ...
+    #   user: ...
+    trigger_context: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Human-readable explanation of what should change. Used both for
+    # operator review (when listing rules) and for the LLM at inference
+    # time as a directive (e.g. "When the lead asks about price, never
+    # quote a range; always redirect to the discovery call.")
+    correct_guidance: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Optional concrete sample of the better response. Useful when the
+    # guidance is best expressed as "say something like this" rather
+    # than as an abstract rule. The model uses it as a few-shot anchor.
+    suggested_response: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Optional channel scope. NULL = applies to every channel. Otherwise
+    # one of "telegram", "instagram", "messenger", "website", "comment".
+    channel: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
+
+    # bge-m3 embedding of trigger_context (1024 dims). pgvector HNSW index
+    # makes top-K cosine-similarity search ~10ms even at 10K+ corrections.
+    embedding: Mapped[Optional[list[float]]] = mapped_column(Vector(EMBEDDING_DIM), nullable=True)
+
+    # Provenance — who approved this and when, optional link back to the
+    # original conversation that prompted the correction.
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_by: Mapped[str] = mapped_column(String(100), nullable=False, default="admin")
+    source_conversation_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    # Versioning: soft-delete via is_active=False, optional chain via
+    # superseded_by_id. Lets us roll back rules cleanly without hard-deleting
+    # rows that audit logs reference.
+    is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
+    superseded_by_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("training_corrections.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    def __repr__(self) -> str:
+        return f"<TrainingCorrection {str(self.id)[:8]} channel={self.channel} active={self.is_active}>"

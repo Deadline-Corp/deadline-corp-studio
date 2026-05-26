@@ -144,6 +144,13 @@ class Settings(BaseSettings):
     # operational counts to competitors is bad hygiene.
     metrics_auth_token: Optional[str] = None
 
+    # Bearer-token gate for the /admin/training/* endpoints (and for the
+    # trainer widget UI in widget.js — it activates when the URL has
+    # ?admin=<this_token>). Required to be set in production — if unset, the
+    # endpoints return 503 (refusing to even validate, in case someone
+    # accidentally exposes them by misconfiguration).
+    training_auth_token: Optional[str] = None
+
     class Config:
         env_file = ".env"
         extra = "ignore"
@@ -235,6 +242,12 @@ def make_llm(model_name: str, *, temperature: float = 0.2, max_tokens: int = 120
 primary_llm = make_llm(_LLM_PRIMARY_MODEL)
 fallback_llm = make_llm(_LLM_FALLBACK_MODEL)
 handoff_llm = make_llm(_LLM_FALLBACK_MODEL, temperature=0.0, max_tokens=1000)
+# Trainer LLM — for /admin/training endpoints. Slightly higher temperature
+# than handoff_llm because we want variety on iterative refine (an operator
+# rejecting a proposal probably wants a meaningfully different next try, not
+# a rephrasing of the same thing). Uses the primary model for quality —
+# corrections will guide every future inference, so worth the extra cents.
+trainer_llm = make_llm(_LLM_PRIMARY_MODEL, temperature=0.3, max_tokens=800)
 log.info(f"LLM provider: {_LLM_PROVIDER} · primary={_LLM_PRIMARY_MODEL} · fallback={_LLM_FALLBACK_MODEL}")
 
 
@@ -294,6 +307,43 @@ class ChatResponse(BaseModel):
     answer: str
     handoff: bool = False
     session_id: str
+
+
+# ---- Training / correction-loop request and response models ----
+
+class TrainingDraftRequest(BaseModel):
+    """Operator opens a new correction session. Provides the conversation
+    snippet that was wrong + a free-text note about what should change."""
+    dialog: str = Field(..., min_length=1, max_length=8000)
+    correction_note: str = Field(..., min_length=1, max_length=2000)
+    channel: Optional[str] = Field(None, max_length=32)
+    source_conversation_id: Optional[str] = None  # UUID as str, optional
+
+
+class TrainingRefineRequest(BaseModel):
+    """Operator gives feedback on the previous proposal, asking for a
+    different variant. session_id ties it to the live in-memory state."""
+    session_id: str
+    operator_feedback: str = Field(..., min_length=1, max_length=2000)
+
+
+class TrainingApproveRequest(BaseModel):
+    """Operator accepts the latest proposal — persist to DB."""
+    session_id: str
+    created_by: str = Field("admin", max_length=100)
+
+
+class TrainingDiscardRequest(BaseModel):
+    """Operator abandons the correction without saving."""
+    session_id: str
+
+
+class TrainingProposalResponse(BaseModel):
+    """Returned by /draft and /refine — what the trainer LLM came up with."""
+    session_id: str
+    proposed_rule: str
+    proposed_response: Optional[str] = None
+    confirmation_question: str
 
 
 # ============================================================================
@@ -566,6 +616,25 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         f"[source: {d.metadata.get('source', '?')}]\n{d.page_content}" for d in docs
     ])
 
+    # 4b. RAG over training_corrections — fetch operator-curated lessons that
+    # match the current lead message in bge-m3 embedding space. These take
+    # priority over generic KB and few-shots (see TRAINER block in SYSTEM_PROMPT).
+    # Fail-safe: if the table doesn't exist yet or the query errors, we proceed
+    # without corrections — the bot still works, just no operator overrides.
+    correction_rules: list[dict] = []
+    try:
+        from services.training import retrieve_corrections
+        correction_rules = retrieve_corrections(
+            db, query=req.content, k=3, channel=req.channel,
+        )
+        if correction_rules:
+            log.info(
+                f"[{str(conversation.id)[:8]}] applied {len(correction_rules)} training "
+                f"corrections (distances: {[round(c['distance'], 3) for c in correction_rules]})"
+            )
+    except Exception as e:
+        log.warning(f"retrieve_corrections failed (non-fatal): {e}")
+
     # 5. History from DB. get_recent_messages returns chronological order.
     # Pull 13 to include the just-appended user message; drop it for the
     # "history before this question" string.
@@ -597,6 +666,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         question=req.content,
         is_first_turn=is_first_turn,
         is_comment_mode=is_comment_mode,
+        corrections=correction_rules,
     )
 
     # Show "печатает..." indicator in the lead's Telegram chat while the LLM
@@ -1493,6 +1563,166 @@ async def lead_submit(lead: LeadFormRequest):
     success = await send_lead_to_telegram(lead)
     log.info(f"Lead received: {lead.name} | {lead.contact} | need={lead.need!r}")
     return {"ok": True, "delivered": success}
+
+
+# ============================================================================
+# /admin/training/* — operator correction loop (see services/training.py)
+# ============================================================================
+# Unlike /metrics, training endpoints REFUSE to run if the auth token isn't
+# configured (return 503). /metrics defaults to open in dev for convenience;
+# training endpoints write into the prompt-influencing table, so the default
+# is fail-closed — accidental open exposure could let a curious caller poison
+# every future bot response.
+
+def _verify_training_token(request: Request) -> None:
+    """FastAPI dependency enforcing bearer-token auth on every /admin/training
+    endpoint. Fails closed: if TRAINING_AUTH_TOKEN isn't set in env, the whole
+    feature is disabled (503), not silently open like /metrics."""
+    expected = settings.training_auth_token
+    if not expected:
+        raise HTTPException(
+            status_code=503,
+            detail="Training endpoints disabled — set TRAINING_AUTH_TOKEN in env.",
+        )
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Bearer token required")
+    if auth.split(None, 1)[1].strip() != expected:
+        raise HTTPException(status_code=403, detail="Invalid token")
+
+
+@app.post("/admin/training/draft", response_model=TrainingProposalResponse)
+async def training_draft(
+    req: TrainingDraftRequest,
+    _: None = Depends(_verify_training_token),
+):
+    """Start a new correction session. Returns the trainer LLM's first
+    proposal + a session_id to use in /refine and /approve."""
+    from services.training import draft_correction
+    try:
+        source_conv_id = PyUUID(req.source_conversation_id) if req.source_conversation_id else None
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=422, detail="source_conversation_id must be a valid UUID")
+
+    try:
+        session_id, proposal = await draft_correction(
+            trainer_llm,
+            dialog=req.dialog,
+            correction_note=req.correction_note,
+            channel=req.channel,
+            source_conversation_id=source_conv_id,
+        )
+    except ValueError as e:
+        # Trainer LLM returned invalid JSON — usually transient
+        raise HTTPException(status_code=502, detail=f"trainer returned invalid JSON: {e}")
+    return TrainingProposalResponse(
+        session_id=str(session_id),
+        proposed_rule=proposal.get("proposed_rule", ""),
+        proposed_response=proposal.get("proposed_response"),
+        confirmation_question=proposal.get("confirmation_question", "Подходит ли вариант?"),
+    )
+
+
+@app.post("/admin/training/refine", response_model=TrainingProposalResponse)
+async def training_refine(
+    req: TrainingRefineRequest,
+    _: None = Depends(_verify_training_token),
+):
+    """Iterate on the previous proposal — operator says what they want
+    changed; trainer LLM produces a new variant."""
+    from services.training import refine_correction
+    try:
+        sid = PyUUID(req.session_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=422, detail="session_id must be a valid UUID")
+    try:
+        proposal = await refine_correction(trainer_llm, sid, req.operator_feedback)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Session not found or expired (TTL 15 min)")
+    except ValueError as e:
+        raise HTTPException(status_code=502, detail=f"trainer returned invalid JSON: {e}")
+    return TrainingProposalResponse(
+        session_id=req.session_id,
+        proposed_rule=proposal.get("proposed_rule", ""),
+        proposed_response=proposal.get("proposed_response"),
+        confirmation_question=proposal.get("confirmation_question", "Подходит ли вариант?"),
+    )
+
+
+@app.post("/admin/training/approve")
+async def training_approve(
+    req: TrainingApproveRequest,
+    db: Session = Depends(get_db),
+    _: None = Depends(_verify_training_token),
+):
+    """Persist the latest proposal to training_corrections — future bot
+    responses will retrieve this rule via similarity search when a
+    semantically similar lead message comes in."""
+    from services.training import approve_correction
+    try:
+        sid = PyUUID(req.session_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=422, detail="session_id must be a valid UUID")
+    try:
+        row = approve_correction(db, sid, created_by=req.created_by)
+        db.commit()
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Session not found or expired")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {
+        "ok": True,
+        "correction_id": str(row.id),
+        "message": "Сохранил правило. Применю на следующих похожих ответах.",
+    }
+
+
+@app.post("/admin/training/discard")
+async def training_discard(
+    req: TrainingDiscardRequest,
+    _: None = Depends(_verify_training_token),
+):
+    """Operator abandons the correction without saving."""
+    from services.training import discard_session
+    try:
+        sid = PyUUID(req.session_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=422, detail="session_id must be a valid UUID")
+    removed = discard_session(sid)
+    return {"ok": True, "removed": removed}
+
+
+@app.get("/admin/training/list")
+async def training_list(
+    _: None = Depends(_verify_training_token),
+    db: Session = Depends(get_db),
+    limit: int = 50,
+    include_inactive: bool = False,
+):
+    """List the most recent training_corrections — for the operator UI to
+    show what rules currently shape bot behavior."""
+    from sqlalchemy import select as sql_select
+    from db.models import TrainingCorrection as TC
+    stmt = sql_select(TC).order_by(TC.created_at.desc()).limit(min(limit, 200))
+    if not include_inactive:
+        stmt = stmt.where(TC.is_active == True)  # noqa: E712
+    rows = db.execute(stmt).scalars().all()
+    return {
+        "rules": [
+            {
+                "id": str(r.id),
+                "trigger_context": r.trigger_context[:300],
+                "guidance": r.correct_guidance,
+                "suggested_response": r.suggested_response,
+                "channel": r.channel,
+                "is_active": r.is_active,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "created_by": r.created_by,
+            }
+            for r in rows
+        ],
+        "count": len(rows),
+    }
 
 
 # ============================================================================

@@ -8,6 +8,9 @@ System prompts and few-shot examples for Deadline lead-qualification bot.
 4. Few-shot перевешивает любые инструкции — поэтому примеры дают ToV целиком
 """
 
+from typing import Optional
+
+
 # ============================================================================
 # SYSTEM PROMPT
 # ============================================================================
@@ -108,6 +111,13 @@ EN: `Passed to the team. We will email you within minutes. 📩`
 - На off-topic / spam: один короткий ответ или пропуск, в Direct не предлагай
 
 Если маркер `[COMMENT_MODE: no]` или его нет — стандартный DM-режим (всё что выше).
+
+# УРОКИ ИЗ ПРОШЛЫХ ИСПРАВЛЕНИЙ (от тренера — приоритет НАД примерами и KB)
+# Если этот блок не пустой — операторы ранее отметили похожую ситуацию как
+# неверно отвеченную и подтвердили лучший вариант. Применяй эти правила
+# ДОСЛОВНО там где они подходят. Если правило противоречит few-shots —
+# правило побеждает (это свежие feedback'и из реальной работы).
+{corrections}
 
 # КОНТЕКСТ ИЗ KNOWLEDGE BASE
 {context}
@@ -351,6 +361,30 @@ def format_handoff_brief(session_id: str, handoff_data: dict, full_conversation:
 # COMPLETE PROMPT BUILDER
 # ============================================================================
 
+def format_corrections_block(corrections: list[dict]) -> str:
+    """Render top-K retrieved training corrections as a numbered block ready
+    to be injected into SYSTEM_PROMPT's `{corrections}` placeholder.
+
+    Each correction in the list is a dict with at minimum:
+        guidance: human-readable instruction
+        suggested_response: optional concrete sample of a better reply
+        trigger_context: the original conversation snippet that produced it
+
+    Empty list → returns "(нет применимых правил)" so the prompt still
+    formats cleanly and the model knows there's nothing to weigh in.
+    """
+    if not corrections:
+        return "(нет применимых правил)"
+    lines: list[str] = []
+    for i, c in enumerate(corrections, start=1):
+        block = f"## Правило {i}\n**Что было не так:** {c.get('trigger_context', '—')[:300]}\n**Как надо:** {c.get('guidance', '—')}"
+        sample = c.get("suggested_response")
+        if sample:
+            block += f"\n**Пример хорошего ответа:** {sample}"
+        lines.append(block)
+    return "\n\n".join(lines)
+
+
 def build_chat_prompt(
     context: str,
     history: str,
@@ -358,6 +392,7 @@ def build_chat_prompt(
     use_few_shots: bool = True,
     is_first_turn: bool = False,
     is_comment_mode: bool = False,
+    corrections: Optional[list[dict]] = None,
 ) -> str:
     """
     Собирает финальный prompt для LLM.
@@ -372,6 +407,10 @@ def build_chat_prompt(
         is_comment_mode: True если это публичный комментарий IG/FB
                       (не DM). Прокидывает COMMENT_MODE marker, см. секцию
                       "COMMENT MODE" в SYSTEM_PROMPT.
+        corrections: список dict'ов с retrieved training corrections (top-K
+                      из services/training.retrieve_corrections). Each dict
+                      has trigger_context / guidance / suggested_response.
+                      None или [] → блок "(нет применимых правил)".
     """
     # Annotate the current question with the first-turn marker so the model
     # сразу видит, нужно ли вставлять AI-disclosure.
@@ -379,7 +418,14 @@ def build_chat_prompt(
     comment_marker = "[COMMENT_MODE: yes]" if is_comment_mode else "[COMMENT_MODE: no]"
     annotated_question = f"{question}\n{first_marker}\n{comment_marker}"
 
-    base = SYSTEM_PROMPT.format(context=context, history=history, question=annotated_question)
+    corrections_text = format_corrections_block(corrections or [])
+
+    base = SYSTEM_PROMPT.format(
+        context=context,
+        history=history,
+        question=annotated_question,
+        corrections=corrections_text,
+    )
     if use_few_shots:
         # Вставляем примеры ПЕРЕД итоговым вопросом — так модель видит их как «образец»
         return base.replace(
@@ -387,3 +433,47 @@ def build_chat_prompt(
             FEW_SHOT_EXAMPLES + "\n# ТЕКУЩИЙ ВОПРОС ЛИДА"
         )
     return base
+
+
+# ============================================================================
+# TRAINER PROMPTS — for the /admin/training operator-correction UI
+# ============================================================================
+
+TRAINER_SYSTEM_PROMPT = '''Ты — внутренний инструмент Deadline для разбора ошибок бота. К тебе обращается оператор, который показывает тебе:
+  1) фрагмент диалога между лидом и ботом
+  2) пояснение, что в ответе бота было не так и как должно было быть
+
+Твоя задача — за один проход:
+  1. Понять корень ошибки (что именно в ответе не так — тон, фактическая неточность, не задал нужный вопрос, не сделал handoff, и т.д.)
+  2. Сформулировать **одно правило** на будущее — короткое, императивное, обобщающее (не привязанное к конкретному имени/email/городу из этого диалога)
+  3. Предложить **конкретный пример ответа**, который оператор был бы готов одобрить как «вот так и надо было»
+  4. Задать оператору **подтверждающий вопрос** — точно ли ты понял суть и подходит ли предложенный вариант
+
+ФОРМАТ ОТВЕТА — строго JSON, без markdown-обёртки, без преамбулы:
+{
+  "proposed_rule": "Короткое правило в одно-два предложения, императивное («Всегда X», «Никогда не Y», «Когда лид спрашивает Z, отвечай W»)",
+  "proposed_response": "Конкретный пример как бот должен был ответить в этой ситуации",
+  "confirmation_question": "Один вопрос оператору: правильно ли понял суть и подходит ли вариант. Если есть несколько вариантов решения — спроси какой ближе. Пиши на «вы»."
+}
+
+ПРИНЦИПЫ:
+- Правила — **обобщай**. Если оператор сказал «бот должен был дать email corpdeadline@gmail.com», правило: «При запросе контактов команды давай corpdeadline@gmail.com» (а не «в этом конкретном диалоге дай corpdeadline@gmail.com»).
+- НЕ переписывай весь стиль бота с нуля. Меняй только то что указал оператор.
+- Если оператор дал расплывчатое «плохой ответ» — задай уточняющий вопрос в confirmation_question, и сделай **консервативный** proposed_rule («Уточнить с оператором» вместо угадывания).
+- НЕ выдумывай факты про Deadline. Если предложенный ответ требует фактов которых нет в материалах — пиши плейсхолдер в proposed_response («[укажи имя ответственного менеджера]»).
+- Тон proposed_response — такой же как у обычного бота (первая буква заглавная, без префиксов `// `, разговорное «вы», lowercase для tech terms типа e-commerce/telegram/next.js).
+'''
+
+
+TRAINER_REFINE_PROMPT = '''Оператор дал обратную связь на твоё предыдущее предложение. Изучи его комментарий и предложи **новый** вариант правила + ответа, который учитывает его замечание.
+
+Формат — тот же JSON что и раньше:
+{
+  "proposed_rule": "...",
+  "proposed_response": "...",
+  "confirmation_question": "..."
+}
+
+НЕ повторяй прошлый вариант дословно — оператор явно не утвердил его, нужна корректировка. Если оператор сказал «добавь X к ответу» — добавь. «Уточни tone» — поменяй tone. «Правило слишком узкое» — обобщи.
+'''
+
