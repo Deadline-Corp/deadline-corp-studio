@@ -18,6 +18,7 @@ from typing import Optional
 from sqlalchemy import (
     String,
     Text,
+    Integer,
     DateTime,
     ForeignKey,
     UniqueConstraint,
@@ -109,6 +110,24 @@ class Customer(Base):
     # Произвольные данные о клиенте (компания, размер, индустрия, ...) — заполняется по ходу диалога
     profile_data: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
 
+    # ---- CRM integration + Notion-spec lead axes (Phase 1, 2026-05-26) ----
+    # ID of this lead's contact in the external CRM (HubSpot / Bitrix24).
+    # NULL until first sync. Adapter writes this on upsert_contact.
+    crm_contact_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    # Notion §5 — base(interaction_type) + content(keywords) + source(canal). Decays on silence.
+    lead_score: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # Notion §7 — cold / warm / hot / ready / client / frozen. Dynamic, decays.
+    lead_temperature: Mapped[str] = mapped_column(
+        String(20), nullable=False, server_default="cold", index=True
+    )
+    # Notion §4 — P1 / P2 / P3 / P4 / P5 / P6 / HardStop. Set once at first touch.
+    interaction_type: Mapped[str] = mapped_column(
+        String(10), nullable=False, server_default="P2"
+    )
+    # Notion §3 — extra dedup hooks beyond email/phone (e.g. {tg_handle, ig_username}).
+    # Used by CRMAdapter.upsert_contact to merge same person across channels.
+    identity_keys: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -194,6 +213,24 @@ class Conversation(Base):
     )
 
     last_message_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+
+    # ---- CRM integration + Notion §20 funnel (Phase 1, 2026-05-26) ----
+    # ID of this conversation's deal in the external CRM. NULL until first sync.
+    crm_deal_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    # Notion §20 active funnel stage. Default new_lead so existing rows are valid post-migration.
+    # Values: new_lead / in_dialog / qualified / nda / on_call / tz_approved /
+    #         proposal / prepayment / in_work / completed_won / post_sale / lost
+    lead_stage: Mapped[str] = mapped_column(
+        String(30), nullable=False, server_default="new_lead", index=True
+    )
+    # Required iff lead_stage == 'lost'. Notion §20 split:
+    # price / not_our_format / competitor / delayed / no_budget / hard_stop
+    lost_reason: Mapped[Optional[str]] = mapped_column(String(30), nullable=True)
+    # When customer.lead_temperature was last recalculated — used by the decay cron.
+    last_temperature_update_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     customer: Mapped["Customer"] = relationship(back_populates="conversations")

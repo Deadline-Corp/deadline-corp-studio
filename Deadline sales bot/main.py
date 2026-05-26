@@ -52,6 +52,9 @@ from services.conversations import (
     find_conversation_by_topic,
     set_operator_takeover,
 )
+# Tenant + CRM (Phase 1, 2026-05-26 — see ADR v1.3 in Obsidian Vault)
+from services.tenant import load_tenant, Tenant
+from services.crm import build_adapter, CRMAdapter
 from channels.telegram import (
     parse_telegram_webhook,
     send_telegram_reply,
@@ -151,6 +154,49 @@ class Settings(BaseSettings):
     # accidentally exposes them by misconfiguration).
     training_auth_token: Optional[str] = None
 
+    # ---- Tenant layer (Phase 1, 2026-05-26) ----
+    # Which tenant config to load on startup. Default = deadline-corp (us).
+    # When extracting the skeleton for resale, each client gets their own
+    # tenants/<slug>/ folder with their own config.yaml, kb/, system_prompt.md
+    # and secrets — same code, different tenant_slug env var.
+    tenant_slug: str = "deadline-corp"
+
+    # ---- CRM integration (Phase 0b feature flag + Phase 1+ adapters) ----
+    # Master switch. While we're rolling out CRM features incrementally,
+    # this stays False in production — every CRM call is gated by it. With
+    # crm_enabled=False the bot behaves 1:1 like the pre-CRM version.
+    # Flip to True in Railway env only after Phase 7 (event queue) is done
+    # AND the integration is smoke-tested locally end-to-end.
+    crm_enabled: bool = False
+
+    # Which adapter to instantiate when crm_enabled=True.
+    # noop = log to our Postgres only, no external CRM (safe default).
+    # hubspot = HubSpotAdapter (Phase 2).
+    # bitrix24 = Bitrix24Adapter (Phase 3, deferred per Nikolay 2026-05-26).
+    crm_provider: str = "noop"
+
+    # ---- HubSpot credentials (Phase 0c done 2026-05-26) ----
+    # Service Key (Beta), Bearer-format pat-na2-xxxx. Created in Settings →
+    # Integrations → Service Keys. Scopes: crm.objects.contacts/companies/
+    # deals r+w, crm.schemas.contacts/deals r+w, conversations r+w.
+    hubspot_access_token: Optional[str] = None
+    # HubSpot Account ID (aka Portal ID, Hub ID) — visible in any URL after
+    # /portal/<id>/. Needed for building deep-links to contact/deal cards
+    # so operators can jump from our admin UI directly into HubSpot.
+    hubspot_portal_id: Optional[str] = None
+    # Data center region (na1/na2/eu1/etc) — from app-<region>.hubspot.com.
+    # Most v3 endpoints are region-agnostic; this is for legacy endpoints
+    # that need region-specific subdomains.
+    hubspot_region: str = "na2"
+
+    # ---- Bitrix24 credentials (Phase 0d deferred per Nikolay 2026-05-26) ----
+    # Inbound Webhook URL — created in Developer Resources → Inbound webhook.
+    # Format: https://<portal>.bitrix24.ru/rest/<user_id>/<webhook_code>/
+    # Whole URL is the bearer credential — treat as secret.
+    bitrix24_webhook_url: Optional[str] = None
+    # Default deal category (pipeline) id for new deals.
+    bitrix24_default_category_id: int = 1
+
     class Config:
         env_file = ".env"
         extra = "ignore"
@@ -162,6 +208,30 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
 log = logging.getLogger("deadline-bot")
+
+# ---- Tenant + CRM initialisation (Phase 1, 2026-05-26) ----
+# Loaded eagerly at import time so a bad config.yaml / missing system_prompt.md
+# crashes the process at boot rather than on first request. Race: anything
+# below this line can `from main import tenant, crm_adapter`.
+#
+# With CRM_ENABLED=False (the default during rollout), build_adapter returns
+# a NoOpAdapter — every CRM call is a no-op log line, the bot behaves
+# exactly like the pre-CRM version.
+try:
+    tenant: Tenant = load_tenant(settings.tenant_slug)
+    log.info(
+        f"Tenant loaded: slug={tenant.slug} display={tenant.display_name} "
+        f"languages={tenant.languages}"
+    )
+except Exception as e:  # noqa: BLE001 — startup fail-loud is intentional
+    log.error(f"Failed to load tenant '{settings.tenant_slug}': {e}")
+    raise
+
+crm_adapter: CRMAdapter = build_adapter(settings)
+log.info(
+    f"CRM adapter: provider={crm_adapter.provider_name} "
+    f"crm_enabled={settings.crm_enabled} crm_provider={settings.crm_provider}"
+)
 
 ROOT = Path(__file__).parent
 CHROMA_DIR = ROOT / "chroma_db"
@@ -1737,5 +1807,14 @@ async def startup():
     log.info(f"Chroma:   {'loaded' if vectorstore else 'NOT LOADED (legacy)'}")
     log.info(f"Postgres: {'connected' if check_connection() else 'NOT CONNECTED'}")
     log.info(f"Telegram: {'configured' if settings.telegram_bot_token else 'NOT configured'}")
+    log.info(f"Tenant:   {tenant.slug} ({tenant.display_name})")
+    # CRM health-check is cheap on NoOp (always True) and a single API call
+    # on real adapters. Failure here logs a warning but doesn't abort startup —
+    # the bot must keep serving leads even if CRM is unreachable.
+    try:
+        crm_ok = await crm_adapter.health_check()
+        log.info(f"CRM:      {crm_adapter.provider_name} (enabled={settings.crm_enabled}, healthy={crm_ok})")
+    except Exception as exc:  # noqa: BLE001
+        log.warning(f"CRM:      {crm_adapter.provider_name} health-check failed: {exc}")
     log.info(f"Origins:  {settings.allowed_origins}")
     log.info("=" * 60)

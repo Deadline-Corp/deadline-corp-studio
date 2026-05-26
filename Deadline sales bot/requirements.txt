@@ -4,6 +4,8 @@ pydantic==2.9.2
 pydantic-settings==2.6.1
 python-dotenv==1.0.1
 httpx==0.27.2
+# Tenant config loader (Phase 1, 2026-05-26) — reads tenants/<slug>/config.yaml
+pyyaml==6.0.2
 
 # LangChain stack
 langchain==0.3.7
