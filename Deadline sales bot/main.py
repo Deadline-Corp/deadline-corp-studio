@@ -823,6 +823,30 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     # 9. Commit the whole turn atomically
     db.commit()
 
+    # 10. CRM sync (Phase 8a, 2026-05-26) — enqueue events to the worker.
+    #     This is a no-op when settings.crm_enabled=False (default during
+    #     rollout). When enabled, the worker drains the queue async and
+    #     handles upsert_contact / create_deal / log_message / stage updates.
+    #     Wrapped in a broad try so a CRM hiccup never breaks the lead-facing
+    #     flow — bot's own Postgres remains the source of truth.
+    if settings.crm_enabled:
+        try:
+            # Re-fetch with identities relationship for tg_handle lookup —
+            # the customer object above may be a fresh insert without
+            # identities loaded yet.
+            from services.crm_dispatch import dispatch_on_message_turn
+            dispatch_on_message_turn(
+                customer=customer,
+                conversation=conversation,
+                last_lead_message=req.content,
+                last_bot_reply=answer,
+                handoff_just_fired=handoff_triggered,
+                channel=req.channel,
+                project_type=None,  # not currently extracted from the conversation
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning(f"[{str(conversation.id)[:8]}] crm dispatch failed: {exc}")
+
     return MessageResponse(
         answer=answer,
         handoff=handoff_triggered,
