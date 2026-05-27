@@ -49,7 +49,7 @@ log = logging.getLogger("deadline-bot.training")
 # In-memory session state
 # ============================================================================
 
-TRAINING_SESSION_TTL = 15 * 60  # 15 min
+TRAINING_SESSION_TTL = 60 * 60  # 1 hour — operators routinely iterate + walk away
 MAX_SESSIONS = 100
 
 
