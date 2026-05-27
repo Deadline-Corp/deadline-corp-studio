@@ -710,6 +710,39 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     # Pull 13 to include the just-appended user message; drop it for the
     # "history before this question" string.
     recent = get_recent_messages(db, conversation.id, limit=13)
+
+    # 5b. Per-turn lead signals (Phase 9, 2026-05-27) — update interaction_type
+    # (set once on first touch), lead_score (incremental + content keywords),
+    # and lead_temperature (engagement triggers + decay). Mutates `customer`
+    # in place; commit happens at the end of the turn alongside the message.
+    signal_update = None
+    if settings.crm_enabled and req.message_type != "comment":
+        try:
+            from services.lead_signals import apply_signals_on_turn
+            signal_update = apply_signals_on_turn(
+                customer=customer,
+                recent_messages=recent,
+                lead_message_text=req.content,
+                channel=req.channel,
+                message_type=req.message_type,
+                tenant_config=tenant.raw_config,
+            )
+            if signal_update.is_first_touch:
+                log.info(
+                    f"[{str(conversation.id)[:8]}] first touch — interaction={signal_update.interaction_type} "
+                    f"score={signal_update.new_score} temp={signal_update.new_temperature} "
+                    f"keywords={list(signal_update.matched_keywords)}"
+                )
+            elif signal_update.new_score != signal_update.old_score or signal_update.new_temperature != signal_update.old_temperature:
+                log.info(
+                    f"[{str(conversation.id)[:8]}] signals: "
+                    f"score {signal_update.old_score}→{signal_update.new_score} "
+                    f"temp {signal_update.old_temperature}→{signal_update.new_temperature} "
+                    f"keywords={list(signal_update.matched_keywords)}"
+                )
+        except Exception as exc:  # noqa: BLE001
+            log.warning(f"[{str(conversation.id)[:8]}] lead_signals failed (non-fatal): {exc}")
+
     history_for_prompt = recent[:-1] if recent else []
     # Trim to last 12 entries for prompt budget (6 turns of user+assistant).
     # Assistant messages pass through _normalize_bot_reply so legacy
@@ -780,6 +813,46 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
             },
         )
 
+    # 7b. Escalation triggers (Phase 9c, 2026-05-27) — run the 7 Notion §21
+    #     checks and mirror any that fire into the operator topic. Rate-limited
+    #     per (conversation, type) so the same alert doesn't spam every turn.
+    if settings.crm_enabled and not is_comment_mode:
+        try:
+            from services.escalation import run_escalation_checks, format_alert_text
+            lead_texts = [
+                m.content for m in recent
+                if (m.role.value if hasattr(m.role, "value") else str(m.role)) == "user"
+            ]
+            bot_texts = [
+                m.content for m in recent
+                if (m.role.value if hasattr(m.role, "value") else str(m.role)) == "assistant"
+            ]
+            fired_triggers = run_escalation_checks(
+                conversation_id=str(conversation.id),
+                message_text=req.content,
+                recent_lead_messages=lead_texts,
+                recent_bot_replies=bot_texts,
+                tenant_config=tenant.raw_config,
+            )
+            if fired_triggers:
+                trigger_summary = ", ".join(t.type for t in fired_triggers)
+                log.info(
+                    f"[{str(conversation.id)[:8]}] escalation triggers fired: {trigger_summary}"
+                )
+                # Mirror each fired trigger into the operator topic
+                if conversation.forum_topic_id and settings.telegram_operator_group_id and settings.telegram_bot_token:
+                    for t in fired_triggers:
+                        await send_to_topic(
+                            settings.telegram_bot_token,
+                            settings.telegram_operator_group_id,
+                            conversation.forum_topic_id,
+                            format_alert_text(t),
+                        )
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                f"[{str(conversation.id)[:8]}] escalation checks failed (non-fatal): {exc}"
+            )
+
     # 8. Handoff — gated on a real email (policy 2026-05-19).
     #    Email is the only mandatory contact: it's stable identity, while
     #    Telegram @username is mutable and would break our identity mapping
@@ -819,6 +892,65 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                     f"[{str(conversation.id)[:8]}] classifier ready but no valid email — "
                     f"suppressed. fields={preview!r}"
                 )
+
+    # 8b. Funnel auto-transition (Phase 9b, 2026-05-27).
+    #     Evaluates Notion §20 funnel state machine with this turn's signals
+    #     and advances conversation.lead_stage if a valid forward transition
+    #     fires. Pushes the change to CRM via dispatch_stage_change.
+    #     Currently observable signals: lead_messages count → new_lead → in_dialog,
+    #     handoff_classifier ready → qualified, interaction_type=HardStop → lost.
+    #     Later stages (NDA, on_call, proposal, prepayment, ...) need operator
+    #     action — they remain operator-set via HubSpot UI for now.
+    if settings.crm_enabled and not is_comment_mode:
+        try:
+            from services.funnel import (
+                decide_from_tenant_config as _funnel_decide,
+                can_auto_transition,
+            )
+            lead_msg_count = sum(
+                1 for m in recent
+                if (m.role.value if hasattr(m.role, "value") else str(m.role)) == "user"
+            )
+            hard_stop_signal = (
+                signal_update is not None
+                and signal_update.interaction_type == "HardStop"
+                and signal_update.is_first_touch
+            )
+            current_stage = conversation.lead_stage or "new_lead"
+            decision = _funnel_decide(
+                current_stage=current_stage,
+                tenant_config=tenant.raw_config,
+                lead_messages_so_far=lead_msg_count,
+                classifier_says_ready=handoff_triggered,
+                hard_stop_signal=hard_stop_signal,
+            )
+            if (
+                decision.should_transition
+                and decision.target_stage
+                and can_auto_transition(current_stage, decision.target_stage)
+            ):
+                new_stage = decision.target_stage
+                conversation.lead_stage = new_stage
+                if new_stage == "lost":
+                    conversation.lost_reason = decision.lost_reason
+                log.info(
+                    f"[{str(conversation.id)[:8]}] funnel: {current_stage} → {new_stage} "
+                    f"({decision.reason})"
+                )
+                # Push to CRM. dispatch_stage_change enqueues 'pending' if
+                # crm_deal_id isn't resolved yet — worker lazy-resolves from DB.
+                from services.crm_dispatch import dispatch_stage_change
+                dispatch_stage_change(
+                    customer_id=str(customer.id),
+                    crm_deal_id=conversation.crm_deal_id,
+                    new_stage=new_stage,
+                    lost_reason=decision.lost_reason,
+                    conversation_id=str(conversation.id),
+                )
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                f"[{str(conversation.id)[:8]}] funnel transition failed (non-fatal): {exc}"
+            )
 
     # 9. Commit the whole turn atomically
     db.commit()
@@ -1847,16 +1979,28 @@ async def startup():
     if settings.crm_enabled:
         await crm_queue.start_worker(crm_adapter)
         log.info(f"CRM queue: worker running")
+        # Phase 9d (2026-05-27) — periodic warming + temperature/score decay.
+        # Cron sweeps silent customers every 1h by default. Started here so
+        # both workers come up together; stopped in shutdown handler below.
+        from services import cron as crm_cron
+        await crm_cron.start_cron_worker(tenant_config=tenant.raw_config)
+        log.info(f"CRM cron:  worker running")
     else:
         log.info(f"CRM queue: not started (crm_enabled=False)")
+        log.info(f"CRM cron:  not started (crm_enabled=False)")
     log.info(f"Origins:  {settings.allowed_origins}")
     log.info("=" * 60)
 
 
 @app.on_event("shutdown")
 async def shutdown():
-    """Drain the CRM queue best-effort before the worker is killed."""
+    """Drain the CRM queue + stop the cron worker before the container dies."""
     if crm_queue.is_running():
         log.info("Shutting down — draining CRM queue...")
         await crm_queue.stop_worker(timeout=5.0)
         log.info("CRM queue drained")
+    from services import cron as crm_cron
+    if crm_cron.is_running():
+        log.info("Shutting down — stopping CRM cron worker...")
+        await crm_cron.stop_cron_worker(timeout=5.0)
+        log.info("CRM cron stopped")
