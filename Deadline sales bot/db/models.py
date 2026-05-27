@@ -230,6 +230,14 @@ class Conversation(Base):
     last_temperature_update_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Phase 10d (2026-05-27) — when cron last dispatched a warming task for
+    # this conversation. NULL = never warmed. plan_warming honours per-bucket
+    # cadence (hot=1d, warm=7d, cold=21d, frozen=90d) against this timestamp.
+    # Without this column, cron would create a duplicate warming task every
+    # hour for every silent lead — fast way to spam the operator inbox.
+    last_warmed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

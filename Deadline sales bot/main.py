@@ -813,12 +813,24 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
             },
         )
 
-    # 7b. Escalation triggers (Phase 9c, 2026-05-27) — run the 7 Notion §21
+    # 7b. Escalation triggers (Phase 9c+10ab, 2026-05-27) — run the 7 Notion §21
     #     checks and mirror any that fire into the operator topic. Rate-limited
     #     per (conversation, type) so the same alert doesn't spam every turn.
+    #
+    #     Phase 10a: bot-reply confidence comes from a heuristic over hedging
+    #     phrases in the just-produced answer (no LLM call). Fires the
+    #     low_confidence trigger when the bot is clearly unsure.
+    #     Phase 10b: budget is regex-extracted from the lead's message and
+    #     stashed on Customer.profile_data so operators see the parsed
+    #     figure in HubSpot. Fires the large_deal_above_threshold trigger
+    #     when above tenant.discount.auto_above_budget_threshold.
     if settings.crm_enabled and not is_comment_mode:
         try:
             from services.escalation import run_escalation_checks, format_alert_text
+            from services.signal_extraction import (
+                estimate_bot_confidence,
+                extract_budget_rub,
+            )
             lead_texts = [
                 m.content for m in recent
                 if (m.role.value if hasattr(m.role, "value") else str(m.role)) == "user"
@@ -827,11 +839,24 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 m.content for m in recent
                 if (m.role.value if hasattr(m.role, "value") else str(m.role)) == "assistant"
             ]
+            confidence = estimate_bot_confidence(answer)
+            budget_rub = extract_budget_rub(req.content)
+            # Persist parsed budget so operators see it in HubSpot — keeps the
+            # latest detected figure on the customer profile_data JSONB.
+            if budget_rub is not None:
+                profile = dict(customer.profile_data or {})
+                profile["estimated_budget_rub"] = budget_rub
+                customer.profile_data = profile
+                log.info(
+                    f"[{str(conversation.id)[:8]}] budget extracted: ~{budget_rub:,} RUB"
+                )
             fired_triggers = run_escalation_checks(
                 conversation_id=str(conversation.id),
+                confidence=confidence,
                 message_text=req.content,
                 recent_lead_messages=lead_texts,
                 recent_bot_replies=bot_texts,
+                estimated_budget_rub=budget_rub,
                 tenant_config=tenant.raw_config,
             )
             if fired_triggers:

@@ -30,7 +30,11 @@ from services.crm_dispatch import (
     dispatch_stage_change,
     dispatch_temperature_change,
 )
-from services.funnel import can_auto_transition, decide_on_silence
+from services.funnel import (
+    can_auto_transition,
+    decide_on_silence,
+    decide_post_sale_window,
+)
 from services.pause_strategy import classify_pause
 from services.scoring import apply_decay as score_decay
 from services.temperature import apply_decay as temperature_decay
@@ -202,43 +206,59 @@ async def sweep_once(*, tenant_config: dict) -> dict:
                 )
 
             # 3. Funnel: in_dialog silent > N days → lost(delayed)
+            #    Also: completed_won + 30d → post_sale (Phase 10c — upsell window).
             current_stage = conversation.lead_stage or "new_lead"
-            silence_decision = decide_on_silence(
-                current_stage=current_stage,
-                silent_days=int(silent_days),
-                silence_lost_threshold_d=silence_lost_threshold_d,
-            )
+            funnel_decision = None
+            if current_stage == "completed_won":
+                # Look at how many days since the deal moved to completed_won.
+                # last_temperature_update_at is the closest cron-touched timestamp;
+                # if missing fall back to last_message_at as a proxy.
+                ref = conversation.last_temperature_update_at or last_msg
+                days_since_completed = (now - ref).days
+                funnel_decision = decide_post_sale_window(
+                    current_stage=current_stage,
+                    days_since_completed=days_since_completed,
+                )
+            else:
+                funnel_decision = decide_on_silence(
+                    current_stage=current_stage,
+                    silent_days=int(silent_days),
+                    silence_lost_threshold_d=silence_lost_threshold_d,
+                )
             if (
-                silence_decision.should_transition
-                and silence_decision.target_stage
-                and can_auto_transition(current_stage, silence_decision.target_stage)
+                funnel_decision is not None
+                and funnel_decision.should_transition
+                and funnel_decision.target_stage
+                and can_auto_transition(current_stage, funnel_decision.target_stage)
             ):
-                new_stage = silence_decision.target_stage
+                new_stage = funnel_decision.target_stage
                 conversation.lead_stage = new_stage
                 if new_stage == "lost":
-                    conversation.lost_reason = silence_decision.lost_reason
+                    conversation.lost_reason = funnel_decision.lost_reason
                 stats["funnel_lost_transitions"] += 1
                 logger.info(
                     "[cron] funnel: conv=%s %s → %s (%s)",
-                    conversation.id, current_stage, new_stage, silence_decision.reason,
+                    conversation.id, current_stage, new_stage, funnel_decision.reason,
                 )
                 dispatch_stage_change(
                     customer_id=str(customer.id),
                     crm_deal_id=conversation.crm_deal_id,
                     new_stage=new_stage,
-                    lost_reason=silence_decision.lost_reason,
+                    lost_reason=funnel_decision.lost_reason,
                     conversation_id=str(conversation.id),
                 )
 
             # 4. Warming — enqueue operator task when bucket says it's time.
-            # last_warmed_days_ago: we don't track this yet, so pass None;
-            # cadence acts as the floor. A future field on Conversation would
-            # let us be smarter, but for MVP this is fine.
+            # Phase 10d: last_warmed_days_ago comes from conversation.last_warmed_at
+            # so cadence properly dedups (no more duplicate tasks every hour).
+            last_warmed_days_ago: Optional[float] = None
+            if conversation.last_warmed_at is not None:
+                last_warmed_days_ago = (now - conversation.last_warmed_at).total_seconds() / 86400.0
             warm_action = plan_warming(
                 customer_id=str(customer.id),
                 current_temperature=customer.lead_temperature or "cold",
                 silent_days=silent_days,
-                last_warmed_days_ago=None,
+                last_warmed_days_ago=last_warmed_days_ago,
                 config_warming=warming_cfg,
                 now=now,
             )
@@ -265,6 +285,9 @@ async def sweep_once(*, tenant_config: dict) -> dict:
                         f"{warm_action.format}. Reason: {warm_action.reason}"
                     ),
                 )
+                # Phase 10d — record dispatch time so next cron cycles
+                # honour the bucket cadence and don't spam duplicates.
+                conversation.last_warmed_at = now
                 stats["warming_tasks_enqueued"] += 1
 
         # session_scope commits on exit
