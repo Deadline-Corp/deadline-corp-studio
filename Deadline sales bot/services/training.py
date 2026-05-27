@@ -39,7 +39,7 @@ from sqlalchemy.orm import Session
 
 from db.models import TrainingCorrection
 from db.vector import _get_embedder
-from prompts import TRAINER_SYSTEM_PROMPT, TRAINER_REFINE_PROMPT
+from prompts import TRAINER_SYSTEM_PROMPT, TRAINER_REFINE_PROMPT, CONFLICT_JUDGE_PROMPT
 
 
 log = logging.getLogger("deadline-bot.training")
@@ -284,6 +284,116 @@ def get_session(session_id: uuid.UUID) -> Optional[TrainingSession]:
 # ============================================================================
 # Read-path: retrieve relevant rules at inference time
 # ============================================================================
+
+def find_similar_active_corrections(
+    db: Session,
+    trigger_context: str,
+    k: int = 3,
+    max_distance: float = 0.4,
+    channel: Optional[str] = None,
+) -> list[dict]:
+    """Find existing active corrections whose trigger_context is semantically
+    close to a NEW one being drafted (Phase 11 conflict detection).
+
+    Used by the trainer endpoints to surface "you already have rules covering
+    this situation" before/while approving. max_distance defaults to 0.4 here
+    (stricter than retrieve_corrections' 0.6) because we want a high bar for
+    "this is the same situation" — false positives in conflict detection are
+    annoying to operators, false negatives are recoverable (rule still saves).
+
+    Returns dicts with full metadata so the operator UI can show what they're
+    potentially superseding:
+        [{id, guidance, suggested_response, channel, created_at, created_by,
+          distance}, ...]
+    """
+    embedder = _get_embedder()
+    query_vec = embedder.embed_query(trigger_context[:8000])
+
+    stmt = (
+        select(
+            TrainingCorrection,
+            TrainingCorrection.embedding.cosine_distance(query_vec).label("distance"),
+        )
+        .where(TrainingCorrection.is_active == True)  # noqa: E712
+    )
+    if channel is not None:
+        stmt = stmt.where(
+            (TrainingCorrection.channel == channel) | (TrainingCorrection.channel.is_(None))
+        )
+    stmt = stmt.order_by(
+        TrainingCorrection.embedding.cosine_distance(query_vec)
+    ).limit(k * 2)
+
+    rows = db.execute(stmt).all()
+    out: list[dict] = []
+    for row in rows:
+        dist = float(row.distance)
+        if dist > max_distance:
+            continue
+        row_obj = row.TrainingCorrection
+        out.append({
+            "id": str(row_obj.id),
+            "guidance": row_obj.correct_guidance,
+            "suggested_response": row_obj.suggested_response,
+            "channel": row_obj.channel,
+            "created_at": row_obj.created_at.isoformat() if row_obj.created_at else None,
+            "created_by": row_obj.created_by,
+            "distance": dist,
+        })
+        if len(out) >= k:
+            break
+    return out
+
+
+async def llm_judge_conflict(
+    llm,
+    new_guidance: str,
+    existing_guidance: str,
+) -> dict:
+    """Ask the trainer LLM whether two rules tell the bot to do contradictory
+    things (Phase 11 conflict detection step 2).
+
+    Returns: {is_conflict: bool, reason: str, suggested_action: "supersede" |
+              "merge" | "coexist"}
+
+    Fail-safe: if the LLM returns malformed JSON or any error happens, we
+    return {is_conflict: False, ...} — i.e., default to allowing the new
+    rule. False negatives are recoverable (operator can manually clean up);
+    false positives (blocking on a phantom conflict) would erode trust in
+    the system fast.
+    """
+    prompt_user = CONFLICT_JUDGE_PROMPT.format(
+        new_rule=new_guidance[:2000],
+        existing_rule=existing_guidance[:2000],
+    )
+    messages = [HumanMessage(content=prompt_user)]
+    try:
+        verdict = await _trainer_invoke(llm, messages)
+        # Coerce values to expected shape
+        return {
+            "is_conflict": bool(verdict.get("is_conflict", False)),
+            "reason": str(verdict.get("reason", ""))[:500],
+            "suggested_action": str(verdict.get("suggested_action", "coexist")),
+        }
+    except Exception as exc:  # noqa: BLE001
+        log.warning(f"llm_judge_conflict failed (fail-safe → no conflict): {exc}")
+        return {"is_conflict": False, "reason": "judge_unavailable", "suggested_action": "coexist"}
+
+
+def supersede_correction(db: Session, old_id: uuid.UUID, new_id: uuid.UUID) -> None:
+    """Mark an old correction as superseded by a new one. Uses the existing
+    is_active + superseded_by_id columns (no migration needed).
+
+    Idempotent — if old is already inactive, just updates the link.
+    """
+    old = db.get(TrainingCorrection, old_id)
+    if old is None:
+        log.warning(f"supersede: old correction {old_id} not found")
+        return
+    old.is_active = False
+    old.superseded_by_id = new_id
+    log.info(f"training: superseded {str(old_id)[:8]} -> {str(new_id)[:8]}")
+
 
 def retrieve_corrections(
     db: Session,

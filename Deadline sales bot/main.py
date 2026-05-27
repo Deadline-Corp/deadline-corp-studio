@@ -399,9 +399,19 @@ class TrainingRefineRequest(BaseModel):
 
 
 class TrainingApproveRequest(BaseModel):
-    """Operator accepts the latest proposal — persist to DB."""
+    """Operator accepts the latest proposal — persist to DB.
+
+    Phase 11 (2026-05-27): force_action lets the operator override a
+    detected conflict with an existing active rule. Accepted values:
+      - None / "" → run conflict check; if conflict, block with details
+      - "supersede" → mark conflicting rules inactive + persist new
+      - "coexist"   → save new alongside existing (operator overrode the judge)
+    "merge" is NOT a server action — the operator handles it by calling
+    /refine to write a combined guidance, then approving normally.
+    """
     session_id: str
     created_by: str = Field("admin", max_length=100)
+    force_action: Optional[str] = None
 
 
 class TrainingDiscardRequest(BaseModel):
@@ -410,11 +420,18 @@ class TrainingDiscardRequest(BaseModel):
 
 
 class TrainingProposalResponse(BaseModel):
-    """Returned by /draft and /refine — what the trainer LLM came up with."""
+    """Returned by /draft and /refine — what the trainer LLM came up with.
+
+    Phase 11 (2026-05-27): similar_existing_rules lists active corrections
+    whose trigger_context is semantically close to what the operator just
+    pasted — surfaced so operators see what they might be conflicting with
+    BEFORE they approve. Empty list when nothing close enough was found.
+    """
     session_id: str
     proposed_rule: str
     proposed_response: Optional[str] = None
     confirmation_question: str
+    similar_existing_rules: list[dict] = Field(default_factory=list)
 
 
 # ============================================================================
@@ -1846,11 +1863,15 @@ def _verify_training_token(request: Request) -> None:
 @app.post("/admin/training/draft", response_model=TrainingProposalResponse)
 async def training_draft(
     req: TrainingDraftRequest,
+    db: Session = Depends(get_db),
     _: None = Depends(_verify_training_token),
 ):
     """Start a new correction session. Returns the trainer LLM's first
-    proposal + a session_id to use in /refine and /approve."""
-    from services.training import draft_correction
+    proposal + a session_id to use in /refine and /approve.
+
+    Phase 11: also surfaces similar_existing_rules so the operator sees
+    nearby active rules BEFORE iterating/approving."""
+    from services.training import draft_correction, find_similar_active_corrections
     try:
         source_conv_id = PyUUID(req.source_conversation_id) if req.source_conversation_id else None
     except (ValueError, TypeError):
@@ -1867,11 +1888,24 @@ async def training_draft(
     except ValueError as e:
         # Trainer LLM returned invalid JSON — usually transient
         raise HTTPException(status_code=502, detail=f"trainer returned invalid JSON: {e}")
+
+    # Phase 11: warn operator about semantically similar active rules
+    # (cosine < 0.4 — strict, to keep false positives down). Non-fatal —
+    # if pgvector fails we just return empty similar_existing_rules.
+    similar: list[dict] = []
+    try:
+        similar = find_similar_active_corrections(
+            db, trigger_context=req.dialog, k=3, max_distance=0.4, channel=req.channel,
+        )
+    except Exception as exc:  # noqa: BLE001
+        log.warning(f"find_similar_active_corrections failed (non-fatal): {exc}")
+
     return TrainingProposalResponse(
         session_id=str(session_id),
         proposed_rule=proposal.get("proposed_rule", ""),
         proposed_response=proposal.get("proposed_response"),
         confirmation_question=proposal.get("confirmation_question", "Подходит ли вариант?"),
+        similar_existing_rules=similar,
     )
 
 
@@ -1909,23 +1943,117 @@ async def training_approve(
 ):
     """Persist the latest proposal to training_corrections — future bot
     responses will retrieve this rule via similarity search when a
-    semantically similar lead message comes in."""
-    from services.training import approve_correction
+    semantically similar lead message comes in.
+
+    Phase 11 (2026-05-27): unless the request carries force_action, we
+    run a conflict check first — embed similarity over active rules,
+    then LLM-as-judge per candidate. If ANY judge says is_conflict=true
+    we return 409 with the conflicting rules so the operator can choose:
+      - retry with force_action="supersede" → deactivate old rules + save new
+      - retry with force_action="coexist"   → save new alongside existing
+      - call /refine to write a merged guidance, then approve normally
+    """
+    from services.training import (
+        approve_correction,
+        find_similar_active_corrections,
+        get_session,
+        llm_judge_conflict,
+        supersede_correction,
+    )
     try:
         sid = PyUUID(req.session_id)
     except (ValueError, TypeError):
         raise HTTPException(status_code=422, detail="session_id must be a valid UUID")
+
+    sess = get_session(sid)
+    if sess is None:
+        raise HTTPException(status_code=404, detail="Session not found or expired")
+    if not sess.last_proposed_rule:
+        raise HTTPException(status_code=400, detail="No proposal in session — call /draft first")
+
+    # ---- Phase 11 conflict detection (skipped if operator overrode) ----
+    if not req.force_action:
+        try:
+            similar = find_similar_active_corrections(
+                db, trigger_context=sess.dialog, k=3, max_distance=0.4, channel=sess.channel,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning(f"find_similar_active failed (non-fatal, allowing approve): {exc}")
+            similar = []
+
+        conflicts_found: list[dict] = []
+        for s in similar:
+            try:
+                verdict = await llm_judge_conflict(
+                    trainer_llm, sess.last_proposed_rule, s["guidance"],
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning(f"llm_judge_conflict raised, treating as no conflict: {exc}")
+                continue
+            if verdict.get("is_conflict"):
+                conflicts_found.append({
+                    **s,
+                    "judge_reason": verdict.get("reason"),
+                    "suggested_action": verdict.get("suggested_action", "supersede"),
+                })
+
+        if conflicts_found:
+            log.info(
+                f"training: blocking approve of session {str(sid)[:8]} — "
+                f"{len(conflicts_found)} conflict(s) detected"
+            )
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "blocked_on": "conflict",
+                    "message": (
+                        f"Похожих активных правил: {len(conflicts_found)}. "
+                        "Выберите действие: supersede (заменить старые), "
+                        "coexist (оставить оба) или вернитесь к refine и объедините вручную."
+                    ),
+                    "conflicts": conflicts_found,
+                },
+            )
+
+    # ---- Either no conflict, or operator overrode with force_action ----
     try:
         row = approve_correction(db, sid, created_by=req.created_by)
-        db.commit()
     except KeyError:
         raise HTTPException(status_code=404, detail="Session not found or expired")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    # Supersede applies AFTER persist so old.superseded_by_id can reference new.id
+    superseded_ids: list[str] = []
+    if req.force_action == "supersede":
+        try:
+            similar2 = find_similar_active_corrections(
+                db, trigger_context=sess.dialog, k=3, max_distance=0.4, channel=sess.channel,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning(f"find_similar_active failed during supersede: {exc}")
+            similar2 = []
+        for s in similar2:
+            if s["id"] == str(row.id):
+                continue  # don't supersede ourselves
+            try:
+                supersede_correction(db, PyUUID(s["id"]), row.id)
+                superseded_ids.append(s["id"])
+            except Exception as exc:  # noqa: BLE001
+                log.warning(f"supersede_correction failed for {s['id']}: {exc}")
+
+    db.commit()
+    msg = "Сохранил правило. Применю на следующих похожих ответах."
+    if superseded_ids:
+        msg += f" Деактивировал {len(superseded_ids)} старых правил."
+    elif req.force_action == "coexist":
+        msg += " Решено сосуществовать с похожими правилами."
     return {
         "ok": True,
         "correction_id": str(row.id),
-        "message": "Сохранил правило. Применю на следующих похожих ответах.",
+        "superseded": superseded_ids,
+        "force_action": req.force_action,
+        "message": msg,
     }
 
 

@@ -434,8 +434,18 @@ user: дорого..."></textarea>
       body: JSON.stringify(body),
     });
     if (!r.ok) {
-      const text = await r.text().catch(() => "");
-      throw new Error("HTTP " + r.status + ": " + text.slice(0, 200));
+      // Phase 11: parse JSON body so 409 conflict payloads can be inspected
+      // by callers. Falls back to plain text for non-JSON errors.
+      let parsed = null;
+      let raw = "";
+      try {
+        raw = await r.text();
+        parsed = JSON.parse(raw);
+      } catch (_) { /* leave parsed=null */ }
+      const err = new Error("HTTP " + r.status + ": " + (raw || "").slice(0, 200));
+      err.status = r.status;
+      err.body = parsed;
+      throw err;
     }
     return r.json();
   }
@@ -457,6 +467,9 @@ user: дорого..."></textarea>
         dialog, correction_note: note,
       });
       sessionId = proposal.session_id;
+      // Phase 11 — surface nearby existing rules BEFORE the proposal so
+      // the operator knows what they might be conflicting with.
+      renderSimilarWarning(proposal.similar_existing_rules || []);
       renderProposal(proposal);
     } catch (e) {
       showStatus("Ошибка: " + e.message, true);
@@ -464,6 +477,39 @@ user: дорого..."></textarea>
       $tDraftBtn.disabled = false;
       $tDraftBtn.textContent = "Получить вариант";
     }
+  }
+
+  // Phase 11 — render the list of pre-existing active rules with similar
+  // trigger context. Goes ABOVE the proposal in the trainer panel.
+  function renderSimilarWarning(rules) {
+    // Remove old block if any
+    const old = document.getElementById("trainer-similar");
+    if (old) old.remove();
+    if (!rules || !rules.length) return;
+    const list = $("#trainer-proposals");
+    if (!list) return;
+    const wrap = document.createElement("div");
+    wrap.id = "trainer-similar";
+    wrap.style.cssText =
+      "background:#3a2010;border:1px solid #c98a3a;border-radius:6px;" +
+      "padding:8px 10px;margin-bottom:8px;color:#ffb86b;font-size:12px;";
+    const header = document.createElement("strong");
+    header.textContent = "⚠ " + rules.length +
+      " похожих активных правил уже есть в базе. Посмотрите прежде чем сохранять:";
+    wrap.appendChild(header);
+    rules.forEach((r) => {
+      const item = document.createElement("div");
+      item.style.cssText = "margin-top:6px;padding-left:8px;border-left:2px solid #c98a3a;";
+      const dist = (typeof r.distance === "number") ? r.distance.toFixed(2) : "?";
+      const created = (r.created_at || "").slice(0, 10);
+      item.innerHTML =
+        "<small style='opacity:.7'>id " + escapeHtml(String(r.id).slice(0, 8)) +
+        " · created " + escapeHtml(created) + " by " + escapeHtml(r.created_by || "?") +
+        " · cosine " + dist + "</small><br>" +
+        escapeHtml((r.guidance || "").slice(0, 220));
+      wrap.appendChild(item);
+    });
+    list.prepend(wrap);
   }
 
   async function refineSession(feedback) {
@@ -485,19 +531,111 @@ user: дорого..."></textarea>
     }
   }
 
-  async function approveSession(blockEl) {
+  async function approveSession(blockEl, forceAction) {
     if (!sessionId) return;
     try {
-      const result = await postJSON("/admin/training/approve", {
-        session_id: sessionId, created_by: "admin",
-      });
-      showStatus("✓ Сохранено! ID правила: " + result.correction_id.slice(0, 8));
+      const payload = { session_id: sessionId, created_by: "admin" };
+      if (forceAction) payload.force_action = forceAction;
+      const result = await postJSON("/admin/training/approve", payload);
+      const supSuffix = (result.superseded && result.superseded.length)
+        ? " (деактивировано старых: " + result.superseded.length + ")"
+        : "";
+      showStatus("✓ Сохранено! ID правила: " +
+        result.correction_id.slice(0, 8) + supSuffix);
       sessionId = null;
       $tDialog.value = "";
       $tNote.value = "";
+      const sim = document.getElementById("trainer-similar");
+      if (sim) sim.remove();
     } catch (e) {
-      showStatus("Ошибка сохранения: " + e.message, true);
+      // Phase 11 — 409 means active rules conflict with this one.
+      // Show the operator a choice instead of a generic error.
+      if (e.status === 409 && e.body && Array.isArray(e.body.detail?.conflicts)) {
+        showConflictModal(e.body.detail.conflicts, e.body.detail.message || "");
+      } else {
+        showStatus("Ошибка сохранения: " + e.message, true);
+      }
     }
+  }
+
+  // Phase 11 — modal to resolve a 409-conflict from /approve.
+  // Inline implementation (no external library) to stay zero-dep.
+  function showConflictModal(conflicts, summary) {
+    // Remove any prior modal
+    const old = document.getElementById("trainer-conflict-modal");
+    if (old) old.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "trainer-conflict-modal";
+    overlay.style.cssText =
+      "position:fixed;inset:0;background:rgba(0,0,0,.6);" +
+      "z-index:99999;display:flex;align-items:center;justify-content:center;";
+
+    const card = document.createElement("div");
+    card.style.cssText =
+      "background:#1a0f08;border:1px solid #c98a3a;border-radius:8px;" +
+      "max-width:560px;width:92%;max-height:85vh;overflow-y:auto;" +
+      "padding:16px;color:#f0d9b5;font-family:system-ui,sans-serif;";
+
+    const title = document.createElement("h3");
+    title.style.cssText = "margin:0 0 8px;color:#ffb86b;font-size:15px;";
+    title.textContent = "⚠ Конфликт с " + conflicts.length + " активными правилами";
+
+    const subtitle = document.createElement("div");
+    subtitle.style.cssText = "font-size:12px;opacity:.8;margin-bottom:10px;";
+    subtitle.textContent = summary;
+
+    card.appendChild(title);
+    card.appendChild(subtitle);
+
+    conflicts.forEach((c, i) => {
+      const item = document.createElement("div");
+      item.style.cssText =
+        "background:#2a1808;border-left:3px solid #c98a3a;padding:8px 10px;" +
+        "margin-bottom:8px;font-size:12px;";
+      const created = (c.created_at || "").slice(0, 10);
+      item.innerHTML =
+        "<strong>" + (i + 1) + ". " + escapeHtml(String(c.id).slice(0, 8)) +
+        "</strong>  <small style='opacity:.7'>" +
+        escapeHtml(created) + " · cosine " +
+        (typeof c.distance === "number" ? c.distance.toFixed(2) : "?") +
+        "</small><br><em style='opacity:.85;display:block;margin-top:4px;'>" +
+        escapeHtml((c.guidance || "").slice(0, 280)) + "</em>" +
+        "<div style='margin-top:4px;color:#ffb86b;'>Судья: " +
+        escapeHtml(c.judge_reason || "") + "</div>" +
+        "<div style='font-size:11px;opacity:.7'>предложено: " +
+        escapeHtml(c.suggested_action || "supersede") + "</div>";
+      card.appendChild(item);
+    });
+
+    const btnRow = document.createElement("div");
+    btnRow.style.cssText = "display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;";
+
+    function mkBtn(label, color, handler) {
+      const b = document.createElement("button");
+      b.textContent = label;
+      b.style.cssText =
+        "background:" + color + ";color:#1a0f08;border:none;border-radius:4px;" +
+        "padding:8px 12px;font-weight:600;cursor:pointer;font-size:13px;";
+      b.onclick = handler;
+      return b;
+    }
+
+    btnRow.appendChild(mkBtn("Заменить старые (supersede)", "#ffb86b", () => {
+      overlay.remove();
+      approveSession(null, "supersede");
+    }));
+    btnRow.appendChild(mkBtn("Оставить оба (coexist)", "#c98a3a", () => {
+      overlay.remove();
+      approveSession(null, "coexist");
+    }));
+    btnRow.appendChild(mkBtn("Отмена", "#5a3a20", () => {
+      overlay.remove();
+    }));
+
+    card.appendChild(btnRow);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
   }
 
   async function discardSession(blockEl) {
