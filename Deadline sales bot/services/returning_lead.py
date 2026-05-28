@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
+from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import select, func
@@ -141,3 +142,37 @@ def classify_topic_decision(llm, summary: str, recall_greeting: str, user_reply:
         result["decision"], result["confidence"], result["reason"][:80],
     )
     return result
+
+
+def archive_stale_conversations(
+    db: Session, customer_id: UUID, *, except_conv_id: Optional[UUID] = None
+) -> int:
+    """Flip every OPEN Conversation of this customer to ARCHIVED status
+    EXCEPT the one named in except_conv_id. Stamps archived_at = now().
+
+    Returns the number of rows updated. Caller commits.
+
+    Used when a new conversation is created for a returning lead — the old
+    OPEN one(s) get sidelined so there's exactly one active conversation
+    per customer at any time.
+    """
+    now = datetime.now(timezone.utc)
+    stmt = (
+        select(Conversation)
+        .where(
+            Conversation.customer_id == customer_id,
+            Conversation.status == ConversationStatusEnum.OPEN.value,
+        )
+    )
+    if except_conv_id is not None:
+        stmt = stmt.where(Conversation.id != except_conv_id)
+
+    rows = db.execute(stmt).scalars().all()
+    for c in rows:
+        c.status = ConversationStatusEnum.ARCHIVED.value
+        c.archived_at = now
+    logger.info(
+        "[recall] archived %d stale conversation(s) for customer=%s (except=%s)",
+        len(rows), customer_id, except_conv_id,
+    )
+    return len(rows)

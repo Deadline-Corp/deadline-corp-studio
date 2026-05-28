@@ -223,3 +223,51 @@ def test_classify_topic_decision_handles_llm_exception():
     assert result["decision"] == "UNCLEAR"
     assert result["confidence"] == 0.0
     assert "network down" in result["reason"] or "llm error" in result["reason"]
+
+
+def test_archive_stale_flips_status_and_stamps_archived_at(db):
+    """Returns count of conversations archived. New conv (except_id)
+    is left alone."""
+    from services.returning_lead import archive_stale_conversations
+
+    customer = _make_customer(db, email="stale@example.com")
+    old_conv = _make_conv(db, customer, days_since_last=60, n_lead_msgs=4)
+    new_conv = _make_conv(db, customer, days_since_last=0, n_lead_msgs=0)
+    db.flush()
+
+    n = archive_stale_conversations(db, customer.id, except_conv_id=new_conv.id)
+    db.flush()
+
+    db.refresh(old_conv)
+    db.refresh(new_conv)
+    assert n == 1
+    assert old_conv.status == ConversationStatusEnum.ARCHIVED.value
+    assert old_conv.archived_at is not None
+    assert new_conv.status == ConversationStatusEnum.OPEN.value
+    assert new_conv.archived_at is None
+
+
+def test_archive_stale_skips_already_archived(db):
+    """Already-archived conversations should not be touched, count not incremented."""
+    from services.returning_lead import archive_stale_conversations
+
+    customer = _make_customer(db, email="already_arch@example.com")
+    already_arch = _make_conv(db, customer, status="archived", days_since_last=90, n_lead_msgs=2)
+    open_conv = _make_conv(db, customer, days_since_last=10, n_lead_msgs=2)
+    db.flush()
+
+    n = archive_stale_conversations(db, customer.id)
+    db.flush()
+
+    db.refresh(already_arch)
+    db.refresh(open_conv)
+    assert n == 1  # only the open one
+    assert open_conv.status == ConversationStatusEnum.ARCHIVED.value
+
+
+def test_archive_stale_no_op_when_no_open_conversations(db):
+    from services.returning_lead import archive_stale_conversations
+    customer = _make_customer(db, email="nothing_to_archive@example.com")
+    db.flush()
+    n = archive_stale_conversations(db, customer.id)
+    assert n == 0
