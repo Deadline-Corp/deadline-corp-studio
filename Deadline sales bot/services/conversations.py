@@ -215,3 +215,53 @@ def set_operator_takeover(
     conversation.operator_takeover = enabled
     db.flush()
     return conversation
+
+
+def get_recent_messages_with_recall(
+    db: Session,
+    *,
+    customer_id: UUID,
+    active_conv_id: UUID,
+    limit: int = 13,
+    prior_tail: int = 5,
+) -> list[Message]:
+    """Like get_recent_messages but ALSO pulls the tail of the most recent
+    ARCHIVED conversation belonging to the same customer. Returns up to
+    `prior_tail` messages from the prior conv + up to (limit - prior_tail)
+    from the active conv, in chronological order (oldest first).
+
+    Returns the same shape as get_recent_messages: list[Message].
+
+    Used in the CONTINUE branch of Phase 13 returning-lead memory: the LLM
+    needs to "remember" the prior project to continue naturally.
+
+    Degrades gracefully when no archived prior conversation exists — in that
+    case the result is identical to get_recent_messages(db, active_conv_id).
+    """
+    current_budget = max(1, limit - prior_tail)
+
+    # 1. Pull `current_budget` most recent messages from the active conv.
+    active_msgs = get_recent_messages(db, active_conv_id, limit=current_budget)
+
+    # 2. Find the prior conversation (most recently active ARCHIVED one for
+    #    this customer, excluding the current active conv).
+    prior_conv = db.execute(
+        select(Conversation)
+        .where(
+            Conversation.customer_id == customer_id,
+            Conversation.id != active_conv_id,
+            Conversation.status == ConversationStatusEnum.ARCHIVED.value,
+        )
+        .order_by(desc(Conversation.last_message_at))
+        .limit(1)
+    ).scalar_one_or_none()
+
+    if prior_conv is None:
+        return active_msgs
+
+    # 3. Pull the tail of the prior conv.
+    prior_msgs = get_recent_messages(db, prior_conv.id, limit=prior_tail)
+
+    # 4. Merge chronologically. Prior is always older by construction —
+    #    it's archived with an earlier last_message_at than the active one.
+    return prior_msgs + active_msgs

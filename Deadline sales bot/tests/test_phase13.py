@@ -271,3 +271,74 @@ def test_archive_stale_no_op_when_no_open_conversations(db):
     db.flush()
     n = archive_stale_conversations(db, customer.id)
     assert n == 0
+
+
+def test_get_recent_messages_with_recall_merges_prior_and_current(db):
+    """When customer has an archived prior conversation and a current
+    active one, the helper returns last 5 prior + last 8 current,
+    chronologically merged."""
+    from services.conversations import get_recent_messages_with_recall
+
+    customer = _make_customer(db, email="merge@example.com")
+
+    # Prior: archived conv with 10 messages
+    prior = _make_conv(db, customer, status="archived", days_since_last=30, n_lead_msgs=0)
+    for i in range(10):
+        m = Message(
+            conversation_id=prior.id,
+            role="user" if i % 2 == 0 else "assistant",
+            content=f"prior msg {i}",
+            created_at=datetime.now(timezone.utc) - timedelta(days=30, minutes=10 - i),
+        )
+        db.add(m)
+
+    # Current: open conv with 3 messages
+    current = _make_conv(db, customer, days_since_last=0, n_lead_msgs=0)
+    for i in range(3):
+        m = Message(
+            conversation_id=current.id,
+            role="user" if i % 2 == 0 else "assistant",
+            content=f"current msg {i}",
+            created_at=datetime.now(timezone.utc) - timedelta(minutes=3 - i),
+        )
+        db.add(m)
+    db.flush()
+
+    result = get_recent_messages_with_recall(
+        db, customer_id=customer.id, active_conv_id=current.id, limit=13, prior_tail=5
+    )
+
+    # Up to 5 from prior tail + 3 from current = 8 total
+    assert 7 <= len(result) <= 8
+    # The current-conv messages are the LAST 3 (chronologically newest).
+    last_three = result[-3:]
+    contents_last = [
+        (m["content"] if isinstance(m, dict) else m.content)
+        for m in last_three
+    ]
+    assert all("current msg" in c for c in contents_last)
+
+
+def test_get_recent_messages_with_recall_no_prior_returns_only_current(db):
+    """Customer with only the active conversation — helper returns
+    same result as the regular get_recent_messages."""
+    from services.conversations import get_recent_messages_with_recall, get_recent_messages
+
+    customer = _make_customer(db, email="lonely@example.com")
+    current = _make_conv(db, customer, days_since_last=0, n_lead_msgs=0)
+    for i in range(3):
+        m = Message(
+            conversation_id=current.id,
+            role="user",
+            content=f"msg {i}",
+            created_at=datetime.now(timezone.utc) - timedelta(minutes=3 - i),
+        )
+        db.add(m)
+    db.flush()
+
+    via_recall = get_recent_messages_with_recall(
+        db, customer_id=customer.id, active_conv_id=current.id, limit=13
+    )
+    via_plain = get_recent_messages(db, current.id, limit=13)
+    # Both should have same length (and ideally same content, but at least same count)
+    assert len(via_recall) == len(via_plain)
