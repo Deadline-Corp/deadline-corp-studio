@@ -127,3 +127,52 @@ def test_generate_topic_summary_empty_conversation_returns_empty_string(db):
     summary = generate_topic_summary(fake_llm, db, conv)
     assert summary == ""
     assert fake_llm.invoke.call_count == 0
+
+
+def test_parse_topic_decision_continue():
+    from prompts import parse_topic_decision
+    raw = '{"decision": "CONTINUE", "confidence": 0.82, "reason": "те же темы"}'
+    result = parse_topic_decision(raw)
+    assert result == {"decision": "CONTINUE", "confidence": 0.82, "reason": "те же темы"}
+
+
+def test_parse_topic_decision_handles_code_fences():
+    from prompts import parse_topic_decision
+    raw = '```json\n{"decision": "NEW", "confidence": 0.9, "reason": "другой бюджет"}\n```'
+    result = parse_topic_decision(raw)
+    assert result["decision"] == "NEW"
+    assert result["confidence"] == 0.9
+
+
+def test_parse_topic_decision_garbage_returns_unclear():
+    from prompts import parse_topic_decision
+    result = parse_topic_decision("я не уверен что это json")
+    assert result["decision"] == "UNCLEAR"
+    assert result["confidence"] == 0.0
+
+
+def test_parse_topic_decision_empty_returns_unclear():
+    from prompts import parse_topic_decision
+    result = parse_topic_decision("")
+    assert result["decision"] == "UNCLEAR"
+    assert result["confidence"] == 0.0
+
+
+def test_parse_topic_decision_invalid_decision_normalizes_to_unclear():
+    """Even if JSON parses, if decision string is not in
+    {CONTINUE, NEW, UNCLEAR}, normalize to UNCLEAR."""
+    from prompts import parse_topic_decision
+    raw = '{"decision": "MAYBE", "confidence": 0.5, "reason": "x"}'
+    result = parse_topic_decision(raw)
+    assert result["decision"] == "UNCLEAR"
+
+
+def test_parse_topic_decision_clamps_confidence_to_unit_range():
+    from prompts import parse_topic_decision
+    raw = '{"decision": "CONTINUE", "confidence": 1.5, "reason": "x"}'
+    result = parse_topic_decision(raw)
+    assert result["confidence"] == 1.0
+
+    raw2 = '{"decision": "NEW", "confidence": -0.3, "reason": "x"}'
+    result2 = parse_topic_decision(raw2)
+    assert result2["confidence"] == 0.0

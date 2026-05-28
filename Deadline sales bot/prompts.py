@@ -561,3 +561,62 @@ def render_recall_greeting(language: str, summary: str, days_ago: int, user_mess
     """
     template = RECALL_GREETING_PROMPT_EN if language == "en" else RECALL_GREETING_PROMPT_RU
     return template.format(summary=summary, days_ago=days_ago, user_message=user_message)
+
+
+# Phase 13 — topic classifier. Run on lead's reply to recall greeting.
+TOPIC_CLASSIFIER_PROMPT = """Определи: клиент хочет продолжить старый проект или начать новый.
+
+ПРОШЛЫЙ ПРОЕКТ: {summary}
+БОТ СКАЗАЛ: {recall_greeting}
+ОТВЕТ КЛИЕНТА: {user_reply}
+
+Правила:
+- CONTINUE — клиент явно или неявно подтверждает старый проект (тот же тип/scope/бюджет)
+- NEW — клиент говорит про другой тип работы (был сайт → теперь бот), другой бюджет в разы, новый период
+- UNCLEAR — ответ слишком короткий или абстрактный чтобы понять
+
+Верни СТРОГО JSON одной строкой:
+{{"decision": "CONTINUE"|"NEW"|"UNCLEAR", "confidence": 0.0-1.0, "reason": "одна фраза"}}"""
+
+
+def parse_topic_decision(raw: str) -> dict:
+    """Parse LLM JSON response into {decision, confidence, reason}.
+
+    Fail-safe: any parse error returns UNCLEAR with confidence=0.0 so the
+    main.py state machine falls through to the explicit-clarification branch.
+
+    - Strips ```json fences if present
+    - Locates first '{' and last '}' to handle leading/trailing text
+    - Normalizes invalid `decision` strings to UNCLEAR
+    - Clamps confidence to [0.0, 1.0]
+    - Truncates reason at 200 chars
+    """
+    import json
+    import re
+
+    if not raw or not raw.strip():
+        return {"decision": "UNCLEAR", "confidence": 0.0, "reason": "empty response"}
+
+    # Strip code fences if present
+    cleaned = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw.strip(), flags=re.MULTILINE).strip()
+
+    # Find first '{' and last '}' to handle leading/trailing text
+    start, end = cleaned.find("{"), cleaned.rfind("}")
+    if start == -1 or end == -1 or end <= start:
+        return {"decision": "UNCLEAR", "confidence": 0.0, "reason": "no JSON found"}
+
+    try:
+        data = json.loads(cleaned[start : end + 1])
+    except json.JSONDecodeError:
+        return {"decision": "UNCLEAR", "confidence": 0.0, "reason": "invalid JSON"}
+
+    decision = data.get("decision", "UNCLEAR")
+    if decision not in ("CONTINUE", "NEW", "UNCLEAR"):
+        decision = "UNCLEAR"
+    try:
+        confidence = float(data.get("confidence", 0.0))
+    except (TypeError, ValueError):
+        confidence = 0.0
+    confidence = max(0.0, min(1.0, confidence))
+    reason = str(data.get("reason", ""))[:200]
+    return {"decision": decision, "confidence": confidence, "reason": reason}
