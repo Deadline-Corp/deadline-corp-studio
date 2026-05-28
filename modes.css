@@ -9,21 +9,23 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 46px;
-  height: 36px;
-  padding: 0;
+  gap: 9px;
+  padding: 10px 16px;
   border: 0;
   border-radius: 10px;
   flex-shrink: 0;
-  font: inherit;
+  font: 700 12px/1 'JetBrains Mono', 'Courier New', monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 
-  /* Bright magical blue with subtle dimensional gradient */
+  /* Bright magical blue with subtle dimensional gradient (50% keyframe shifts to copper) */
   background:
     radial-gradient(120% 80% at 30% 25%, #6FDBFF 0%, transparent 55%),
     linear-gradient(135deg, #1E9BFF 0%, #00BFFF 55%, #00A8E8 100%);
   color: #fff;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.25);
 
   /* Layered glow + inner highlight */
   box-shadow:
@@ -32,17 +34,26 @@
     0 1px 0 rgba(255, 255, 255, 0.18) inset,
     0 -1px 0 rgba(0, 60, 110, 0.45) inset;
 
-  animation: magic-pulse 2.4s ease-in-out infinite;
+  animation: magic-pulse 1.8s ease-in-out infinite;
   transition:
     box-shadow 240ms ease-out,
     filter 200ms ease;
-  will-change: transform, box-shadow, filter;
+  will-change: transform, box-shadow, filter, background;
 }
 
-/* Idle pulse: gentle scale + glow ring */
+.magic-toggle-label {
+  font: inherit;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Idle pulse: scale + glow ring + blue↔copper color swap (brand-aware) */
 @keyframes magic-pulse {
   0%, 100% {
     transform: scale(1);
+    background:
+      radial-gradient(120% 80% at 30% 25%, #6FDBFF 0%, transparent 55%),
+      linear-gradient(135deg, #1E9BFF 0%, #00BFFF 55%, #00A8E8 100%);
     box-shadow:
       0 0 0 0 rgba(0, 191, 255, 0.55),
       0 4px 14px -2px rgba(0, 191, 255, 0.45),
@@ -51,13 +62,16 @@
     filter: brightness(1);
   }
   50% {
-    transform: scale(1.045);
+    transform: scale(1.06);
+    background:
+      radial-gradient(120% 80% at 30% 25%, #FFE9A3 0%, transparent 55%),
+      linear-gradient(135deg, #E5894F 0%, #D9A057 55%, #C76A2D 100%);
     box-shadow:
-      0 0 0 7px rgba(0, 191, 255, 0),
-      0 7px 22px -2px rgba(0, 191, 255, 0.6),
-      0 1px 0 rgba(255, 255, 255, 0.28) inset,
-      0 -1px 0 rgba(0, 60, 110, 0.45) inset;
-    filter: brightness(1.08);
+      0 0 0 10px rgba(199, 106, 45, 0),
+      0 8px 26px -2px rgba(199, 106, 45, 0.7),
+      0 1px 0 rgba(255, 255, 255, 0.32) inset,
+      0 -1px 0 rgba(120, 50, 10, 0.45) inset;
+    filter: brightness(1.12) saturate(1.1);
   }
 }
 
@@ -210,11 +224,17 @@ html.is-transitioning .magic-toggle {
   pointer-events: auto;
 }
 
-/* Mobile: nudge the magic button so it stays comfortably tappable */
+/* Mobile: tighter padding + smaller label so the button stays comfortably tappable */
 @media (max-width: 640px) {
   .magic-toggle {
-    width: 42px;
-    height: 34px;
+    padding: 8px 12px;
+    gap: 7px;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+  }
+  .magic-toggle svg {
+    width: 18px;
+    height: 18px;
   }
 }
 
@@ -4794,15 +4814,20 @@ html .magic-toggle {
   color: #fff !important;
   border: 0 !important;
   border-radius: 10px !important;
-  padding: 0 !important;
-  width: 46px !important;
-  height: 36px !important;
+  padding: 10px 16px !important;
+  width: auto !important;
+  height: auto !important;
+  gap: 9px !important;
+  font: 700 12px/1 'JetBrains Mono', 'Courier New', monospace !important;
+  letter-spacing: 0.14em !important;
+  text-transform: uppercase !important;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.25) !important;
   box-shadow:
     0 0 0 0 rgba(0, 191, 255, 0.55),
     0 4px 14px -2px rgba(0, 191, 255, 0.45),
     0 1px 0 rgba(255, 255, 255, 0.18) inset,
     0 -1px 0 rgba(0, 60, 110, 0.45) inset !important;
-  animation: magic-pulse 2.4s ease-in-out infinite !important;
+  animation: magic-pulse 1.8s ease-in-out infinite !important;
 }
 /* Per-mode aura tint preserved on the box-shadow */
 html.mode-matrix .magic-toggle {
@@ -11818,6 +11843,60 @@ html.mode-island body {
     gap: 16px !important;
     padding-left: 16px !important;
     padding-right: 16px !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   MAGIC-TOGGLE FINAL OVERRIDE (2026-05-28) — wins the cascade against the
+   many `width: 46px / animation: 2.4s` overrides scattered throughout this
+   file. Adds the "Нажми на меня / Tap me" label, blue↔copper pulse, and
+   larger tap-area. Must remain LAST in this stylesheet.
+   ═══════════════════════════════════════════════════════════════════════ */
+html .magic-toggle,
+html.mode-matrix .magic-toggle,
+html.mode-island .magic-toggle,
+html.mode-studio .magic-toggle,
+html.mode-noir .magic-toggle,
+html.mode-vault .magic-toggle,
+html.mode-kinetic .magic-toggle {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 9px !important;
+  width: auto !important;
+  height: auto !important;
+  padding: 10px 16px !important;
+  font: 700 12px/1 'JetBrains Mono', 'Courier New', monospace !important;
+  letter-spacing: 0.14em !important;
+  text-transform: uppercase !important;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.25) !important;
+  animation: magic-pulse 1.8s ease-in-out infinite !important;
+}
+
+/* Mobile — keep button tappable but a bit more compact */
+@media (max-width: 640px) {
+  html .magic-toggle,
+  html.mode-matrix .magic-toggle,
+  html.mode-island .magic-toggle,
+  html.mode-studio .magic-toggle,
+  html.mode-noir .magic-toggle,
+  html.mode-vault .magic-toggle,
+  html.mode-kinetic .magic-toggle {
+    padding: 8px 12px !important;
+    gap: 7px !important;
+    font-size: 11px !important;
+    letter-spacing: 0.1em !important;
+    transform: none !important;
+  }
+  html .magic-toggle svg,
+  html.mode-matrix .magic-toggle svg,
+  html.mode-island .magic-toggle svg,
+  html.mode-studio .magic-toggle svg,
+  html.mode-noir .magic-toggle svg,
+  html.mode-vault .magic-toggle svg,
+  html.mode-kinetic .magic-toggle svg {
+    width: 18px !important;
+    height: 18px !important;
   }
 }
 

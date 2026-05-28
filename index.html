@@ -70,7 +70,7 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@100;200;300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="modes.css?v=3.7.68">
+<link rel="stylesheet" href="modes.css?v=3.7.71">
 <!-- GSAP + ScrollTrigger: industry-standard animation runtime for premium
      reveal/scroll sequences in noir/vault/kinetic modes. Loads before
      modes.js so the global `gsap` is ready when mode-init runs. -->
@@ -833,6 +833,103 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
       z-index: 1;
     }
   }
+
+  /* ═════════════════════ LEAD-FORM MODAL ═════════════════════ */
+  .lead-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(8, 6, 2, 0.78);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+    opacity: 0;
+    transition: opacity 200ms ease-out;
+  }
+  .lead-modal.is-open {
+    display: flex;
+    opacity: 1;
+  }
+  .lead-modal-shell {
+    position: relative;
+    width: 100%;
+    max-width: 760px;
+    height: min(88vh, 920px);
+    background: #161208;
+    border: 1px solid rgba(245, 237, 216, 0.14);
+    border-radius: 14px;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+    overflow: hidden;
+    transform: scale(0.97) translateY(8px);
+    transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .lead-modal-shell::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: #C76A2D;
+    z-index: 3;
+    pointer-events: none;
+  }
+  .lead-modal.is-open .lead-modal-shell {
+    transform: scale(1) translateY(0);
+  }
+  .lead-modal-frame {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    display: block;
+    background: #161208;
+  }
+  .lead-modal-close {
+    position: absolute;
+    top: 25px;
+    right: 18px;
+    width: 24px;
+    height: 24px;
+    background: transparent;
+    border: 0;
+    padding: 0;
+    color: #F0E8D5;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+    z-index: 3;
+    transition: color 160ms ease, transform 160ms ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: inherit;
+  }
+  .lead-modal-close:hover {
+    color: #C76A2D;
+    transform: scale(1.1);
+  }
+  .lead-modal-close:focus-visible {
+    outline: 1px solid #C76A2D;
+    outline-offset: 4px;
+  }
+  body.lead-modal-open { overflow: hidden; }
+  body.lead-modal-open #dl-bot,
+  body.lead-modal-open #magic-toggle { display: none !important; }
+  @media (max-width: 600px) {
+    .lead-modal { padding: 0; }
+    .lead-modal-shell {
+      height: 100vh;
+      height: 100dvh;
+      max-width: 100%;
+      border: 0;
+      border-radius: 0;
+      box-shadow: none;
+    }
+    .lead-modal-close { top: 12px; right: 12px; }
+  }
 </style>
 
 <!-- JSON-LD: Organization + WebSite + ProfessionalService -->
@@ -893,6 +990,9 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
     <circle cx="19" cy="5"  r="1.1" fill="currentColor" opacity="0.85"/>
     <circle cx="5"  cy="18" r="0.8" fill="currentColor" opacity="0.55"/>
   </svg>
+  <span class="magic-toggle-label">
+    <span class="lang-ru">Нажми на меня</span><span class="lang-en">Tap me</span>
+  </span>
 </button>
 
 <!-- ═══════════════════════════════════════════ NAV ═══════════════════════════════════════════ -->
@@ -912,7 +1012,7 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
         <span class="sep">|</span>
         <button data-lang="en" aria-pressed="false">EN</button>
       </div>
-      <a href="https://t.me/deadline_corp" target="_blank" rel="noopener" class="btn-primary"><span class="lang-ru">Связаться</span><span class="lang-en">Talk to us</span></a>
+      <a href="/lead-form/" data-lead-trigger class="btn-primary"><span class="lang-ru">Связаться</span><span class="lang-en">Talk to us</span></a>
     </div>
   </div>
 </nav>
@@ -941,7 +1041,7 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
       <span class="lang-ru">// листай дальше →</span>
       <span class="lang-en">// scroll for the rest →</span>
     </div>
-    <a href="#contact" class="btn-primary">
+    <a href="/lead-form/" data-lead-trigger class="btn-primary">
       <span class="lang-ru">Начать проект</span><span class="lang-en">Start a project</span>
     </a>
     <a href="#work" class="btn-secondary">
@@ -1873,6 +1973,72 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
 
 <!-- Deadline Sales Bot widget — backend on Railway, KB-driven lead qualification -->
 <script src="widget.js" defer></script>
+
+<!-- ═══════════════════════ LEAD-FORM MODAL ═══════════════════════ -->
+<div class="lead-modal" id="leadModal" aria-hidden="true" role="dialog" aria-modal="true" aria-label="Форма заявки">
+  <div class="lead-modal-shell">
+    <button class="lead-modal-close" type="button" id="leadModalClose" aria-label="Закрыть форму">×</button>
+    <iframe class="lead-modal-frame" id="leadModalFrame" title="Форма заявки DEADLINE" src="about:blank" loading="lazy"></iframe>
+  </div>
+</div>
+
+<script>
+  (function leadModalInit() {
+    var modal = document.getElementById('leadModal');
+    var frame = document.getElementById('leadModalFrame');
+    var closeBtn = document.getElementById('leadModalClose');
+    if (!modal || !frame) return;
+
+    var FORM_URL_RU = '/lead-form/';
+    var FORM_URL_EN = '/lead-form-en/';
+
+    function currentFormUrl() {
+      return document.body.classList.contains('lang-en') ? FORM_URL_EN : FORM_URL_RU;
+    }
+
+    function openModal() {
+      var target = currentFormUrl();
+      if (frame.dataset.loadedSrc !== target) {
+        frame.src = target;
+        frame.dataset.loadedSrc = target;
+      }
+      modal.classList.add('is-open');
+      modal.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('lead-modal-open');
+      // give the close button focus so Esc / Tab work predictably
+      setTimeout(function () { closeBtn && closeBtn.focus(); }, 50);
+    }
+
+    function closeModal() {
+      modal.classList.remove('is-open');
+      modal.setAttribute('aria-hidden', 'true');
+      document.body.classList.remove('lead-modal-open');
+    }
+
+    closeBtn && closeBtn.addEventListener('click', closeModal);
+    modal.addEventListener('click', function (e) {
+      if (e.target === modal) closeModal();
+    });
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && modal.classList.contains('is-open')) closeModal();
+    });
+
+    // Wire every CTA with [data-lead-trigger]. Middle-click / Ctrl-click / Cmd-click
+    // still opens the form in a new tab (native <a> behaviour preserved).
+    var triggers = document.querySelectorAll('a[data-lead-trigger]');
+    triggers.forEach(function (el) {
+      el.addEventListener('click', function (e) {
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.button === 1) return;
+        e.preventDefault();
+        openModal();
+      });
+    });
+
+    // Expose for any future programmatic trigger (e.g. widget hand-off, banner CTA)
+    window.openLeadModal = openModal;
+    window.closeLeadModal = closeModal;
+  })();
+</script>
 
 </body>
 </html>
