@@ -445,6 +445,36 @@ async def set_telegram_webhook(token: str, url: str) -> dict:
 # ============================================================================
 
 
+def build_forum_topic_name(db, customer, conversation, *, lead_name: str, channel: str) -> str:
+    """Compose forum-topic title with optional returning-lead prefix +
+    topic summary tag.
+
+    - [ПОВТОРНЫЙ] prefix if customer has ANY archived prior conversation
+    - ' · <first 40 chars of conversation.summary>' tail if summary is set
+
+    Both are optional — for first-time leads with no archived priors and no
+    summary yet, the name is just '{lead_name} · {channel}'.
+    """
+    from sqlalchemy import select, func
+    from db.models import Conversation, ConversationStatusEnum
+
+    prefix = ""
+    has_archived = db.execute(
+        select(func.count(Conversation.id)).where(
+            Conversation.customer_id == customer.id,
+            Conversation.status == ConversationStatusEnum.ARCHIVED.value,
+        )
+    ).scalar_one() > 0
+    if has_archived:
+        prefix = "[ПОВТОРНЫЙ] "
+
+    summary_tag = ""
+    if conversation.summary:
+        summary_tag = " · " + conversation.summary[:40]
+
+    return f"{prefix}{lead_name} · {channel}{summary_tag}"
+
+
 async def create_forum_topic(
     token: str,
     supergroup_id: str,

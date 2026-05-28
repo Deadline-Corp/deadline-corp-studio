@@ -342,3 +342,33 @@ def test_get_recent_messages_with_recall_no_prior_returns_only_current(db):
     via_plain = get_recent_messages(db, current.id, limit=13)
     # Both should have same length (and ideally same content, but at least same count)
     assert len(via_recall) == len(via_plain)
+
+
+def test_forum_topic_prefix_returning_customer(db):
+    """When customer has an archived prior conv → topic title gets [ПОВТОРНЫЙ]
+    + summary tag."""
+    from channels.telegram import build_forum_topic_name
+
+    customer = _make_customer(db, email="ret-prefix@example.com")
+    _make_conv(db, customer, status="archived", days_since_last=60, n_lead_msgs=4)
+    active = _make_conv(db, customer, days_since_last=0, n_lead_msgs=1)
+    active.summary = "сайт спа, 200к"
+    db.flush()
+
+    name = build_forum_topic_name(db, customer, active, lead_name="Иван С.", channel="website")
+    assert name.startswith("[ПОВТОРНЫЙ]")
+    assert "Иван С." in name
+    assert "сайт спа" in name
+
+
+def test_forum_topic_name_first_time_lead_no_prefix(db):
+    """Fresh customer, no archived prior, no summary → plain title."""
+    from channels.telegram import build_forum_topic_name
+
+    customer = _make_customer(db, email="firsttime@example.com")
+    active = _make_conv(db, customer, days_since_last=0, n_lead_msgs=1)
+    db.flush()
+
+    name = build_forum_topic_name(db, customer, active, lead_name="Пётр", channel="telegram")
+    assert "[ПОВТОРНЫЙ]" not in name
+    assert name == "Пётр · telegram"

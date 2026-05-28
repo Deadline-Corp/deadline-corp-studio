@@ -61,6 +61,7 @@ from channels.telegram import (
     send_telegram_reply,
     send_typing_action,
     create_forum_topic,
+    build_forum_topic_name,
     send_to_topic,
     answer_callback_query,
     close_forum_topic,
@@ -640,7 +641,11 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         and not conversation.handoff_done  # don't open topics for already-closed convs
     ):
         topic_label = req.username or req.email or req.external_id[:20]
-        topic_name = f"{req.channel}: {topic_label}"
+        topic_name = build_forum_topic_name(
+            db, customer, conversation,
+            lead_name=topic_label,
+            channel=req.channel,
+        )
         new_topic_id = await create_forum_topic(
             settings.telegram_bot_token,
             settings.telegram_operator_group_id,
