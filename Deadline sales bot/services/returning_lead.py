@@ -13,13 +13,15 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
-from db.models import Conversation, ConversationStatusEnum, Customer, Message
+# `Customer` and `ConversationStatusEnum` are used by other Phase 13 functions
+# (generate_topic_summary, archive_stale_conversations) that will land in
+# Tasks 4 and 8 — kept here to avoid churning the import block per-task.
+from db.models import Conversation, ConversationStatusEnum, Customer, Message  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +32,9 @@ RECALL_MIN_LEAD_MESSAGES = 3
 
 def should_trigger_recall(db: Session, customer_id: UUID) -> bool:
     """Return True iff this customer has at least one prior Conversation
-    with last_message_at >= RECALL_MIN_GAP_DAYS days ago AND at least
-    RECALL_MIN_LEAD_MESSAGES messages with role='user' in it.
+    where last_message_at is at least RECALL_MIN_GAP_DAYS days in the past
+    AND that Conversation has at least RECALL_MIN_LEAD_MESSAGES messages
+    with role='user'.
 
     Does NOT check the identity-merge flag — caller is expected to gate
     this on was_returning_match first to avoid querying for new leads.
