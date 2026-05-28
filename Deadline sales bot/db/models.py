@@ -85,6 +85,7 @@ class ConversationStatusEnum(str, enum.Enum):
     HANDED_OFF = "handed_off"    # Передан команде, бот молчит
     RESOLVED = "resolved"        # Диалог закрыт
     ABANDONED = "abandoned"      # Клиент пропал, не реактивируется
+    ARCHIVED = "archived"        # Сидлайн в пользу нового диалога с тем же клиентом (Phase 13)
 
 
 # ============================================================================
@@ -213,6 +214,21 @@ class Conversation(Base):
     )
 
     last_message_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+
+    # ---- Phase 13: returning lead memory ----
+    # When this conversation was sidelined (i.e. user started a new project on
+    # this customer). NULL = still in normal lifecycle. Set together with
+    # status = ARCHIVED when topic_classifier returns NEW.
+    archived_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    # If this conversation was spawned from an earlier one (Phase 13 NEW
+    # branch), points back. NULL for top-level conversations.
+    parent_conversation_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("conversations.id", ondelete="SET NULL"),
+        nullable=True, index=True,
+    )
 
     # ---- CRM integration + Notion §20 funnel (Phase 1, 2026-05-26) ----
     # ID of this conversation's deal in the external CRM. NULL until first sync.
