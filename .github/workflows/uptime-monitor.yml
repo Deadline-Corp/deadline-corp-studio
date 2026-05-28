@@ -1,0 +1,59 @@
+name: Uptime monitor — sales-bot backend
+
+on:
+  schedule:
+    # GitHub cron min interval is 5 min. Adjust higher if you want fewer pings.
+    - cron: '*/5 * * * *'
+  workflow_dispatch:  # lets you trigger a manual probe from the Actions tab
+
+jobs:
+  probe:
+    name: Probe /health (2 attempts before alerting)
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: First probe
+        id: first
+        run: |
+          URL="https://deadline-sales-bot-production.up.railway.app/health"
+          STATUS=$(curl -s -o /tmp/body -w "%{http_code}" -m 25 "$URL" || echo "000")
+          BODY=$(cat /tmp/body 2>/dev/null | head -c 400)
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+          echo "body=$BODY" >> "$GITHUB_OUTPUT"
+          echo "[first] $URL — HTTP $STATUS"
+          echo "$BODY"
+
+      - name: Retry after 30s if first failed
+        id: retry
+        if: steps.first.outputs.status != '200'
+        run: |
+          sleep 30
+          URL="https://deadline-sales-bot-production.up.railway.app/health"
+          STATUS=$(curl -s -o /tmp/body -w "%{http_code}" -m 25 "$URL" || echo "000")
+          BODY=$(cat /tmp/body 2>/dev/null | head -c 400)
+          echo "status=$STATUS" >> "$GITHUB_OUTPUT"
+          echo "body=$BODY" >> "$GITHUB_OUTPUT"
+          echo "[retry] $URL — HTTP $STATUS"
+          echo "$BODY"
+          if [ "$STATUS" != "200" ]; then exit 1; fi
+
+      - name: Telegram alert (only when both probes failed)
+        if: failure()
+        env:
+          BOT: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          STATUS1: ${{ steps.first.outputs.status }}
+          STATUS2: ${{ steps.retry.outputs.status }}
+          BODY: ${{ steps.retry.outputs.body }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          MSG="🚨 deadline-sales-bot DOWN
+          /health attempt 1: HTTP ${STATUS1}
+          /health attempt 2: HTTP ${STATUS2}
+          Response: ${BODY:-<empty>}
+          Run: ${RUN_URL}"
+          curl -sSf -X POST "https://api.telegram.org/bot${BOT}/sendMessage" \
+            --data-urlencode "chat_id=${CHAT}" \
+            --data-urlencode "text=${MSG}" \
+            -o /dev/null
+          echo "Alert sent to chat ${CHAT}"
