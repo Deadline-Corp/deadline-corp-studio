@@ -229,6 +229,15 @@ class Conversation(Base):
         ForeignKey("conversations.id", ondelete="SET NULL"),
         nullable=True, index=True,
     )
+    # ORM relationship — lets Phase 13 services traverse via `conv.parent`
+    # instead of an explicit session.get(). `remote_side` tells SQLAlchemy
+    # that the FK target is the same table's id (self-referential).
+    parent: Mapped[Optional["Conversation"]] = relationship(
+        "Conversation",
+        remote_side="Conversation.id",
+        foreign_keys=[parent_conversation_id],
+        post_update=True,
+    )
 
     # ---- CRM integration + Notion §20 funnel (Phase 1, 2026-05-26) ----
     # ID of this conversation's deal in the external CRM. NULL until first sync.
