@@ -8,8 +8,10 @@ magic_toggle_test.mjs
 *.mjs
 *_results.json
 
-# But DO ship intentional production PNGs (favicons, OG-image, app icons)
+# But DO ship intentional production PNGs (favicons, OG-image, app icons, brand assets)
 !og-image.png
 !icon-*.png
 !favicon*.png
 !apple-touch-icon.png
+!assets/iron-heart.png
+!assets/*.png

@@ -70,7 +70,7 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@100;200;300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="modes.css?v=3.7.71">
+<link rel="stylesheet" href="modes.css?v=3.7.75">
 <!-- GSAP + ScrollTrigger: industry-standard animation runtime for premium
      reveal/scroll sequences in noir/vault/kinetic modes. Loads before
      modes.js so the global `gsap` is ready when mode-init runs. -->
@@ -984,16 +984,74 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
 <button id="magic-toggle" class="magic-toggle" type="button"
         aria-label="Switch visual mode"
         title="Switch visual mode">
-  <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-    <path d="M12 1 L13.2 10.8 L23 12 L13.2 13.2 L12 23 L10.8 13.2 L1 12 L10.8 10.8 Z"
-          fill="currentColor"/>
-    <circle cx="19" cy="5"  r="1.1" fill="currentColor" opacity="0.85"/>
-    <circle cx="5"  cy="18" r="0.8" fill="currentColor" opacity="0.55"/>
-  </svg>
-  <span class="magic-toggle-label">
-    <span class="lang-ru">Нажми на меня</span><span class="lang-en">Tap me</span>
-  </span>
+  <img class="magic-toggle-golem" src="assets/iron-heart.png?v=7" alt="" aria-hidden="true">
+  <div class="magic-toggle-bubble" id="ironHeartBubble" aria-hidden="true"></div>
 </button>
+
+<script>
+  /* Iron Heart rotating phrases — JS-managed timing (CSS animations can be
+     paused by prefers-reduced-motion in some browsers, setInterval is reliable). */
+  (function ironHeartBubbleInit() {
+    var bubble = document.getElementById('ironHeartBubble');
+    if (!bubble) return;
+    var PHRASES = {
+      ru: [
+        'Братан, чё ты потерялся?',
+        'Давай мы тебе сайт запилим?',
+        'Давай мы тебе продажи автоматизируем?',
+        'Чат-бота автономного себе хочешь?',
+        'Это всё тебе ещё вчера надо было!',
+        'Напиши нашему ботяре вон он внизу'
+      ],
+      en: [
+        'Yo, you lost or what?',
+        'Let us build you a site?',
+        'Let us automate your sales?',
+        'Want a self-running bot?',
+        'You needed all this yesterday!',
+        'Ping our bot — see it bottom-right'
+      ]
+    };
+
+    // One-shot position reset for users whose old localStorage drag-pos
+    // points at the scrollbar (pre-2026-05-28 default was much closer to edge).
+    if (!localStorage.getItem('mx-toggle-pos-reset-v2')) {
+      localStorage.removeItem('mx-toggle-pos');
+      document.getElementById('magic-toggle')?.removeAttribute('style');
+      localStorage.setItem('mx-toggle-pos-reset-v2', '1');
+    }
+
+    var idx = 0;
+    var VISIBLE_MS = 3000;   // how long the bubble stays up
+    var HIDDEN_MS = 1500;    // gap between phrases
+    var FADE_MS   = 380;     // matches CSS transition
+
+    function setPhrase() {
+      var lang = document.body.classList.contains('lang-en') ? 'en' : 'ru';
+      bubble.textContent = PHRASES[lang][idx];
+    }
+    function show() {
+      setPhrase();
+      bubble.classList.add('is-visible');
+      setTimeout(hide, VISIBLE_MS);
+    }
+    function hide() {
+      bubble.classList.remove('is-visible');
+      setTimeout(function () {
+        idx = (idx + 1) % PHRASES.ru.length;
+        show();
+      }, HIDDEN_MS + FADE_MS);
+    }
+
+    // React to language toggle while a bubble is on screen — swap text mid-show
+    new MutationObserver(function () {
+      if (bubble.classList.contains('is-visible')) setPhrase();
+    }).observe(document.body, { attributes: true, attributeFilter: ['class'] });
+
+    // Kick off — first bubble after a short settle delay so the page renders cleanly
+    setTimeout(show, 800);
+  })();
+</script>
 
 <!-- ═══════════════════════════════════════════ NAV ═══════════════════════════════════════════ -->
 <nav class="nav-bar">

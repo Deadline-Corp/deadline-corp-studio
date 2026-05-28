@@ -11900,3 +11900,161 @@ html.mode-kinetic .magic-toggle {
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   IRON HEART GOLEM (2026-05-28) — replaces SVG star + label inside
+   #magic-toggle. The button becomes a transparent wrapper around a
+   pixel-art golem image with idle sway + a periodic "Братан / Bro"
+   speech bubble that fades in/out on a 4s loop. Cascade-wise this MUST
+   stay below the earlier override block — placed last on purpose.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Wrapper button becomes invisible — only the golem & bubble are seen */
+html .magic-toggle,
+html.mode-matrix .magic-toggle,
+html.mode-island .magic-toggle,
+html.mode-studio .magic-toggle,
+html.mode-noir .magic-toggle,
+html.mode-vault .magic-toggle,
+html.mode-kinetic .magic-toggle {
+  background: transparent !important;
+  background-image: none !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+  animation: none !important;
+  width: auto !important;
+  height: auto !important;
+  gap: 0 !important;
+  font: inherit !important;
+  letter-spacing: normal !important;
+  text-transform: none !important;
+  overflow: visible !important;
+  display: inline-block !important;
+}
+
+/* Default resting position — far enough left to clear the scrollbar.
+   Only applies when no inline drag-position was saved (the drag JS adds
+   `inset: …` inline, which beats this rule). */
+html .magic-toggle:not([style*="inset"]) {
+  right: 60px !important;
+  top: 22px !important;
+  left: auto !important;
+}
+
+/* Old idle sparks were tied to the SVG era — silence them */
+html .magic-toggle::before,
+html .magic-toggle::after {
+  display: none !important;
+  animation: none !important;
+}
+
+/* The golem itself: pixel-perfect render + idle sway + warm copper glow */
+.magic-toggle-golem {
+  display: block !important;
+  width: 176px !important;
+  height: 176px !important;
+  image-rendering: pixelated !important;
+  image-rendering: -moz-crisp-edges !important;
+  -ms-interpolation-mode: nearest-neighbor !important;
+  filter: drop-shadow(0 8px 14px rgba(199, 106, 45, 0.45)) !important;
+  animation: golem-sway 2.4s ease-in-out infinite !important;
+  pointer-events: none !important;
+  transform-origin: 50% 90% !important;
+}
+
+@keyframes golem-sway {
+  0%, 100% {
+    transform: rotate(-2deg) translateY(0);
+    filter: drop-shadow(0 6px 10px rgba(199, 106, 45, 0.4));
+  }
+  50% {
+    transform: rotate(2deg) translateY(-2px);
+    filter: drop-shadow(0 9px 16px rgba(255, 200, 120, 0.7));
+  }
+}
+
+/* Speech bubble — below the golem, points up at him.
+   Visibility is controlled by JS via .is-visible class (more reliable than
+   CSS keyframes which some browsers pause when prefers-reduced-motion is on). */
+.magic-toggle-bubble {
+  position: absolute !important;
+  top: calc(100% + 12px) !important;
+  left: 50% !important;
+  transform: translateX(-50%) translateY(-4px) !important;
+  background: #F0E8D5 !important;
+  color: #161208 !important;
+  padding: 9px 16px !important;
+  font: 700 12px/1.35 'JetBrains Mono', 'Courier New', monospace !important;
+  letter-spacing: 0.08em !important;
+  text-transform: none !important;
+  white-space: normal !important;
+  max-width: 260px !important;
+  width: max-content !important;
+  text-align: center !important;
+  border: 1.5px solid #C76A2D !important;
+  border-radius: 4px !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.45) !important;
+  transition: opacity 380ms ease, transform 380ms ease !important;
+}
+.magic-toggle-bubble.is-visible {
+  opacity: 1 !important;
+  transform: translateX(-50%) translateY(0) !important;
+}
+
+/* Tail (outer copper triangle pointing up at the golem) */
+.magic-toggle-bubble::after {
+  content: '' !important;
+  position: absolute !important;
+  top: -7px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: 0 !important;
+  height: 0 !important;
+  border-left: 7px solid transparent !important;
+  border-right: 7px solid transparent !important;
+  border-bottom: 7px solid #C76A2D !important;
+  display: block !important;
+  animation: none !important;
+}
+
+/* Tail inner fill (matches bubble bg, sits 2px below copper to mask border) */
+.magic-toggle-bubble::before {
+  content: '' !important;
+  position: absolute !important;
+  top: -5px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  width: 0 !important;
+  height: 0 !important;
+  border-left: 5px solid transparent !important;
+  border-right: 5px solid transparent !important;
+  border-bottom: 5px solid #F0E8D5 !important;
+  z-index: 1 !important;
+  display: block !important;
+  animation: none !important;
+}
+
+@keyframes bubble-pop {
+  0%, 100% { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+  12%, 62% { opacity: 1; transform: translateX(-50%) translateY(0); }
+  78%      { opacity: 0; transform: translateX(-50%) translateY(-6px); }
+}
+
+/* Mobile — smaller golem & bubble */
+@media (max-width: 640px) {
+  .magic-toggle-golem {
+    width: 128px !important;
+    height: 128px !important;
+  }
+  .magic-toggle-bubble {
+    font-size: 11px !important;
+    padding: 7px 12px !important;
+    letter-spacing: 0.06em !important;
+    max-width: 220px !important;
+  }
+}
+
