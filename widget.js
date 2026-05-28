@@ -21,8 +21,19 @@
     (typeof window !== "undefined" && window.DEADLINE_BOT_API) ||
     "https://deadline-sales-bot-production.up.railway.app/chat";
 
-  const SESSION_ID =
-    "sess_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+  // Session id is persisted in localStorage so the conversation survives page
+  // reloads, language switches AND skin switches (those don't reload, but if
+  // the user ever does F5 the bot's memory stays — same session_id reaches
+  // the backend, which keeps the conversation thread intact).
+  const SESSION_STORAGE_KEY = "dl-bot-session-id";
+  const SESSION_ID = (function () {
+    let stored = null;
+    try { stored = window.localStorage.getItem(SESSION_STORAGE_KEY); } catch (_) {}
+    if (stored && /^sess_/.test(stored)) return stored;
+    const fresh = "sess_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+    try { window.localStorage.setItem(SESSION_STORAGE_KEY, fresh); } catch (_) {}
+    return fresh;
+  })();
 
   // ============================================================
   // STYLES

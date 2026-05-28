@@ -1879,7 +1879,7 @@ html.mode-noir {
 }
 
 /* Hide original DOM, keep persistent overlay/cursor/chrome */
-html.mode-noir body > *:not(.noir-book):not(.noir-bg):not(.magic-toggle):not(.mode-indicator):not(.mode-overlay):not(.noir-cursor-dot):not(.noir-cursor-ring):not(.theme-cursor-canvas):not(.noir-grain):not(.noir-running):not(.noir-pages):not(.noir-progress) {
+html.mode-noir body > *:not(.noir-book):not(.noir-bg):not(.magic-toggle):not(.mode-indicator):not(.mode-overlay):not(.noir-cursor-dot):not(.noir-cursor-ring):not(.theme-cursor-canvas):not(.noir-grain):not(.noir-running):not(.noir-pages):not(.noir-progress):not(#dl-bot):not(#leadModal) {
   display: none !important;
 }
 
@@ -11668,8 +11668,16 @@ html.mode-matrix #contact .btn-secondary {
 /* When in island/resort mode: hide ALL original DOM children of body
    except magic-toggle, the resort iframe, and the overlay (used for
    the enter/exit fade). Mode-indicator already hidden globally. */
-html.mode-island body > *:not(.magic-toggle):not(.mx-resort-frame):not(.mode-overlay):not(.mode-indicator):not(.island-bird):not(.island-bg):not(.island-chrome) {
+html.mode-island body > *:not(.magic-toggle):not(.mx-resort-frame):not(.mode-overlay):not(.mode-indicator):not(.island-bird):not(.island-bg):not(.island-chrome):not(#dl-bot):not(#leadModal) {
   display: none !important;
+}
+
+/* Bot widget must sit above the Resort/Matrix overlays. iframe is z-index 100;
+   put the widget on 1000 so it floats above the iframe in island/resort skin. */
+html.mode-island #dl-bot,
+html.mode-noir #dl-bot,
+html.mode-matrix #dl-bot {
+  z-index: 99999 !important;
 }
 
 /* Body chrome in resort mode — dark ink background under iframe */
