@@ -205,3 +205,54 @@ def test_link_identity_raises_when_pointing_to_other_customer(db):
 
     with pytest.raises(ValueError, match="already linked"):
         link_identity(db, customer_id=c2.id, channel="telegram", external_id=ext_id)
+
+
+# ============================================================================
+# resolve_or_create_customer_with_meta — returning-lead flag
+# ============================================================================
+
+
+def test_resolve_with_meta_flags_returning_email_match(db):
+    """When email matches an existing Customer (different channel/external_id),
+    the meta wrapper returns was_returning_match=True."""
+    from services.identity import resolve_or_create_customer, resolve_or_create_customer_with_meta
+
+    # First contact via website — fresh customer with email
+    c1 = resolve_or_create_customer(
+        db, channel="website", external_id="sess_old", email="ada@example.com"
+    )
+    db.commit()
+
+    # Second contact via website with a new session id but same email — should match c1
+    c2, was_returning = resolve_or_create_customer_with_meta(
+        db, channel="website", external_id="sess_new", email="ada@example.com"
+    )
+    db.commit()
+
+    assert c2.id == c1.id
+    assert was_returning is True
+
+
+def test_resolve_with_meta_flags_fresh_lead_as_not_returning(db):
+    """Brand new email + channel → was_returning_match=False."""
+    from services.identity import resolve_or_create_customer_with_meta
+
+    _, was_returning = resolve_or_create_customer_with_meta(
+        db, channel="website", external_id="sess_brand_new", email="newbie@example.com"
+    )
+    db.commit()
+    assert was_returning is False
+
+
+def test_resolve_with_meta_known_identity_is_not_returning(db):
+    """Same (channel, external_id) lookup returns the same customer but is
+    NOT a 'returning' event — it's just normal session continuity."""
+    from services.identity import resolve_or_create_customer, resolve_or_create_customer_with_meta
+
+    resolve_or_create_customer(db, channel="website", external_id="sess_same", email="x@y.com")
+    db.commit()
+
+    _, was_returning = resolve_or_create_customer_with_meta(
+        db, channel="website", external_id="sess_same", email="x@y.com"
+    )
+    assert was_returning is False

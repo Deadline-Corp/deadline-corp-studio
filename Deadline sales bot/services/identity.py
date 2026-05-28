@@ -122,6 +122,49 @@ def resolve_or_create_customer(
     return customer
 
 
+def resolve_or_create_customer_with_meta(
+    db: Session,
+    channel: str,
+    external_id: str,
+    email: Optional[str] = None,
+    username: Optional[str] = None,
+) -> tuple[Customer, bool]:
+    """Same as resolve_or_create_customer but also returns a flag
+    indicating whether this call merged into a pre-existing Customer
+    via email (i.e. a returning lead).
+
+    Returns (customer, was_returning_match) where was_returning_match is True iff:
+      - the (channel, external_id) identity did NOT exist beforehand
+      - AND email was provided
+      - AND a Customer with that email already existed prior to this call
+
+    The function still creates / links identities just like the plain version.
+    """
+    # Pre-check identity — if (channel, external_id) already exists, this
+    # is NOT a returning-lead event, it's continued use of a known session.
+    identity_existed = db.execute(
+        select(ChannelIdentity.id).where(
+            ChannelIdentity.channel == channel,
+            ChannelIdentity.external_id == external_id,
+        )
+    ).first() is not None
+
+    # Pre-check email — if no email provided OR no customer with this email
+    # exists yet, the resolve call below cannot be a returning match.
+    pre_existing_customer_for_email = None
+    if email and not identity_existed:
+        pre_existing_customer_for_email = find_customer_by_email(db, email)
+
+    customer = resolve_or_create_customer(
+        db, channel=channel, external_id=external_id, email=email, username=username
+    )
+
+    was_returning_match = (
+        not identity_existed and pre_existing_customer_for_email is not None
+    )
+    return customer, was_returning_match
+
+
 def link_identity(
     db: Session,
     customer_id: UUID,
