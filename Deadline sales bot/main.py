@@ -703,12 +703,21 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
 
         # ---- Branch A: Emit recall greeting on fresh conversation ----
         if is_fresh_conv and was_returning_match and should_trigger_recall(db, customer.id):
-            # Find the most recent prior conversation for this customer.
+            # Find the most recent *completed* prior conversation for this customer.
+            # Exclude OPEN conversations (concurrent active threads on another channel
+            # are not "prior projects" — only closed/handed-off/resolved/abandoned/
+            # archived convs represent a previous engagement we can recall).
             prior_conv = db.execute(
                 _select(ConvRow)
                 .where(
                     ConvRow.customer_id == customer.id,
                     ConvRow.id != conversation.id,
+                    ConvRow.status.in_([
+                        ConversationStatusEnum.HANDED_OFF.value,
+                        ConversationStatusEnum.RESOLVED.value,
+                        ConversationStatusEnum.ABANDONED.value,
+                        ConversationStatusEnum.ARCHIVED.value,
+                    ]),
                 )
                 .order_by(_desc(ConvRow.last_message_at))
                 .limit(1)
@@ -787,12 +796,16 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
 
                 if decision == "NEW" and confidence >= 0.65:
                     # Spawn a child conversation; archive the current one.
+                    # Keep the SAME channel_conversation_id so that subsequent
+                    # messages from the lead (which arrive with the original
+                    # chat_id / session_id) are routed to this new OPEN conv
+                    # by get_or_create_conversation's status=OPEN filter.
+                    # (The old conv is archived in the same transaction, so the
+                    # lookup will find only this new one.)
                     new_conv = ConvRow(
                         customer_id=customer.id,
                         channel=conversation.channel,
-                        channel_conversation_id=(
-                            (conversation.channel_conversation_id or "") + "/branch"
-                        ),
+                        channel_conversation_id=conversation.channel_conversation_id,
                         status=ConversationStatusEnum.OPEN.value,
                         parent_conversation_id=conversation.id,
                     )
@@ -842,6 +855,24 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
 
     # ---- Early return when Phase 13 handled the reply ----
     if recall_skip_normal_flow:
+        # C1: Mirror the lead's triggering message to the operator forum-topic
+        # BEFORE returning, so operators see the user's question alongside the
+        # recall greeting that follows it.  Same format as the normal-flow mirror
+        # below — no new dependencies, just the same send_to_topic call.
+        if conversation.forum_topic_id and settings.telegram_operator_group_id and settings.telegram_bot_token:
+            _is_voice_recall = isinstance(req.extra_meta, dict) and req.extra_meta.get("source") == "voice"
+            _lead_label_recall = req.username or f"{req.channel.upper()}#{req.external_id}"
+            _voice_hint_recall = ""
+            if _is_voice_recall:
+                _dur_recall = (req.extra_meta or {}).get("duration_sec", 0)
+                _voice_hint_recall = f"  🎙️ {_dur_recall}s" if _dur_recall else "  🎙️"
+            _mirror_in_recall = f"📥 LEAD · {_lead_label_recall}{_voice_hint_recall}\n{req.content[:3700]}"
+            await send_to_topic(
+                settings.telegram_bot_token,
+                settings.telegram_operator_group_id,
+                conversation.forum_topic_id,
+                _mirror_in_recall,
+            )
         db.commit()
         return MessageResponse(
             answer=_phase13_answer,
