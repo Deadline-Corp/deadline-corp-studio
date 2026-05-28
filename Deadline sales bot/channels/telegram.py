@@ -459,13 +459,22 @@ def build_forum_topic_name(db, customer, conversation, *, lead_name: str, channe
     from db.models import Conversation, ConversationStatusEnum
 
     prefix = ""
-    has_archived = db.execute(
+    # CRITICAL FIX (P13.T15): original filter was ARCHIVED-only, but the most
+    # common returning-lead case is HANDED_OFF (handoff fired when email was
+    # captured). Widened to all four "completed" statuses so [ПОВТОРНЫЙ] prefix
+    # fires for any lead that has previously engaged and closed a conversation.
+    has_prior = db.execute(
         select(func.count(Conversation.id)).where(
             Conversation.customer_id == customer.id,
-            Conversation.status == ConversationStatusEnum.ARCHIVED.value,
+            Conversation.status.in_([
+                ConversationStatusEnum.HANDED_OFF.value,
+                ConversationStatusEnum.RESOLVED.value,
+                ConversationStatusEnum.ABANDONED.value,
+                ConversationStatusEnum.ARCHIVED.value,
+            ]),
         )
     ).scalar_one() > 0
-    if has_archived:
+    if has_prior:
         prefix = "[ПОВТОРНЫЙ] "
 
     summary_tag = ""

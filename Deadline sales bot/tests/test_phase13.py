@@ -372,3 +372,85 @@ def test_forum_topic_name_first_time_lead_no_prefix(db):
     name = build_forum_topic_name(db, customer, active, lead_name="Пётр", channel="telegram")
     assert "[ПОВТОРНЫЙ]" not in name
     assert name == "Пётр · telegram"
+
+
+def test_forum_topic_prefix_for_handed_off_prior(db):
+    """Most common returning-lead case: prior conv is HANDED_OFF (handoff
+    fired when email captured). Title should still get [ПОВТОРНЫЙ] prefix.
+
+    Regression test for P13.T15 Bug 3: original filter was ARCHIVED-only,
+    so HANDED_OFF priors were silently skipped and the prefix never appeared.
+    """
+    from channels.telegram import build_forum_topic_name
+
+    customer = _make_customer(db, email="handed_off_returnee@example.com")
+    _make_conv(db, customer, status="handed_off", days_since_last=45, n_lead_msgs=5)
+    active = _make_conv(db, customer, days_since_last=0, n_lead_msgs=1)
+    db.flush()
+
+    name = build_forum_topic_name(db, customer, active, lead_name="Анна", channel="website")
+    assert name.startswith("[ПОВТОРНЫЙ]")
+
+
+def test_get_recent_messages_with_recall_handed_off_prior(db):
+    """CONTINUE branch: prior conv is HANDED_OFF (most common case).
+    get_recent_messages_with_recall must return messages from it.
+
+    Regression test for P13.T15 Bug 2: original filter was ARCHIVED-only,
+    so HANDED_OFF priors produced an empty recall and the CONTINUE branch
+    delivered no memory despite promising it.
+    """
+    from services.conversations import get_recent_messages_with_recall
+
+    customer = _make_customer(db, email="recall_handed_off@example.com")
+
+    prior = _make_conv(db, customer, status="handed_off", days_since_last=30, n_lead_msgs=0)
+    for i in range(6):
+        m = Message(
+            conversation_id=prior.id,
+            role="user" if i % 2 == 0 else "assistant",
+            content=f"prior msg {i}",
+            created_at=datetime.now(timezone.utc) - timedelta(days=30, minutes=6 - i),
+        )
+        db.add(m)
+
+    current = _make_conv(db, customer, days_since_last=0, n_lead_msgs=0)
+    for i in range(2):
+        m = Message(
+            conversation_id=current.id,
+            role="user",
+            content=f"current msg {i}",
+            created_at=datetime.now(timezone.utc) - timedelta(minutes=2 - i),
+        )
+        db.add(m)
+    db.flush()
+
+    result = get_recent_messages_with_recall(
+        db, customer_id=customer.id, active_conv_id=current.id, limit=13, prior_tail=5
+    )
+
+    # Must include messages from the HANDED_OFF prior conv.
+    contents = [
+        (m["content"] if isinstance(m, dict) else m.content)
+        for m in result
+    ]
+    assert any("prior msg" in c for c in contents), (
+        "CONTINUE recall returned no messages from HANDED_OFF prior conv — filter bug not fixed"
+    )
+    assert any("current msg" in c for c in contents)
+
+
+def test_phase13_new_branch_persists_pivot_msg_to_new_conv(db):
+    """When classifier returns NEW, the user's pivoting message must end
+    up on the new_conv (not stranded on the old conv) so the LLM sees it
+    in subsequent turn history.
+
+    Integration test deferred — full _handle_message wiring requires async
+    test client setup beyond unit-test scope. Covered by Task 13 prod smoke.
+    """
+    import pytest
+    pytest.skip(
+        "Integration test deferred — covered by Task 13 prod smoke. "
+        "Unit coverage: pivot msg re-point logic is in main.py NEW branch "
+        "after `conversation = new_conv` reassignment (P13.T15 Bug 1 fix)."
+    )

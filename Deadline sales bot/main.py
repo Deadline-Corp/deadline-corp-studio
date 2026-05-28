@@ -708,57 +708,69 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
 
         # ---- Branch A: Emit recall greeting on fresh conversation ----
         if is_fresh_conv and was_returning_match and should_trigger_recall(db, customer.id):
-            # Find the most recent *completed* prior conversation for this customer.
-            # Exclude OPEN conversations (concurrent active threads on another channel
-            # are not "prior projects" — only closed/handed-off/resolved/abandoned/
-            # archived convs represent a previous engagement we can recall).
-            prior_conv = db.execute(
-                _select(ConvRow)
-                .where(
-                    ConvRow.customer_id == customer.id,
-                    ConvRow.id != conversation.id,
-                    ConvRow.status.in_([
-                        ConversationStatusEnum.HANDED_OFF.value,
-                        ConversationStatusEnum.RESOLVED.value,
-                        ConversationStatusEnum.ABANDONED.value,
-                        ConversationStatusEnum.ARCHIVED.value,
-                    ]),
-                )
-                .order_by(_desc(ConvRow.last_message_at))
-                .limit(1)
-            ).scalar_one_or_none()
+            # IMPORTANT FIX (P13.T15 Bug 4): wrap entire Branch A in try/except so
+            # that any LLM failure (OpenRouter throttle, timeout, network error) does
+            # NOT crash the request. On exception we fall through to normal flow.
+            try:
+                # Find the most recent *completed* prior conversation for this customer.
+                # Exclude OPEN conversations (concurrent active threads on another channel
+                # are not "prior projects" — only closed/handed-off/resolved/abandoned/
+                # archived convs represent a previous engagement we can recall).
+                prior_conv = db.execute(
+                    _select(ConvRow)
+                    .where(
+                        ConvRow.customer_id == customer.id,
+                        ConvRow.id != conversation.id,
+                        ConvRow.status.in_([
+                            ConversationStatusEnum.HANDED_OFF.value,
+                            ConversationStatusEnum.RESOLVED.value,
+                            ConversationStatusEnum.ABANDONED.value,
+                            ConversationStatusEnum.ARCHIVED.value,
+                        ]),
+                    )
+                    .order_by(_desc(ConvRow.last_message_at))
+                    .limit(1)
+                ).scalar_one_or_none()
 
-            if prior_conv is not None:
-                summary = generate_topic_summary(handoff_llm, db, prior_conv)
-                days_ago = 0
-                if prior_conv.last_message_at:
-                    _prior_ts = prior_conv.last_message_at
-                    if _prior_ts.tzinfo is None:
-                        _prior_ts = _prior_ts.replace(tzinfo=_tz.utc)
-                    days_ago = (datetime.now(_tz.utc) - _prior_ts).days
+                if prior_conv is not None:
+                    summary = generate_topic_summary(handoff_llm, db, prior_conv)
+                    days_ago = 0
+                    if prior_conv.last_message_at:
+                        _prior_ts = prior_conv.last_message_at
+                        if _prior_ts.tzinfo is None:
+                            _prior_ts = _prior_ts.replace(tzinfo=_tz.utc)
+                        days_ago = (datetime.now(_tz.utc) - _prior_ts).days
 
-                _recall_lang = (tenant.languages[0] if tenant.languages else "ru")
-                greeting_prompt = render_recall_greeting(
-                    language=_recall_lang,
-                    summary=summary,
-                    days_ago=days_ago,
-                    user_message=req.content,
-                )
-                recall_greeting_text = handoff_llm.invoke(
-                    [_HumanMessage(content=greeting_prompt)]
-                ).content.strip()
+                    _recall_lang = (tenant.languages[0] if tenant.languages else "ru")
+                    greeting_prompt = render_recall_greeting(
+                        language=_recall_lang,
+                        summary=summary,
+                        days_ago=days_ago,
+                        user_message=req.content,
+                    )
+                    recall_greeting_text = handoff_llm.invoke(
+                        [_HumanMessage(content=greeting_prompt)]
+                    ).content.strip()
 
-                append_message(
-                    db, conversation.id, role="assistant",
-                    content=recall_greeting_text,
-                    extra_meta={"kind": "recall_greeting", "prior_conv_id": str(prior_conv.id)},
+                    append_message(
+                        db, conversation.id, role="assistant",
+                        content=recall_greeting_text,
+                        extra_meta={"kind": "recall_greeting", "prior_conv_id": str(prior_conv.id)},
+                    )
+                    log.info(
+                        f"[{str(conversation.id)[:8]}] Phase13 Branch A: recall greeting emitted "
+                        f"(prior_conv={str(prior_conv.id)[:8]}, days_ago={days_ago})"
+                    )
+                    _phase13_answer = recall_greeting_text
+                    recall_skip_normal_flow = True
+            except Exception as _branch_a_exc:
+                log.warning(
+                    "[recall] Phase13 Branch A failed for customer=%s: %s — falling through to normal flow",
+                    customer.id, _branch_a_exc,
                 )
-                log.info(
-                    f"[{str(conversation.id)[:8]}] Phase13 Branch A: recall greeting emitted "
-                    f"(prior_conv={str(prior_conv.id)[:8]}, days_ago={days_ago})"
-                )
-                _phase13_answer = recall_greeting_text
-                recall_skip_normal_flow = True
+                # Reset Phase 13 flags so the normal flow proceeds unaffected.
+                recall_skip_normal_flow = False
+                _phase13_answer = ""
 
         # ---- Branch B: Lead replied to a recall greeting ----
         elif not is_fresh_conv:
@@ -807,6 +819,11 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                     # by get_or_create_conversation's status=OPEN filter.
                     # (The old conv is archived in the same transaction, so the
                     # lookup will find only this new one.)
+
+                    # CRITICAL FIX (P13.T15 Bug 1): capture old conv id BEFORE
+                    # reassignment so we can re-point the pivot user message below.
+                    _old_conv_id = conversation.id
+
                     new_conv = ConvRow(
                         customer_id=customer.id,
                         channel=conversation.channel,
@@ -830,6 +847,67 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                     )
                     # Reassign so all subsequent flow runs inside the new conv.
                     conversation = new_conv
+
+                    # CRITICAL FIX (P13.T15 Bug 1): The user's pivoting message was
+                    # already appended to the OLD conversation (line ~668, before the
+                    # Phase 13 state machine ran). Move it onto new_conv so that:
+                    #   - the LLM sees the pivoting question in its history
+                    #   - apply_signals_on_turn on new_conv sees a real first-touch msg
+                    #   - operator forum topic mirror shows the pivot message
+                    _pivot_msg = db.execute(
+                        _select(MessageRow)
+                        .where(
+                            MessageRow.conversation_id == _old_conv_id,
+                            MessageRow.role == "user",
+                        )
+                        .order_by(_desc(MessageRow.created_at))
+                        .limit(1)
+                    ).scalar_one_or_none()
+                    if _pivot_msg is not None:
+                        _pivot_msg.conversation_id = new_conv.id
+                        db.flush()
+                        log.info(
+                            "[recall] Phase13: moved pivot user msg %s from old conv %s to new conv %s",
+                            _pivot_msg.id, _old_conv_id, new_conv.id,
+                        )
+
+                    # IMPORTANT FIX (P13.T15 Bug 5): forum topic was created BEFORE
+                    # the Phase 13 state machine ran, so new_conv has forum_topic_id=None.
+                    # Explicitly create a topic for new_conv so operators can see the
+                    # pivot turn immediately without waiting for the next user message.
+                    if (
+                        settings.telegram_operator_group_id
+                        and settings.telegram_bot_token
+                        and not new_conv.forum_topic_id
+                    ):
+                        try:
+                            _topic_label_new = req.username or req.email or req.external_id[:20]
+                            _topic_name_new = build_forum_topic_name(
+                                db, customer, new_conv,
+                                lead_name=_topic_label_new,
+                                channel=req.channel,
+                            )
+                            _new_topic_id = await create_forum_topic(
+                                settings.telegram_bot_token,
+                                settings.telegram_operator_group_id,
+                                _topic_name_new,
+                            )
+                            if _new_topic_id is not None:
+                                link_forum_topic(db, new_conv.id, _new_topic_id)
+                                await close_forum_topic(
+                                    settings.telegram_bot_token,
+                                    settings.telegram_operator_group_id,
+                                    _new_topic_id,
+                                )
+                                log.info(
+                                    "[recall] Phase13: created forum topic %s for new_conv %s",
+                                    _new_topic_id, str(new_conv.id)[:8],
+                                )
+                        except Exception as _e:
+                            log.warning(
+                                "[recall] Phase13: failed to create forum topic for new_conv %s: %s",
+                                str(new_conv.id)[:8], _e,
+                            )
 
                 elif decision == "CONTINUE" and confidence >= 0.65:
                     # Signal the context loader to include prior conv tail.

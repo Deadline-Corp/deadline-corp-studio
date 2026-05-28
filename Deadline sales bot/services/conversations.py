@@ -243,14 +243,24 @@ def get_recent_messages_with_recall(
     # 1. Pull `current_budget` most recent messages from the active conv.
     active_msgs = get_recent_messages(db, active_conv_id, limit=current_budget)
 
-    # 2. Find the prior conversation (most recently active ARCHIVED one for
+    # 2. Find the prior conversation (most recently active *completed* one for
     #    this customer, excluding the current active conv).
+    #    CRITICAL FIX (P13.T15): original filter was ARCHIVED-only, but the most
+    #    common returning-lead case is HANDED_OFF (handoff fired when email was
+    #    captured). RESOLVED and ABANDONED are also valid "completed" priors.
+    #    OPEN is excluded to avoid loading a concurrent active thread on another
+    #    channel as if it were historical context.
     prior_conv = db.execute(
         select(Conversation)
         .where(
             Conversation.customer_id == customer_id,
             Conversation.id != active_conv_id,
-            Conversation.status == ConversationStatusEnum.ARCHIVED.value,
+            Conversation.status.in_([
+                ConversationStatusEnum.HANDED_OFF.value,
+                ConversationStatusEnum.RESOLVED.value,
+                ConversationStatusEnum.ABANDONED.value,
+                ConversationStatusEnum.ARCHIVED.value,
+            ]),
         )
         .order_by(desc(Conversation.last_message_at))
         .limit(1)
