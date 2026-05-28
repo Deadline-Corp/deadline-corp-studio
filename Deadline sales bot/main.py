@@ -42,7 +42,7 @@ from db.connection import get_db, check_connection, session_scope
 from db.models import Message as MessageRow, Conversation as ConvRow, ConversationStatusEnum
 from uuid import UUID as PyUUID
 from db.vector import similarity_search as pgvector_search
-from services.identity import resolve_or_create_customer
+from services.identity import resolve_or_create_customer, resolve_or_create_customer_with_meta
 from services.conversations import (
     get_or_create_conversation,
     append_message,
@@ -161,6 +161,11 @@ class Settings(BaseSettings):
     # tenants/<slug>/ folder with their own config.yaml, kb/, system_prompt.md
     # and secrets — same code, different tenant_slug env var.
     tenant_slug: str = "deadline-corp"
+
+    # ---- Phase 13 — Returning lead memory feature flag ----
+    # Master switch. Default False → bot behaves exactly as before this phase.
+    # Flip to True in Railway env only after end-to-end smoke test (Task 13).
+    returning_lead_recall: bool = False
 
     # ---- CRM integration (Phase 0b feature flag + Phase 1+ adapters) ----
     # Master switch. While we're rolling out CRM features incrementally,
@@ -606,7 +611,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
       8. Handoff check + (if real contact) fire brief + mark conversation HANDED_OFF
       9. Commit transaction once at the end
     """
-    customer = resolve_or_create_customer(
+    customer, was_returning_match = resolve_or_create_customer_with_meta(
         db,
         channel=req.channel,
         external_id=req.external_id,
@@ -661,6 +666,189 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     )
 
     log.info(f"[{str(conversation.id)[:8]}/{req.channel}/{req.message_type}] Q: {req.content[:200]}")
+
+    # ---- Phase 13: Returning Lead Memory state machine ----
+    # All branches are guarded by the feature flag (default False) and
+    # NOT comment_mode (recall UX makes no sense for public comments).
+    # Flag off → zero behavior change, all variables default to neutral.
+    recall_skip_normal_flow = False  # when True, skip LLM/RAG and return early
+    recall_continue = False          # when True, swap context loader to with_recall variant
+    _phase13_answer: str = ""        # recall-generated reply (bypass normal LLM flow)
+
+    is_comment_mode_early = req.message_type == "comment"  # mirrors is_comment_mode below
+
+    if settings.returning_lead_recall and not is_comment_mode_early:
+        from datetime import datetime, timezone as _tz
+        from sqlalchemy import select as _select, desc as _desc
+        from services.returning_lead import (
+            should_trigger_recall,
+            generate_topic_summary,
+            classify_topic_decision,
+            archive_stale_conversations,
+        )
+        from langchain_core.messages import HumanMessage as _HumanMessage
+        from prompts import render_recall_greeting
+        from sqlalchemy import func as _sqlalchemy_func
+
+        # Count existing assistant messages on this conversation BEFORE this turn.
+        # is_fresh_conv means: bot hasn't spoken yet (user message we just appended
+        # is the only message, or no assistant messages exist yet).
+        _asst_count = db.execute(
+            _select(_sqlalchemy_func.count()).select_from(MessageRow).where(
+                MessageRow.conversation_id == conversation.id,
+                MessageRow.role == "assistant",
+            )
+        ).scalar() or 0
+        is_fresh_conv = (_asst_count == 0)
+
+        # ---- Branch A: Emit recall greeting on fresh conversation ----
+        if is_fresh_conv and was_returning_match and should_trigger_recall(db, customer.id):
+            # Find the most recent prior conversation for this customer.
+            prior_conv = db.execute(
+                _select(ConvRow)
+                .where(
+                    ConvRow.customer_id == customer.id,
+                    ConvRow.id != conversation.id,
+                )
+                .order_by(_desc(ConvRow.last_message_at))
+                .limit(1)
+            ).scalar_one_or_none()
+
+            if prior_conv is not None:
+                summary = generate_topic_summary(handoff_llm, db, prior_conv)
+                days_ago = 0
+                if prior_conv.last_message_at:
+                    _prior_ts = prior_conv.last_message_at
+                    if _prior_ts.tzinfo is None:
+                        _prior_ts = _prior_ts.replace(tzinfo=_tz.utc)
+                    days_ago = (datetime.now(_tz.utc) - _prior_ts).days
+
+                _recall_lang = (tenant.languages[0] if tenant.languages else "ru")
+                greeting_prompt = render_recall_greeting(
+                    language=_recall_lang,
+                    summary=summary,
+                    days_ago=days_ago,
+                    user_message=req.content,
+                )
+                recall_greeting_text = handoff_llm.invoke(
+                    [_HumanMessage(content=greeting_prompt)]
+                ).content.strip()
+
+                append_message(
+                    db, conversation.id, role="assistant",
+                    content=recall_greeting_text,
+                    extra_meta={"kind": "recall_greeting", "prior_conv_id": str(prior_conv.id)},
+                )
+                log.info(
+                    f"[{str(conversation.id)[:8]}] Phase13 Branch A: recall greeting emitted "
+                    f"(prior_conv={str(prior_conv.id)[:8]}, days_ago={days_ago})"
+                )
+                _phase13_answer = recall_greeting_text
+                recall_skip_normal_flow = True
+
+        # ---- Branch B: Lead replied to a recall greeting ----
+        elif not is_fresh_conv:
+            # Find last assistant message on this conversation.
+            last_asst = db.execute(
+                _select(MessageRow)
+                .where(
+                    MessageRow.conversation_id == conversation.id,
+                    MessageRow.role == "assistant",
+                )
+                .order_by(_desc(MessageRow.created_at))
+                .limit(1)
+            ).scalar_one_or_none()
+
+            _last_meta = (last_asst.extra_meta or {}) if last_asst else {}
+            if _last_meta.get("kind") == "recall_greeting":
+                prior_conv_id_str = _last_meta.get("prior_conv_id")
+                prior_conv_for_b = None
+                if prior_conv_id_str:
+                    import uuid as _uuid
+                    try:
+                        prior_conv_for_b = db.get(ConvRow, _uuid.UUID(prior_conv_id_str))
+                    except Exception:
+                        pass
+
+                prior_summary = (prior_conv_for_b.summary or "") if prior_conv_for_b else ""
+                result = classify_topic_decision(
+                    handoff_llm,
+                    summary=prior_summary,
+                    recall_greeting=last_asst.content,
+                    user_reply=req.content,
+                )
+                decision = result.get("decision", "UNCLEAR")
+                confidence = result.get("confidence", 0.0)
+
+                log.info(
+                    f"[{str(conversation.id)[:8]}] Phase13 Branch B: classifier → "
+                    f"decision={decision} confidence={confidence:.2f}"
+                )
+
+                if decision == "NEW" and confidence >= 0.65:
+                    # Spawn a child conversation; archive the current one.
+                    new_conv = ConvRow(
+                        customer_id=customer.id,
+                        channel=conversation.channel,
+                        channel_conversation_id=(
+                            (conversation.channel_conversation_id or "") + "/branch"
+                        ),
+                        status=ConversationStatusEnum.OPEN.value,
+                        parent_conversation_id=conversation.id,
+                    )
+                    db.add(new_conv)
+                    db.flush()  # populate new_conv.id
+
+                    # Archive the conversation the lead was just on.
+                    conversation.status = ConversationStatusEnum.ARCHIVED.value
+                    conversation.archived_at = datetime.now(_tz.utc)
+
+                    # Archive any other stale open conversations for this customer.
+                    archive_stale_conversations(db, customer.id, except_conv_id=new_conv.id)
+
+                    log.info(
+                        f"[{str(conversation.id)[:8]}] Phase13: NEW branch — spawned child "
+                        f"conv={str(new_conv.id)[:8]}, archived old conv"
+                    )
+                    # Reassign so all subsequent flow runs inside the new conv.
+                    conversation = new_conv
+
+                elif decision == "CONTINUE" and confidence >= 0.65:
+                    # Signal the context loader to include prior conv tail.
+                    recall_continue = True
+                    log.info(
+                        f"[{str(conversation.id)[:8]}] Phase13: CONTINUE — "
+                        "will use get_recent_messages_with_recall for context"
+                    )
+
+                else:
+                    # UNCLEAR or low confidence — ask for explicit clarification.
+                    _recall_lang_b = (tenant.languages[0] if tenant.languages else "ru")
+                    if _recall_lang_b == "en":
+                        clarify_text = "Could you clarify — continue the prior project or start a new one?"
+                    else:
+                        clarify_text = "Уточни, пожалуйста: продолжаем тот проект или начинаем новый?"
+
+                    append_message(
+                        db, conversation.id, role="assistant",
+                        content=clarify_text,
+                        extra_meta={"kind": "recall_clarify"},
+                    )
+                    log.info(
+                        f"[{str(conversation.id)[:8]}] Phase13 Branch B: UNCLEAR → clarification sent"
+                    )
+                    _phase13_answer = clarify_text
+                    recall_skip_normal_flow = True
+
+    # ---- Early return when Phase 13 handled the reply ----
+    if recall_skip_normal_flow:
+        db.commit()
+        return MessageResponse(
+            answer=_phase13_answer,
+            handoff=False,
+            customer_id=str(customer.id),
+            conversation_id=str(conversation.id),
+        )
 
     # Mirror the user message to the operator topic.
     # Format: "📥 LEAD · @username  (🎙️ 12s)\n<text>"  — label on a separate
@@ -726,7 +914,14 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     # 5. History from DB. get_recent_messages returns chronological order.
     # Pull 13 to include the just-appended user message; drop it for the
     # "history before this question" string.
-    recent = get_recent_messages(db, conversation.id, limit=13)
+    # Phase 13 CONTINUE branch: include tail of prior conversation for context.
+    if recall_continue:
+        from services.conversations import get_recent_messages_with_recall
+        recent = get_recent_messages_with_recall(
+            db, customer_id=customer.id, active_conv_id=conversation.id, limit=13
+        )
+    else:
+        recent = get_recent_messages(db, conversation.id, limit=13)
 
     # 5b. Per-turn lead signals (Phase 9, 2026-05-27) — update interaction_type
     # (set once on first touch), lead_score (incremental + content keywords),
