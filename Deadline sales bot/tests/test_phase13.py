@@ -176,3 +176,50 @@ def test_parse_topic_decision_clamps_confidence_to_unit_range():
     raw2 = '{"decision": "NEW", "confidence": -0.3, "reason": "x"}'
     result2 = parse_topic_decision(raw2)
     assert result2["confidence"] == 0.0
+
+
+def test_classify_topic_decision_routes_via_llm():
+    """classify_topic_decision is a thin wrapper — it builds the prompt
+    via TOPIC_CLASSIFIER_PROMPT, calls the LLM, and parses the response."""
+    from unittest.mock import MagicMock
+    from services.returning_lead import classify_topic_decision
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = MagicMock(
+        content='{"decision": "NEW", "confidence": 0.88, "reason": "другой проект"}'
+    )
+
+    result = classify_topic_decision(
+        fake_llm,
+        summary="сайт спа, 200к",
+        recall_greeting="Помню, спа-сайт. Продолжим?",
+        user_reply="хочу telegram бот",
+    )
+    assert result["decision"] == "NEW"
+    assert result["confidence"] == 0.88
+    assert fake_llm.invoke.call_count == 1
+
+
+def test_classify_topic_decision_falls_back_on_garbage():
+    from unittest.mock import MagicMock
+    from services.returning_lead import classify_topic_decision
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = MagicMock(content="мнэ, я не понял")
+    result = classify_topic_decision(fake_llm, "x", "y", "z")
+    assert result["decision"] == "UNCLEAR"
+    assert result["confidence"] == 0.0
+
+
+def test_classify_topic_decision_handles_llm_exception():
+    """If the LLM raises (network error, rate limit) — return UNCLEAR
+    with confidence=0 so main.py can route to explicit clarification."""
+    from unittest.mock import MagicMock
+    from services.returning_lead import classify_topic_decision
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.side_effect = RuntimeError("network down")
+    result = classify_topic_decision(fake_llm, "x", "y", "z")
+    assert result["decision"] == "UNCLEAR"
+    assert result["confidence"] == 0.0
+    assert "network down" in result["reason"] or "llm error" in result["reason"]

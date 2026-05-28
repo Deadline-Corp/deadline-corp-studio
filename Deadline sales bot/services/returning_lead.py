@@ -113,3 +113,31 @@ def generate_topic_summary(llm, db: Session, conversation: Conversation) -> str:
         conversation.id, len(msgs), len(summary),
     )
     return summary
+
+
+def classify_topic_decision(llm, summary: str, recall_greeting: str, user_reply: str) -> dict:
+    """Wrap the topic classifier LLM call. Returns
+    {decision: CONTINUE|NEW|UNCLEAR, confidence: float, reason: str}.
+
+    Fail-safe: parser returns UNCLEAR on any error, and any LLM exception
+    (network, rate limit, timeout) is caught and also returns UNCLEAR so
+    callers can route deterministically without try/except themselves.
+    """
+    from langchain_core.messages import HumanMessage
+    from prompts import TOPIC_CLASSIFIER_PROMPT, parse_topic_decision
+
+    prompt = TOPIC_CLASSIFIER_PROMPT.format(
+        summary=summary, recall_greeting=recall_greeting, user_reply=user_reply
+    )
+    try:
+        response = llm.invoke([HumanMessage(content=prompt)])
+        result = parse_topic_decision(response.content or "")
+    except Exception as exc:
+        logger.warning("[recall] classifier failed: %s", exc)
+        result = {"decision": "UNCLEAR", "confidence": 0.0, "reason": f"llm error: {exc}"}
+
+    logger.info(
+        "[recall] topic classifier → decision=%s confidence=%.2f reason=%s",
+        result["decision"], result["confidence"], result["reason"][:80],
+    )
+    return result
