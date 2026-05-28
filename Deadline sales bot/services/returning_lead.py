@@ -66,3 +66,50 @@ def should_trigger_recall(db: Session, customer_id: UUID) -> bool:
         customer_id, triggered, RECALL_MIN_GAP_DAYS, RECALL_MIN_LEAD_MESSAGES,
     )
     return triggered
+
+
+def generate_topic_summary(llm, db: Session, conversation: Conversation) -> str:
+    """Generate (or return cached) a 1-3 sentence summary of the project
+    discussed in this conversation. Result is persisted to
+    Conversation.summary so subsequent recalls don't re-spend LLM tokens.
+
+    `llm` is a LangChain-compatible chat model (already configured with
+    temperature etc. — caller's responsibility).
+
+    Returns empty string if the conversation has no messages — caller
+    should decide whether to skip the recall in that case.
+    """
+    if conversation.summary:
+        return conversation.summary
+
+    # Load all messages chronologically
+    msgs = db.execute(
+        select(Message)
+        .where(Message.conversation_id == conversation.id)
+        .order_by(Message.created_at.asc())
+    ).scalars().all()
+
+    if not msgs:
+        return ""
+
+    # Build a compact transcript for the prompt
+    transcript_lines = []
+    for m in msgs:
+        role_label = {"user": "Клиент", "assistant": "Бот", "system": "Система"}.get(m.role, m.role)
+        transcript_lines.append(f"{role_label}: {m.content}")
+    transcript = "\n".join(transcript_lines)
+
+    from prompts import TOPIC_SUMMARY_PROMPT
+    prompt_text = TOPIC_SUMMARY_PROMPT.format(transcript=transcript)
+
+    from langchain_core.messages import HumanMessage
+    response = llm.invoke([HumanMessage(content=prompt_text)])
+    summary = (response.content or "").strip()
+
+    # Cache for next recall — caller commits/flushes
+    conversation.summary = summary
+    logger.info(
+        "[recall] generated topic summary for conv=%s (%d msgs → %d chars)",
+        conversation.id, len(msgs), len(summary),
+    )
+    return summary

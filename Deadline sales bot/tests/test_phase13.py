@@ -83,3 +83,47 @@ def test_should_trigger_recall_just_inside_13_days(db):
     _make_conv(db, customer, days_since_last=13, n_lead_msgs=3)
     db.flush()
     assert should_trigger_recall(db, customer.id) is False
+
+
+def test_generate_topic_summary_calls_llm_and_caches(db):
+    """generate_topic_summary should:
+      - read messages from the given conversation
+      - call the LLM with TOPIC_SUMMARY_PROMPT
+      - persist result to Conversation.summary
+      - return the same string on subsequent calls without re-calling LLM
+    """
+    from unittest.mock import MagicMock
+    from services.returning_lead import generate_topic_summary
+
+    customer = _make_customer(db, email="topic_summary@example.com")
+    conv = _make_conv(db, customer, days_since_last=20, n_lead_msgs=4)
+    db.flush()
+
+    fake_llm = MagicMock()
+    fake_llm.invoke.return_value = MagicMock(content="спа-сайт, бюджет 200к, остановились на ТЗ")
+
+    summary1 = generate_topic_summary(fake_llm, db, conv)
+    db.flush()
+    assert summary1 == "спа-сайт, бюджет 200к, остановились на ТЗ"
+    assert fake_llm.invoke.call_count == 1
+
+    # Second call should not hit LLM — read from cache
+    summary2 = generate_topic_summary(fake_llm, db, conv)
+    assert summary2 == summary1
+    assert fake_llm.invoke.call_count == 1  # unchanged
+
+
+def test_generate_topic_summary_empty_conversation_returns_empty_string(db):
+    """Edge case: conversation row exists but has no messages.
+    Should return empty string (don't waste LLM call, caller decides skip)."""
+    from unittest.mock import MagicMock
+    from services.returning_lead import generate_topic_summary
+
+    customer = _make_customer(db, email="empty_summary@example.com")
+    conv = _make_conv(db, customer, days_since_last=20, n_lead_msgs=0)
+    db.flush()
+
+    fake_llm = MagicMock()
+    summary = generate_topic_summary(fake_llm, db, conv)
+    assert summary == ""
+    assert fake_llm.invoke.call_count == 0
