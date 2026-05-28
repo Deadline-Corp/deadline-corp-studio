@@ -141,7 +141,7 @@ def resolve_or_create_customer_with_meta(
     The function still creates / links identities just like the plain version.
     """
     # Pre-check identity — if (channel, external_id) already exists, this
-    # is NOT a returning-lead event, it's continued use of a known session.
+    # is NOT a returning-lead event, it's continued use of a known identity.
     identity_existed = db.execute(
         select(ChannelIdentity.id).where(
             ChannelIdentity.channel == channel,
