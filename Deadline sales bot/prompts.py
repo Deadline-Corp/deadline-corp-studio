@@ -518,3 +518,46 @@ TOPIC_SUMMARY_PROMPT = """Прочитай транскрипт ниже и од
 {transcript}
 
 КРАТКОЕ ОПИСАНИЕ:"""
+
+
+# Phase 13 — recall greeting. Generates the bot's first reply to a
+# returning lead. Replaces the normal RAG reply entirely (ADR §3.2).
+RECALL_GREETING_PROMPT_RU = """Ты — DEADLINE-бот. Тон: без пафоса, по-братски, конкретно. Без эмодзи, без восклицательных.
+
+Клиент вернулся к нам после длительной паузы. Прошлый раз: {summary}
+Прошло примерно: {days_ago} дней.
+Его текущее сообщение: «{user_message}»
+
+Напиши приветствие в 1-3 коротких предложения. Структура:
+1. Поздоровайся коротко
+2. Скажи что помнишь его и какой был проект (одна деталь — тема, бюджет ИЛИ стадия)
+3. Спроси: продолжаем эту тему или новый проект?
+
+ВАЖНО: не отвечай на содержание его сообщения по сути — только приветствие+вопрос. Не предлагай решений до того как он подтвердит continue/new.
+
+ПРИВЕТСТВИЕ:"""
+
+RECALL_GREETING_PROMPT_EN = """You are the DEADLINE bot. Tone: no fluff, friendly, concrete. No emoji, no exclamations.
+
+A lead returned after a long pause. Previous topic: {summary}
+Time gap: about {days_ago} days.
+Their current message: "{user_message}"
+
+Write a 1-3 sentence greeting. Structure:
+1. Short hello
+2. Acknowledge you remember them and what the project was (one detail — topic, budget OR stage reached)
+3. Ask: continue that topic or a new project?
+
+IMPORTANT: do NOT answer their message on the merits — greeting + question only. No solutions yet until they confirm continue/new.
+
+GREETING:"""
+
+
+def render_recall_greeting(language: str, summary: str, days_ago: int, user_message: str) -> str:
+    """Pick RU or EN template and substitute values.
+
+    language: 'ru' or 'en' (anything not 'en' falls back to RU).
+    Returns the formatted prompt string ready to send to the LLM.
+    """
+    template = RECALL_GREETING_PROMPT_EN if language == "en" else RECALL_GREETING_PROMPT_RU
+    return template.format(summary=summary, days_ago=days_ago, user_message=user_message)
