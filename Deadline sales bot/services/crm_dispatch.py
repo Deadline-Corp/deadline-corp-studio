@@ -246,7 +246,13 @@ def _build_deal_title(
 # Hot-path entry point — called once per message turn from _handle_message
 # =============================================================================
 
-DEAL_CREATION_SCORE_THRESHOLD = 50
+# Phase 12 tuning (2026-05-28): threshold raised 50 → 80 after smoke #6 showed
+# P2 visitors (base score 60 with no keywords) were getting deals on first "hi".
+# At 80, P1 (base 100) still triggers deal immediately (intent is explicit from
+# ad/direct request — appropriate to track). P2 needs either content keywords
+# (e.g. "бюджет" +20 + "дедлайн" +20 = 100, real intent visible) OR engagement
+# (lead_messages_count >= 3) OR handoff. Casual visitors no longer pollute pipeline.
+DEAL_CREATION_SCORE_THRESHOLD = 80
 DEAL_CREATION_LEAD_MESSAGES_THRESHOLD = 3
 
 
