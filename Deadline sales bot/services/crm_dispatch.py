@@ -246,6 +246,10 @@ def _build_deal_title(
 # Hot-path entry point — called once per message turn from _handle_message
 # =============================================================================
 
+DEAL_CREATION_SCORE_THRESHOLD = 50
+DEAL_CREATION_LEAD_MESSAGES_THRESHOLD = 3
+
+
 def dispatch_on_message_turn(
     *,
     customer: Any,          # db.models.Customer — has crm_contact_id field
@@ -254,19 +258,30 @@ def dispatch_on_message_turn(
     last_bot_reply: Optional[str],
     handoff_just_fired: bool,
     channel: str,
+    lead_messages_count: int = 0,
     project_type: Optional[str] = None,
 ) -> None:
-    """Process one message turn — enqueue all CRM events implied.
+    """Process one message turn — enqueue CRM events implied.
 
-    This is THE function the bot's hot path calls. Everything else is
-    internal composition. Never raises — exceptions are logged and
-    swallowed so a CRM hiccup never breaks the bot.
+    LAZY DEAL CREATION (Phase 12, 2026-05-28):
+    Contact is created/updated on every new lead (lightweight identity).
+    Deal is created LAZILY — only when there's a real signal that this is
+    actually a lead, not just a casual visitor:
+      - handoff_just_fired (email was captured → real lead)
+      - customer.lead_score >= DEAL_CREATION_SCORE_THRESHOLD (50)
+      - lead_messages_count >= DEAL_CREATION_LEAD_MESSAGES_THRESHOLD (3)
+    The "or" semantics + idempotency via `deal_id is None` ensures one deal
+    per conversation, created as soon as ANY signal fires.
+
+    Why: HubSpot pipeline shouldn't fill with throwaway "hi" deals from
+    visitors who never engage. Contacts are fine to track (lightweight
+    identity record) but Deals must represent real sales opportunities.
 
     Branching (determined from Customer/Conversation state):
-      1. customer.crm_contact_id is None  → enqueue upsert_contact + create_deal
-         (with DB-writeback callbacks for the real CRM ids)
-      2. Else, log_message events for lead message + bot reply
-      3. handoff_just_fired → update_deal_stage(qualified) + operator task
+      1. customer.crm_contact_id is None  → enqueue upsert_contact
+      2. conversation.crm_deal_id is None AND any signal → enqueue create_deal
+      3. Always: log_message events for lead message + bot reply
+      4. handoff_just_fired → update_deal_stage(qualified) + operator task
 
     Args use Customer + Conversation directly (not unpacked) because the
     hot path already has them in hand and unpacking 10 fields here would
@@ -277,24 +292,39 @@ def dispatch_on_message_turn(
         customer_id = str(customer.id)
         contact_id = customer.crm_contact_id
         deal_id = conversation.crm_deal_id
+        score = int(getattr(customer, "lead_score", 0) or 0)
 
-        # "New for CRM" = we haven't synced this customer yet. This is the
-        # right cue rather than is_first_turn, because the same lead can
-        # return on a different channel and we still want one CRM contact.
-        is_new_for_crm = not contact_id
+        # 1. Ensure contact exists. Contact is lightweight identity — fine to
+        #    create eagerly on every new lead (so we have someone to attach
+        #    log_messages to even before deal-signal threshold is crossed).
+        if not contact_id:
+            _enqueue_upsert_contact(
+                customer=customer,
+                channel=channel,
+            )
 
-        if is_new_for_crm:
-            _enqueue_new_lead(
+        # 2. Lazy deal creation. Only fire when there's a real sales signal
+        #    AND the deal doesn't already exist (idempotency).
+        should_create_deal = (not deal_id) and (
+            handoff_just_fired
+            or score >= DEAL_CREATION_SCORE_THRESHOLD
+            or lead_messages_count >= DEAL_CREATION_LEAD_MESSAGES_THRESHOLD
+        )
+        if should_create_deal:
+            _enqueue_create_deal(
                 customer=customer,
                 conversation=conversation,
                 first_message_text=last_lead_message,
                 channel=channel,
                 project_type=project_type,
             )
-            # Don't return early — we still want to log this first message,
-            # but it'll skip because contact_id is None until worker resolves.
+            logger.info(
+                "[crm_dispatch] deal create triggered for conv=%s "
+                "(handoff=%s score=%d msgs=%d)",
+                str(conversation.id)[:8], handoff_just_fired, score, lead_messages_count,
+            )
 
-        # Log lead message
+        # 3. Log lead message
         if last_lead_message:
             dispatch_message_log(
                 customer_id=customer_id,
@@ -339,30 +369,19 @@ def dispatch_on_message_turn(
         logger.warning("[crm_dispatch] dispatch_on_message_turn failed: %s", exc)
 
 
-def _enqueue_new_lead(
-    *,
-    customer: Any,
-    conversation: Any,
-    first_message_text: Optional[str],
-    channel: str,
-    project_type: Optional[str],
-) -> None:
-    """Enqueue upsert_contact + create_deal with DB writeback callbacks.
+def _build_lead_from_customer(customer: Any, channel: str) -> Lead:
+    """Map our Customer ORM row to the CRMAdapter Lead value object.
 
-    Worker will populate the real CRM-side ids by calling the callbacks,
-    which open a fresh session_scope and patch Customer + Conversation rows.
+    Extracted from _enqueue_upsert_contact so the same mapping is used
+    consistently (and tested separately if needed).
     """
-    customer_id = str(customer.id)
-    conversation_id = str(conversation.id)
-
-    # Build identity_keys from customer fields
     identity_keys: dict[str, Any] = {}
     if customer.email:
         identity_keys["email"] = customer.email
     if customer.phone:
         identity_keys["phone"] = customer.phone
 
-    # Get tg_handle from channel_identities for the telegram channel
+    # Pull tg_handle from channel_identities if present
     tg_handle = None
     for ident in (customer.identities or []):
         if ident.channel == "telegram" and ident.username:
@@ -372,15 +391,15 @@ def _enqueue_new_lead(
 
     contact_handle = customer.email or tg_handle or customer.phone
 
-    # Find external_id for this channel (used as channel_user_id)
+    # Find external_id for this channel
     channel_user_id = ""
     for ident in (customer.identities or []):
         if ident.channel == channel:
             channel_user_id = ident.external_id
             break
 
-    lead = Lead(
-        id=customer_id,
+    return Lead(
+        id=str(customer.id),
         contact_name=customer.name,
         contact_handle=contact_handle,
         channel=channel,  # type: ignore[arg-type]
@@ -393,13 +412,48 @@ def _enqueue_new_lead(
         identity_keys=identity_keys,
     )
 
-    from services.crm_queue import enqueue, make_upsert_contact_event, make_create_deal_event
 
+def _enqueue_upsert_contact(
+    *,
+    customer: Any,
+    channel: str,
+) -> None:
+    """Phase 12 (2026-05-28): enqueue ONLY upsert_contact, not deal.
+
+    Called when we have a new lead but haven't seen a real sales signal
+    yet (lazy deal creation). The contact captures identity + signals
+    (interaction_type, score, temperature); the deal will follow when
+    handoff fires or engagement thresholds are crossed.
+    """
+    customer_id = str(customer.id)
+    lead = _build_lead_from_customer(customer, channel)
+
+    from services.crm_queue import enqueue, make_upsert_contact_event
     enqueue(make_upsert_contact_event(
         customer_id=customer_id,
         lead=lead,
         on_contact_id=_make_contact_id_writeback(customer_id),
     ))
+
+
+def _enqueue_create_deal(
+    *,
+    customer: Any,
+    conversation: Any,
+    first_message_text: Optional[str],
+    channel: str,
+    project_type: Optional[str],
+) -> None:
+    """Phase 12 (2026-05-28): enqueue ONLY create_deal.
+
+    Called when a real sales signal fires (handoff / score / engagement)
+    AND conversation doesn't already have a deal. Contact may or may not
+    be CRM-synced yet — if not, contact_id='pending' triggers lazy
+    resolution in the worker (services/crm_queue._resolve_pending_contact_id).
+    """
+    customer_id = str(customer.id)
+    conversation_id = str(conversation.id)
+    contact_id = customer.crm_contact_id or "pending"
 
     deal = Deal(
         lead_id=customer_id,
@@ -409,12 +463,12 @@ def _enqueue_new_lead(
         project_type=project_type,
         brief=(first_message_text[:500] if first_message_text else None),
     )
-    # NOTE: contact_id="pending" — worker substitutes the real id from
-    # the upsert_contact event ahead of this in the FIFO queue.
+
+    from services.crm_queue import enqueue, make_create_deal_event
     enqueue(make_create_deal_event(
         customer_id=customer_id,
         deal=deal,
-        contact_id="pending",
+        contact_id=contact_id,
         on_deal_id=_make_deal_id_writeback(conversation_id),
     ))
 

@@ -1009,6 +1009,13 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
             # the customer object above may be a fresh insert without
             # identities loaded yet.
             from services.crm_dispatch import dispatch_on_message_turn
+            # Phase 12 (2026-05-28): pass lead_messages_count for lazy deal
+            # creation threshold — deal only fires when handoff OR score>=50
+            # OR this count >= 3, not on every first "hi" from a visitor.
+            lead_msg_count_for_crm = sum(
+                1 for m in recent
+                if (m.role.value if hasattr(m.role, "value") else str(m.role)) == "user"
+            )
             dispatch_on_message_turn(
                 customer=customer,
                 conversation=conversation,
@@ -1016,6 +1023,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 last_bot_reply=answer,
                 handoff_just_fired=handoff_triggered,
                 channel=req.channel,
+                lead_messages_count=lead_msg_count_for_crm,
                 project_type=None,  # not currently extracted from the conversation
             )
         except Exception as exc:  # noqa: BLE001
