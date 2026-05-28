@@ -35,6 +35,37 @@
     return fresh;
   })();
 
+  // Visible chat history is also persisted so on reload / new tab the user
+  // sees their previous messages, not just an empty widget. Capped at the
+  // last 100 messages and expired after 30 days of inactivity. Transient
+  // error messages (network failures) are explicitly NOT stored — they'd
+  // be confusing to see on next visit.
+  const MESSAGES_STORAGE_KEY = "dl-bot-messages";
+  const MAX_STORED_MESSAGES = 100;
+  const STORAGE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+  function loadStoredMessages() {
+    try {
+      const raw = window.localStorage.getItem(MESSAGES_STORAGE_KEY);
+      if (!raw) return [];
+      const data = JSON.parse(raw);
+      if (data.sessionId !== SESSION_ID) return [];
+      if (Date.now() - (data.savedAt || 0) > STORAGE_TTL_MS) return [];
+      return Array.isArray(data.messages) ? data.messages : [];
+    } catch (_) { return []; }
+  }
+  function saveMessage(text, role) {
+    try {
+      const prev = loadStoredMessages();
+      prev.push({ text: text, role: role, ts: Date.now() });
+      const trimmed = prev.slice(-MAX_STORED_MESSAGES);
+      window.localStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify({
+        sessionId: SESSION_ID,
+        savedAt: Date.now(),
+        messages: trimmed,
+      }));
+    } catch (_) {}
+  }
+
   // ============================================================
   // STYLES
   // ============================================================
@@ -126,13 +157,30 @@
   // ============================================================
   // HELPERS
   // ============================================================
-  function addMsg(text, role) {
+  function addMsg(text, role, opts) {
+    opts = opts || {};
     const div = document.createElement("div");
     div.className = "dl-msg " + role;
     div.textContent = text;
     $msg.appendChild(div);
     $msg.scrollTop = $msg.scrollHeight;
+    if (opts.persist !== false) saveMessage(text, role);
   }
+
+  // Restore previous conversation on widget mount. Wipes the inline default
+  // greeting so it isn't duplicated next to the restored history.
+  (function restoreHistoryOnInit() {
+    const stored = loadStoredMessages();
+    if (!stored.length) return;
+    $msg.innerHTML = "";
+    for (const m of stored) {
+      const div = document.createElement("div");
+      div.className = "dl-msg " + m.role;
+      div.textContent = m.text;
+      $msg.appendChild(div);
+    }
+    $msg.scrollTop = $msg.scrollHeight;
+  })();
 
   function showTyping() {
     const t = document.createElement("div");
@@ -168,9 +216,9 @@
 
       if (!r.ok) {
         if (r.status === 503) {
-          addMsg("Сервис временно недоступен. Напишите в Telegram @deadline_corp", "b");
+          addMsg("Сервис временно недоступен. Напишите в Telegram @deadline_corp", "b", { persist: false });
         } else {
-          addMsg("Ошибка связи. Напишите в Telegram @deadline_corp", "b");
+          addMsg("Ошибка связи. Напишите в Telegram @deadline_corp", "b", { persist: false });
         }
         return;
       }
@@ -186,7 +234,7 @@
       }
     } catch (e) {
       hideTyping();
-      addMsg("Сбой связи. Напишите в Telegram @deadline_corp", "b");
+      addMsg("Сбой связи. Напишите в Telegram @deadline_corp", "b", { persist: false });
       console.error("[dl-bot]", e);
     } finally {
       $btn.disabled = false;
