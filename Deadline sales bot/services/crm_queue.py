@@ -256,6 +256,9 @@ async def _dispatch(ev: CRMEvent, adapter: CRMAdapter) -> None:
             deal_id = await asyncio.to_thread(_resolve_pending_deal_id, p["conversation_id"])
         await adapter.update_deal_stage(
             deal_id, p["stage"], p.get("lost_reason"),
+            title=p.get("title"),
+            description=p.get("description"),
+            project_type=p.get("project_type"),
         )
         return
 
@@ -353,6 +356,9 @@ def make_update_stage_event(
     customer_id: str, deal_id: str, stage: LeadStage,
     lost_reason: Optional[LostReason] = None,
     conversation_id: Optional[str] = None,
+    title: Optional[str] = None,
+    description: Optional[str] = None,
+    project_type: Optional[str] = None,
 ) -> CRMEvent:
     return CRMEvent(
         type="update_deal_stage",
@@ -360,6 +366,8 @@ def make_update_stage_event(
         payload={
             "deal_id": deal_id, "stage": stage, "lost_reason": lost_reason,
             "conversation_id": conversation_id,  # needed for lazy resolution when deal_id="pending"
+            # Phase C1: optional readable card content, set at handoff/qualified
+            "title": title, "description": description, "project_type": project_type,
         },
     )
 
