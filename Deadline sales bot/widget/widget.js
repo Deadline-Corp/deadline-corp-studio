@@ -295,10 +295,16 @@
 (function () {
   "use strict";
 
-  // ----- Activation gate: only mount if ?admin=<token> is in URL -----
-  const URL_PARAMS = new URLSearchParams(window.location.search);
+  // ----- Activation gate: only mount if #admin=<token> is in the URL hash -----
+  // Use the URL fragment (hash), NOT the query string: the fragment is never
+  // sent to the server, never leaks in the Referer header to third-party
+  // scripts (Meta Pixel / Clarity / CDNs), and never lands in server access logs.
+  const URL_PARAMS = new URLSearchParams(window.location.hash.slice(1));
   const ADMIN_TOKEN = URL_PARAMS.get("admin");
   if (!ADMIN_TOKEN) return;  // not in admin mode → don't render anything
+  // Strip the token from the address bar immediately so it doesn't linger in
+  // browser history or session-replay tools after first read.
+  try { history.replaceState(null, "", window.location.pathname + window.location.search); } catch (e) {}
 
   // Detect API base URL — same host as the regular widget's /chat endpoint
   const BASE_URL = (
@@ -740,9 +746,13 @@ user: дорого..."></textarea>
   $tDraftBtn.addEventListener("click", startDraft);
   $tListBtn.addEventListener("click", listRules);
 
-  // Expose for debugging
-  window.DeadlineTrainer = {
-    sessionId: () => sessionId,
-    listRules,
-  };
+  // Expose for debugging ONLY on localhost — never in production, where a
+  // compromised/third-party script could call listRules() with the operator's
+  // bearer token via this global.
+  if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
+    window.DeadlineTrainer = {
+      sessionId: () => sessionId,
+      listRules,
+    };
+  }
 })();

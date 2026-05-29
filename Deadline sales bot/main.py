@@ -1373,7 +1373,21 @@ async def health():
 
 @app.post("/message", response_model=MessageResponse)
 async def message_endpoint(req: MessageRequest, db: Session = Depends(get_db)):
-    """Universal channel-agnostic chat entry point."""
+    """Public website chat entry point.
+
+    Only the `website` channel is accepted here. Social channels (telegram,
+    instagram, messenger) MUST arrive through their signed webhook handlers,
+    which call _handle_message directly — never via this anonymous HTTP route.
+    Without this guard an unauthenticated caller could spoof channel=telegram
+    with a victim's chat_id and trigger outbound Telegram actions to that
+    victim, or merge messages into the victim's customer record.
+    """
+    if req.channel != "website":
+        raise HTTPException(
+            status_code=403,
+            detail="This endpoint accepts the 'website' channel only; "
+                   "social channels are handled via their webhook endpoints.",
+        )
     return await _handle_message(req, db)
 
 

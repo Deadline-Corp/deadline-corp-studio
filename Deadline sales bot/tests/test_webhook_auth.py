@@ -104,3 +104,49 @@ def test_training_rejects_wrong_token(client, monkeypatch):
     monkeypatch.setattr(main.settings, "training_auth_token", "secret-train")
     r = client.get("/admin/training/list", headers={"Authorization": "Bearer nope"})
     assert r.status_code == 403
+
+
+# ---- /message public endpoint: website channel only (anti-spoofing) --------
+
+def test_message_endpoint_rejects_social_channel(client):
+    """Public /message must reject a spoofed social channel — an anonymous
+    caller could otherwise set channel=telegram + a victim chat_id and trigger
+    outbound Telegram actions to that victim. Guard returns 403 before any
+    pipeline work."""
+    r = client.post("/message", json={
+        "channel": "telegram",
+        "external_id": "victim-123",
+        "content": "hi",
+        "channel_conversation_id": "999999",
+    })
+    assert r.status_code == 403
+
+
+def test_message_endpoint_rejects_instagram_channel(client):
+    r = client.post("/message", json={
+        "channel": "instagram",
+        "external_id": "victim-ig",
+        "content": "hi",
+    })
+    assert r.status_code == 403
+
+
+# ---- Meta webhook signature fails CLOSED when secret unset -----------------
+
+def test_meta_signature_fails_closed_without_secret():
+    """No META_APP_SECRET configured → refuse (fail-closed), never accept."""
+    from channels.utils import verify_meta_signature
+    assert verify_meta_signature("", "sha256=whatever", b"{}") is False
+    assert verify_meta_signature(None, None, b"{}") is False
+
+
+def test_meta_signature_accepts_valid_rejects_bad():
+    """With a secret set: a correct HMAC passes, a wrong one fails."""
+    import hashlib
+    import hmac as _hmac
+    from channels.utils import verify_meta_signature
+    secret = "test-secret"
+    body = b'{"x":1}'
+    good = "sha256=" + _hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
+    assert verify_meta_signature(secret, good, body) is True
+    assert verify_meta_signature(secret, "sha256=deadbeef", body) is False

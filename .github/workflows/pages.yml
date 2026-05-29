@@ -30,12 +30,33 @@ jobs:
         with:
           enablement: true
 
+      - name: Stage public site (exclude backend source + internal docs)
+        # The repo root mixes the static site with the bot backend source and
+        # internal docs. Publishing the whole tree would expose main.py,
+        # channels/, db/ models, alembic migrations, the bot system prompt
+        # (prompt-injection intel), CLAUDE.md and architecture docs on the
+        # public domain. Stage only the site assets into _site/.
+        run: |
+          mkdir -p _site
+          rsync -a \
+            --exclude='_site/' \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='.claude/' \
+            --exclude='Deadline sales bot/' \
+            --exclude='AI_Content_Factory/' \
+            --exclude='Research/' \
+            --exclude='Site_obsidian_source_of_truth/' \
+            --exclude='CLAUDE.md' \
+            --exclude='CHANGES_MATRIX_v2.md' \
+            --exclude='Hermes_vs_OpenClaw_architecture.md' \
+            --exclude='README.md' \
+            ./ _site/
+
       - name: Upload site as Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # Repo root contains the static site (index.html, forge.html,
-          # modes.css, modes.js, .nojekyll). Upload the whole tree.
-          path: .
+          path: _site
 
   deploy:
     needs: build

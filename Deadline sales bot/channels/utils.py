@@ -50,13 +50,16 @@ def verify_meta_signature(
     Meta signs request bodies with HMAC-SHA256 keyed by App Secret.
     Header format: "sha256=hex_digest"
 
-    Returns True if signature matches OR if no secret is configured (dev mode).
-    Returns False if a secret IS configured but the signature is missing/bad.
+    Fails CLOSED: returns True ONLY if a secret is configured AND the signature
+    matches. A missing secret, missing/malformed header, or bad signature all
+    return False. (An unauthenticated Meta webhook can inject content into lead
+    conversations and trigger outbound replies — same threat as the Telegram
+    webhook, so we refuse rather than accept when unverifiable.)
     """
     if not app_secret:
-        # Dev mode — no secret set, skip verification but log
-        log.warning("META_APP_SECRET not set — accepting webhook without signature check")
-        return True
+        # Fail CLOSED — refuse rather than accept an unverifiable webhook.
+        log.error("META_APP_SECRET not set — rejecting Meta webhook (fail-closed)")
+        return False
 
     if not signature_header or not signature_header.startswith("sha256="):
         log.warning(f"meta signature: missing or malformed header — got {signature_header!r}")
