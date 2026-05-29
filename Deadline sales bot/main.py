@@ -15,6 +15,7 @@ Deploy to Railway: see README.md
 
 import asyncio
 import gc
+import hmac
 import json
 import logging
 import threading
@@ -25,7 +26,7 @@ from typing import Optional
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request, Depends
+from fastapi import FastAPI, HTTPException, Request, Depends, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings
@@ -123,6 +124,15 @@ class Settings(BaseSettings):
     # take over a conversation from the bot via inline button.
     # chat_id is negative for supergroups (e.g. -1001234567890).
     telegram_operator_group_id: Optional[str] = None
+    # Shared secret authenticating inbound Telegram webhooks. Telegram echoes
+    # it back in the `X-Telegram-Bot-Api-Secret-Token` header on every update
+    # IF the webhook was registered with `secret_token` (see set_telegram_webhook).
+    # The /webhooks/telegram handler fails CLOSED: unset → refuse all updates
+    # (503); set → every update must carry a matching header (constant-time
+    # compare) or it's rejected (401). Generate with `openssl rand -hex 32`.
+    # Without it, anyone who knows the public webhook URL could forge operator
+    # messages to real leads via the bot's own outbound tokens.
+    telegram_webhook_secret: Optional[str] = None
     email_notify: Optional[str] = None
     # Groq for voice transcription (Whisper-large-v3 via OpenAI-compatible
     # endpoint). Free tier covers small volumes. Get a key at console.groq.com.
@@ -1794,6 +1804,32 @@ async def telegram_webhook(request: Request):
     blip, deploy gap, our background task crashed mid-flight), the second
     delivery exits early without re-processing the same payload.
     """
+    # --- Authenticate the caller (fail-closed) -----------------------------
+    # Telegram echoes our registered secret in the X-Telegram-Bot-Api-Secret-
+    # Token header on every update. Unlike the Meta handlers (which fail OPEN
+    # when META_APP_SECRET is unset), this path fails CLOSED: an unset secret
+    # refuses all traffic, because a forged update here can impersonate an
+    # operator and push attacker-controlled text to real leads through the
+    # bot's own outbound tokens.
+    expected_secret = settings.telegram_webhook_secret
+    if not expected_secret:
+        log.error(
+            "telegram_webhook: TELEGRAM_WEBHOOK_SECRET not set — refusing all "
+            "updates (fail-closed). Set it in env AND re-register the webhook "
+            "with secret_token (see set_telegram_webhook)."
+        )
+        # 503 (not 401): this is OUR misconfiguration. Telegram keeps the
+        # update queued and retries, so leads' messages aren't lost once the
+        # secret is configured.
+        return Response(status_code=503)
+    got_secret = request.headers.get("x-telegram-bot-api-secret-token", "")
+    if not hmac.compare_digest(expected_secret.encode("utf-8"), got_secret.encode("utf-8")):
+        log.warning(
+            "telegram_webhook: secret-token mismatch — rejected an "
+            "unauthenticated/forged update"
+        )
+        return Response(status_code=401)
+
     try:
         payload = await request.json()
     except Exception as e:
@@ -2006,7 +2042,8 @@ def _verify_metrics_token(request: Request) -> None:
     auth = request.headers.get("authorization", "")
     if not auth.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Bearer token required")
-    if auth.split(None, 1)[1].strip() != expected:
+    token = auth.split(None, 1)[1].strip()
+    if not hmac.compare_digest(token.encode("utf-8"), expected.encode("utf-8")):
         raise HTTPException(status_code=403, detail="Invalid token")
 
 
@@ -2173,7 +2210,8 @@ def _verify_training_token(request: Request) -> None:
     auth = request.headers.get("authorization", "")
     if not auth.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Bearer token required")
-    if auth.split(None, 1)[1].strip() != expected:
+    token = auth.split(None, 1)[1].strip()
+    if not hmac.compare_digest(token.encode("utf-8"), expected.encode("utf-8")):
         raise HTTPException(status_code=403, detail="Invalid token")
 
 

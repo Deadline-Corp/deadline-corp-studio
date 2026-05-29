@@ -414,21 +414,30 @@ async def send_typing_action(token: str, chat_id: str) -> None:
         log.debug(f"sendChatAction failed (non-fatal): {e}")
 
 
-async def set_telegram_webhook(token: str, url: str) -> dict:
+async def set_telegram_webhook(token: str, url: str, secret_token: Optional[str] = None) -> dict:
     """Configure Telegram to POST every update to `url`. Idempotent. Returns
     the Telegram response dict. Call from a script after deploy, not on every
     container start (Bot API rate-limits setWebhook).
 
     `allowed_updates` includes `message` and `callback_query` because operators
     interact with the bot via inline buttons in the forum-supergroup.
+
+    `secret_token`, when provided, is stored by Telegram and echoed back in the
+    `X-Telegram-Bot-Api-Secret-Token` header on every update. The bot verifies
+    it in /webhooks/telegram (fail-closed) — without it, anyone who knows the
+    public webhook URL could forge updates. ALWAYS pass it in production; it
+    must equal the TELEGRAM_WEBHOOK_SECRET env var the backend reads.
     """
+    body = {
+        "url": url,
+        "allowed_updates": ["message", "callback_query"],
+    }
+    if secret_token:
+        body["secret_token"] = secret_token
     async with httpx.AsyncClient(timeout=10) as client:
         r = await client.post(
             f"{TELEGRAM_API_BASE}/bot{token}/setWebhook",
-            json={
-                "url": url,
-                "allowed_updates": ["message", "callback_query"],
-            },
+            json=body,
         )
     return r.json()
 
