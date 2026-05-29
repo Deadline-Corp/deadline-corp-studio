@@ -44,6 +44,27 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
+# Test-lead filter (Phase B Step 7, 2026-05-27)
+# =============================================================================
+# Тестовые лиды для dogfood-прогонов под разными легендами идут с email
+# вида `test+<persona>@<domain>` (Gmail-style plus addressing — все приходят
+# в один реальный ящик, но бот видит их как разных людей). Чтобы такие
+# прогоны НЕ загрязняли продакшен HubSpot, гасим CRM-диспатч в самом
+# верху обеих entry-точек ниже. Бот продолжает работать нормально (DB
+# заполняется), просто события в CRM не уходят.
+#
+# Паттерн хардкодим стабильным "test+" — если понадобится сделать
+# конфигурируемым через env, обернуть в Settings без изменения вызывающих.
+
+_TEST_EMAIL_PREFIX = "test+"
+
+
+def _is_test_email(email: Optional[str]) -> bool:
+    """True если email подпадает под dogfood-test-конвенцию."""
+    return bool(email) and email.lower().startswith(_TEST_EMAIL_PREFIX)
+
+
+# =============================================================================
 # First touch — new lead arrived
 # =============================================================================
 
@@ -72,6 +93,15 @@ def dispatch_on_first_touch(
     the on_contact_id / on_deal_id callbacks (Phase 8 — until then
     callers can re-fetch by external_id if needed).
     """
+    # Test-lead filter (Phase B Step 7) — dogfood-прогоны с test+...@
+    # email не попадают в продакшен CRM. См. _is_test_email выше.
+    if _is_test_email(customer_email):
+        logger.info(
+            "[crm_dispatch] skipping first-touch CRM dispatch for test lead %s",
+            customer_email,
+        )
+        return
+
     identity_keys: dict[str, Any] = {}
     if customer_email:
         identity_keys["email"] = customer_email
@@ -97,7 +127,7 @@ def dispatch_on_first_touch(
     )
     enqueue(make_upsert_contact_event(customer_id=str(customer_id), lead=lead))
 
-    deal_title = _build_deal_title(customer_name, project_type, channel)
+    deal_title = _build_deal_title(customer_name, project_type, channel, first_message_text)
     deal = Deal(
         lead_id=str(customer_id),
         conversation_id=str(conversation_id),
@@ -235,8 +265,39 @@ def _build_deal_title(
     customer_name: Optional[str],
     project_type: Optional[str],
     channel: str,
+    first_message: Optional[str] = None,
 ) -> str:
-    """Format a deal title following pattern: <name> — <project_type> (<channel>)."""
+    """Build a meaningful deal title for HubSpot.
+
+    Priority (Phase B Step 8, 2026-05-27):
+      1. First-message snippet (first line, smart-truncated to ~55 chars
+         at word boundary) + short channel code → "Хочу лендинг для кафе · IG"
+      2. Legacy fallback when first_message is empty/missing → keeps the old
+         "<name> — <project_type> (<channel>)" pattern.
+
+    Heuristic, no LLM call — keeps dispatcher sync and free. Result is still
+    миллион раз лучше чем дефолтный «Unknown lead — scope TBD (website)»
+    для случаев когда лид сразу написал что хочет.
+    """
+    channel_short = {
+        "telegram": "TG",
+        "instagram": "IG",
+        "messenger": "FB",
+        "website": "Web",
+        "whatsapp": "WA",
+        "email": "Email",
+    }.get((channel or "").lower(), (channel or "").capitalize() or "Web")
+
+    if first_message and first_message.strip():
+        snippet = first_message.strip().split("\n", 1)[0].strip()
+        if len(snippet) > 55:
+            # Trim at word boundary so we don't cut mid-word
+            snippet = snippet[:55].rsplit(" ", 1)[0] + "…"
+        if snippet:
+            snippet = snippet[0].upper() + snippet[1:]
+            return f"{snippet} · {channel_short}"
+
+    # Legacy fallback — preserves backward-compat for first_message=None callers
     name_part = customer_name or "Unknown lead"
     pt_part = project_type if project_type else "scope TBD"
     return f"{name_part} — {pt_part} ({channel})"
@@ -295,6 +356,15 @@ def dispatch_on_message_turn(
     happen in worker callbacks via a fresh session_scope.
     """
     try:
+        # Test-lead filter (Phase B Step 7) — dogfood email vида
+        # test+persona@... не двигают CRM. См. _is_test_email на верху файла.
+        if _is_test_email(getattr(customer, "email", None)):
+            logger.debug(
+                "[crm_dispatch] skipping turn CRM dispatch for test lead %s",
+                customer.email,
+            )
+            return
+
         customer_id = str(customer.id)
         contact_id = customer.crm_contact_id
         deal_id = conversation.crm_deal_id
@@ -464,7 +534,7 @@ def _enqueue_create_deal(
     deal = Deal(
         lead_id=customer_id,
         conversation_id=conversation_id,
-        title=_build_deal_title(customer.name, project_type, channel),
+        title=_build_deal_title(customer.name, project_type, channel, first_message_text),
         stage=getattr(conversation, "lead_stage", "new_lead") or "new_lead",
         project_type=project_type,
         brief=(first_message_text[:500] if first_message_text else None),

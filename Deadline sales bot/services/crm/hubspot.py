@@ -64,19 +64,28 @@ DEFAULT_API_BASE = "https://api.hubapi.com"
 # (HubSpot generates stage ids internally; we look them up by label).
 # Probabilities ((0..1)) influence forecast reports — values follow
 # typical sales-funnel expectation.
+#
+# 2026-05-27: labels switched to RU per Deadline UI requirement
+# (operators+ founders read RU; English-only labels were causing context
+# switching during operator triage). Internal `_our_stage` keys
+# (snake_case EN) are unchanged — only the display labels differ. The
+# HubSpot pipeline 'Deadline Sales' (id=default, portal 246304597,
+# region na2) was already updated via API to match these exact labels;
+# `_reconcile_stages` will find every stage on first start without
+# adding duplicates.
 STAGE_DEFS: list[dict[str, Any]] = [
-    {"label": "New Lead",      "metadata": {"probability": "0.05", "isClosed": "false"}, "_our_stage": "new_lead"},
-    {"label": "In Dialog",     "metadata": {"probability": "0.10", "isClosed": "false"}, "_our_stage": "in_dialog"},
-    {"label": "Qualified",     "metadata": {"probability": "0.20", "isClosed": "false"}, "_our_stage": "qualified"},
-    {"label": "NDA",           "metadata": {"probability": "0.30", "isClosed": "false"}, "_our_stage": "nda"},
-    {"label": "On Call",       "metadata": {"probability": "0.40", "isClosed": "false"}, "_our_stage": "on_call"},
-    {"label": "TZ Approved",   "metadata": {"probability": "0.55", "isClosed": "false"}, "_our_stage": "tz_approved"},
-    {"label": "Proposal",      "metadata": {"probability": "0.65", "isClosed": "false"}, "_our_stage": "proposal"},
-    {"label": "Prepayment",    "metadata": {"probability": "0.80", "isClosed": "false"}, "_our_stage": "prepayment"},
-    {"label": "In Work",       "metadata": {"probability": "0.90", "isClosed": "false"}, "_our_stage": "in_work"},
-    {"label": "Completed Won", "metadata": {"probability": "1.00", "isClosed": "true"},  "_our_stage": "completed_won"},
-    {"label": "Post Sale",     "metadata": {"probability": "1.00", "isClosed": "true"},  "_our_stage": "post_sale"},
-    {"label": "Lost",          "metadata": {"probability": "0.00", "isClosed": "true"},  "_our_stage": "lost"},
+    {"label": "🆕 Новый лид",        "metadata": {"probability": "0.05", "isClosed": "false"}, "_our_stage": "new_lead"},
+    {"label": "💬 В диалоге",         "metadata": {"probability": "0.10", "isClosed": "false"}, "_our_stage": "in_dialog"},
+    {"label": "✅ Квалифицирован",    "metadata": {"probability": "0.20", "isClosed": "false"}, "_our_stage": "qualified"},
+    {"label": "📜 NDA подписан",      "metadata": {"probability": "0.30", "isClosed": "false"}, "_our_stage": "nda"},
+    {"label": "📞 Созвон назначен",   "metadata": {"probability": "0.40", "isClosed": "false"}, "_our_stage": "on_call"},
+    {"label": "🎯 ТЗ согласовано",    "metadata": {"probability": "0.55", "isClosed": "false"}, "_our_stage": "tz_approved"},
+    {"label": "📄 КП отправлено",     "metadata": {"probability": "0.65", "isClosed": "false"}, "_our_stage": "proposal"},
+    {"label": "💰 Аванс получен",     "metadata": {"probability": "0.80", "isClosed": "false"}, "_our_stage": "prepayment"},
+    {"label": "🤝 В работе",          "metadata": {"probability": "0.90", "isClosed": "false"}, "_our_stage": "in_work"},
+    {"label": "✅ Сдано",             "metadata": {"probability": "1.00", "isClosed": "true"},  "_our_stage": "completed_won"},
+    {"label": "🔁 Постпродажа",       "metadata": {"probability": "1.00", "isClosed": "true"},  "_our_stage": "post_sale"},
+    {"label": "❌ Проигран",          "metadata": {"probability": "0.00", "isClosed": "true"},  "_our_stage": "lost"},
 ]
 
 
@@ -181,6 +190,20 @@ DEAL_PROPERTIES: list[dict[str, Any]] = [
             {"label": "No budget",     "value": "no_budget",      "displayOrder": 4},
             {"label": "Hard Stop",     "value": "hard_stop",      "displayOrder": 5},
         ],
+    },
+    {
+        # 2026-05-27: добавлено, чтобы дата назначенного созвона была видна
+        # прямо в карточке сделки в HubSpot UI без отдельной календарной
+        # интеграции (Calendly/Cal.com отложены до фазы Phase 0e).
+        # Оператор / бот ставит при движении в стадию '📞 Созвон назначен'.
+        # Уже создано в HubSpot через API (idempotent — _ensure_properties
+        # вернёт 409 на повторный создающий вызов).
+        "name": "next_meeting_at",
+        "label": "Назначенный созвон",
+        "type": "datetime",
+        "fieldType": "date",
+        "groupName": "dealinformation",
+        "description": "Дата и время следующего созвона с лидом (UTC ISO 8601)",
     },
 ]
 
