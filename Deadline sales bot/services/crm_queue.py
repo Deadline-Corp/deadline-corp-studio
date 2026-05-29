@@ -223,29 +223,37 @@ async def _dispatch(ev: CRMEvent, adapter: CRMAdapter) -> None:
     from DB via _resolve_pending_*. If the prior event's writeback hasn't
     landed yet, those resolvers raise and we let retry backoff buy time.
     """
+    # NOTE (2026-05-29 incident fix): every SYNC DB op below — the
+    # _resolve_pending_* lookups and the writeback callbacks (cb) — opens a
+    # sync session_scope() (psycopg2 pool checkout). This worker runs ON the
+    # main event loop, so calling them inline froze the whole loop under load
+    # (a blocking pool checkout deadlocked against coroutines holding
+    # connections through slow LLM turns — every endpoint incl /health hung).
+    # We push all sync DB work to a thread via asyncio.to_thread so the event
+    # loop stays free. Adapter calls are already async (httpx) and stay awaited.
     p = ev.payload
     if ev.type == "upsert_contact":
         contact_id = await adapter.upsert_contact(p["lead"])
         # Caller can read this back via the optional callback in payload
         cb = p.get("on_contact_id")
         if cb is not None:
-            cb(contact_id)
+            await asyncio.to_thread(cb, contact_id)
         return
 
     if ev.type == "create_deal":
         contact_id = p["contact_id"]
         if contact_id == "pending":
-            contact_id = _resolve_pending_contact_id(ev.customer_id)
+            contact_id = await asyncio.to_thread(_resolve_pending_contact_id, ev.customer_id)
         deal_id = await adapter.create_deal(p["deal"], contact_id)
         cb = p.get("on_deal_id")
         if cb is not None:
-            cb(deal_id)
+            await asyncio.to_thread(cb, deal_id)
         return
 
     if ev.type == "update_deal_stage":
         deal_id = p["deal_id"]
         if deal_id == "pending":
-            deal_id = _resolve_pending_deal_id(p["conversation_id"])
+            deal_id = await asyncio.to_thread(_resolve_pending_deal_id, p["conversation_id"])
         await adapter.update_deal_stage(
             deal_id, p["stage"], p.get("lost_reason"),
         )
@@ -254,25 +262,25 @@ async def _dispatch(ev: CRMEvent, adapter: CRMAdapter) -> None:
     if ev.type == "update_lead_temperature":
         contact_id = p["contact_id"]
         if contact_id == "pending":
-            contact_id = _resolve_pending_contact_id(ev.customer_id)
+            contact_id = await asyncio.to_thread(_resolve_pending_contact_id, ev.customer_id)
         await adapter.update_lead_temperature(contact_id, p["temperature"])
         return
 
     if ev.type == "log_message":
         contact_id = p["contact_id"]
         if contact_id == "pending":
-            contact_id = _resolve_pending_contact_id(ev.customer_id)
+            contact_id = await asyncio.to_thread(_resolve_pending_contact_id, ev.customer_id)
         await adapter.log_message(p["msg"], contact_id)
         return
 
     if ev.type == "create_task":
         contact_id = p["contact_id"]
         if contact_id == "pending":
-            contact_id = _resolve_pending_contact_id(ev.customer_id)
+            contact_id = await asyncio.to_thread(_resolve_pending_contact_id, ev.customer_id)
         deal_id_raw = p.get("deal_id")
         deal_id = None
         if deal_id_raw == "pending":
-            deal_id = _resolve_pending_deal_id(p["conversation_id"])
+            deal_id = await asyncio.to_thread(_resolve_pending_deal_id, p["conversation_id"])
         elif deal_id_raw:
             deal_id = deal_id_raw
         task_id = await adapter.create_task(
@@ -285,7 +293,7 @@ async def _dispatch(ev: CRMEvent, adapter: CRMAdapter) -> None:
         )
         cb = p.get("on_task_id")
         if cb is not None:
-            cb(task_id)
+            await asyncio.to_thread(cb, task_id)
         return
 
     logger.error("[crm_queue] unknown event type: %s", ev.type)
