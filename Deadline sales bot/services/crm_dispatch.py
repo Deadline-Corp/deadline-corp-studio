@@ -509,27 +509,32 @@ def dispatch_on_message_turn(
                 description=_desc,
                 project_type=_ptype,
             )
-            # Phase C1.2: алерт оператору НЕ на сайтовой квалификации — только
-            # когда лид в мессенджере (telegram/whatsapp/instagram/messenger),
-            # т.е. реально перешёл в канал, где менеджер его подхватит. На сайте
-            # бот работает сам; сделка всё равно создаётся и квалифицируется выше.
+            # Task Engine Фаза A: задача создаётся на КАЖДОГО квалифицированного
+            # лида (включая сайт) — «никто не теряется». Формулировка зависит от
+            # канала: в мессенджере лид уже перешёл и ждёт (срочно подхватить),
+            # на сайте — обычное «связаться». Задача вешается на менеджера
+            # (HUBSPOT_OWNER_ID, если задан в env). C1.2-смысл сохранён: на сайте
+            # это CRM-задача (to-do в карточке), а не реал-тайм пинг оператору.
+            _name = customer.name or customer.email or "лид"
             if (channel or "").lower() != "website":
-                dispatch_operator_task(
-                    customer_id=customer_id,
-                    crm_contact_id=contact_id,
-                    crm_deal_id=deal_id,
-                    conversation_id=str(conversation.id),
-                    title=f"Take over lead — {customer.name or customer.email or 'unknown'}",
-                    category="qualification",
-                    due_in_minutes=15,
-                    description=(last_lead_message or "")[:500],
-                )
+                _task_title = f"Подхватить в Telegram — {_name} ждёт"
             else:
-                logger.info(
-                    "[crm_dispatch] website handoff conv=%s — deal qualified; operator "
-                    "alert deferred until lead moves to a messenger",
-                    str(conversation.id)[:8],
-                )
+                _task_title = f"Связаться с лидом — {_name}"
+            dispatch_operator_task(
+                customer_id=customer_id,
+                crm_contact_id=contact_id,
+                crm_deal_id=deal_id,
+                conversation_id=str(conversation.id),
+                title=_task_title,
+                category="callback",
+                due_in_minutes=15,
+                description=(_desc or last_lead_message or "")[:1000],
+            )
+            logger.info(
+                "[crm_dispatch] handoff conv=%s channel=%s — deal qualified + "
+                "callback task created (owner per HUBSPOT_OWNER_ID)",
+                str(conversation.id)[:8], channel,
+            )
 
     except Exception as exc:  # noqa: BLE001
         logger.warning("[crm_dispatch] dispatch_on_message_turn failed: %s", exc)

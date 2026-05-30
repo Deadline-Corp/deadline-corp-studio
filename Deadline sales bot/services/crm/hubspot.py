@@ -221,12 +221,15 @@ class HubSpotAdapter(CRMAdapter):
         pipeline_name: str = "Deadline Sales",
         api_base: str = DEFAULT_API_BASE,
         timeout_sec: float = 15.0,
+        owner_id: Optional[str] = None,
     ):
         if not access_token:
             raise ValueError("HubSpotAdapter requires an access_token")
         self.access_token = access_token
         self.portal_id = portal_id
         self.region = region
+        # Owner (менеджер), на кого вешать задачи/сделки. None → без владельца.
+        self.owner_id = owner_id
         self.pipeline_name = pipeline_name
         self.api_base = api_base
         self._timeout = timeout_sec
@@ -546,6 +549,9 @@ class HubSpotAdapter(CRMAdapter):
             props["description"] = deal.brief
         if deal.lost_reason and deal.stage == "lost":
             props["lost_reason_internal"] = deal.lost_reason
+        # Назначаем сделку на менеджера, если owner_id сконфигурирован.
+        if self.owner_id:
+            props["hubspot_owner_id"] = self.owner_id
 
         payload = {
             "properties": props,
@@ -712,15 +718,19 @@ class HubSpotAdapter(CRMAdapter):
                 }],
             })
 
+        props = {
+            "hs_task_subject": title,
+            "hs_task_body": description or "",
+            "hs_task_status": "NOT_STARTED",
+            "hs_task_priority": "MEDIUM",
+            "hs_task_type": hs_type,
+            "hs_timestamp": str(due_ms),
+        }
+        # Назначаем задачу на менеджера, если owner_id сконфигурирован.
+        if self.owner_id:
+            props["hubspot_owner_id"] = self.owner_id
         payload = {
-            "properties": {
-                "hs_task_subject": title,
-                "hs_task_body": description or "",
-                "hs_task_status": "NOT_STARTED",
-                "hs_task_priority": "MEDIUM",
-                "hs_task_type": hs_type,
-                "hs_timestamp": str(due_ms),
-            },
+            "properties": props,
             "associations": associations,
         }
         resp = await self._req("POST", "/crm/v3/objects/tasks", json=payload)

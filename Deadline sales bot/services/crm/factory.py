@@ -62,6 +62,7 @@ def build_adapter(settings: "Settings") -> CRMAdapter:
                 access_token=settings.hubspot_access_token,
                 portal_id=settings.hubspot_portal_id,
                 region=settings.hubspot_region,
+                owner_id=settings.hubspot_owner_id,
             )
         except ImportError:
             logger.warning(
