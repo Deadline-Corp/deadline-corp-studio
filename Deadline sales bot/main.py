@@ -388,6 +388,8 @@ class MessageResponse(BaseModel):
 class ChatRequest(BaseModel):
     session_id: str = Field(..., min_length=1, max_length=128)
     message: str = Field(..., min_length=1, max_length=4000)
+    source: Optional[str] = Field(None, max_length=300,
+                                  description="Traffic source (referrer host + UTM) from the widget — Phase C1.2")
 
 
 class ChatResponse(BaseModel):
@@ -1337,6 +1339,12 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 1 for m in recent
                 if (m.role.value if hasattr(m.role, "value") else str(m.role)) == "user"
             )
+            # Phase C1.2: прокидываем источник трафика (widget → extra_meta)
+            # в handoff_data, чтобы он попал в карточку сделки.
+            if handoff_data is not None and isinstance(req.extra_meta, dict):
+                _ts = req.extra_meta.get("traffic_source")
+                if _ts:
+                    handoff_data["traffic_source"] = _ts
             dispatch_on_message_turn(
                 customer=customer,
                 conversation=conversation,
@@ -1403,6 +1411,7 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
         external_id=req.session_id,
         content=req.message,
         channel_conversation_id=req.session_id,
+        extra_meta=({"traffic_source": req.source} if req.source else None),
     )
     resp = await _handle_message(msg_req, db)
     return ChatResponse(answer=resp.answer, handoff=resp.handoff, session_id=req.session_id)
