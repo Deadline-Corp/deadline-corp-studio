@@ -184,6 +184,62 @@ def dispatch_message_log(
     ))
 
 
+def build_qualified_deal_fields(
+    handoff_data: dict, channel: str,
+) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """Phase C1 (2026-05-29): turn the handoff classifier output into a
+    READABLE HubSpot deal title + structured brief for the card.
+
+    title  = имя лида → короткая суть задачи → «{канал} · {тип}»
+    desc   = структурный бриф (тип · задача · срок · срочность · контакт)
+    Returns (title, description, project_type); any element may be None.
+    """
+    if not handoff_data:
+        return None, None, None
+    name = (handoff_data.get("lead_name") or "").strip()
+    project_type = (handoff_data.get("project_type") or "").strip() or None
+    if project_type in ("Unknown", "unknown"):
+        project_type = None
+    task = (handoff_data.get("task_summary") or "").strip()
+    timeline = (handoff_data.get("timeline") or "").strip()
+    urgency = (handoff_data.get("urgency") or "").strip()
+    email = (handoff_data.get("lead_email") or "").strip()
+    tg = (handoff_data.get("lead_telegram_username") or "").strip()
+    phone = (handoff_data.get("lead_phone") or "").strip()
+
+    channel_short = {
+        "telegram": "TG", "instagram": "IG", "messenger": "FB",
+        "website": "Web", "whatsapp": "WA", "email": "Email",
+    }.get((channel or "").lower(), (channel or "Web").capitalize())
+
+    # --- title: name → task essence → channel·type ---
+    if name:
+        title = name if not project_type else f"{name} · {project_type}"
+    elif task:
+        snippet = task.split("\n", 1)[0].strip()
+        if len(snippet) > 50:
+            snippet = snippet[:50].rsplit(" ", 1)[0] + "…"
+        title = (snippet[0].upper() + snippet[1:]) if snippet else None
+    elif project_type:
+        title = f"{channel_short} · {project_type}"
+    else:
+        title = None
+
+    # --- structured brief ---
+    contact_bits = [b for b in (email, tg, phone) if b]
+    lines = [
+        f"Тип: {project_type or '—'}",
+        f"Задача: {task or '—'}",
+        f"Срок: {timeline or '—'}",
+        f"Срочность: {urgency or 'Normal'}",
+        f"Канал: {channel_short}",
+    ]
+    if contact_bits:
+        lines.append(f"Контакт: {' · '.join(contact_bits)}")
+    description = "\n".join(lines)
+    return title, description, project_type
+
+
 def dispatch_stage_change(
     *,
     customer_id: str,
@@ -191,6 +247,9 @@ def dispatch_stage_change(
     new_stage: str,
     lost_reason: Optional[str] = None,
     conversation_id: Optional[str] = None,
+    title: Optional[str] = None,
+    description: Optional[str] = None,
+    project_type: Optional[str] = None,
 ) -> None:
     """Push a funnel-stage transition to the CRM deal.
 
@@ -198,6 +257,10 @@ def dispatch_stage_change(
     common when a handoff fires on the very first message. The worker will
     lazy-resolve it from Conversation.crm_deal_id when create_deal's writeback
     has applied. conversation_id is required for that resolution.
+
+    Phase C1: optional title/description/project_type ride along so the deal
+    card gets a readable name + structured brief in the SAME PATCH as the
+    stage move (used on handoff→qualified).
     """
     deal_id = crm_deal_id if crm_deal_id else "pending"
     enqueue(make_update_stage_event(
@@ -206,6 +269,9 @@ def dispatch_stage_change(
         stage=new_stage,  # type: ignore[arg-type]
         lost_reason=lost_reason,  # type: ignore[arg-type]
         conversation_id=conversation_id,
+        title=title,
+        description=description,
+        project_type=project_type,
     ))
 
 
@@ -327,6 +393,7 @@ def dispatch_on_message_turn(
     channel: str,
     lead_messages_count: int = 0,
     project_type: Optional[str] = None,
+    handoff_data: Optional[dict] = None,
 ) -> None:
     """Process one message turn — enqueue CRM events implied.
 
@@ -424,11 +491,20 @@ def dispatch_on_message_turn(
 
         # Handoff just fired → move deal to qualified + create operator task
         if handoff_just_fired:
+            # Phase C1: enrich the card with a readable title + structured brief
+            # built from the handoff classifier output (task_summary etc.), set
+            # in the SAME PATCH as the stage move.
+            _title, _desc, _ptype = build_qualified_deal_fields(
+                handoff_data or {}, channel,
+            )
             dispatch_stage_change(
                 customer_id=customer_id,
                 crm_deal_id=deal_id,
                 new_stage="qualified",
                 conversation_id=str(conversation.id),
+                title=_title,
+                description=_desc,
+                project_type=_ptype,
             )
             dispatch_operator_task(
                 customer_id=customer_id,

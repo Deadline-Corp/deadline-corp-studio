@@ -1221,6 +1221,8 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     #    SKIP entirely for public comments — contacts are not exchanged in
     #    public threads, and operator briefs there would be noise.
     handoff_triggered = False
+    handoff_data = None  # Phase C1: kept in function scope so the CRM dispatch
+                         # below can build a readable deal title + brief from it
     if not conversation.handoff_done and not is_comment_mode:
         all_recent = get_recent_messages(db, conversation.id, limit=20)
         history_dicts = _messages_to_dicts(all_recent)
@@ -1344,6 +1346,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 channel=req.channel,
                 lead_messages_count=lead_msg_count_for_crm,
                 project_type=None,  # not currently extracted from the conversation
+                handoff_data=handoff_data,  # Phase C1: readable deal title + brief
             )
         except Exception as exc:  # noqa: BLE001
             log.warning(f"[{str(conversation.id)[:8]}] crm dispatch failed: {exc}")

@@ -120,6 +120,13 @@
     }
     #dl-btn:hover { background: #ffffff; }
     #dl-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .dl-cta {
+      display: inline-block; align-self: flex-start;
+      margin: 2px 0 6px; padding: 10px 16px;
+      background: #2aabee; color: #fff; text-decoration: none;
+      border-radius: 8px; font-size: 14px; font-weight: 700;
+    }
+    .dl-cta:hover { background: #1f96d4; }
     @media (max-width: 480px) {
       #dl-bot { width: calc(100% - 20px); right: 10px; left: 10px; bottom: 10px; }
     }
@@ -199,6 +206,8 @@
   // SEND
   // ============================================================
   async function send() {
+    // Phase C1.2: после увода (handoff) бот «затихает» на сайте — блокируем ввод.
+    if (root.dataset.closed === "1") return;
     const text = $inp.value.trim();
     if (!text) return;
     addMsg(text, "u");
@@ -226,20 +235,44 @@
       const data = await r.json();
       addMsg(data.answer, "b");
       if (data.handoff) {
-        const isEng = /[a-zA-Z]/.test(text) && !/[а-яА-Я]/.test(text);
-        const msg = isEng
-          ? "📩 Passed to the team. We will email you within minutes."
-          : "📩 Передал команде. Напишем на email в течение минут.";
-        addMsg(msg, "sys");
+        closeWithHandoff(text);
       }
     } catch (e) {
       hideTyping();
       addMsg("Сбой связи. Напишите в Telegram @deadline_corp", "b", { persist: false });
       console.error("[dl-bot]", e);
     } finally {
-      $btn.disabled = false;
-      $inp.focus();
+      // не реактивируем ввод, если диалог закрыт уводом в Telegram
+      if (root.dataset.closed !== "1") {
+        $btn.disabled = false;
+        $inp.focus();
+      }
     }
+  }
+
+  // Phase C1.2: handoff → бот «передал команде» и уводит лида в Telegram.
+  // Закрывающая строка + кнопка, дальнейший ввод на сайте отключаем
+  // (разговор продолжается в мессенджере, где лид не потеряется).
+  function closeWithHandoff(lastText) {
+    root.dataset.closed = "1";
+    const isEng = /[a-zA-Z]/.test(lastText) && !/[а-яА-Я]/.test(lastText);
+    addMsg(
+      isEng
+        ? "Got it — taken into work. Let's continue on Telegram so nothing gets lost. 📩"
+        : "Взяли в работу. Продолжим в Telegram — так удобнее и не потеряемся. 📩",
+      "sys", { persist: false }
+    );
+    const cta = document.createElement("a");
+    cta.className = "dl-cta";
+    cta.href = "https://t.me/deadline_corp";
+    cta.target = "_blank";
+    cta.rel = "noopener";
+    cta.textContent = isEng ? "Open Telegram →" : "Написать в Telegram →";
+    $msg.appendChild(cta);
+    $msg.scrollTop = $msg.scrollHeight;
+    $inp.disabled = true;
+    $btn.disabled = true;
+    $inp.placeholder = isEng ? "Continue on Telegram →" : "Продолжаем в Telegram →";
   }
 
   // ============================================================

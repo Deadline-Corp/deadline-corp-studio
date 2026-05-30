@@ -572,6 +572,10 @@ class HubSpotAdapter(CRMAdapter):
         deal_id: str,
         stage: LeadStage,
         lost_reason: Optional[LostReason] = None,
+        *,
+        title: Optional[str] = None,
+        description: Optional[str] = None,
+        project_type: Optional[str] = None,
     ) -> None:
         await self._ensure_setup()
 
@@ -583,6 +587,25 @@ class HubSpotAdapter(CRMAdapter):
         props: dict[str, Any] = {"dealstage": stage_id}
         if stage == "lost" and lost_reason:
             props["lost_reason_internal"] = lost_reason
+        # Phase C1 (2026-05-29): write a readable deal name + structured brief
+        # onto the card together with the stage move. Set at handoff/qualified
+        # from the classifier's task_summary — so the operator sees the gist
+        # without opening the transcript. One PATCH = stage + card content.
+        if title:
+            props["dealname"] = title[:255]
+        if description:
+            props["description"] = description[:65000]
+        if project_type:
+            # Map classifier value ("AI Agents") → HubSpot enum option value
+            # ("ai_agents"). Skip if it doesn't map — never send an invalid
+            # enum (would 400 and fail the whole stage PATCH).
+            _pt = {
+                "web": "web", "automation": "automation",
+                "ai agents": "ai_agents", "ai_agents": "ai_agents",
+                "mixed": "mixed",
+            }.get(project_type.strip().lower())
+            if _pt:
+                props["project_type"] = _pt
 
         resp = await self._req(
             "PATCH",
