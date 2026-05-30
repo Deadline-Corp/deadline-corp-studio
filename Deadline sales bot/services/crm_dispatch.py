@@ -206,6 +206,7 @@ def build_qualified_deal_fields(
     email = (handoff_data.get("lead_email") or "").strip()
     tg = (handoff_data.get("lead_telegram_username") or "").strip()
     phone = (handoff_data.get("lead_phone") or "").strip()
+    source = (handoff_data.get("traffic_source") or "").strip()  # Phase C1.2
 
     channel_short = {
         "telegram": "TG", "instagram": "IG", "messenger": "FB",
@@ -234,6 +235,8 @@ def build_qualified_deal_fields(
         f"Срочность: {urgency or 'Normal'}",
         f"Канал: {channel_short}",
     ]
+    if source:
+        lines.insert(0, f"Источник: {source}")
     if contact_bits:
         lines.append(f"Контакт: {' · '.join(contact_bits)}")
     description = "\n".join(lines)
@@ -506,16 +509,27 @@ def dispatch_on_message_turn(
                 description=_desc,
                 project_type=_ptype,
             )
-            dispatch_operator_task(
-                customer_id=customer_id,
-                crm_contact_id=contact_id,
-                crm_deal_id=deal_id,
-                conversation_id=str(conversation.id),
-                title=f"Take over lead — {customer.name or customer.email or 'unknown'}",
-                category="qualification",
-                due_in_minutes=15,
-                description=(last_lead_message or "")[:500],
-            )
+            # Phase C1.2: алерт оператору НЕ на сайтовой квалификации — только
+            # когда лид в мессенджере (telegram/whatsapp/instagram/messenger),
+            # т.е. реально перешёл в канал, где менеджер его подхватит. На сайте
+            # бот работает сам; сделка всё равно создаётся и квалифицируется выше.
+            if (channel or "").lower() != "website":
+                dispatch_operator_task(
+                    customer_id=customer_id,
+                    crm_contact_id=contact_id,
+                    crm_deal_id=deal_id,
+                    conversation_id=str(conversation.id),
+                    title=f"Take over lead — {customer.name or customer.email or 'unknown'}",
+                    category="qualification",
+                    due_in_minutes=15,
+                    description=(last_lead_message or "")[:500],
+                )
+            else:
+                logger.info(
+                    "[crm_dispatch] website handoff conv=%s — deal qualified; operator "
+                    "alert deferred until lead moves to a messenger",
+                    str(conversation.id)[:8],
+                )
 
     except Exception as exc:  # noqa: BLE001
         logger.warning("[crm_dispatch] dispatch_on_message_turn failed: %s", exc)

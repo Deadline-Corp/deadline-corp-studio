@@ -21,6 +21,20 @@
     (typeof window !== "undefined" && window.DEADLINE_BOT_API) ||
     "https://deadline-sales-bot-production.up.railway.app/chat";
 
+  // Phase C1.2: источник трафика (referrer-хост + UTM) — снимаем при загрузке,
+  // шлём с каждым сообщением; на handoff попадает в карточку лида в CRM.
+  const DL_SRC = (function () {
+    try {
+      var p = new URLSearchParams(window.location.search);
+      var utm = ["utm_source", "utm_medium", "utm_campaign"]
+        .map(function (k) { return p.get(k); })
+        .filter(Boolean)
+        .join(" / ");
+      var ref = document.referrer ? new URL(document.referrer).hostname : "";
+      return (utm || ref || "direct").slice(0, 200);
+    } catch (e) { return "direct"; }
+  })();
+
   // Session id is persisted in localStorage so the conversation survives page
   // reloads, language switches AND skin switches (those don't reload, but if
   // the user ever does F5 the bot's memory stays — same session_id reaches
@@ -219,7 +233,7 @@
       const r = await fetch(API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_id: SESSION_ID, message: text }),
+        body: JSON.stringify({ session_id: SESSION_ID, message: text, source: DL_SRC }),
       });
       hideTyping();
 
