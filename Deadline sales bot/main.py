@@ -205,6 +205,11 @@ class Settings(BaseSettings):
     # Most v3 endpoints are region-agnostic; this is for legacy endpoints
     # that need region-specific subdomains.
     hubspot_region: str = "na2"
+    # HubSpot owner id задач/сделок (на кого вешать). Из env HUBSPOT_OWNER_ID.
+    # Пусто → задачи без владельца (как было). Заполни — все задачи/сделки
+    # пойдут на этого менеджера. Owner id ≠ user id; берётся из /crm/v3/owners
+    # или назначь себя владельцем контакта и прочитай hubspot_owner_id обратно.
+    hubspot_owner_id: Optional[str] = None
 
     # ---- Bitrix24 credentials (Phase 0d deferred per Nikolay 2026-05-26) ----
     # Inbound Webhook URL — created in Developer Resources → Inbound webhook.
