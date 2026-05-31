@@ -57,6 +57,7 @@ EventType = Literal[
     "update_lead_temperature",
     "log_message",
     "create_task",
+    "schedule_followup",   # Task Engine B2 — записать отложенное действие бота
 ]
 
 
@@ -299,6 +300,22 @@ async def _dispatch(ev: CRMEvent, adapter: CRMAdapter) -> None:
             await asyncio.to_thread(cb, task_id)
         return
 
+    if ev.type == "schedule_followup":
+        # Task Engine B2 — записать строку отложенного действия бота (off event
+        # loop, через to_thread). Само-отправку делает крон run_due_followups.
+        from services.scheduled_actions import write_scheduled_action
+        await asyncio.to_thread(
+            write_scheduled_action,
+            customer_id=p["customer_id"],
+            conversation_id=p.get("conversation_id"),
+            channel=p["channel"],
+            chat_id=p.get("chat_id"),
+            due_at=p["due_at"],
+            text=p.get("text"),
+            crm_task_id=p.get("crm_task_id"),
+        )
+        return
+
     logger.error("[crm_queue] unknown event type: %s", ev.type)
 
 
@@ -412,5 +429,30 @@ def make_create_task_event(
             "category": category,
             "description": description,
             "on_task_id": on_task_id,
+        },
+    )
+
+
+def make_schedule_followup_event(
+    customer_id: str,
+    conversation_id: Optional[str],
+    channel: str,
+    chat_id: Optional[str],
+    due_at: datetime,
+    text: Optional[str] = None,
+    crm_task_id: Optional[str] = None,
+) -> CRMEvent:
+    """Task Engine B2 — событие записи отложенного действия бота в scheduled_actions."""
+    return CRMEvent(
+        type="schedule_followup",
+        customer_id=customer_id,
+        payload={
+            "customer_id": customer_id,
+            "conversation_id": conversation_id,
+            "channel": channel,
+            "chat_id": chat_id,
+            "due_at": due_at,
+            "text": text,
+            "crm_task_id": crm_task_id,
         },
     )

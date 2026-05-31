@@ -564,6 +564,27 @@ def dispatch_on_message_turn(
                         "(lead asked to be contacted later)",
                         str(conversation.id)[:8], _mins,
                     )
+                    # Task Engine B2 — если лид в мессенджере (есть chat_id), бот
+                    # САМ напишет ему в срок: ставим строку в scheduled_actions
+                    # (через воркер, off event loop). На сайте chat_id нет →
+                    # только задача-напоминание выше.
+                    _chat_id = getattr(conversation, "channel_conversation_id", None)
+                    if _chat_id and (channel or "").lower() in (
+                        "telegram", "whatsapp", "instagram", "messenger"
+                    ):
+                        from services.crm_queue import make_schedule_followup_event
+                        enqueue(make_schedule_followup_event(
+                            customer_id=customer_id,
+                            conversation_id=str(conversation.id),
+                            channel=channel,
+                            chat_id=str(_chat_id),
+                            due_at=_fu,
+                            text=None,  # дефолтный тёплый текст в scheduled_actions
+                        ))
+                        logger.info(
+                            "[crm_dispatch] bot self-followup scheduled conv=%s chat=%s",
+                            str(conversation.id)[:8], _chat_id,
+                        )
             except Exception as _fe:  # noqa: BLE001
                 logger.debug("[crm_dispatch] followup detect skipped: %s", _fe)
 
