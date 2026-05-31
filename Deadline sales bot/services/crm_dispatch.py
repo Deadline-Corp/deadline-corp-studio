@@ -536,6 +536,37 @@ def dispatch_on_message_turn(
                 str(conversation.id)[:8], channel,
             )
 
+        # Task Engine: лид просит связаться позже («через неделю / в субботу /
+        # завтра») → задача-напоминание менеджеру на распарсенную дату. Реюзаем
+        # проверенный путь dispatch_operator_task (срок = минуты до даты, TZ UTC+7
+        # внутри парсера). Срабатывает на любой реплике с явной просьбой о времени.
+        if last_lead_message:
+            try:
+                from services.followup_parse import parse_followup_when
+                _fu = parse_followup_when(last_lead_message)
+                if _fu is not None:
+                    _mins = max(
+                        1, int((_fu - datetime.now(timezone.utc)).total_seconds() / 60)
+                    )
+                    _nm = customer.name or customer.email or "лид"
+                    dispatch_operator_task(
+                        customer_id=customer_id,
+                        crm_contact_id=contact_id,
+                        crm_deal_id=deal_id if deal_id else None,
+                        conversation_id=str(conversation.id),
+                        title=f"Написать лиду {_nm} — просил связаться позже",
+                        category="callback",
+                        due_in_minutes=_mins,
+                        description=(last_lead_message or "")[:500],
+                    )
+                    logger.info(
+                        "[crm_dispatch] followup task conv=%s due_in_min=%d "
+                        "(lead asked to be contacted later)",
+                        str(conversation.id)[:8], _mins,
+                    )
+            except Exception as _fe:  # noqa: BLE001
+                logger.debug("[crm_dispatch] followup detect skipped: %s", _fe)
+
     except Exception as exc:  # noqa: BLE001
         logger.warning("[crm_dispatch] dispatch_on_message_turn failed: %s", exc)
 

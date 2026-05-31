@@ -230,6 +230,11 @@ class CRMAdapter(ABC):
     ) -> str:
         """Create a task for the operator. Returns CRM task id."""
 
+    async def complete_task(self, task_id: str) -> bool:
+        """Mark a CRM task COMPLETED (закрыть зеркальную задачу после
+        самоисполнения ботом). Default no-op — переопределяется в адаптере."""
+        return False
+
     @abstractmethod
     async def health_check(self) -> bool:
         """Cheap call to verify credentials + connectivity. Called at startup."""
