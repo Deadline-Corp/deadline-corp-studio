@@ -1152,11 +1152,24 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 )
                 _nudge = (
                     prompt
-                    + "\n\nВАЖНО: твой предыдущий ответ был почти таким же. Ответь "
-                    "ИНАЧЕ — другими словами, зайди с другой стороны, НЕ повторяй "
-                    "прошлую реплику. Среагируй именно на последнее сообщение лида."
+                    + "\n\n# СТОП-ПОВТОР (КРИТИЧНО)\nТвой ПРОШЛЫЙ ответ был дословно:\n«"
+                    + _prev_bot.strip()
+                    + "»\nЭто УЖЕ сказано — повторять НЕЛЬЗЯ. Дай ДРУГОЙ ответ: начни "
+                    "с других слов (если начинал с «Так,» — начни иначе), добавь новую "
+                    "мысль или вопрос, среагируй ИМЕННО на последнее сообщение лида. "
+                    "Коротко, по-человечески, без повтора прошлой фразы."
                 )
-                raw_answer = await call_llm(_nudge)
+                _re_answer = await call_llm(_nudge)
+                # Берём перегенерацию только если она реально отличается.
+                if _re_answer and difflib.SequenceMatcher(
+                    None, _prev_bot.lower().strip(), _re_answer.lower().strip()
+                ).ratio() < 0.9:
+                    raw_answer = _re_answer
+                else:
+                    # Всё ещё дубль — добавим живую вариацию, чтоб не звучать роботом.
+                    raw_answer = (
+                        _re_answer or raw_answer
+                    ).rstrip() + " Что скажете?"
     except Exception as _are:  # noqa: BLE001
         log.debug(f"anti-repeat guard skipped: {_are}")
 
