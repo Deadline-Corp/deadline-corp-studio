@@ -538,6 +538,48 @@ def _extract_email_from_handoff(handoff_data: dict) -> str:
     return ""
 
 
+# Email-backstop (надёжность handoff): иногда классификатор не выносит email в
+# lead_email ИЛИ возвращает not-ready, хотя лид уже дал email + внятный бриф.
+# Ловим email/имя/бриф прямо из сообщений лида на сервере — детерминированно.
+_EMAIL_INLINE_RE = re.compile(r"[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+")
+_NAME_RE = re.compile(r"\b([А-ЯЁ][а-яё]{1,}|[A-Z][a-z]{1,})\b")
+
+
+def _user_messages(history_dicts: list[dict]) -> list[str]:
+    return [
+        (m.get("content") or "")
+        for m in history_dicts
+        if m.get("role") == "user"
+    ]
+
+
+def _scan_lead_email(history_dicts: list[dict]) -> str:
+    """Самый свежий валидный email из сообщений лида (regex по тексту)."""
+    for c in reversed(_user_messages(history_dicts)):
+        m = _EMAIL_INLINE_RE.search(c or "")
+        if m and _is_valid_email(m.group(0)):
+            return m.group(0)
+    return ""
+
+
+def _has_brief(history_dicts: list[dict]) -> bool:
+    """Достаточно ли контекста, чтобы это был реальный лид (не спам с email)."""
+    msgs = [c for c in _user_messages(history_dicts) if c and c.strip()]
+    total = sum(len(c) for c in msgs)
+    return len(msgs) >= 2 and total >= 40
+
+
+def _guess_lead_name(history_dicts: list[dict], email: str) -> str:
+    """Лучше-усилие имя: слово с заглавной перед email (исключая доменные части)."""
+    for c in reversed(_user_messages(history_dicts)):
+        if email and email in c:
+            before = c.split(email)[0]
+            m = _NAME_RE.search(before)
+            if m:
+                return m.group(1)
+    return ""
+
+
 import re as _re_normalize
 
 _LEGACY_PREFIX_RE = _re_normalize.compile(r'^\s*(?://+|>>+|—+)\s*')
@@ -1146,7 +1188,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
             _sim = difflib.SequenceMatcher(
                 None, _prev_bot.lower().strip(), raw_answer.lower().strip()
             ).ratio()
-            if _sim >= 0.8:
+            if _sim >= 0.72:
                 log.info(
                     f"[{str(conversation.id)[:8]}] anti-repeat: sim={_sim:.2f} → regen"
                 )
@@ -1278,9 +1320,30 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         all_recent = get_recent_messages(db, conversation.id, limit=20)
         history_dicts = _messages_to_dicts(all_recent)
         handoff_data = await check_handoff(history_dicts)
+        # Email-backstop: если классификатор НЕ сказал ready, но лид уже дал
+        # валидный email + внятный бриф — квалифицируем сами (T1-кейс).
+        _scanned_email = _scan_lead_email(history_dicts)
+        if handoff_data is None and _scanned_email and _has_brief(history_dicts):
+            handoff_data = {
+                "ready_for_handoff": True,
+                "lead_email": _scanned_email,
+                "lead_name": _guess_lead_name(history_dicts, _scanned_email),
+                "task_summary": " | ".join(
+                    c for c in _user_messages(history_dicts) if c.strip()
+                )[:1000],
+                "project_type": "Unknown",
+            }
+            log.info(
+                f"[{str(conversation.id)[:8]}] email-backstop handoff "
+                f"(классификатор не сказал ready, но email+бриф есть)"
+            )
         if handoff_data:
-            email = _extract_email_from_handoff(handoff_data)
+            # email из классификатора ИЛИ из backstop-скана сообщений
+            email = _extract_email_from_handoff(handoff_data) or (
+                _scanned_email if _is_valid_email(_scanned_email) else ""
+            )
             if email:
+                handoff_data.setdefault("lead_email", email)
                 # Persist email on the customer (idempotent if already set).
                 # update_email also handles cross-channel merges if another
                 # customer happens to own the same email.
@@ -1291,6 +1354,14 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                     log.warning(
                         f"[{str(conversation.id)[:8]}] update_email failed: {e}"
                     )
+                # Fix #2: имя в карточку/задачу — сохраняем lead_name на клиенте,
+                # если ещё не задано (иначе задачи показывают email вместо имени).
+                _ln = (handoff_data.get("lead_name") or "").strip()
+                if _ln and not (customer.name or "").strip():
+                    try:
+                        customer.name = _ln[:200]
+                    except Exception:  # noqa: BLE001
+                        pass
 
                 await send_telegram_brief(str(conversation.id), handoff_data, history_dicts)
                 mark_handoff_done(db, conversation.id)
