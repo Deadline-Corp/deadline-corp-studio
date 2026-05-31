@@ -56,6 +56,37 @@ def find_customer_by_identity(
     return identity.customer if identity else None
 
 
+def _norm_handle(username: Optional[str]) -> str:
+    if not username:
+        return ""
+    h = username.strip()
+    return h if h.startswith("@") else ("@" + h if h else "")
+
+
+def find_customer_by_telegram_username(db: Session, username: str) -> Optional[Customer]:
+    """Найти клиента по telegram @username — для склейки МЕЖДУ каналами: лид дал
+    @username на сайте, потом написал из самого Telegram. @username в Telegram
+    глобально уникален, поэтому мёрж по нему безопасен (без ложных склеек).
+
+    Ищем по ChannelIdentity.username И по Customer.identity_keys['tg_handle']
+    (туда кладём @username, который лид назвал на сайте)."""
+    handle = _norm_handle(username)
+    if not handle:
+        return None
+    ident = db.execute(
+        select(ChannelIdentity).where(ChannelIdentity.username == handle)
+    ).scalars().first()
+    if ident is not None:
+        return ident.customer
+    try:
+        cust = db.execute(
+            select(Customer).where(Customer.identity_keys["tg_handle"].astext == handle)
+        ).scalars().first()
+    except Exception:  # noqa: BLE001 — jsonb-запрос не должен ронять резолв
+        cust = None
+    return cust
+
+
 def resolve_or_create_customer(
     db: Session,
     channel: str,
@@ -99,6 +130,16 @@ def resolve_or_create_customer(
     customer = None
     if email:
         customer = find_customer_by_email(db, email)
+
+    # ----- Step 2.5: try telegram @username anchor (глобально уникален) -----
+    # Склейка между каналами: лид дал @username на сайте → пишет из своего TG.
+    if customer is None and username:
+        customer = find_customer_by_telegram_username(db, username)
+        if customer is not None:
+            log.info(
+                "[identity] cross-channel merge via tg username %s → customer %s",
+                _norm_handle(username), customer.id,
+            )
 
     # ----- Step 3: new customer if nothing matched -----
     if customer is None:
@@ -152,15 +193,20 @@ def resolve_or_create_customer_with_meta(
     # Pre-check email — if no email provided OR no customer with this email
     # exists yet, the resolve call below cannot be a returning match.
     pre_existing_customer_for_email = None
-    if email and not identity_existed:
-        pre_existing_customer_for_email = find_customer_by_email(db, email)
+    pre_existing_for_username = None
+    if not identity_existed:
+        if email:
+            pre_existing_customer_for_email = find_customer_by_email(db, email)
+        if username and pre_existing_customer_for_email is None:
+            pre_existing_for_username = find_customer_by_telegram_username(db, username)
 
     customer = resolve_or_create_customer(
         db, channel=channel, external_id=external_id, email=email, username=username
     )
 
-    was_returning_match = (
-        not identity_existed and pre_existing_customer_for_email is not None
+    was_returning_match = not identity_existed and (
+        pre_existing_customer_for_email is not None
+        or pre_existing_for_username is not None
     )
     return customer, was_returning_match
 

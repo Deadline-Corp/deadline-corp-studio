@@ -174,9 +174,10 @@ class Settings(BaseSettings):
     tenant_slug: str = "deadline-corp"
 
     # ---- Phase 13 — Returning lead memory feature flag ----
-    # Master switch. Default False → bot behaves exactly as before this phase.
-    # Flip to True in Railway env only after end-to-end smoke test (Task 13).
-    returning_lead_recall: bool = False
+    # Включено: бот узнаёт вернувшегося лида (по email / telegram @username) и
+    # вспоминает прошлый контекст («CRM как база — понимает, что человек уже был»).
+    # Можно выключить через env RETURNING_LEAD_RECALL=false.
+    returning_lead_recall: bool = True
 
     # ---- CRM integration (Phase 0b feature flag + Phase 1+ adapters) ----
     # Master switch. While we're rolling out CRM features incrementally,
@@ -1407,6 +1408,18 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 if phone and not (customer.phone or "").strip():
                     try:
                         customer.phone = phone[:50]
+                    except Exception:  # noqa: BLE001
+                        pass
+                # Persist telegram @username в identity_keys — чтобы потом склеить
+                # с этим же человеком, когда он напишет из своего Telegram
+                # (кросс-канальный мёрж: сайт @username ↔ telegram from_user).
+                if tg:
+                    try:
+                        _h = tg if tg.startswith("@") else "@" + tg
+                        _ik = dict(customer.identity_keys or {})
+                        if _ik.get("tg_handle") != _h:
+                            _ik["tg_handle"] = _h
+                            customer.identity_keys = _ik
                     except Exception:  # noqa: BLE001
                         pass
                 # Имя в карточку/задачу.
