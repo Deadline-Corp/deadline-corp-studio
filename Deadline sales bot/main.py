@@ -1129,6 +1129,37 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
 
     # 6. LLM
     raw_answer = await call_llm(prompt)
+
+    # Anti-repeat guard (код-уровень): llama иногда дословно повторяет свой
+    # прошлый ответ на коротких follow-up'ах («ааа», email, «успеете?»). Промпт-
+    # правило это не добивает, поэтому: сравниваем с предыдущей репликой бота и,
+    # если почти дубль, перегенерим ОДИН раз с явной подсказкой «скажи иначе».
+    try:
+        import difflib
+        _prev_bot = ""
+        for _m in reversed(recent or []):
+            _role = _m.role.value if hasattr(_m.role, "value") else str(_m.role)
+            if _role == "assistant":
+                _prev_bot = _m.content or ""
+                break
+        if _prev_bot and raw_answer:
+            _sim = difflib.SequenceMatcher(
+                None, _prev_bot.lower().strip(), raw_answer.lower().strip()
+            ).ratio()
+            if _sim >= 0.8:
+                log.info(
+                    f"[{str(conversation.id)[:8]}] anti-repeat: sim={_sim:.2f} → regen"
+                )
+                _nudge = (
+                    prompt
+                    + "\n\nВАЖНО: твой предыдущий ответ был почти таким же. Ответь "
+                    "ИНАЧЕ — другими словами, зайди с другой стороны, НЕ повторяй "
+                    "прошлую реплику. Среагируй именно на последнее сообщение лида."
+                )
+                raw_answer = await call_llm(_nudge)
+    except Exception as _are:  # noqa: BLE001
+        log.debug(f"anti-repeat guard skipped: {_are}")
+
     # Defense-in-depth: enforce the no-prefix + capitalize-first-letter
     # convention regardless of what the LLM returned. See _normalize_bot_reply.
     answer = _normalize_bot_reply(raw_answer)
