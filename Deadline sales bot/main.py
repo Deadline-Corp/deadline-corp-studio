@@ -1184,6 +1184,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         is_first_turn=is_first_turn,
         is_comment_mode=is_comment_mode,
         corrections=correction_rules,
+        channel=req.channel,
     )
 
     # Show "печатает..." indicator in the lead's Telegram chat while the LLM
@@ -1354,9 +1355,12 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         _scanned_email = _scan_lead_email(history_dicts)
         _scanned_tg = _scan_lead_telegram(history_dicts)
         _scanned_phone = _scan_lead_phone(history_dicts)
+        # В мессенджере (telegram/whatsapp/...) сам КАНАЛ = контакт: лид уже
+        # доступен здесь, отдельный email/telegram в тексте не нужен.
+        _is_msgr = (req.channel or "website").lower() != "website"
         if (
             handoff_data is None
-            and (_scanned_email or _scanned_tg or _scanned_phone)
+            and (_scanned_email or _scanned_tg or _scanned_phone or _is_msgr)
             and _has_brief(history_dicts)
         ):
             handoff_data = {
@@ -1372,7 +1376,8 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
             }
             log.info(
                 f"[{str(conversation.id)[:8]}] contact-backstop handoff "
-                f"(email={bool(_scanned_email)} tg={bool(_scanned_tg)} phone={bool(_scanned_phone)})"
+                f"(email={bool(_scanned_email)} tg={bool(_scanned_tg)} "
+                f"phone={bool(_scanned_phone)} msgr={_is_msgr})"
             )
         if handoff_data:
             email = _extract_email_from_handoff(handoff_data) or (
@@ -1380,7 +1385,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
             )
             tg = (handoff_data.get("lead_telegram_username") or _scanned_tg or "").strip()
             phone = (handoff_data.get("lead_phone") or _scanned_phone or "").strip()
-            if email or tg or phone:
+            if email or tg or phone or _is_msgr:
                 # Прокидываем контакты в handoff_data — попадут в brief оператору
                 # и в карточку сделки (чтобы менеджер знал, куда писать).
                 if email:
