@@ -407,3 +407,65 @@ class TrainingCorrection(Base):
 
     def __repr__(self) -> str:
         return f"<TrainingCorrection {str(self.id)[:8]} channel={self.channel} active={self.is_active}>"
+
+
+# ============================================================================
+# SCHEDULED ACTIONS — движок «бот сам отрабатывает задачи» (Task Engine, Фаза B)
+# ============================================================================
+#
+# Своя очередь отложенных действий в Postgres — источник правды для крона.
+# Бот по ней работает (шлёт сообщение лиду в срок), а в HubSpot держит
+# зеркальную задачу (crm_task_id) для видимости менеджеру.
+#
+#   executor='bot'   → крон выполняет сам (followup_message → send в Telegram),
+#                      потом status='done' + закрывает зеркальную HubSpot-задачу.
+#   executor='human' → выполняет менеджер в CRM; бот только эскалирует/напоминает.
+
+class ScheduledAction(Base):
+    __tablename__ = "scheduled_actions"
+    __table_args__ = (
+        # Горячий запрос крона: выбрать созревшие pending bot-действия.
+        Index("ix_scheduled_actions_due", "status", "executor", "due_at"),
+        Index("ix_scheduled_actions_conv", "conversation_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    customer_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("customers.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    conversation_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("conversations.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    # Канал и chat_id (для проактивной отправки в мессенджер).
+    channel: Mapped[str] = mapped_column(
+        SQLEnum(ChannelEnum, native_enum=False), nullable=False
+    )
+    chat_id: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+
+    # followup_message | warming_touch | operator_callback | escalation
+    action_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    # bot | human
+    executor: Mapped[str] = mapped_column(String(16), nullable=False, server_default="bot")
+
+    due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    # pending | done | cancelled | failed
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="pending")
+
+    # Черновик/контекст для исполнения (текст сообщения, причина и т.д.).
+    payload: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    # id зеркальной HubSpot-задачи (чтобы закрыть её при исполнении).
+    crm_task_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    executed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    def __repr__(self) -> str:
+        return (
+            f"<ScheduledAction {str(self.id)[:8]} {self.action_type} "
+            f"executor={self.executor} status={self.status} due={self.due_at}>"
+        )
