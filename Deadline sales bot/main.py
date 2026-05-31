@@ -580,6 +580,34 @@ def _guess_lead_name(history_dicts: list[dict], email: str) -> str:
     return ""
 
 
+# Скан телеграм-хэндла и телефона из сообщений лида (любой контакт → handoff).
+_TG_RE = re.compile(r"@([A-Za-z][A-Za-z0-9_]{3,31})")
+_PHONE_RE = re.compile(r"\+?\d[\d\-\s()]{7,}\d")
+
+
+def _scan_lead_telegram(history_dicts: list[dict]) -> str:
+    for c in reversed(_user_messages(history_dicts)):
+        # не путать с email (@ в адресе) — берём @ только если не часть email
+        for m in _TG_RE.finditer(c or ""):
+            start = m.start()
+            if start > 0 and (c[start - 1].isalnum() or c[start - 1] == "."):
+                continue  # похоже на email-домен, пропускаем
+            return "@" + m.group(1)
+    return ""
+
+
+def _scan_lead_phone(history_dicts: list[dict]) -> str:
+    for c in reversed(_user_messages(history_dicts)):
+        if "@" in (c or ""):
+            c = re.sub(r"\S+@\S+", " ", c)  # вырезать email перед поиском телефона
+        m = _PHONE_RE.search(c or "")
+        if m:
+            digits = re.sub(r"\D", "", m.group(0))
+            if 9 <= len(digits) <= 15:
+                return m.group(0).strip()
+    return ""
+
+
 import re as _re_normalize
 
 _LEGACY_PREFIX_RE = _re_normalize.compile(r'^\s*(?://+|>>+|—+)\s*')
@@ -1322,40 +1350,61 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         handoff_data = await check_handoff(history_dicts)
         # Email-backstop: если классификатор НЕ сказал ready, но лид уже дал
         # валидный email + внятный бриф — квалифицируем сами (T1-кейс).
+        # Любой контакт годится: email / telegram @username / телефон.
         _scanned_email = _scan_lead_email(history_dicts)
-        if handoff_data is None and _scanned_email and _has_brief(history_dicts):
+        _scanned_tg = _scan_lead_telegram(history_dicts)
+        _scanned_phone = _scan_lead_phone(history_dicts)
+        if (
+            handoff_data is None
+            and (_scanned_email or _scanned_tg or _scanned_phone)
+            and _has_brief(history_dicts)
+        ):
             handoff_data = {
                 "ready_for_handoff": True,
                 "lead_email": _scanned_email,
-                "lead_name": _guess_lead_name(history_dicts, _scanned_email),
+                "lead_telegram_username": _scanned_tg,
+                "lead_phone": _scanned_phone,
+                "lead_name": _guess_lead_name(history_dicts, _scanned_email or _scanned_tg or ""),
                 "task_summary": " | ".join(
                     c for c in _user_messages(history_dicts) if c.strip()
                 )[:1000],
                 "project_type": "Unknown",
             }
             log.info(
-                f"[{str(conversation.id)[:8]}] email-backstop handoff "
-                f"(классификатор не сказал ready, но email+бриф есть)"
+                f"[{str(conversation.id)[:8]}] contact-backstop handoff "
+                f"(email={bool(_scanned_email)} tg={bool(_scanned_tg)} phone={bool(_scanned_phone)})"
             )
         if handoff_data:
-            # email из классификатора ИЛИ из backstop-скана сообщений
             email = _extract_email_from_handoff(handoff_data) or (
                 _scanned_email if _is_valid_email(_scanned_email) else ""
             )
-            if email:
-                handoff_data.setdefault("lead_email", email)
-                # Persist email on the customer (idempotent if already set).
-                # update_email also handles cross-channel merges if another
-                # customer happens to own the same email.
-                try:
-                    from services.identity import update_email
-                    update_email(db, customer.id, email)
-                except Exception as e:
-                    log.warning(
-                        f"[{str(conversation.id)[:8]}] update_email failed: {e}"
-                    )
-                # Fix #2: имя в карточку/задачу — сохраняем lead_name на клиенте,
-                # если ещё не задано (иначе задачи показывают email вместо имени).
+            tg = (handoff_data.get("lead_telegram_username") or _scanned_tg or "").strip()
+            phone = (handoff_data.get("lead_phone") or _scanned_phone or "").strip()
+            if email or tg or phone:
+                # Прокидываем контакты в handoff_data — попадут в brief оператору
+                # и в карточку сделки (чтобы менеджер знал, куда писать).
+                if email:
+                    handoff_data.setdefault("lead_email", email)
+                if tg:
+                    handoff_data.setdefault("lead_telegram_username", tg)
+                if phone:
+                    handoff_data.setdefault("lead_phone", phone)
+                # Persist email (если есть) — стабильный якорь + кросс-канал мёрж.
+                if email:
+                    try:
+                        from services.identity import update_email
+                        update_email(db, customer.id, email)
+                    except Exception as e:
+                        log.warning(
+                            f"[{str(conversation.id)[:8]}] update_email failed: {e}"
+                        )
+                # Persist телефон, если дан и ещё не записан.
+                if phone and not (customer.phone or "").strip():
+                    try:
+                        customer.phone = phone[:50]
+                    except Exception:  # noqa: BLE001
+                        pass
+                # Имя в карточку/задачу.
                 _ln = (handoff_data.get("lead_name") or "").strip()
                 if _ln and not (customer.name or "").strip():
                     try:
@@ -1367,15 +1416,10 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 mark_handoff_done(db, conversation.id)
                 handoff_triggered = True
             else:
-                # Build a small diagnostic so logs show why we suppressed
-                preview = {
-                    k: handoff_data.get(k)
-                    for k in ("lead_email", "lead_contact", "lead_telegram_username", "lead_phone")
-                    if handoff_data.get(k)
-                }
+                # Контакта нет вообще — ждём, пока лид даст email/telegram/телефон.
                 log.info(
-                    f"[{str(conversation.id)[:8]}] classifier ready but no valid email — "
-                    f"suppressed. fields={preview!r}"
+                    f"[{str(conversation.id)[:8]}] classifier ready but NO contact "
+                    f"(email/tg/phone) — suppressed, бот попросит контакт"
                 )
 
     # 8b. Funnel auto-transition (Phase 9b, 2026-05-27).
