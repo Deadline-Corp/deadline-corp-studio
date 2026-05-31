@@ -742,6 +742,19 @@ class HubSpotAdapter(CRMAdapter):
         )
         return task_id
 
+    async def complete_task(self, task_id: str) -> bool:
+        """Пометить задачу COMPLETED (после самоисполнения ботом)."""
+        if not task_id:
+            return False
+        await self._ensure_setup()
+        resp = await self._req(
+            "PATCH", f"/crm/v3/objects/tasks/{task_id}",
+            json={"properties": {"hs_task_status": "COMPLETED"}},
+        )
+        resp.raise_for_status()
+        logger.info("[hubspot] task %s → COMPLETED", task_id)
+        return True
+
 
 # ----------------------------------------------------------------------- helpers
 
