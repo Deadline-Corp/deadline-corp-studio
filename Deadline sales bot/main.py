@@ -2246,6 +2246,51 @@ def _verify_training_token(request: Request) -> None:
         raise HTTPException(status_code=403, detail="Invalid token")
 
 
+# ---- Task Engine B2 debug endpoints (под тем же admin-токеном) ----
+
+@app.post("/admin/cron/sweep")
+async def admin_cron_sweep(_: None = Depends(_verify_training_token)):
+    """Force-run крон-свипа + само-исполнения отложенных действий (для теста,
+    чтобы не ждать часовой интервал крона)."""
+    from services.cron import sweep_once
+    from services.scheduled_actions import run_due_followups
+    try:
+        sweep_stats = await sweep_once(tenant_config={})
+    except Exception as e:  # noqa: BLE001
+        sweep_stats = {"error": str(e)}
+    fu_stats = await run_due_followups(tenant_config=None)
+    return {"sweep": sweep_stats, "followups": fu_stats}
+
+
+@app.get("/admin/scheduled-actions")
+async def admin_scheduled_actions(
+    status: str = "pending",
+    db: Session = Depends(get_db),
+    _: None = Depends(_verify_training_token),
+):
+    """Список отложенных действий бота по статусу (pending/done/failed)."""
+    from db.models import ScheduledAction
+    rows = (
+        db.query(ScheduledAction)
+        .filter(ScheduledAction.status == status)
+        .order_by(ScheduledAction.due_at.asc())
+        .limit(50)
+        .all()
+    )
+    return {
+        "count": len(rows),
+        "items": [
+            {
+                "id": str(r.id), "action_type": r.action_type, "executor": r.executor,
+                "status": r.status,
+                "due_at": r.due_at.isoformat() if r.due_at else None,
+                "channel": r.channel, "chat_id": r.chat_id, "attempts": r.attempts,
+            }
+            for r in rows
+        ],
+    }
+
+
 @app.post("/admin/training/draft", response_model=TrainingProposalResponse)
 async def training_draft(
     req: TrainingDraftRequest,

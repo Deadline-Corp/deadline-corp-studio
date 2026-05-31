@@ -104,6 +104,15 @@ async def _worker_loop(*, tenant_config: dict, interval_sec: int) -> None:
             raise
         except Exception as exc:  # noqa: BLE001
             logger.warning("[cron] sweep failed (non-fatal): %s", exc)
+        # Task Engine B2 — само-исполнение отложенных действий бота. Отдельный
+        # try/except: баг здесь НЕ должен ломать прогрев/основной sweep.
+        try:
+            from services.scheduled_actions import run_due_followups
+            await run_due_followups(tenant_config=tenant_config)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[cron] run_due_followups failed (non-fatal): %s", exc)
         try:
             await asyncio.sleep(interval_sec)
         except asyncio.CancelledError:
