@@ -1424,6 +1424,23 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     # Defense-in-depth: enforce the no-prefix + capitalize-first-letter
     # convention regardless of what the LLM returned. See _normalize_bot_reply.
     answer = _normalize_bot_reply(raw_answer)
+
+    # Пост-гард (детерминированный): модель ненадёжно следует правилам/few-shot,
+    # поэтому жёстко чистим КОДОМ — приветствие-зеркало (Здравствуйте), вырезаем
+    # вопросы-выпытывания (наценка/бюджет/частота/тех-стек) и повторный запрос уже
+    # данных имени+email. См. services/reply_polish.
+    try:
+        from services import reply_polish as _rp
+        answer = _rp.polish(
+            answer,
+            lead_message=req.content,
+            is_first_turn=is_first_turn,
+            name_known=bool((getattr(customer, "name", None) or "").strip()),
+            email_known=bool((getattr(customer, "email", None) or "").strip()),
+        )
+    except Exception as _pe:  # noqa: BLE001
+        log.debug(f"reply_polish skipped: {_pe}")
+
     log.info(f"[{str(conversation.id)[:8]}/{req.channel}/{req.message_type}] A: {answer[:200]}")
 
     # 7. Persist assistant reply (normalized form — keeps DB clean for future reads)
