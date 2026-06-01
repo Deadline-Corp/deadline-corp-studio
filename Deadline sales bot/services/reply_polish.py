@@ -151,6 +151,18 @@ def polish(answer, *, lead_message="", is_first_turn=False,
     # Лид реально дал @ник (тогда «записал ваш телеграм» — правда, не трогаем).
     tg_handle_given = bool(re.search(r"@[A-Za-z0-9_]{3,}", lead_message or ""))
     lead_to_tg = lead_going_to_tg(lead_message)
+
+    # Контакт дан ПРЯМО в этом сообщении? Тогда переспрашивать его — глупость
+    # (extraction в БД срабатывает после генерации ответа, поэтому name_known/
+    # email_known из customer ещё False на этом ходе). Детектим в тексте.
+    _msg = lead_message or ""
+    if re.search(r"[\w.+-]+@[\w-]+\.[A-Za-z]{2,}", _msg):
+        email_known = True
+        # «Андрей, andrey@…» — ведущее имя + email в одном сообщении.
+        if re.match(r"^\s*[А-ЯЁA-Z][а-яёa-z]{1,}\s*[,.]", _msg):
+            name_known = True
+    if re.search(r"(меня\s+зовут|зовут\s+меня|\bзовут\b|\bмо[её]\s+имя\b|\bимя\s*[:—-])\s*[А-ЯЁA-Z]", _msg):
+        name_known = True
     out = mirror_greeting(answer, lead_message, is_first_turn)
     cleaned = drop_bad_questions(
         out, name_known=name_known, email_known=email_known,

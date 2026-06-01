@@ -68,6 +68,30 @@ def test_drop_imperative_reask_no_qmark():
     assert "telegram @deadline_corp" in out
 
 
+def test_no_reask_when_contact_given_same_turn():
+    # Лид дал имя+email В ЭТОМ сообщении → бот НЕ должен переспрашивать контакт
+    # (даже если customer.name/email ещё не записаны — extraction срабатывает позже).
+    ans = ("Понял — сайт для стоматологии. Давайте продолжим в telegram @deadline_corp. "
+           "Как вас зовут и на какой email продублировать?")
+    out = R.polish(ans, lead_message="Андрей, andrey.qa@example.com", is_first_turn=False)
+    assert "как вас зовут" not in out.lower()
+    assert "email продублировать" not in out.lower()
+
+
+def test_reask_kept_when_no_contact_in_message():
+    # Контакта в сообщении нет и customer пуст → спрашивать НАДО, не режем.
+    ans = "Понял задачу. Как вас зовут и на какой email написать?"
+    out = R.polish(ans, lead_message="нужен сайт для кафе", is_first_turn=False)
+    assert "как вас зовут" in out.lower()
+
+
+def test_greeting_not_mistaken_for_name():
+    # «Здравствуйте, нужен сайт» НЕ должно пометить имя как данное (нет email/зовут).
+    ans = "Здравствуйте! Как вас зовут и на какой email написать?"
+    out = R.polish(ans, lead_message="Здравствуйте, нужен сайт", is_first_turn=False)
+    assert "как вас зовут" in out.lower()  # имя НЕ распознано → ask остаётся
+
+
 def test_drop_false_telegram_record():
     # Лид сказал «я напишу в телеграм» (без ника) → «записал ваш телеграм» — ложь, режем.
     ans = ("Отлично, записал ваш телеграм — команда напишет вам в telegram. "
