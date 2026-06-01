@@ -474,6 +474,37 @@ class ScheduledAction(Base):
         )
 
 
+class CRMEvent(Base):
+    """Durable-запись события CRM-очереди (для recovery после рестарта).
+
+    Воркер пишет строку (status=pending) когда берёт событие, помечает done после
+    успешной отправки в CRM или failed после исчерпания ретраев. На старте
+    pending-строки переигрываются (services.crm_queue.recover_pending_events).
+    payload — JSON-safe снимок (без closures-колбэков; dataclasses/datetime
+    закодированы, см. crm_queue._serialize_payload)."""
+    __tablename__ = "crm_events"
+    __table_args__ = (
+        Index("ix_crm_events_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    # Без FK намеренно — reset/удаление клиента не должно ломать recovery.
+    customer_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    conversation_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    payload: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<CRMEvent {str(self.id)[:8]} {self.event_type} status={self.status}>"
+
+
 class ProcessedUpdate(Base):
     """Дедуп входящих апдейтов вебхуков, переживающий рестарт процесса.
 

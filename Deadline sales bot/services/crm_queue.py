@@ -68,6 +68,169 @@ RETRY_BACKOFF: tuple[float, ...] = (1.0, 3.0, 10.0)
 # Bounded queue — protects against unbounded growth if the adapter is wedged.
 DEFAULT_MAX_QUEUE_SIZE: int = 1000
 
+# =============================================================================
+# Durable persistence (recovery после рестарта)
+# =============================================================================
+# Очередь in-memory → события в ней теряются при рестарте. Воркер пишет строку
+# crm_events (pending) когда берёт событие, помечает done/failed. На старте
+# recover_pending_events() переигрывает оставшиеся pending. payload сериализуем
+# JSON-safe: closures-колбэки (on_*) выбрасываем (восстановим при recovery по
+# customer_id/conversation_id), dataclasses (Lead/Deal/MessageLog) и datetime
+# кодируем тегами.
+
+import dataclasses as _dc
+
+_DC_REGISTRY: dict = {"Lead": Lead, "Deal": Deal, "MessageLog": MessageLog}
+
+
+def _encode(v):
+    if _dc.is_dataclass(v) and not isinstance(v, type):
+        return {"__dc__": type(v).__name__, "f": _encode(_dc.asdict(v))}
+    if isinstance(v, datetime):
+        return {"__dt__": v.isoformat()}
+    if isinstance(v, dict):
+        return {k: _encode(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [_encode(x) for x in v]
+    return v
+
+
+def _decode(v):
+    if isinstance(v, dict):
+        if "__dt__" in v and len(v) == 1:
+            return datetime.fromisoformat(v["__dt__"])
+        if "__dc__" in v:
+            cls = _DC_REGISTRY.get(v["__dc__"])
+            fields = _decode(v.get("f") or {})
+            return cls(**fields) if cls else fields
+        return {k: _decode(x) for k, x in v.items()}
+    if isinstance(v, list):
+        return [_decode(x) for x in v]
+    return v
+
+
+def _serialize_payload(payload: dict) -> dict:
+    """JSON-safe снимок payload: без callable-колбэков, dataclasses/datetime закодированы."""
+    return {k: _encode(val) for k, val in payload.items() if not callable(val)}
+
+
+def _uuid_or_none(s):
+    from uuid import UUID
+    try:
+        return UUID(str(s)) if s else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _persist_pending(ev: "CRMEvent") -> Optional[str]:
+    """Записать crm_events (pending). Возвращает id строки. Sync — звать через to_thread."""
+    from db.connection import session_scope
+    from db.models import CRMEvent as CRMEventRow
+    try:
+        payload_json = _serialize_payload(ev.payload)
+        with session_scope() as s:
+            row = CRMEventRow(
+                event_type=ev.type,
+                customer_id=_uuid_or_none(ev.customer_id),
+                conversation_id=_uuid_or_none(ev.payload.get("conversation_id")),
+                payload=payload_json,
+                status="pending",
+                attempts=ev.attempt,
+            )
+            s.add(row)
+            s.flush()
+            return str(row.id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[crm_queue] persist pending failed type=%s: %s", ev.type, exc)
+        return None
+
+
+def _mark_event(row_id: Optional[str], status: str, error: Optional[str] = None) -> None:
+    """Пометить crm_events строку done/failed. Sync — звать через to_thread."""
+    if not row_id:
+        return
+    from db.connection import session_scope
+    from db.models import CRMEvent as CRMEventRow
+    from uuid import UUID
+    try:
+        with session_scope() as s:
+            row = s.get(CRMEventRow, UUID(row_id))
+            if row is not None:
+                row.status = status
+                row.processed_at = datetime.now(timezone.utc)
+                if error:
+                    row.last_error = str(error)[:500]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[crm_queue] mark %s failed row=%s: %s", status, row_id, exc)
+
+
+def _load_pending_rows(limit: int = 500) -> list[dict]:
+    """Прочитать pending crm_events (для recovery). Sync — звать через to_thread."""
+    from db.connection import session_scope
+    from db.models import CRMEvent as CRMEventRow
+    out: list[dict] = []
+    try:
+        with session_scope() as s:
+            rows = (
+                s.query(CRMEventRow)
+                .filter(CRMEventRow.status == "pending")
+                .order_by(CRMEventRow.created_at.asc())
+                .limit(limit)
+                .all()
+            )
+            for r in rows:
+                out.append({
+                    "id": str(r.id),
+                    "event_type": r.event_type,
+                    "customer_id": str(r.customer_id) if r.customer_id else None,
+                    "conversation_id": str(r.conversation_id) if r.conversation_id else None,
+                    "payload": r.payload or {},
+                    "attempts": r.attempts or 0,
+                })
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[crm_queue] load pending failed: %s", exc)
+    return out
+
+
+def _reconstruct_event(r: dict) -> Optional["CRMEvent"]:
+    """Восстановить CRMEvent из crm_events строки + перевесить writeback-колбэки."""
+    try:
+        payload = _decode(r.get("payload") or {})
+        et = r["event_type"]
+        # Перевешиваем критичные writeback-колбэки (contact_id/deal_id) по id —
+        # они нужны для pending-резолва и идемпотентности. task_id-writeback
+        # пропускаем (некритично: зеркальная задача просто не авто-закроется).
+        from services import crm_dispatch as _cd
+        if et == "upsert_contact" and r.get("customer_id"):
+            payload["on_contact_id"] = _cd._make_contact_id_writeback(r["customer_id"])
+        elif et == "create_deal" and r.get("conversation_id"):
+            payload["on_deal_id"] = _cd._make_deal_id_writeback(r["conversation_id"])
+        ev = CRMEvent(
+            type=et, payload=payload,
+            customer_id=r.get("customer_id") or "",
+            attempt=r.get("attempts") or 0,
+            row_id=r["id"],
+        )
+        return ev
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[crm_queue] reconstruct failed row=%s: %s", r.get("id"), exc)
+        return None
+
+
+async def recover_pending_events() -> int:
+    """Старт: переиграть pending crm_events, оставшиеся от прошлого процесса
+    (потеряны из in-memory очереди при рестарте). Дубль-обработка безопасна:
+    create_deal идемпотентен, update_stage идемпотентен, log/task — мягкие дубли."""
+    rows = await asyncio.to_thread(_load_pending_rows)
+    n = 0
+    for r in rows:
+        ev = _reconstruct_event(r)
+        if ev is not None and enqueue(ev):
+            n += 1
+    if rows:
+        logger.info("[crm_queue] recovery: re-enqueued %d/%d pending CRM events", n, len(rows))
+    return n
+
 
 @dataclass
 class CRMEvent:
@@ -83,6 +246,7 @@ class CRMEvent:
     customer_id: str                           # used for diagnostic logging + future per-customer ordering
     enqueued_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     attempt: int = 0                            # 0 = first try; incremented on each retry
+    row_id: Optional[str] = None               # id durable-строки crm_events (для mark done/failed)
 
 
 # =============================================================================
@@ -116,6 +280,12 @@ async def start_worker(adapter: CRMAdapter, max_size: int = DEFAULT_MAX_QUEUE_SI
     _worker_task = asyncio.create_task(_worker_loop(queue, adapter))
     logger.info("[crm_queue] worker started (adapter=%s, max_size=%d)",
                 adapter.provider_name, max_size)
+    # Recovery: переиграть pending CRM-события прошлого процесса (потеряны из
+    # in-memory очереди при рестарте). Fire-and-forget — не тормозим старт.
+    try:
+        asyncio.create_task(recover_pending_events())
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[crm_queue] could not schedule recovery: %s", exc)
 
 
 async def stop_worker(timeout: float = 5.0) -> None:
@@ -168,7 +338,12 @@ async def _worker_loop(queue: asyncio.Queue[CRMEvent], adapter: CRMAdapter) -> N
     while True:
         ev = await queue.get()
         try:
+            # Durable: фиксируем событие (pending) ДО отправки в CRM, чтобы
+            # пережить рестарт. Уже восстановленные (row_id есть) не дублируем.
+            if ev.row_id is None:
+                ev.row_id = await asyncio.to_thread(_persist_pending, ev)
             await _dispatch(ev, adapter)
+            await asyncio.to_thread(_mark_event, ev.row_id, "done")
         except asyncio.CancelledError:
             queue.task_done()
             raise
@@ -372,6 +547,8 @@ async def _handle_failure(
             "[crm_queue] event %s customer=%s DROPPED after %d attempts: %s",
             ev.type, ev.customer_id, ev.attempt + 1, exc,
         )
+        # Durable: помечаем строку failed (для разбора/реконсиляции, не теряем след).
+        await asyncio.to_thread(_mark_event, ev.row_id, "failed", str(exc))
 
 
 # =============================================================================
