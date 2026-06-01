@@ -1358,6 +1358,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 _pref_nb, _pref_hmin, _pref_hmax = _sched.parse_time_preference(req.content, _now)
                 _has_pref = _pref_nb is not None or _pref_hmin is not None
                 _valid = [s for s in _offered if s > _now]
+                _slots = None  # инициализация: в ветке ask_time слоты не считаем
                 if _valid and not _has_pref:
                     # Уже предлагали времена, лид НЕ выбрал и НЕ назвал своё → НЕ долбим
                     # тем же списком (фикс зацикливания «где удобно?» по кругу).
