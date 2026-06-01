@@ -402,6 +402,7 @@ def dispatch_on_message_turn(
     lead_messages_count: int = 0,
     project_type: Optional[str] = None,
     handoff_data: Optional[dict] = None,
+    call_booked_at=None,
 ) -> None:
     """Process one message turn — enqueue CRM events implied.
 
@@ -460,6 +461,7 @@ def dispatch_on_message_turn(
             handoff_just_fired
             or score >= DEAL_CREATION_SCORE_THRESHOLD
             or lead_messages_count >= DEAL_CREATION_LEAD_MESSAGES_THRESHOLD
+            or call_booked_at is not None  # бронь созвона = точно реальный лид
         )
         if should_create_deal:
             _enqueue_create_deal(
@@ -473,6 +475,23 @@ def dispatch_on_message_turn(
                 "[crm_dispatch] deal create triggered for conv=%s "
                 "(handoff=%s score=%d msgs=%d)",
                 str(conversation.id)[:8], handoff_just_fired, score, lead_messages_count,
+            )
+
+        # 2b. Созвон назначен → двигаем сделку в «📞 Созвон назначен» + пишем время
+        #     в карточку. Enqueue ПОСЛЕ create_deal (FIFO) — worker резолвит deal_id
+        #     из writeback create_deal. Бронь форсит создание сделки (см. выше),
+        #     поэтому карточка точно появится, даже если порогов ещё не было.
+        if call_booked_at is not None:
+            dispatch_stage_change(
+                customer_id=customer_id,
+                crm_deal_id=deal_id,
+                new_stage="on_call",
+                conversation_id=str(conversation.id),
+                next_meeting_at=call_booked_at,
+            )
+            logger.info(
+                "[crm_dispatch] call booked → stage on_call conv=%s at=%s",
+                str(conversation.id)[:8], call_booked_at,
             )
 
         # 3. Log lead message

@@ -1189,6 +1189,9 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     # поэтому слоты на сайте НЕ предлагаем (см. # КАНАЛ в SYSTEM_PROMPT).
     _call_slots_human = None
     _just_booked_human = None
+    _call_medium = None
+    _call_booked_at = None       # → dispatch_on_message_turn: создаст сделку + стадию on_call
+    _booked_info_human = None    # созвон уже назначен ранее → бот не зацикливается
     _booking_channel_ok = (req.channel or "website").lower() != "website"
     if settings.crm_enabled and not is_comment_mode and _booking_channel_ok:
         try:
@@ -1208,7 +1211,20 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 1 for m in recent
                 if (m.role.value if hasattr(m.role, "value") else str(m.role)) == "user"
             )
-            if _chosen is not None and not _booked:
+            if _booked:
+                # --- УЖЕ ЗАБРОНИРОВАНО --- не переспрашивать время/канал, не зацикливаться.
+                # Если лид только сейчас назвал канал — дозаписываем (без повторного вопроса).
+                _new_medium = _sched.detect_call_medium(req.content)
+                if _new_medium and _profile.get("call_medium") != _new_medium:
+                    _profile["call_medium"] = _new_medium
+                    customer.profile_data = _profile
+                try:
+                    _when = _sched.format_slot_human(_dtm.fromisoformat(_booked), _now)
+                except Exception:  # noqa: BLE001
+                    _when = "назначенное время"
+                _m = _profile.get("call_medium")
+                _booked_info_human = _when + (f", {_m}" if _m else "")
+            elif _chosen is not None:
                 # --- БРОНЬ ---
                 _medium = _sched.detect_call_medium(req.content) or _profile.get("call_medium")
                 _profile["booked_call_at"] = _chosen.isoformat()
@@ -1217,18 +1233,9 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 _profile.pop("offered_call_slots", None)
                 customer.profile_data = _profile
                 _just_booked_human = _sched.format_slot_human(_chosen, _now)
+                _call_medium = _medium
+                _call_booked_at = _chosen  # сделку создаст/двинет dispatch_on_message_turn (после create_deal)
                 conversation.lead_stage = "on_call"
-                try:
-                    from services.crm_dispatch import dispatch_stage_change
-                    dispatch_stage_change(
-                        customer_id=str(customer.id),
-                        crm_deal_id=conversation.crm_deal_id,
-                        new_stage="on_call",
-                        conversation_id=str(conversation.id),
-                        next_meeting_at=_chosen,
-                    )
-                except Exception as _ce:  # noqa: BLE001
-                    log.warning(f"[{str(conversation.id)[:8]}] call stage dispatch failed: {_ce}")
                 try:
                     from services.scheduled_actions import write_call_booking, write_call_reminder
                     _chat = getattr(conversation, "channel_conversation_id", None)
@@ -1272,7 +1279,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 except Exception as _re:  # noqa: BLE001
                     log.warning(f"[{str(conversation.id)[:8]}] call reminders write failed: {_re}")
                 log.info(f"[{str(conversation.id)[:8]}] call booked at {_chosen.isoformat()} medium={_medium}")
-            elif not _booked and _lead_msg_n >= 2:
+            elif _lead_msg_n >= 2:
                 # --- ПРЕДЛОЖИТЬ СЛОТЫ --- (не на первом «привет»)
                 # Если лид в ЭТОМ сообщении выразил пожелание («завтра утром»,
                 # «в среду») — пересчитываем под него; иначе переиспользуем ранее
@@ -1310,6 +1317,8 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         channel=req.channel,
         call_slots=_call_slots_human,
         just_booked=_just_booked_human,
+        call_medium=_call_medium,
+        booked_info=_booked_info_human,
     )
 
     # Show "печатает..." indicator in the lead's Telegram chat while the LLM
@@ -1694,6 +1703,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 lead_messages_count=lead_msg_count_for_crm,
                 project_type=None,  # not currently extracted from the conversation
                 handoff_data=handoff_data,  # Phase C1: readable deal title + brief
+                call_booked_at=_call_booked_at,  # бронь созвона → создать сделку + on_call
             )
         except Exception as exc:  # noqa: BLE001
             log.warning(f"[{str(conversation.id)[:8]}] crm dispatch failed: {exc}")
