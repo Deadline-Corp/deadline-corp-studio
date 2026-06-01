@@ -1206,6 +1206,16 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                     _offered.append(_dtm.fromisoformat(_x))
                 except Exception:  # noqa: BLE001
                     pass
+            # Анти-стале: если лид назвал ДЕНЬ, которого нет среди предложенных
+            # слотов (предлагали «завтра», а он просит «в пятницу») — старые слоты
+            # протухли, НЕ бронируем по ним. Сбрасываем → ниже пересчитаем под день.
+            _pref_nb_early, _, _ = _sched.parse_time_preference(req.content, _now)
+            if _pref_nb_early is not None and _offered:
+                _pday = _sched._to_local(_pref_nb_early).date()
+                if not any(_sched._to_local(s).date() == _pday for s in _offered):
+                    _offered = []
+                    _profile.pop("offered_call_slots", None)
+                    customer.profile_data = _profile
             _chosen = _sched.parse_slot_choice(req.content, _offered) if _offered else None
             _lead_msg_n = sum(
                 1 for m in recent
