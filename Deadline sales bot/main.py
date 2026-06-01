@@ -688,6 +688,294 @@ async def send_telegram_brief(session_id: str, handoff_data: dict, history_dicts
 # CORE — universal message handler (the brains of /message and /chat alias)
 # ============================================================================
 
+def _run_finalize_in_thread(**kwargs) -> None:
+    """Thread entry point for the post-reply tail — mirrors _process_in_thread.
+
+    Spins up its own asyncio event loop because the caller's loop (the FastAPI
+    main loop for the website widget, or the per-update loop the Telegram
+    worker created via asyncio.run) has already moved on / is about to be torn
+    down by the time we run. A separate OS thread is fully decoupled, so the
+    lead-facing reply is flushed immediately while this runs in the background.
+    """
+    try:
+        asyncio.run(_finalize_turn(**kwargs))
+    except Exception as e:  # noqa: BLE001
+        log.error(f"_run_finalize_in_thread crashed: {e}", exc_info=True)
+
+
+async def _finalize_turn(
+    *,
+    conversation_id: PyUUID,
+    customer_id: PyUUID,
+    req: "MessageRequest",
+    answer: str,
+    lead_texts: list[str],
+    bot_texts: list[str],
+    lead_msg_count: int,
+    interaction_type: Optional[str],
+    is_first_touch: bool,
+    is_comment_mode: bool,
+) -> None:
+    """Post-reply tail: handoff classifier + escalation + funnel + CRM dispatch.
+
+    Runs in a background thread AFTER the lead-facing reply has been committed
+    and returned, so the (slow) second LLM call inside check_handoff no longer
+    blocks the response — roughly halving perceived latency.
+
+    Opens its OWN DB session via session_scope because the request-scoped
+    session from Depends(get_db) is already closed by the time we run. All
+    exceptions are caught: there is no caller to return them to, and the
+    message turn itself is already safely persisted. A failure here just means
+    handoff/CRM is re-evaluated on the lead's next turn (handoff_done is still
+    False), so it self-heals.
+
+    `lead_texts` / `bot_texts` / `lead_msg_count` are passed in from the
+    request handler (derived from the same `recent` window the synchronous
+    version used, i.e. BEFORE this turn's assistant reply was appended) so the
+    escalation/funnel/CRM inputs stay byte-for-byte identical to the old flow.
+    Handoff still re-reads the full history (limit=20) itself, exactly as
+    before (it ran after the assistant reply was persisted).
+    """
+    try:
+        with session_scope() as db:
+            from db.models import Customer
+            conversation = db.get(ConvRow, conversation_id)
+            customer = db.get(Customer, customer_id)
+            if conversation is None or customer is None:
+                log.warning(
+                    f"_finalize_turn: conversation/customer vanished "
+                    f"(conv={conversation_id} cust={customer_id}) — skipping tail"
+                )
+                return
+
+            # 7b. Escalation triggers (Phase 9c+10ab, 2026-05-27) — run the 7
+            #     Notion §21 checks and mirror any that fire into the operator
+            #     topic. Rate-limited per (conversation, type) so the same alert
+            #     doesn't spam every turn. Confidence is a heuristic over the
+            #     just-produced answer; budget is regex-extracted from the lead's
+            #     message and stashed on Customer.profile_data for HubSpot.
+            if settings.crm_enabled and not is_comment_mode:
+                try:
+                    from services.escalation import run_escalation_checks, format_alert_text
+                    from services.signal_extraction import (
+                        estimate_bot_confidence,
+                        extract_budget_rub,
+                    )
+                    confidence = estimate_bot_confidence(answer)
+                    budget_rub = extract_budget_rub(req.content)
+                    if budget_rub is not None:
+                        profile = dict(customer.profile_data or {})
+                        profile["estimated_budget_rub"] = budget_rub
+                        customer.profile_data = profile
+                        log.info(
+                            f"[{str(conversation.id)[:8]}] budget extracted: ~{budget_rub:,} RUB"
+                        )
+                    fired_triggers = run_escalation_checks(
+                        conversation_id=str(conversation.id),
+                        confidence=confidence,
+                        message_text=req.content,
+                        recent_lead_messages=lead_texts,
+                        recent_bot_replies=bot_texts,
+                        estimated_budget_rub=budget_rub,
+                        tenant_config=tenant.raw_config,
+                    )
+                    if fired_triggers:
+                        trigger_summary = ", ".join(t.type for t in fired_triggers)
+                        log.info(
+                            f"[{str(conversation.id)[:8]}] escalation triggers fired: {trigger_summary}"
+                        )
+                        if conversation.forum_topic_id and settings.telegram_operator_group_id and settings.telegram_bot_token:
+                            for t in fired_triggers:
+                                await send_to_topic(
+                                    settings.telegram_bot_token,
+                                    settings.telegram_operator_group_id,
+                                    conversation.forum_topic_id,
+                                    format_alert_text(t),
+                                )
+                except Exception as exc:  # noqa: BLE001
+                    log.warning(
+                        f"[{str(conversation.id)[:8]}] escalation checks failed (non-fatal): {exc}"
+                    )
+
+            # 8. Handoff — gated on a real contact (policy 2026-05-19). Any of
+            #    email / telegram @username / phone qualifies; in a messenger the
+            #    channel itself IS the contact. SKIP for public comments.
+            handoff_triggered = False
+            handoff_data = None
+            if not conversation.handoff_done and not is_comment_mode:
+                all_recent = get_recent_messages(db, conversation.id, limit=20)
+                history_dicts = _messages_to_dicts(all_recent)
+                handoff_data = await check_handoff(history_dicts)
+                # Email-backstop: если классификатор НЕ сказал ready, но лид уже дал
+                # валидный email + внятный бриф — квалифицируем сами (T1-кейс).
+                # Любой контакт годится: email / telegram @username / телефон.
+                _scanned_email = _scan_lead_email(history_dicts)
+                _scanned_tg = _scan_lead_telegram(history_dicts)
+                _scanned_phone = _scan_lead_phone(history_dicts)
+                # В мессенджере (telegram/whatsapp/...) сам КАНАЛ = контакт: лид уже
+                # доступен здесь, отдельный email/telegram в тексте не нужен.
+                _is_msgr = (req.channel or "website").lower() != "website"
+                if (
+                    handoff_data is None
+                    and (_scanned_email or _scanned_tg or _scanned_phone or _is_msgr)
+                    and _has_brief(history_dicts)
+                ):
+                    handoff_data = {
+                        "ready_for_handoff": True,
+                        "lead_email": _scanned_email,
+                        "lead_telegram_username": _scanned_tg,
+                        "lead_phone": _scanned_phone,
+                        "lead_name": _guess_lead_name(history_dicts, _scanned_email or _scanned_tg or ""),
+                        "task_summary": " | ".join(
+                            c for c in _user_messages(history_dicts) if c.strip()
+                        )[:1000],
+                        "project_type": "Unknown",
+                    }
+                    log.info(
+                        f"[{str(conversation.id)[:8]}] contact-backstop handoff "
+                        f"(email={bool(_scanned_email)} tg={bool(_scanned_tg)} "
+                        f"phone={bool(_scanned_phone)} msgr={_is_msgr})"
+                    )
+                if handoff_data:
+                    email = _extract_email_from_handoff(handoff_data) or (
+                        _scanned_email if _is_valid_email(_scanned_email) else ""
+                    )
+                    tg = (handoff_data.get("lead_telegram_username") or _scanned_tg or "").strip()
+                    phone = (handoff_data.get("lead_phone") or _scanned_phone or "").strip()
+                    if email or tg or phone or _is_msgr:
+                        # Прокидываем контакты в handoff_data — попадут в brief оператору
+                        # и в карточку сделки (чтобы менеджер знал, куда писать).
+                        if email:
+                            handoff_data.setdefault("lead_email", email)
+                        if tg:
+                            handoff_data.setdefault("lead_telegram_username", tg)
+                        if phone:
+                            handoff_data.setdefault("lead_phone", phone)
+                        # Persist email (если есть) — стабильный якорь + кросс-канал мёрж.
+                        if email:
+                            try:
+                                from services.identity import update_email
+                                update_email(db, customer.id, email)
+                            except Exception as e:
+                                log.warning(
+                                    f"[{str(conversation.id)[:8]}] update_email failed: {e}"
+                                )
+                        # Persist телефон, если дан и ещё не записан.
+                        if phone and not (customer.phone or "").strip():
+                            try:
+                                customer.phone = phone[:50]
+                            except Exception:  # noqa: BLE001
+                                pass
+                        # Persist telegram @username в identity_keys — чтобы потом склеить
+                        # с этим же человеком, когда он напишет из своего Telegram
+                        # (кросс-канальный мёрж: сайт @username ↔ telegram from_user).
+                        if tg:
+                            try:
+                                _h = tg if tg.startswith("@") else "@" + tg
+                                _ik = dict(customer.identity_keys or {})
+                                if _ik.get("tg_handle") != _h:
+                                    _ik["tg_handle"] = _h
+                                    customer.identity_keys = _ik
+                            except Exception:  # noqa: BLE001
+                                pass
+                        # Имя в карточку/задачу.
+                        _ln = (handoff_data.get("lead_name") or "").strip()
+                        if _ln and not (customer.name or "").strip():
+                            try:
+                                customer.name = _ln[:200]
+                            except Exception:  # noqa: BLE001
+                                pass
+
+                        await send_telegram_brief(str(conversation.id), handoff_data, history_dicts)
+                        mark_handoff_done(db, conversation.id)
+                        handoff_triggered = True
+                    else:
+                        # Контакта нет вообще — ждём, пока лид даст email/telegram/телефон.
+                        log.info(
+                            f"[{str(conversation.id)[:8]}] classifier ready but NO contact "
+                            f"(email/tg/phone) — suppressed, бот попросит контакт"
+                        )
+
+            # 8b. Funnel auto-transition (Phase 9b, 2026-05-27). Advances
+            #     conversation.lead_stage on valid forward transitions and pushes
+            #     the change to CRM via dispatch_stage_change.
+            if settings.crm_enabled and not is_comment_mode:
+                try:
+                    from services.funnel import (
+                        decide_from_tenant_config as _funnel_decide,
+                        can_auto_transition,
+                    )
+                    hard_stop_signal = (
+                        interaction_type == "HardStop" and is_first_touch
+                    )
+                    current_stage = conversation.lead_stage or "new_lead"
+                    decision = _funnel_decide(
+                        current_stage=current_stage,
+                        tenant_config=tenant.raw_config,
+                        lead_messages_so_far=lead_msg_count,
+                        classifier_says_ready=handoff_triggered,
+                        hard_stop_signal=hard_stop_signal,
+                    )
+                    if (
+                        decision.should_transition
+                        and decision.target_stage
+                        and can_auto_transition(current_stage, decision.target_stage)
+                    ):
+                        new_stage = decision.target_stage
+                        conversation.lead_stage = new_stage
+                        if new_stage == "lost":
+                            conversation.lost_reason = decision.lost_reason
+                        log.info(
+                            f"[{str(conversation.id)[:8]}] funnel: {current_stage} → {new_stage} "
+                            f"({decision.reason})"
+                        )
+                        from services.crm_dispatch import dispatch_stage_change
+                        dispatch_stage_change(
+                            customer_id=str(customer.id),
+                            crm_deal_id=conversation.crm_deal_id,
+                            new_stage=new_stage,
+                            lost_reason=decision.lost_reason,
+                            conversation_id=str(conversation.id),
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    log.warning(
+                        f"[{str(conversation.id)[:8]}] funnel transition failed (non-fatal): {exc}"
+                    )
+
+            # 9. Commit handoff/funnel mutations before CRM dispatch (the worker
+            #    lazy-resolves deals from DB, so persist first). The message turn
+            #    itself was already committed by the request handler.
+            db.commit()
+
+            # 10. CRM sync (Phase 8a, 2026-05-26) — enqueue events to the worker.
+            #     No-op when crm_enabled=False. Broad try so a CRM hiccup never
+            #     breaks anything — bot's own Postgres remains the source of truth.
+            if settings.crm_enabled:
+                try:
+                    from services.crm_dispatch import dispatch_on_message_turn
+                    # Phase C1.2: прокидываем источник трафика (widget → extra_meta)
+                    # в handoff_data, чтобы он попал в карточку сделки.
+                    if handoff_data is not None and isinstance(req.extra_meta, dict):
+                        _ts = req.extra_meta.get("traffic_source")
+                        if _ts:
+                            handoff_data["traffic_source"] = _ts
+                    dispatch_on_message_turn(
+                        customer=customer,
+                        conversation=conversation,
+                        last_lead_message=req.content,
+                        last_bot_reply=answer,
+                        handoff_just_fired=handoff_triggered,
+                        channel=req.channel,
+                        lead_messages_count=lead_msg_count,
+                        project_type=None,  # not currently extracted from the conversation
+                        handoff_data=handoff_data,  # Phase C1: readable deal title + brief
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    log.warning(f"[{str(conversation.id)[:8]}] crm dispatch failed: {exc}")
+    except Exception as e:  # noqa: BLE001
+        log.error(f"_finalize_turn failed (conv={conversation_id}): {e}", exc_info=True)
+
+
 async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     """Pipeline:
       1. Identity: (channel, external_id, email?) → Customer (existing or new)
@@ -1305,278 +1593,56 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
             },
         )
 
-    # 7b. Escalation triggers (Phase 9c+10ab, 2026-05-27) — run the 7 Notion §21
-    #     checks and mirror any that fire into the operator topic. Rate-limited
-    #     per (conversation, type) so the same alert doesn't spam every turn.
+    # ---- Fast path complete: the lead-facing reply is ready. ----
+    # Commit the turn NOW (lead message + assistant reply + per-turn lead-signal
+    # updates + forum-topic links) so the lead gets the answer immediately, then
+    # run the heavier tail (handoff classifier LLM call, escalation, funnel, CRM
+    # dispatch) in a background thread with its own DB session. This removes the
+    # second blocking LLM call from the response path — roughly halving latency.
     #
-    #     Phase 10a: bot-reply confidence comes from a heuristic over hedging
-    #     phrases in the just-produced answer (no LLM call). Fires the
-    #     low_confidence trigger when the bot is clearly unsure.
-    #     Phase 10b: budget is regex-extracted from the lead's message and
-    #     stashed on Customer.profile_data so operators see the parsed
-    #     figure in HubSpot. Fires the large_deal_above_threshold trigger
-    #     when above tenant.discount.auto_above_budget_threshold.
-    if settings.crm_enabled and not is_comment_mode:
-        try:
-            from services.escalation import run_escalation_checks, format_alert_text
-            from services.signal_extraction import (
-                estimate_bot_confidence,
-                extract_budget_rub,
-            )
-            lead_texts = [
-                m.content for m in recent
-                if (m.role.value if hasattr(m.role, "value") else str(m.role)) == "user"
-            ]
-            bot_texts = [
-                m.content for m in recent
-                if (m.role.value if hasattr(m.role, "value") else str(m.role)) == "assistant"
-            ]
-            confidence = estimate_bot_confidence(answer)
-            budget_rub = extract_budget_rub(req.content)
-            # Persist parsed budget so operators see it in HubSpot — keeps the
-            # latest detected figure on the customer profile_data JSONB.
-            if budget_rub is not None:
-                profile = dict(customer.profile_data or {})
-                profile["estimated_budget_rub"] = budget_rub
-                customer.profile_data = profile
-                log.info(
-                    f"[{str(conversation.id)[:8]}] budget extracted: ~{budget_rub:,} RUB"
-                )
-            fired_triggers = run_escalation_checks(
-                conversation_id=str(conversation.id),
-                confidence=confidence,
-                message_text=req.content,
-                recent_lead_messages=lead_texts,
-                recent_bot_replies=bot_texts,
-                estimated_budget_rub=budget_rub,
-                tenant_config=tenant.raw_config,
-            )
-            if fired_triggers:
-                trigger_summary = ", ".join(t.type for t in fired_triggers)
-                log.info(
-                    f"[{str(conversation.id)[:8]}] escalation triggers fired: {trigger_summary}"
-                )
-                # Mirror each fired trigger into the operator topic
-                if conversation.forum_topic_id and settings.telegram_operator_group_id and settings.telegram_bot_token:
-                    for t in fired_triggers:
-                        await send_to_topic(
-                            settings.telegram_bot_token,
-                            settings.telegram_operator_group_id,
-                            conversation.forum_topic_id,
-                            format_alert_text(t),
-                        )
-        except Exception as exc:  # noqa: BLE001
-            log.warning(
-                f"[{str(conversation.id)[:8]}] escalation checks failed (non-fatal): {exc}"
-            )
+    # Derive the escalation/funnel/CRM inputs HERE from `recent` so the tail sees
+    # the exact same window the synchronous version did (recent was fetched
+    # BEFORE this turn's assistant reply was appended).
+    _esc_lead_texts = [
+        m.content for m in recent
+        if (m.role.value if hasattr(m.role, "value") else str(m.role)) == "user"
+    ]
+    _esc_bot_texts = [
+        m.content for m in recent
+        if (m.role.value if hasattr(m.role, "value") else str(m.role)) == "assistant"
+    ]
+    _lead_msg_count = sum(
+        1 for m in recent
+        if (m.role.value if hasattr(m.role, "value") else str(m.role)) == "user"
+    )
+    _sig_interaction = signal_update.interaction_type if signal_update is not None else None
+    _sig_first_touch = bool(signal_update.is_first_touch) if signal_update is not None else False
 
-    # 8. Handoff — gated on a real email (policy 2026-05-19).
-    #    Email is the only mandatory contact: it's stable identity, while
-    #    Telegram @username is mutable and would break our identity mapping
-    #    if the user later renames it.
-    #    SKIP entirely for public comments — contacts are not exchanged in
-    #    public threads, and operator briefs there would be noise.
-    handoff_triggered = False
-    handoff_data = None  # Phase C1: kept in function scope so the CRM dispatch
-                         # below can build a readable deal title + brief from it
-    if not conversation.handoff_done and not is_comment_mode:
-        all_recent = get_recent_messages(db, conversation.id, limit=20)
-        history_dicts = _messages_to_dicts(all_recent)
-        handoff_data = await check_handoff(history_dicts)
-        # Email-backstop: если классификатор НЕ сказал ready, но лид уже дал
-        # валидный email + внятный бриф — квалифицируем сами (T1-кейс).
-        # Любой контакт годится: email / telegram @username / телефон.
-        _scanned_email = _scan_lead_email(history_dicts)
-        _scanned_tg = _scan_lead_telegram(history_dicts)
-        _scanned_phone = _scan_lead_phone(history_dicts)
-        # В мессенджере (telegram/whatsapp/...) сам КАНАЛ = контакт: лид уже
-        # доступен здесь, отдельный email/telegram в тексте не нужен.
-        _is_msgr = (req.channel or "website").lower() != "website"
-        if (
-            handoff_data is None
-            and (_scanned_email or _scanned_tg or _scanned_phone or _is_msgr)
-            and _has_brief(history_dicts)
-        ):
-            handoff_data = {
-                "ready_for_handoff": True,
-                "lead_email": _scanned_email,
-                "lead_telegram_username": _scanned_tg,
-                "lead_phone": _scanned_phone,
-                "lead_name": _guess_lead_name(history_dicts, _scanned_email or _scanned_tg or ""),
-                "task_summary": " | ".join(
-                    c for c in _user_messages(history_dicts) if c.strip()
-                )[:1000],
-                "project_type": "Unknown",
-            }
-            log.info(
-                f"[{str(conversation.id)[:8]}] contact-backstop handoff "
-                f"(email={bool(_scanned_email)} tg={bool(_scanned_tg)} "
-                f"phone={bool(_scanned_phone)} msgr={_is_msgr})"
-            )
-        if handoff_data:
-            email = _extract_email_from_handoff(handoff_data) or (
-                _scanned_email if _is_valid_email(_scanned_email) else ""
-            )
-            tg = (handoff_data.get("lead_telegram_username") or _scanned_tg or "").strip()
-            phone = (handoff_data.get("lead_phone") or _scanned_phone or "").strip()
-            if email or tg or phone or _is_msgr:
-                # Прокидываем контакты в handoff_data — попадут в brief оператору
-                # и в карточку сделки (чтобы менеджер знал, куда писать).
-                if email:
-                    handoff_data.setdefault("lead_email", email)
-                if tg:
-                    handoff_data.setdefault("lead_telegram_username", tg)
-                if phone:
-                    handoff_data.setdefault("lead_phone", phone)
-                # Persist email (если есть) — стабильный якорь + кросс-канал мёрж.
-                if email:
-                    try:
-                        from services.identity import update_email
-                        update_email(db, customer.id, email)
-                    except Exception as e:
-                        log.warning(
-                            f"[{str(conversation.id)[:8]}] update_email failed: {e}"
-                        )
-                # Persist телефон, если дан и ещё не записан.
-                if phone and not (customer.phone or "").strip():
-                    try:
-                        customer.phone = phone[:50]
-                    except Exception:  # noqa: BLE001
-                        pass
-                # Persist telegram @username в identity_keys — чтобы потом склеить
-                # с этим же человеком, когда он напишет из своего Telegram
-                # (кросс-канальный мёрж: сайт @username ↔ telegram from_user).
-                if tg:
-                    try:
-                        _h = tg if tg.startswith("@") else "@" + tg
-                        _ik = dict(customer.identity_keys or {})
-                        if _ik.get("tg_handle") != _h:
-                            _ik["tg_handle"] = _h
-                            customer.identity_keys = _ik
-                    except Exception:  # noqa: BLE001
-                        pass
-                # Имя в карточку/задачу.
-                _ln = (handoff_data.get("lead_name") or "").strip()
-                if _ln and not (customer.name or "").strip():
-                    try:
-                        customer.name = _ln[:200]
-                    except Exception:  # noqa: BLE001
-                        pass
-
-                await send_telegram_brief(str(conversation.id), handoff_data, history_dicts)
-                mark_handoff_done(db, conversation.id)
-                handoff_triggered = True
-            else:
-                # Контакта нет вообще — ждём, пока лид даст email/telegram/телефон.
-                log.info(
-                    f"[{str(conversation.id)[:8]}] classifier ready but NO contact "
-                    f"(email/tg/phone) — suppressed, бот попросит контакт"
-                )
-
-    # 8b. Funnel auto-transition (Phase 9b, 2026-05-27).
-    #     Evaluates Notion §20 funnel state machine with this turn's signals
-    #     and advances conversation.lead_stage if a valid forward transition
-    #     fires. Pushes the change to CRM via dispatch_stage_change.
-    #     Currently observable signals: lead_messages count → new_lead → in_dialog,
-    #     handoff_classifier ready → qualified, interaction_type=HardStop → lost.
-    #     Later stages (NDA, on_call, proposal, prepayment, ...) need operator
-    #     action — they remain operator-set via HubSpot UI for now.
-    if settings.crm_enabled and not is_comment_mode:
-        try:
-            from services.funnel import (
-                decide_from_tenant_config as _funnel_decide,
-                can_auto_transition,
-            )
-            lead_msg_count = sum(
-                1 for m in recent
-                if (m.role.value if hasattr(m.role, "value") else str(m.role)) == "user"
-            )
-            hard_stop_signal = (
-                signal_update is not None
-                and signal_update.interaction_type == "HardStop"
-                and signal_update.is_first_touch
-            )
-            current_stage = conversation.lead_stage or "new_lead"
-            decision = _funnel_decide(
-                current_stage=current_stage,
-                tenant_config=tenant.raw_config,
-                lead_messages_so_far=lead_msg_count,
-                classifier_says_ready=handoff_triggered,
-                hard_stop_signal=hard_stop_signal,
-            )
-            if (
-                decision.should_transition
-                and decision.target_stage
-                and can_auto_transition(current_stage, decision.target_stage)
-            ):
-                new_stage = decision.target_stage
-                conversation.lead_stage = new_stage
-                if new_stage == "lost":
-                    conversation.lost_reason = decision.lost_reason
-                log.info(
-                    f"[{str(conversation.id)[:8]}] funnel: {current_stage} → {new_stage} "
-                    f"({decision.reason})"
-                )
-                # Push to CRM. dispatch_stage_change enqueues 'pending' if
-                # crm_deal_id isn't resolved yet — worker lazy-resolves from DB.
-                from services.crm_dispatch import dispatch_stage_change
-                dispatch_stage_change(
-                    customer_id=str(customer.id),
-                    crm_deal_id=conversation.crm_deal_id,
-                    new_stage=new_stage,
-                    lost_reason=decision.lost_reason,
-                    conversation_id=str(conversation.id),
-                )
-        except Exception as exc:  # noqa: BLE001
-            log.warning(
-                f"[{str(conversation.id)[:8]}] funnel transition failed (non-fatal): {exc}"
-            )
-
-    # 9. Commit the whole turn atomically
     db.commit()
 
-    # 10. CRM sync (Phase 8a, 2026-05-26) — enqueue events to the worker.
-    #     This is a no-op when settings.crm_enabled=False (default during
-    #     rollout). When enabled, the worker drains the queue async and
-    #     handles upsert_contact / create_deal / log_message / stage updates.
-    #     Wrapped in a broad try so a CRM hiccup never breaks the lead-facing
-    #     flow — bot's own Postgres remains the source of truth.
-    if settings.crm_enabled:
-        try:
-            # Re-fetch with identities relationship for tg_handle lookup —
-            # the customer object above may be a fresh insert without
-            # identities loaded yet.
-            from services.crm_dispatch import dispatch_on_message_turn
-            # Phase 12 (2026-05-28): pass lead_messages_count for lazy deal
-            # creation threshold — deal only fires when handoff OR score>=50
-            # OR this count >= 3, not on every first "hi" from a visitor.
-            lead_msg_count_for_crm = sum(
-                1 for m in recent
-                if (m.role.value if hasattr(m.role, "value") else str(m.role)) == "user"
-            )
-            # Phase C1.2: прокидываем источник трафика (widget → extra_meta)
-            # в handoff_data, чтобы он попал в карточку сделки.
-            if handoff_data is not None and isinstance(req.extra_meta, dict):
-                _ts = req.extra_meta.get("traffic_source")
-                if _ts:
-                    handoff_data["traffic_source"] = _ts
-            dispatch_on_message_turn(
-                customer=customer,
-                conversation=conversation,
-                last_lead_message=req.content,
-                last_bot_reply=answer,
-                handoff_just_fired=handoff_triggered,
-                channel=req.channel,
-                lead_messages_count=lead_msg_count_for_crm,
-                project_type=None,  # not currently extracted from the conversation
-                handoff_data=handoff_data,  # Phase C1: readable deal title + brief
-            )
-        except Exception as exc:  # noqa: BLE001
-            log.warning(f"[{str(conversation.id)[:8]}] crm dispatch failed: {exc}")
+    threading.Thread(
+        target=_run_finalize_in_thread,
+        kwargs=dict(
+            conversation_id=conversation.id,
+            customer_id=customer.id,
+            req=req,
+            answer=answer,
+            lead_texts=_esc_lead_texts,
+            bot_texts=_esc_bot_texts,
+            lead_msg_count=_lead_msg_count,
+            interaction_type=_sig_interaction,
+            is_first_touch=_sig_first_touch,
+            is_comment_mode=is_comment_mode,
+        ),
+        daemon=True,
+    ).start()
 
+    # handoff is decided asynchronously now (see _finalize_turn); the website
+    # widget does not branch on this flag, and the operator brief / CRM events
+    # are not lead-facing, so reporting False here is safe.
     return MessageResponse(
         answer=answer,
-        handoff=handoff_triggered,
+        handoff=False,
         customer_id=str(customer.id),
         conversation_id=str(conversation.id),
     )
