@@ -14,10 +14,14 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 logger = logging.getLogger("scheduled_actions")
+
+# Два followup'а с почти одинаковым сроком (лид дважды сказал «через неделю»)
+# схлопываются в один — не дёргаем лида дважды. Окно ± этих часов.
+DEDUP_WINDOW_HOURS = 12
 
 DEFAULT_FOLLOWUP_TEXT = (
     "Привет! Вы просили напомнить — мы на связи 🙂 Готовы обсудить ваш проект, "
@@ -43,8 +47,36 @@ def write_scheduled_action(
     """
     from db.connection import session_scope
     from db.models import ScheduledAction
+    from uuid import UUID
     try:
+        # customer_id приходит строкой — приводим к UUID для сравнения с колонкой
+        # (как в crm_queue._resolve_pending_*). Невалидный → оставляем как есть.
+        try:
+            _cid = UUID(str(customer_id))
+        except (ValueError, TypeError, AttributeError):
+            _cid = customer_id
         with session_scope() as s:
+            # Дедуп: уже есть pending followup для этого лида с близким сроком?
+            # Тогда не плодим вторую строку — при необходимости дольём crm_task_id.
+            existing = (
+                s.query(ScheduledAction)
+                .filter(ScheduledAction.customer_id == _cid)
+                .filter(ScheduledAction.action_type == "followup_message")
+                .filter(ScheduledAction.status == "pending")
+                .filter(ScheduledAction.due_at >= due_at - timedelta(hours=DEDUP_WINDOW_HOURS))
+                .filter(ScheduledAction.due_at <= due_at + timedelta(hours=DEDUP_WINDOW_HOURS))
+                .order_by(ScheduledAction.due_at.asc())
+                .first()
+            )
+            if existing is not None:
+                if crm_task_id and not existing.crm_task_id:
+                    existing.crm_task_id = crm_task_id
+                rid = str(existing.id)
+                logger.info(
+                    "[scheduled_actions] dedup: pending followup row=%s near due=%s — skip new",
+                    rid, due_at,
+                )
+                return rid
             row = ScheduledAction(
                 customer_id=customer_id,
                 conversation_id=conversation_id,
@@ -104,6 +136,8 @@ async def run_due_followups(*, tenant_config: Optional[dict] = None) -> dict:
                 "id": str(r.id),
                 "chat_id": r.chat_id,
                 "text": payload.get("text") or DEFAULT_FOLLOWUP_TEXT,
+                "crm_task_id": r.crm_task_id,
+                "customer_id": str(r.customer_id),
             })
 
     if not todo:
@@ -129,6 +163,24 @@ async def run_due_followups(*, tenant_config: Optional[dict] = None) -> dict:
                         row.status = "done"
                         row.executed_at = now
                         stats["sent"] += 1
+                        # Закрыть зеркальную HubSpot-задачу — бот сам отработал
+                        # followup. Через очередь (крон на главном лупе, enqueue
+                        # безопасен). Нет crm_task_id → нечего закрывать.
+                        if item.get("crm_task_id"):
+                            try:
+                                from services.crm_queue import (
+                                    enqueue,
+                                    make_complete_task_event,
+                                )
+                                enqueue(make_complete_task_event(
+                                    customer_id=item["customer_id"],
+                                    task_id=item["crm_task_id"],
+                                ))
+                            except Exception as exc:  # noqa: BLE001
+                                logger.warning(
+                                    "[scheduled_actions] complete_task enqueue failed row=%s: %s",
+                                    item["id"], exc,
+                                )
                     else:
                         row.attempts = (row.attempts or 0) + 1
                         # после 3 неудач — фейл, чтобы не долбить вечно

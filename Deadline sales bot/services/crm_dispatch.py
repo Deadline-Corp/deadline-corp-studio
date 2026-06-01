@@ -303,11 +303,18 @@ def dispatch_operator_task(
     due_in_minutes: int = 15,
     description: Optional[str] = None,
     conversation_id: Optional[str] = None,
+    on_task_id=None,
 ) -> None:
     """Create an operator task in the CRM. Used after handoff, dunning, etc.
 
     Both contact_id and deal_id may be 'pending' — the worker resolves
     them lazily from DB. conversation_id is needed for deal_id resolution.
+
+    on_task_id: optional sync callback(task_id: str) invoked off the event
+    loop once HubSpot returns the created task id. Used by B2 follow-ups to
+    link the bot's scheduled_action row to its mirror task (so the cron can
+    later close the task on self-send). MUST be a plain DB write — do NOT
+    enqueue from it (the queue is not thread-safe and the cb runs in a thread).
     """
     contact_id = crm_contact_id if crm_contact_id else "pending"
     deal_id_for_event: Optional[str] = (
@@ -323,6 +330,7 @@ def dispatch_operator_task(
         due_at=due_at,
         category=category,  # type: ignore[arg-type]
         description=description,
+        on_task_id=on_task_id,
     ))
 
 
@@ -549,6 +557,39 @@ def dispatch_on_message_turn(
                         1, int((_fu - datetime.now(timezone.utc)).total_seconds() / 60)
                     )
                     _nm = customer.name or customer.email or "лид"
+                    # Task Engine B2 — если лид в мессенджере (есть chat_id), бот
+                    # САМ напишет ему в срок. Привязываем строку scheduled_actions
+                    # к зеркальной задаче через on_task_id-колбэк: как только
+                    # HubSpot вернёт task_id, пишем scheduled_action с crm_task_id
+                    # (чистый DB-write, БЕЗ enqueue из потока). Когда крон
+                    # само-отправит followup — он закроет именно эту задачу
+                    # (см. run_due_followups → make_complete_task_event).
+                    # На сайте chat_id нет → только задача-напоминание (on_task_id=None).
+                    _chat_id = getattr(conversation, "channel_conversation_id", None)
+                    _is_msgr_followup = bool(_chat_id) and (channel or "").lower() in (
+                        "telegram", "whatsapp", "instagram", "messenger"
+                    )
+                    _on_task_id = None
+                    if _is_msgr_followup:
+                        def _link_followup(
+                            task_id: str,
+                            _cid=customer_id,
+                            _conv=str(conversation.id),
+                            _ch=channel,
+                            _chat=str(_chat_id),
+                            _due=_fu,
+                        ) -> None:
+                            from services.scheduled_actions import write_scheduled_action
+                            write_scheduled_action(
+                                customer_id=_cid,
+                                conversation_id=_conv,
+                                channel=_ch,
+                                chat_id=_chat,
+                                due_at=_due,
+                                text=None,  # дефолтный тёплый текст в scheduled_actions
+                                crm_task_id=task_id,
+                            )
+                        _on_task_id = _link_followup
                     dispatch_operator_task(
                         customer_id=customer_id,
                         crm_contact_id=contact_id,
@@ -558,33 +599,13 @@ def dispatch_on_message_turn(
                         category="callback",
                         due_in_minutes=_mins,
                         description=(last_lead_message or "")[:500],
+                        on_task_id=_on_task_id,
                     )
                     logger.info(
                         "[crm_dispatch] followup task conv=%s due_in_min=%d "
-                        "(lead asked to be contacted later)",
-                        str(conversation.id)[:8], _mins,
+                        "self_send=%s (lead asked to be contacted later)",
+                        str(conversation.id)[:8], _mins, _is_msgr_followup,
                     )
-                    # Task Engine B2 — если лид в мессенджере (есть chat_id), бот
-                    # САМ напишет ему в срок: ставим строку в scheduled_actions
-                    # (через воркер, off event loop). На сайте chat_id нет →
-                    # только задача-напоминание выше.
-                    _chat_id = getattr(conversation, "channel_conversation_id", None)
-                    if _chat_id and (channel or "").lower() in (
-                        "telegram", "whatsapp", "instagram", "messenger"
-                    ):
-                        from services.crm_queue import make_schedule_followup_event
-                        enqueue(make_schedule_followup_event(
-                            customer_id=customer_id,
-                            conversation_id=str(conversation.id),
-                            channel=channel,
-                            chat_id=str(_chat_id),
-                            due_at=_fu,
-                            text=None,  # дефолтный тёплый текст в scheduled_actions
-                        ))
-                        logger.info(
-                            "[crm_dispatch] bot self-followup scheduled conv=%s chat=%s",
-                            str(conversation.id)[:8], _chat_id,
-                        )
             except Exception as _fe:  # noqa: BLE001
                 logger.debug("[crm_dispatch] followup detect skipped: %s", _fe)
 
