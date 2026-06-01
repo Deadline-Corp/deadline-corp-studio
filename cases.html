@@ -24,13 +24,13 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="cases.css?v=1.0.0">
+<link rel="stylesheet" href="cases.css?v=2.3.0">
 
 <!-- GSAP + ScrollTrigger (scroll-inside-frame). cases-data.js → cases.js -->
 <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
-<script defer src="cases-data.js?v=1.0.0"></script>
-<script defer src="cases.js?v=1.0.0"></script>
+<script defer src="cases-data.js?v=2.3.0"></script>
+<script defer src="cases.js?v=2.3.0"></script>
 </head>
 <body>
 
@@ -70,58 +70,78 @@
   </div>
 </header>
 
-<!-- ═════════════════ FILTER + BENTO GRID ═════════════════ -->
-<main class="container" style="padding-bottom:64px;">
-  <div class="filter-bar" id="filterBar" role="group" aria-label="Filter cases by type"></div>
-  <div class="bento" id="bento"><!-- cards injected by cases.js --></div>
-</main>
-
-<!-- ═════════════════ DEEP DIVE 1 · VRP — scroll-inside-frame ═════════════════ -->
-<section class="showcase">
+<!-- ═════════════════ FLAGSHIP · VRP (наверху, один раз) ═════════════════ -->
+<section class="showcase flagship" style="padding-top:24px;">
   <div class="container">
-    <div class="showcase-grid">
-      <div class="reveal">
-        <div class="sc-kicker">// 01 · WEB + AI</div>
-        <h2 class="sc-title"><span class="lang-ru">Сайт, который продаёт сам</span><span class="lang-en">A site that sells itself</span></h2>
-        <p class="sc-body">
-          <span class="lang-ru">VIP Rental Phuket: booking-платформа с AI-консьержем. Прокрутите рамку справа — так интерфейс живёт у клиента. Реальный скрин или видео встанет на место демо в один клик.</span>
-          <span class="lang-en">VIP Rental Phuket: a booking platform with an AI concierge. Scroll the frame on the right — that's how it lives for the client. A real screen or video drops into the demo in one click.</span>
-        </p>
+    <div class="reveal" style="text-align:center; max-width:800px; margin:0 auto 26px;">
+      <div class="sc-kicker" style="text-align:center;">// FLAGSHIP · WEB + BOT + ADMIN</div>
+      <h2 class="sc-title"><span class="lang-ru">Сайт + бот + админка</span><span class="lang-en">Site + bot + admin</span></h2>
+      <p class="sc-body" style="margin:0 auto;">
+        <span class="lang-ru">VIP Rental Phuket: автоматизировали продажи под ключ — клиент пустил трафик на сайт, и продажи пошли сами. Booking-сайт + AI-консьерж + Telegram-бот + админка: клиенты бронируют сами, админ правит каталог из одной панели, а заявки сразу падают ему.</span>
+        <span class="lang-en">VIP Rental Phuket: sales automated end-to-end — the client drove traffic to the site and sales started on their own. Booking site + AI concierge + Telegram bot + admin: clients self-book, the admin runs the catalog from one panel, and requests land straight to them.</span>
+      </p>
+    </div>
+    <!-- big site video first -->
+    <div class="reveal vrp-hero" id="scVrpSite" data-activate></div>
+    <!-- bot + admin together -->
+    <div class="showcase-grid grid-bot-admin reveal" style="margin-top:16px;">
+      <div id="scVrpBot" data-activate></div>
+      <div id="scVrpAdmin" data-activate></div>
+    </div>
+    <!-- architecture schema + stats -->
+    <div class="showcase-grid reveal" style="margin-top:16px; align-items:center;">
+      <div class="scroll-frame" style="padding:0;">
+        <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">flow.vrp</span></div>
+        <div id="scVrpGraph" data-activate></div>
+      </div>
+      <div>
+        <div class="sc-kicker">// <span class="lang-ru">КАК ЭТО УСТРОЕНО</span><span class="lang-en">HOW IT WORKS</span></div>
+        <div class="tech-chips" style="margin:0 0 18px;">
+          <span class="tech-chip">Next.js</span><span class="tech-chip">GPT-4</span><span class="tech-chip">Telegram bot</span><span class="tech-chip">Admin panel</span><span class="tech-chip">Railway</span>
+        </div>
         <div class="case-metrics" data-activate>
           <div class="metric"><span class="num" data-count="32" data-prefix="+" data-suffix="%">0</span><span class="lbl"><span class="lang-ru">конверсия</span><span class="lang-en">conversion</span></span></div>
           <div class="metric"><span class="num" data-count="73" data-suffix="%">0</span><span class="lbl"><span class="lang-ru">без человека</span><span class="lang-en">auto-handled</span></span></div>
           <div class="metric"><span class="num" data-count="80" data-suffix="+">0</span><span class="lbl"><span class="lang-ru">объектов</span><span class="lang-en">properties</span></span></div>
         </div>
       </div>
-      <div class="reveal">
-        <div class="scroll-frame">
-          <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">viprentalphuket.com</span></div>
-          <div class="scroll-window" id="scrollWindow">
-            <div class="scroll-track fake-page" id="scrollTrack">
-              <div><h4>VIP Rental Phuket</h4><p>Booking villas, yachts & cars — 80+ properties, one team.</p><div class="blk"></div></div>
-              <div><h4><span class="lang-ru">AI-консьерж</span><span class="lang-en">AI concierge</span></h4><p>«Нужна вилла на 6 гостей с бассейном к пятнице» → 3 варианта за 4 секунды.</p><div class="blk"></div></div>
-              <div><h4><span class="lang-ru">Каталог</span><span class="lang-en">Catalog</span></h4><p>Фильтры, карты, мгновенная бронь. Конверсия +32%.</p><div class="blk"></div></div>
-              <div><h4><span class="lang-ru">Оплата</span><span class="lang-en">Checkout</span></h4><p>Stripe + крипто. Подтверждение в Telegram владельцу.</p><div class="blk"></div></div>
-              <div><h4>24 / 7</h4><p>73% запросов закрывает бот. Команда спит.</p><div class="blk"></div></div>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   </div>
 </section>
+
+<!-- ── CTA banner · лендинг ── -->
+<section class="cta-banner reveal">
+  <div class="container">
+    <div class="ctab">
+      <div>
+        <div class="ctab-h"><span class="lang-ru">Сделаем вам продающий лендинг</span><span class="lang-en">We’ll build you a converting landing</span></div>
+        <div class="ctab-s"><span class="lang-ru">Под ключ, быстро и точно в срок.</span><span class="lang-en">Turnkey, fast, right on deadline.</span></div>
+      </div>
+      <a href="/lead-form/" class="btn-primary"><span class="lang-ru">Оставить заявку →</span><span class="lang-en">Get a quote →</span></a>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════════════ FILTER + BENTO GRID ═════════════════ -->
+<main class="container" style="padding-bottom:64px;">
+  <div class="filter-bar" id="filterBar" role="group" aria-label="Filter cases by type"></div>
+  <div class="bento" id="bento"><!-- cards injected by cases.js --></div>
+</main>
 
 <!-- ═════════════════ DEEP DIVE 2 · KEYDROP — live chat ═════════════════ -->
 <section class="showcase">
   <div class="container">
     <div class="showcase-grid rev">
       <div class="reveal">
-        <div class="sc-kicker">// 02 · BOT + MINIAPP</div>
-        <h2 class="sc-title"><span class="lang-ru">Бот вместо отдела продаж</span><span class="lang-en">A bot instead of a sales team</span></h2>
+        <div class="sc-kicker">// 02 · MINIAPP + AUTOMATION</div>
+        <h2 class="sc-title"><span class="lang-ru">Магазин, который работает сам</span><span class="lang-en">A store that runs itself</span></h2>
         <p class="sc-body">
-          <span class="lang-ru">KeyDrop: выдача Steam-кодов на полном автомате. Справа — живой диалог: сообщения печатаются, как у реального пользователя. Замените сценарий на свой в одной строке данных.</span>
-          <span class="lang-en">KeyDrop: fully automated Steam-code delivery. On the right — a live dialogue, messages typing like a real user. Swap the script for yours in one line of data.</span>
+          <span class="lang-ru">KeyDrop: Telegram mini-app по продаже Steam-кодов. Каталог и цены подтягиваются с разных источников и автоматически обновляются на сайте, когда меняются у поставщиков. Выдача ключа — мгновенная, без человека. Справа — интерфейс приложения, ниже — схема авто-синка.</span>
+          <span class="lang-en">KeyDrop: a Telegram mini-app selling Steam codes. Catalog and prices are pulled from multiple sources and auto-update on the site whenever suppliers change them. Key delivery is instant, no humans. On the right — the app interface, below — the auto-sync schema.</span>
         </p>
+        <div class="tech-chips" style="margin-bottom:18px;">
+          <span class="tech-chip">Telegram MiniApp</span><span class="tech-chip">Node.js</span><span class="tech-chip">Auto-sync</span><span class="tech-chip">Payments API</span><span class="tech-chip">PostgreSQL</span>
+        </div>
         <div class="case-metrics" data-activate>
           <div class="metric"><span class="num" data-count="1000" data-suffix="+">0</span><span class="lbl"><span class="lang-ru">заказов / мес</span><span class="lang-en">orders / mo</span></span></div>
           <div class="metric"><span class="num" data-count="99.99" data-suffix="%">0</span><span class="lbl">uptime</span></div>
@@ -131,36 +151,163 @@
       <div class="reveal" style="display:flex; justify-content:center;">
         <div class="phone" style="width:280px; max-width:90%;">
           <div class="notch"></div>
-          <div class="viewport" id="scChat" data-activate style="height:420px;"></div>
+          <div class="viewport" id="scKeydropApp" data-activate style="height:420px;"></div>
+        </div>
+      </div>
+    </div>
+    <div class="reveal">
+      <div class="sc-kicker" style="margin-top:40px;">// <span class="lang-ru">АВТО-СИНК ДАННЫХ</span><span class="lang-en">DATA AUTO-SYNC</span></div>
+      <div class="scroll-frame" style="padding:0;">
+        <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">sync.store</span></div>
+        <div id="scKeydropGraph" data-activate></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── CTA banner · бот ── -->
+<section class="cta-banner reveal">
+  <div class="container">
+    <div class="ctab">
+      <div>
+        <div class="ctab-h"><span class="lang-ru">Telegram-бот, который продаёт сам</span><span class="lang-en">A Telegram bot that sells itself</span></div>
+        <div class="ctab-s"><span class="lang-ru">Автоматизируем заявки и рутину. Быстро.</span><span class="lang-en">We automate leads and routine. Fast.</span></div>
+      </div>
+      <a href="/lead-form/" class="btn-primary"><span class="lang-ru">Обсудить проект →</span><span class="lang-en">Start a project →</span></a>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════════════ DEEP DIVE 3 · SMM EASY — automation schema ═════════════════ -->
+<section class="showcase">
+  <div class="container">
+    <div class="showcase-grid rev">
+      <div class="reveal">
+        <div class="sc-kicker">// 03 · APP + AI</div>
+        <h2 class="sc-title"><span class="lang-ru">SMM-щик внутри Telegram</span><span class="lang-en">An SMM team inside Telegram</span></h2>
+        <p class="sc-body">
+          <span class="lang-ru">Бизнес даёт бриф в три тапа — приложение само <b>производит контент</b> (тексты, карусели, voice-first reels) и <b>выкладывает его по расписанию</b>. Никакого SMM-щика. Слева — реальный экран mini-app, справа — схема: как пара кнопок превращается в готовый и опубликованный контент.</span>
+          <span class="lang-en">The business gives a 3-tap brief — the app <b>produces the content</b> (captions, carousels, voice-first reels) and <b>posts it on schedule</b>. No SMM manager. Left — the real mini-app screen, right — the schema: how a few taps turn into ready, published content.</span>
+        </p>
+        <div class="tech-chips" style="margin-bottom:20px;">
+          <span class="tech-chip">Telegram Mini-App</span><span class="tech-chip">GPT-4</span><span class="tech-chip">Image-gen</span><span class="tech-chip">ElevenLabs TTS</span><span class="tech-chip">Python</span>
+        </div>
+        <div class="case-metrics" data-activate>
+          <div class="metric"><span class="num" data-count="70" data-suffix="×">0</span><span class="lbl"><span class="lang-ru">дешевле</span><span class="lang-en">cheaper</span></span></div>
+          <div class="metric"><span class="num" data-count="3">0</span><span class="lbl"><span class="lang-ru">формата</span><span class="lang-en">formats</span></span></div>
+          <div class="metric"><span class="num" data-count="60" data-suffix=" сек">0</span><span class="lbl"><span class="lang-ru">на пост</span><span class="lang-en">per post</span></span></div>
+        </div>
+      </div>
+      <div class="reveal">
+        <div class="scroll-frame" style="padding:0;">
+          <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">smm.pipeline</span></div>
+          <div id="scSmm" data-activate></div>
         </div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ═════════════════ DEEP DIVE 3 · RA — metrics + flow ═════════════════ -->
+<!-- ── CTA banner · приложение ── -->
+<section class="cta-banner reveal">
+  <div class="container">
+    <div class="ctab">
+      <div>
+        <div class="ctab-h"><span class="lang-ru">Ваше приложение под ключ</span><span class="lang-en">Your app, end-to-end</span></div>
+        <div class="ctab-s"><span class="lang-ru">iOS + Android, чётко по срокам.</span><span class="lang-en">iOS + Android, on schedule.</span></div>
+      </div>
+      <a href="/lead-form/" class="btn-primary"><span class="lang-ru">Оставить заявку →</span><span class="lang-en">Get a quote →</span></a>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════════════ DEEP DIVE 6 · VASILIY — bot executing tasks ═════════════════ -->
 <section class="showcase">
   <div class="container">
     <div class="showcase-grid">
       <div class="reveal">
-        <div class="sc-kicker">// 03 · DATA + AI</div>
-        <h2 class="sc-title"><span class="lang-ru">Когда UI нет — есть цифры</span><span class="lang-en">No UI? Then numbers</span></h2>
+        <div class="sc-kicker">// 04 · AI ASSISTANT</div>
+        <h2 class="sc-title"><span class="lang-ru">Не отвечает — а делает</span><span class="lang-en">It doesn’t reply — it does</span></h2>
         <p class="sc-body">
-          <span class="lang-ru">RA Project: on-chain аналитика на 12 сетях. У бэкенда нет «красивого экрана» — поэтому кейс держится на метриках и схеме пайплайна. Узлы оживают по скроллу.</span>
-          <span class="lang-en">RA Project: on-chain analytics across 12 networks. A backend has no "pretty screen" — so the case stands on metrics and a pipeline diagram. Nodes come alive on scroll.</span>
+          <span class="lang-ru">Помощник Василий выполняет сложные задачи прямо в Telegram: поднять лендинг, зафиксировать важное, собрать систему под отдел продаж. Справа — как он отрабатывает задачу по шагам.</span>
+          <span class="lang-en">Vasiliy executes complex tasks right in Telegram: spin up a landing, capture what matters, assemble a system for the sales team. On the right — how it runs a task step by step.</span>
         </p>
+        <div class="tech-chips" style="margin-bottom:20px;">
+          <span class="tech-chip">GPT / LLM</span><span class="tech-chip">Telegram</span><span class="tech-chip">Tool-use</span><span class="tech-chip">Python</span><span class="tech-chip">Automations</span>
+        </div>
         <div class="case-metrics" data-activate>
-          <div class="metric"><span class="num" data-count="41" data-suffix="M+">0</span><span class="lbl"><span class="lang-ru">блоков</span><span class="lang-en">blocks</span></span></div>
-          <div class="metric"><span class="num" data-count="12">0</span><span class="lbl"><span class="lang-ru">сетей</span><span class="lang-en">chains</span></span></div>
-          <div class="metric"><span class="num" data-count="14" data-suffix=" нед">0</span><span class="lbl"><span class="lang-ru">до прода</span><span class="lang-en">to prod</span></span></div>
+          <div class="metric"><span class="num" data-count="4">0</span><span class="lbl"><span class="lang-ru">ниши</span><span class="lang-en">niches</span></span></div>
+          <div class="metric"><span class="num" data-count="24" data-suffix="/7">0</span><span class="lbl"><span class="lang-ru">на связи</span><span class="lang-en">online</span></span></div>
+          <div class="metric"><span class="num" data-count="0" data-suffix=" мин">0</span><span class="lbl"><span class="lang-ru">ожидание</span><span class="lang-en">wait</span></span></div>
+        </div>
+      </div>
+      <div class="reveal" style="display:flex; justify-content:center;">
+        <div class="phone" style="width:280px; max-width:90%;">
+          <div class="notch"></div>
+          <div class="viewport" id="scVasiliy" data-activate style="height:420px;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════════════ DEEP DIVE · LEAD BOT — CRM kanban ═════════════════ -->
+<section class="showcase">
+  <div class="container">
+    <div class="reveal" style="text-align:center; max-width:760px; margin:0 auto 22px;">
+      <div class="sc-kicker" style="text-align:center;">// 05 · BOT + CRM</div>
+      <h2 class="sc-title"><span class="lang-ru">Клиент в CRM не теряется</span><span class="lang-en">Nobody leaks from the CRM</span></h2>
+      <p class="sc-body" style="margin:0 auto;">
+        <span class="lang-ru">Бот ловит лида и сам ведёт его по воронке — карточка клиента двигается по стадиям: диалог → квалификация → продажа → оплата → отзыв. Ни одной потерянной заявки.</span>
+        <span class="lang-en">The bot catches the lead and drives it through the funnel itself — the client card moves across stages: chat → qualified → offer → paid → review. Not a single lost lead.</span>
+      </p>
+      <div class="tech-chips" style="justify-content:center; margin-top:16px;">
+        <span class="tech-chip">Telegram</span><span class="tech-chip">GPT</span><span class="tech-chip">CRM</span><span class="tech-chip">PostgreSQL</span><span class="tech-chip">Cron</span>
+      </div>
+    </div>
+    <div class="reveal" id="scLeadKanban" data-activate></div>
+  </div>
+</section>
+
+<!-- ═════════════════ DEEP DIVE · RESEARCH BOT — content autopilot ═════════════════ -->
+<section class="showcase">
+  <div class="container">
+    <div class="showcase-grid">
+      <div class="reveal">
+        <div class="sc-kicker">// 06 · BOT + CONTENT</div>
+        <h2 class="sc-title"><span class="lang-ru">Контент сам себя выпускает</span><span class="lang-en">Content that ships itself</span></h2>
+        <p class="sc-body">
+          <span class="lang-ru">Бот мониторит интернет, находит свежие новости по теме, переписывает в нужном стиле и автопостит в Telegram-канал. На каждую тему собирает карусель и Reel — и выкладывает в Instagram. Справа — схема.</span>
+          <span class="lang-en">The bot monitors the web, finds fresh topic news, rewrites it in your voice and auto-posts to a Telegram channel. For each topic it builds a carousel and a Reel — and publishes to Instagram. On the right — the schema.</span>
+        </p>
+        <div class="tech-chips" style="margin-bottom:18px;">
+          <span class="tech-chip">Search API</span><span class="tech-chip">GPT</span><span class="tech-chip">Image-gen</span><span class="tech-chip">TTS</span><span class="tech-chip">Instagram API</span>
+        </div>
+        <div class="case-metrics" data-activate>
+          <div class="metric"><span class="num" data-count="24" data-suffix="/7">0</span><span class="lbl"><span class="lang-ru">мониторинг</span><span class="lang-en">monitoring</span></span></div>
+          <div class="metric"><span class="num" data-count="3">0</span><span class="lbl"><span class="lang-ru">формата</span><span class="lang-en">formats</span></span></div>
+          <div class="metric"><span class="num" data-count="0" data-suffix=" мин">0</span><span class="lbl"><span class="lang-ru">ручной работы</span><span class="lang-en">manual</span></span></div>
         </div>
       </div>
       <div class="reveal">
         <div class="scroll-frame" style="padding:0;">
-          <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">pipeline.ra</span></div>
-          <div id="scFlow" data-activate style="min-height:240px; display:flex; align-items:center; justify-content:center; background:var(--bg);"></div>
+          <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">autopilot.flow</span></div>
+          <div id="scResearch" data-activate></div>
         </div>
       </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── CTA banner · AI / автоматизация ── -->
+<section class="cta-banner reveal">
+  <div class="container">
+    <div class="ctab">
+      <div>
+        <div class="ctab-h"><span class="lang-ru">Нужна AI-система или автоматизация?</span><span class="lang-en">Need an AI system or automation?</span></div>
+        <div class="ctab-s"><span class="lang-ru">Соберём под вашу задачу — быстро и под ключ.</span><span class="lang-en">We’ll build it for your task — fast, turnkey.</span></div>
+      </div>
+      <a href="/lead-form/" class="btn-primary"><span class="lang-ru">Написать нам →</span><span class="lang-en">Talk to us →</span></a>
     </div>
   </div>
 </section>
