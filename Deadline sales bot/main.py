@@ -2246,6 +2246,24 @@ async def _process_telegram_update(payload: dict) -> None:
         gc.collect()
 
 
+# Per-chat сериализация фоновых потоков. Без неё два сообщения одного чата,
+# пришедшие подряд (лид пишет вторую реплику, пока бот ещё обрабатывает первую —
+# особенно медленный handoff-ход), обрабатываются ПАРАЛЛЕЛЬНО на одном диалоге →
+# гонка за БД-сессию → второй ход молча теряется. Лок на chat_id ставит их в
+# очередь: обрабатываются строго последовательно, ничего не пропадает.
+_chat_locks: dict = {}
+_chat_locks_guard = threading.Lock()
+
+
+def _get_chat_lock(key: str) -> threading.Lock:
+    with _chat_locks_guard:
+        lk = _chat_locks.get(key)
+        if lk is None:
+            lk = threading.Lock()
+            _chat_locks[key] = lk
+        return lk
+
+
 def _process_in_thread(payload: dict) -> None:
     """Thread entry point — spins up its own asyncio event loop because the
     main event loop is back to serving FastAPI requests by the time we run.
@@ -2256,11 +2274,21 @@ def _process_in_thread(payload: dict) -> None:
       response can't be flushed to the socket, so Telegram (and curl)
       keeps the connection open and waits — exactly the bug we're fixing.
       A separate OS thread with its own event loop is fully decoupled.
+
+    Сообщения ОДНОГО чата обрабатываем строго по очереди (per-chat lock), чтобы
+    быстрые подряд-реплики не гонялись за БД и не терялись.
     """
+    _chat = (((payload or {}).get("message") or {}).get("chat") or {}).get("id")
+    _lock = _get_chat_lock(str(_chat)) if _chat is not None else None
+    if _lock is not None:
+        _lock.acquire()
     try:
         asyncio.run(_process_telegram_update(payload))
     except Exception as e:
         log.error(f"_process_in_thread crashed: {e}", exc_info=True)
+    finally:
+        if _lock is not None:
+            _lock.release()
 
 
 @app.post("/webhooks/telegram")
