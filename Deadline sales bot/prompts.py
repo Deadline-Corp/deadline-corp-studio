@@ -726,11 +726,42 @@ def build_chat_prompt(
         few_shots_resolved = FEW_SHOT_EXAMPLES.replace(
             "{calendar_url}", calendar_url or "",
         )
+        # В МЕССЕНДЖЕРЕ убираем примеры, которые учат website-поведению (звать
+        # «@deadline_corp» / просить email-дубль) — иначе llama копирует их дословно,
+        # хотя лид УЖЕ в мессенджере (баг: «опять зовёт в telegram»).
+        if _is_messenger:
+            few_shots_resolved = _filter_fewshots_for_messenger(few_shots_resolved)
         return base.replace(
             "# ТЕКУЩИЙ ВОПРОС ЛИДА",
             few_shots_resolved + "\n# ТЕКУЩИЙ ВОПРОС ЛИДА"
         )
     return base
+
+
+# Маркеры website-only поведения в few-shot — для фильтра в мессенджер-режиме.
+_WEBSITE_ONLY_FEWSHOT_MARKERS = (
+    "@deadline_corp", "продолжим в telegram", "продолжим в телеграм",
+    "перейдём в telegram", "перейдем в telegram", "перейти в telegram",
+    "перейдём в телеграм", "продолжить в telegram", "на email продубл",
+    "email продублир", "продублируем на email",
+)
+
+
+def _filter_fewshots_for_messenger(text: str) -> str:
+    """Выкинуть из few-shot блоки-примеры, обучающие website-поведению (увод в
+    @deadline_corp / просьба email-дубля). Блоки разделены маркером '## Пример'.
+    Хедер (часть до первого '## Пример') сохраняем. Канал-нейтральные примеры
+    остаются."""
+    import re as _re
+    parts = _re.split(r"(?=## Пример)", text)
+    kept = []
+    for i, p in enumerate(parts):
+        if i > 0:  # часть 0 — общий хедер few-shot, не трогаем
+            low = p.lower()
+            if any(m in low for m in _WEBSITE_ONLY_FEWSHOT_MARKERS):
+                continue
+        kept.append(p)
+    return "".join(kept)
 
 
 # ============================================================================
