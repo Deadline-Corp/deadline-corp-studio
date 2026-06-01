@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>DEADLINE — Кейсы · Cases</title>
+<meta name="description" content="DEADLINE — кейсы: сайты, боты, приложения, data/AI. Доказательства, не питч.">
+<meta name="robots" content="index, follow, max-image-preview:large">
+<link rel="canonical" href="https://deadlinecorp.com/cases.html">
+<link rel="alternate" hreflang="ru" href="https://deadlinecorp.com/cases.html">
+<link rel="alternate" hreflang="en" href="https://deadlinecorp.com/cases.html?lang=en">
+<link rel="alternate" hreflang="x-default" href="https://deadlinecorp.com/cases.html">
+
+<meta property="og:title" content="DEADLINE — Кейсы · Cases">
+<meta property="og:description" content="Доказательства, не питч. Сайты · боты · приложения · data/AI.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://deadlinecorp.com/cases.html">
+<meta property="og:image" content="https://deadlinecorp.com/og-image.png">
+<meta name="theme-color" content="#161208">
+
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="cases.css?v=1.0.0">
+
+<!-- GSAP + ScrollTrigger (scroll-inside-frame). cases-data.js → cases.js -->
+<script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/ScrollTrigger.min.js"></script>
+<script defer src="cases-data.js?v=1.0.0"></script>
+<script defer src="cases.js?v=1.0.0"></script>
+</head>
+<body>
+
+<!-- ═════════════════ NAV ═════════════════ -->
+<nav class="nav-bar">
+  <div class="container" style="display:flex; align-items:center; justify-content:space-between; height:72px; gap:24px;">
+    <a href="index.html" class="logo"><span class="pulse"></span>DEADLINE</a>
+    <div style="display:flex; gap:10px; flex-wrap:wrap;" class="nav-chips">
+      <a href="index.html#services" class="btn-chip"><span class="lang-ru">Услуги</span><span class="lang-en">Services</span></a>
+      <a href="cases.html" class="btn-chip-copper"><span class="lang-ru">Кейсы</span><span class="lang-en">Work</span></a>
+      <a href="index.html#testimonials" class="btn-chip"><span class="lang-ru">Отзывы</span><span class="lang-en">Reviews</span></a>
+      <a href="index.html#process" class="btn-chip"><span class="lang-ru">Процесс</span><span class="lang-en">Process</span></a>
+    </div>
+    <div style="display:flex; align-items:center; gap:14px; flex-shrink:0;">
+      <div class="lang-toggle" role="group" aria-label="Language">
+        <button data-lang="ru" class="active" aria-pressed="true">RU</button>
+        <span class="sep">|</span>
+        <button data-lang="en" aria-pressed="false">EN</button>
+      </div>
+      <a href="/lead-form/" class="btn-primary"><span class="lang-ru">Связаться</span><span class="lang-en">Talk to us</span></a>
+    </div>
+  </div>
+</nav>
+
+<!-- ═════════════════ HERO ═════════════════ -->
+<header class="cases-hero">
+  <div class="container">
+    <div class="section-eyebrow reveal" style="display:block;">// SELECTED WORK</div>
+    <h1 class="section-headline copper reveal">
+      <span class="lang-ru">Доказательства,<br><em>не питч.</em></span>
+      <span class="lang-en">Proof,<br><em>not pitch.</em></span>
+    </h1>
+    <p class="lead reveal">
+      <span class="lang-ru">Мы не рассказываем, что умеем — мы показываем. Сайты, боты, приложения и data/AI-системы в проде. <b>Наведите, прокрутите, потрогайте.</b></span>
+      <span class="lang-en">We don't tell you what we can do — we show it. Sites, bots, apps and data/AI systems in production. <b>Hover, scroll, poke around.</b></span>
+    </p>
+  </div>
+</header>
+
+<!-- ═════════════════ FILTER + BENTO GRID ═════════════════ -->
+<main class="container" style="padding-bottom:64px;">
+  <div class="filter-bar" id="filterBar" role="group" aria-label="Filter cases by type"></div>
+  <div class="bento" id="bento"><!-- cards injected by cases.js --></div>
+</main>
+
+<!-- ═════════════════ DEEP DIVE 1 · VRP — scroll-inside-frame ═════════════════ -->
+<section class="showcase">
+  <div class="container">
+    <div class="showcase-grid">
+      <div class="reveal">
+        <div class="sc-kicker">// 01 · WEB + AI</div>
+        <h2 class="sc-title"><span class="lang-ru">Сайт, который продаёт сам</span><span class="lang-en">A site that sells itself</span></h2>
+        <p class="sc-body">
+          <span class="lang-ru">VIP Rental Phuket: booking-платформа с AI-консьержем. Прокрутите рамку справа — так интерфейс живёт у клиента. Реальный скрин или видео встанет на место демо в один клик.</span>
+          <span class="lang-en">VIP Rental Phuket: a booking platform with an AI concierge. Scroll the frame on the right — that's how it lives for the client. A real screen or video drops into the demo in one click.</span>
+        </p>
+        <div class="case-metrics" data-activate>
+          <div class="metric"><span class="num" data-count="32" data-prefix="+" data-suffix="%">0</span><span class="lbl"><span class="lang-ru">конверсия</span><span class="lang-en">conversion</span></span></div>
+          <div class="metric"><span class="num" data-count="73" data-suffix="%">0</span><span class="lbl"><span class="lang-ru">без человека</span><span class="lang-en">auto-handled</span></span></div>
+          <div class="metric"><span class="num" data-count="80" data-suffix="+">0</span><span class="lbl"><span class="lang-ru">объектов</span><span class="lang-en">properties</span></span></div>
+        </div>
+      </div>
+      <div class="reveal">
+        <div class="scroll-frame">
+          <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">viprentalphuket.com</span></div>
+          <div class="scroll-window" id="scrollWindow">
+            <div class="scroll-track fake-page" id="scrollTrack">
+              <div><h4>VIP Rental Phuket</h4><p>Booking villas, yachts & cars — 80+ properties, one team.</p><div class="blk"></div></div>
+              <div><h4><span class="lang-ru">AI-консьерж</span><span class="lang-en">AI concierge</span></h4><p>«Нужна вилла на 6 гостей с бассейном к пятнице» → 3 варианта за 4 секунды.</p><div class="blk"></div></div>
+              <div><h4><span class="lang-ru">Каталог</span><span class="lang-en">Catalog</span></h4><p>Фильтры, карты, мгновенная бронь. Конверсия +32%.</p><div class="blk"></div></div>
+              <div><h4><span class="lang-ru">Оплата</span><span class="lang-en">Checkout</span></h4><p>Stripe + крипто. Подтверждение в Telegram владельцу.</p><div class="blk"></div></div>
+              <div><h4>24 / 7</h4><p>73% запросов закрывает бот. Команда спит.</p><div class="blk"></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════════════ DEEP DIVE 2 · KEYDROP — live chat ═════════════════ -->
+<section class="showcase">
+  <div class="container">
+    <div class="showcase-grid rev">
+      <div class="reveal">
+        <div class="sc-kicker">// 02 · BOT + MINIAPP</div>
+        <h2 class="sc-title"><span class="lang-ru">Бот вместо отдела продаж</span><span class="lang-en">A bot instead of a sales team</span></h2>
+        <p class="sc-body">
+          <span class="lang-ru">KeyDrop: выдача Steam-кодов на полном автомате. Справа — живой диалог: сообщения печатаются, как у реального пользователя. Замените сценарий на свой в одной строке данных.</span>
+          <span class="lang-en">KeyDrop: fully automated Steam-code delivery. On the right — a live dialogue, messages typing like a real user. Swap the script for yours in one line of data.</span>
+        </p>
+        <div class="case-metrics" data-activate>
+          <div class="metric"><span class="num" data-count="1000" data-suffix="+">0</span><span class="lbl"><span class="lang-ru">заказов / мес</span><span class="lang-en">orders / mo</span></span></div>
+          <div class="metric"><span class="num" data-count="99.99" data-suffix="%">0</span><span class="lbl">uptime</span></div>
+          <div class="metric"><span class="num" data-count="0" data-suffix="₽">0</span><span class="lbl"><span class="lang-ru">операторы</span><span class="lang-en">operators</span></span></div>
+        </div>
+      </div>
+      <div class="reveal" style="display:flex; justify-content:center;">
+        <div class="phone" style="width:280px; max-width:90%;">
+          <div class="notch"></div>
+          <div class="viewport" id="scChat" data-activate style="height:420px;"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════════════ DEEP DIVE 3 · RA — metrics + flow ═════════════════ -->
+<section class="showcase">
+  <div class="container">
+    <div class="showcase-grid">
+      <div class="reveal">
+        <div class="sc-kicker">// 03 · DATA + AI</div>
+        <h2 class="sc-title"><span class="lang-ru">Когда UI нет — есть цифры</span><span class="lang-en">No UI? Then numbers</span></h2>
+        <p class="sc-body">
+          <span class="lang-ru">RA Project: on-chain аналитика на 12 сетях. У бэкенда нет «красивого экрана» — поэтому кейс держится на метриках и схеме пайплайна. Узлы оживают по скроллу.</span>
+          <span class="lang-en">RA Project: on-chain analytics across 12 networks. A backend has no "pretty screen" — so the case stands on metrics and a pipeline diagram. Nodes come alive on scroll.</span>
+        </p>
+        <div class="case-metrics" data-activate>
+          <div class="metric"><span class="num" data-count="41" data-suffix="M+">0</span><span class="lbl"><span class="lang-ru">блоков</span><span class="lang-en">blocks</span></span></div>
+          <div class="metric"><span class="num" data-count="12">0</span><span class="lbl"><span class="lang-ru">сетей</span><span class="lang-en">chains</span></span></div>
+          <div class="metric"><span class="num" data-count="14" data-suffix=" нед">0</span><span class="lbl"><span class="lang-ru">до прода</span><span class="lang-en">to prod</span></span></div>
+        </div>
+      </div>
+      <div class="reveal">
+        <div class="scroll-frame" style="padding:0;">
+          <div class="bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">pipeline.ra</span></div>
+          <div id="scFlow" data-activate style="min-height:240px; display:flex; align-items:center; justify-content:center; background:var(--bg);"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═════════════════ CTA ═════════════════ -->
+<section class="showcase" style="text-align:center;">
+  <div class="container">
+    <h2 class="section-headline reveal">
+      <span class="lang-ru">Следующий кейс — <em>ваш.</em></span>
+      <span class="lang-en">The next case — <em>yours.</em></span>
+    </h2>
+    <a href="/lead-form/" class="btn-primary reveal" style="margin-top:8px;">
+      <span class="lang-ru">Обсудить проект</span><span class="lang-en">Start a project</span>
+    </a>
+  </div>
+</section>
+
+<!-- ═════════════════ FOOTER ═════════════════ -->
+<footer class="footer-band">
+  <span class="lang-ru">© 2025-2026 DEADLINE · сделано в Пхукете × Бангкоке · </span>
+  <span class="lang-en">© 2025-2026 DEADLINE · forged in Phuket × Bangkok · </span>
+  <a href="https://t.me/deadline_corp">telegram</a> ·
+  <a href="mailto:corpdeadline@gmail.com">corpdeadline@gmail.com</a> ·
+  <a href="index.html"><span class="lang-ru">на главную</span><span class="lang-en">home</span></a>
+</footer>
+
+</body>
+</html>
