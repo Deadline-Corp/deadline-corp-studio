@@ -326,8 +326,47 @@ def update_email(db: Session, customer_id: UUID, email: str) -> Customer:
     target.email = email
     db.flush()
 
-    # (4) delete the now-orphaned customer (its identities list is empty
-    #     after the UPDATE in step 1, so cascade has nothing to delete)
+    # (3.5) HARDENING (2026-06-01, email-as-identifier): migrate `other`'s data
+    #       to target BEFORE deleting it. Email-as-identifier makes this merge
+    #       FREQUENT (we now ask email early on every channel), so the other
+    #       channel's chat history + pending follow-ups + CRM linkage must NOT
+    #       be lost. Без этого FK ON DELETE CASCADE снёс бы диалоги/задачи other.
+    from db.models import Conversation, ScheduledAction
+    # Re-point conversations (raw UPDATE — avoids ORM cascade landmines).
+    db.execute(
+        update(Conversation)
+        .where(Conversation.customer_id == other.id)
+        .values(customer_id=target.id)
+    )
+    # Re-point bot's scheduled actions (followups), if the table exists.
+    try:
+        db.execute(
+            update(ScheduledAction)
+            .where(ScheduledAction.customer_id == other.id)
+            .values(customer_id=target.id)
+        )
+    except Exception as _sa_exc:  # noqa: BLE001
+        log.warning("update_email: scheduled_actions re-point skipped: %s", _sa_exc)
+    # Carry over CRM/profile fields target is MISSING (never clobber target's own).
+    if not target.crm_contact_id and other.crm_contact_id:
+        target.crm_contact_id = other.crm_contact_id
+    if (other.lead_score or 0) > (target.lead_score or 0):
+        target.lead_score = other.lead_score
+    if not (target.name or "").strip() and (other.name or "").strip():
+        target.name = other.name
+    if not (target.phone or "").strip() and (other.phone or "").strip():
+        target.phone = other.phone
+    if other.identity_keys:
+        _merged_keys = dict(other.identity_keys or {})
+        _merged_keys.update(target.identity_keys or {})  # target wins on conflict
+        target.identity_keys = _merged_keys
+    db.flush()
+    # Full expire so any loaded relationship (conversations/identities) re-reads
+    # from DB as empty — db.delete(other) then has nothing to cascade-delete.
+    db.expire(other)
+
+    # (4) delete the now-orphaned customer (its identities/conversations were
+    #     re-pointed above, so cascade has nothing to delete)
     db.delete(other)
     db.flush()
 

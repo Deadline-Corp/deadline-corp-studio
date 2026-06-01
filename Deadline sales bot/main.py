@@ -1157,6 +1157,33 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         except Exception as exc:  # noqa: BLE001
             log.warning(f"[{str(conversation.id)[:8]}] lead_signals failed (non-fatal): {exc}")
 
+    # ---- Email as identifier (2026-06-01) ----
+    # Persist + cross-channel-merge the lead's email AS SOON AS they give it —
+    # on ANY turn, not only at handoff. This is the cross-channel identity key:
+    # same email seen on website + Telegram → ONE customer, one history. The bot
+    # asks for it early & politely (see SYSTEM_PROMPT «EMAIL КАК ИДЕНТИФИКАТОР»),
+    # but capture is purely server-side (classifier-independent). Safe: update_email
+    # keeps the CURRENT customer (target) as the survivor and re-points the other
+    # channel's data onto it. Skip public comments. Test-emails are allowed here
+    # (identity only — the test-email guard lives in CRM dispatch, not identity).
+    if not is_comment_mode_early:
+        _early_email = _scan_lead_email(_messages_to_dicts(recent))
+        if (
+            _early_email
+            and _is_valid_email(_early_email)
+            and (customer.email or "").strip().lower() != _early_email.strip().lower()
+        ):
+            try:
+                from services.identity import update_email
+                customer = update_email(db, customer.id, _early_email)
+                log.info(
+                    f"[{str(conversation.id)[:8]}] early email captured for identity: {_early_email}"
+                )
+            except Exception as _ee:  # noqa: BLE001
+                log.warning(
+                    f"[{str(conversation.id)[:8]}] early email capture failed: {_ee}"
+                )
+
     history_for_prompt = recent[:-1] if recent else []
     # Trim to last 12 entries for prompt budget (6 turns of user+assistant).
     # Assistant messages pass through _normalize_bot_reply so legacy
