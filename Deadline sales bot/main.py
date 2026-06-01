@@ -1245,6 +1245,39 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     except Exception as _are:  # noqa: BLE001
         log.debug(f"anti-repeat guard skipped: {_are}")
 
+    # Channel guard: в мессенджере (лид УЖЕ в Telegram) бот НЕ должен звать
+    # «перейти/продолжить в telegram @deadline_corp» и просить email «продублировать»
+    # — вы уже здесь. Few-shot это перебивает инструкцию, поэтому ловим в коде:
+    # 1 перегенерация с жёсткой подсказкой, иначе вырезаем нарушающие предложения.
+    def _msgr_leaks(text: str) -> bool:
+        low = (text or "").lower()
+        if "@deadline_corp" in low:
+            return True
+        if "telegram" in low and any(w in low for w in ("продолж", "перейд", "перейти", "напишите нам", "пишите нам", "напишите в")):
+            return True
+        if "email" in low and any(w in low for w in ("продубл", "дублир")):
+            return True
+        return False
+    try:
+        if (req.channel or "website").lower() != "website" and _msgr_leaks(raw_answer):
+            log.info(f"[{str(conversation.id)[:8]}] channel-guard: messenger reply leaked site-phrasing → regen")
+            _ch_nudge = (
+                prompt
+                + "\n\n# СТОП: ТЫ УЖЕ В ЭТОМ ЧАТЕ (мессенджер).\n"
+                "НЕ зови «перейти/продолжить в telegram @deadline_corp» — вы УЖЕ здесь, это "
+                "выглядит глупо. НЕ проси email «продублировать». Контакт уже есть (этот чат), "
+                "команда ответит ЗДЕСЬ. Ответь заново, по-человечески, общаясь прямо в этом чате."
+            )
+            raw_answer = await call_llm(_ch_nudge)
+            if _msgr_leaks(raw_answer):
+                # Всё ещё протекает — вырезаем нарушающие предложения.
+                import re as _re_g
+                parts = _re_g.split(r"(?<=[.!?])\s+", raw_answer)
+                kept = [p for p in parts if not _msgr_leaks(p)]
+                raw_answer = " ".join(kept).strip() or "Понял! Расскажите подробнее, что нужно — соберём с командой."
+    except Exception as _cge:  # noqa: BLE001
+        log.debug(f"channel-guard skipped: {_cge}")
+
     # Defense-in-depth: enforce the no-prefix + capitalize-first-letter
     # convention regardless of what the LLM returned. See _normalize_bot_reply.
     answer = _normalize_bot_reply(raw_answer)
