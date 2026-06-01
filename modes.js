@@ -2467,6 +2467,7 @@
     const onTocClick = (ev) => {
       const item = ev.target.closest('.noir-toc-item');
       if (!item) return;
+      if (item.dataset.ch === undefined) return;  // external link (cases.html) — navigate normally
       ev.preventDefault();
       const target = wrapper.querySelector(`#noir-ch-${item.dataset.ch}`);
       if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
