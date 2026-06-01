@@ -28,6 +28,24 @@ def test_drop_markup_question_keeps_statement():
     assert "как считать наценку" not in out     # вопрос-выпытывание вырезан
 
 
+def test_strip_embedded_markup_clause_keeps_rest():
+    # Точная фраза из живого теста sess_web_03: зонд «и как считать наценку» вшит
+    # в середину хорошего предложения — режем ТОЛЬКО клаузу, остальное живёт.
+    ans = ("Расскажите, что за шкуры вы планируете продавать и как считать наценку — "
+           "детали можно спокойно разложить с командой на созвоне.")
+    out = R.drop_bad_questions(ans)
+    assert "как считать наценку" not in out.lower()
+    assert "что за шкуры вы планируете продавать" in out
+    assert "разложить с командой на созвоне" in out
+
+
+def test_strip_clause_does_not_touch_statement():
+    # «своя наценка и автообновление» — это summary-statement, НЕ трогаем.
+    ans = "Понял — каталог с автоподтягиванием, своя наценка и автообновление."
+    out = R.drop_bad_questions(ans)
+    assert "своя наценка и автообновление" in out
+
+
 def test_drop_budget_frequency_questions():
     assert R.drop_bad_questions("Ок. На какой бюджет ориентируетесь?") == "Ок."
     assert R.drop_bad_questions("Понял. Как часто обновлять цены?") == "Понял."

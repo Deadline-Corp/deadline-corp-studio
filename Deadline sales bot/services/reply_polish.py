@@ -35,6 +35,22 @@ def _sentences(text):
     return [p for p in re.split(r"(?<=[.!?…])\s+", (text or "").strip()) if p.strip()]
 
 
+# Вшитая клауза-зонд вида «… и как считать наценку …» / «… и какой процент …».
+# Модель часто лепит её ВНУТРЬ нормального предложения (без «?»), поэтому
+# вырезаем ТОЛЬКО саму клаузу, оставляя остальной текст. Якорь « и <вопрос-слово> …
+# <маркер> » не задевает statements вроде «своя наценка и автообновление».
+_PROBE_CLAUSE = re.compile(
+    r"[,\s]+и\s+(?:как(?:ой|ая|ую|ие)?|сколько|на\s+как(?:ой|ую))\b"
+    r"[^—.,!?]*?\b(?:наценк\w*|маржу|маржа|маржи|процент\w*|бюджет\w*)\w*",
+    re.IGNORECASE,
+)
+
+
+def _strip_probe_clause(s):
+    """Убрать вшитую клаузу-зонд про наценку/маржу/процент/бюджет, сохранив предложение."""
+    return _PROBE_CLAUSE.sub("", s)
+
+
 def mirror_greeting(answer, lead_message, is_first_turn):
     """Первый ход + лид поздоровался формально, а бот открыл «Привет» → «Здравствуйте»."""
     if not is_first_turn or not answer:
@@ -55,6 +71,9 @@ def drop_bad_questions(answer, *, name_known=False, email_known=False):
         return answer
     kept = []
     for s in _sentences(answer):
+        # Сначала вырезаем вшитую клаузу-зонд («… и как считать наценку …»),
+        # затем решаем по очищенному предложению.
+        s = _strip_probe_clause(s)
         low = s.lower()
         is_q = s.rstrip().endswith("?")
         # Выпытывание деталей — только если это ВОПРОС (statements про наценку оставляем).
