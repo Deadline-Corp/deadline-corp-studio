@@ -1183,9 +1183,14 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     # бот предлагает РОВНО эти времена. Когда лид выбирает слот, сервер бронирует:
     # стадия «📞 Созвон назначен» + next_meeting_at в CRM + напоминания лиду (в его
     # чат) и админу (опер-группа) за день / 3ч / 1ч. Логика — в services/scheduling.
+    #
+    # ТОЛЬКО в мессенджере (ТГ/WA/IG): созвон — конверсия именно там. На САЙТЕ цель
+    # другая — ответить + взять email + увести в Telegram (созвон предложат уже в ТГ),
+    # поэтому слоты на сайте НЕ предлагаем (см. # КАНАЛ в SYSTEM_PROMPT).
     _call_slots_human = None
     _just_booked_human = None
-    if settings.crm_enabled and not is_comment_mode:
+    _booking_channel_ok = (req.channel or "website").lower() != "website"
+    if settings.crm_enabled and not is_comment_mode and _booking_channel_ok:
         try:
             from services import scheduling as _sched
             from datetime import datetime as _dtm, timezone as _tzu
