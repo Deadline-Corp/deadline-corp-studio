@@ -41,6 +41,15 @@ def test_drop_reask_when_both_known():
     assert "telegram @deadline_corp" in out     # увод в ТГ (statement) остаётся
 
 
+def test_drop_imperative_reask_no_qmark():
+    # Повтор-запрос без «?» («Расскажите, как вас зовут…») — тоже вырезаем.
+    ans = ("Команда ответит скоро. Расскажите, как вас зовут и на какой email удобнее "
+           "написать, чтобы не потеряться. Давайте в telegram @deadline_corp.")
+    out = R.drop_bad_questions(ans, name_known=True, email_known=True)
+    assert "как вас зовут" not in out.lower()
+    assert "telegram @deadline_corp" in out
+
+
 def test_keep_contact_ask_when_unknown():
     ans = "Понял задачу. На какой email написать?"
     out = R.drop_bad_questions(ans, name_known=False, email_known=False)

@@ -22,8 +22,13 @@ SPECIFICS_MARKERS = (
     "как часто", "частот обновл", "тех-стек", "техническ детал",
 )
 
-NAME_ASK = ("как вас зовут", "как к вам обращаться", "ваше имя")
-EMAIL_ASK = ("email", "почт", "куда написать", "куда удобнее", "куда продублировать")
+NAME_ASK = ("как вас зовут", "как к вам обращаться", "ваше имя", "подскажите имя", "представьтесь")
+# Только ASK-фразы (не ловим statements вроде «на email продублируем»).
+EMAIL_ASK = (
+    "на какой email", "какой email", "ваш email", "оставьте email", "скиньте email",
+    "пришлите email", "куда написать", "куда удобнее написать", "куда продублировать",
+    "email или telegram", "оставьте контакт", "ваш контакт",
+)
 
 
 def _sentences(text):
@@ -48,17 +53,22 @@ def drop_bad_questions(answer, *, name_known=False, email_known=False):
     """Убрать вопросы-выпытывания и повторный запрос уже данных имени+email."""
     if not answer:
         return answer
-    contact_redundant = name_known and email_known
     kept = []
     for s in _sentences(answer):
         low = s.lower()
         is_q = s.rstrip().endswith("?")
+        # Выпытывание деталей — только если это ВОПРОС (statements про наценку оставляем).
         if is_q and any(w in low for w in SPECIFICS_MARKERS):
             continue
-        if is_q and contact_redundant and (
-            any(w in low for w in NAME_ASK) or any(w in low for w in EMAIL_ASK)
-        ):
-            continue
+        # Повторный запрос контакта — даже БЕЗ «?» («Расскажите, как вас зовут…»).
+        # Вырезаем предложение, только если ВСЕ запрашиваемые в нём данные уже есть.
+        asks_name = any(w in low for w in NAME_ASK)
+        asks_email = any(w in low for w in EMAIL_ASK)
+        if asks_name or asks_email:
+            name_ok = (not asks_name) or name_known
+            email_ok = (not asks_email) or email_known
+            if name_ok and email_ok:
+                continue
         kept.append(s)
     return " ".join(kept).strip()
 
