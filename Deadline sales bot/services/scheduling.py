@@ -357,6 +357,18 @@ def parse_explicit_datetime(text: str, now_utc: datetime) -> Optional[datetime]:
     return cand
 
 
+_CALL_REQUEST = (
+    "созвон", "созвонит", "созвонимся", "созвониться", "позвон", "звонок", "звонком",
+    "поговорить", "пообщаться", "голосом", "набрать", "созвоны", "колл", "call",
+)
+
+
+def detect_call_request(text: str) -> bool:
+    """Лид прямо просит созвон/звонок («когда можно созвониться?»)."""
+    t = (text or "").lower()
+    return any(w in t for w in _CALL_REQUEST)
+
+
 def detect_call_medium(text: str) -> Optional[str]:
     """Определить предпочтительный способ созвона из текста лида."""
     t = (text or "").lower()

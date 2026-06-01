@@ -129,6 +129,14 @@ def test_parse_explicit_datetime_rejects_ambiguous_and_negative():
     assert S.parse_explicit_datetime("давайте в 9 утра", NOW) is None                    # вне окна 11–19
 
 
+def test_detect_call_request():
+    assert S.detect_call_request("Когда можно созвониться с кем-то из ваших?")
+    assert S.detect_call_request("давайте созвон")
+    assert S.detect_call_request("можно поговорить с человеком?")
+    assert not S.detect_call_request("сколько стоит лендинг")
+    assert not S.detect_call_request("нужен сайт для суши")
+
+
 def test_detect_cancel_intent():
     assert S.detect_cancel_intent("Ладно не надо тогда")
     assert S.detect_cancel_intent("Мне не удобно")

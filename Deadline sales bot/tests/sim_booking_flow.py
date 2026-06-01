@@ -56,7 +56,7 @@ def step(profile, lead_msg_n, content, *, taken=()):
     elif wants_cancel:
         profile.pop("offered_call_slots", None)
         return "CALL_CANCELLED(до брони)", "не навязываю созвон"
-    elif lead_msg_n >= 2:
+    elif lead_msg_n >= 2 or S.detect_call_request(content):
         pref_nb, pref_hmin, pref_hmax = S.parse_time_preference(content, now)
         has_pref = pref_nb is not None or pref_hmin is not None
         valid = [s for s in offered if s > now]

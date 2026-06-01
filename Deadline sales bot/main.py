@@ -1169,10 +1169,22 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         [_line_for_prompt(m) for m in history_for_prompt[-12:]]
     ) or "(новый диалог)"
 
-    # First-turn detection for AI Act Art. 50 disclosure. If after appending
-    # the user message we have exactly 1 message in the conversation, this
-    # is the lead's first ever message → bot must identify as AI in its reply.
-    is_first_turn = len(recent) == 1
+    # First-turn detection for AI Act Art. 50 disclosure. «Первый ход» = бот ещё
+    # НЕ отвечал в ЭТОМ диалоге. Считаем ответы бота прямо в БД (authoritative),
+    # а НЕ len(recent)==1 — иначе при подмешанной истории (recall) или после
+    # резюма диалога бот повторно «здоровается» как на первом ходе (реальный баг
+    # из живого ТГ-теста: на 2-м сообщении снова «Здравствуйте! Я AI-агент…»).
+    try:
+        from sqlalchemy import select as _sel_ft, func as _fn_ft
+        _asst_count_ft = db.execute(
+            _sel_ft(_fn_ft.count()).select_from(MessageRow).where(
+                MessageRow.conversation_id == conversation.id,
+                MessageRow.role == "assistant",
+            )
+        ).scalar() or 0
+        is_first_turn = _asst_count_ft == 0
+    except Exception:  # noqa: BLE001
+        is_first_turn = len(recent) == 1  # фолбэк на прежнюю эвристику
 
     # Comment mode (public IG/FB comment, not private DM). Triggers short
     # reply + redirect-to-DM; no email ask; no handoff brief.
@@ -1336,8 +1348,10 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                     _profile.pop("offered_call_slots", None)
                     customer.profile_data = _profile
                 _call_cancelled = True
-            elif _lead_msg_n >= 2:
-                # --- ПРЕДЛОЖИТЬ СЛОТЫ --- (не на первом «привет»)
+            elif _lead_msg_n >= 2 or _sched.detect_call_request(req.content):
+                # --- ПРЕДЛОЖИТЬ СЛОТЫ --- (не на первом «привет», НО если лид
+                # сразу просит созвон — предлагаем времена уже на первом ходе,
+                # а не спрашиваем только канал без времён).
                 # Если лид в ЭТОМ сообщении выразил пожелание («завтра утром»,
                 # «в среду») — пересчитываем под него; иначе переиспользуем ранее
                 # предложенные (стабильность между ходами), либо считаем ближайшие.
