@@ -54,10 +54,17 @@ def _on_connect(dbapi_conn, _):
 
 
 def get_db():
-    """FastAPI dependency: yields a session, closes after request."""
+    """FastAPI dependency: yields a session, closes after request.
+
+    Откатываем при исключении, чтобы соединение не вернулось в пул в «грязном»
+    (открытая транзакция) состоянии.
+    """
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 

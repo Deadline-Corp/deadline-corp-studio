@@ -463,9 +463,31 @@ class ScheduledAction(Base):
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     executed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Когда строку «забрал» крон (status→processing). Защита от двойной отправки
+    # при конкурентных свипах; протухший claim (>15 мин) можно перезабрать.
+    claimed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     def __repr__(self) -> str:
         return (
             f"<ScheduledAction {str(self.id)[:8]} {self.action_type} "
             f"executor={self.executor} status={self.status} due={self.due_at}>"
         )
+
+
+class ProcessedUpdate(Base):
+    """Дедуп входящих апдейтов вебхуков, переживающий рестарт процесса.
+
+    event_key = '<channel>:<update_id>' (напр. 'telegram:12345'). Вставка
+    ON CONFLICT DO NOTHING: если ключ уже есть — апдейт уже обработан, пропускаем.
+    Раньше дедуп был in-memory (OrderedDict) → после деплоя Railway Telegram
+    ретраил последние апдейты, и новый процесс обрабатывал их повторно (дубли).
+    """
+    __tablename__ = "processed_updates"
+
+    event_key: Mapped[str] = mapped_column(String(120), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return f"<ProcessedUpdate {self.event_key}>"

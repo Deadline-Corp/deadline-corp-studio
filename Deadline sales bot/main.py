@@ -2130,19 +2130,38 @@ _DEDUP_MAX_AGE_SEC = 300
 _DEDUP_MAX_SIZE = 1000
 
 
+def _seen_update_db(event_key: str) -> bool:
+    """Persistent дедуп: INSERT ... ON CONFLICT DO NOTHING в processed_updates.
+    True = ключ уже был (апдейт обработан раньше, в т.ч. ДО рестарта). Переживает
+    деплой Railway → Telegram-ретраи не дают дублей ответов."""
+    from db.connection import session_scope
+    from sqlalchemy import text as _sql_text
+    with session_scope() as s:
+        res = s.execute(
+            _sql_text(
+                "INSERT INTO processed_updates (event_key) VALUES (:k) "
+                "ON CONFLICT (event_key) DO NOTHING"
+            ),
+            {"k": event_key},
+        )
+        return (res.rowcount or 0) == 0  # 0 строк вставлено = был конфликт = видели
+
+
 def _seen_update(update_id: Optional[int]) -> bool:
-    """Mark `update_id` as processed and return whether we'd seen it before.
-
-    - Fresh update_id → store with current timestamp, return False
-    - Repeat update_id → return True without re-storing
-    - update_id is None → return False, do NOT store (Telegram occasionally
-      omits the field on malformed payloads; we don't want a None-key entry
-      to swallow ALL future Nones as "duplicates")
-
-    Eviction sweeps run on every call:
-      1. TTL: drop any entries older than _DEDUP_MAX_AGE_SEC
-      2. Size cap: if still over _DEDUP_MAX_SIZE, FIFO-evict oldest
+    """Видели ли уже этот update_id. Сначала персистентный БД-дедуп (переживает
+    рестарт); при сбое БД — fallback на in-memory. update_id=None → False, не пишем.
     """
+    if update_id is None:
+        return False
+    try:
+        return _seen_update_db(f"telegram:{update_id}")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[dedup] DB dedup failed (%s) — fallback to in-memory", exc)
+        return _seen_update_mem(update_id)
+
+
+def _seen_update_mem(update_id: Optional[int]) -> bool:
+    """In-memory дедуп (fallback): TTL + size-cap FIFO. Не переживает рестарт."""
     if update_id is None:
         return False
 

@@ -83,21 +83,34 @@ async def run_due_followups(*, tenant_config: Optional[dict] = None) -> dict:
     token = os.getenv("TELEGRAM_BOT_TOKEN") or (tenant_config or {}).get("telegram_bot_token")
     now = datetime.now(timezone.utc)
 
-    # 1) Забираем созревшие строки + материализуем нужные поля (чтобы не держать
-    #    ORM-объекты вне сессии).
+    # 1) КЛЕЙМ: атомарно забираем созревшие строки (FOR UPDATE SKIP LOCKED) и
+    #    переводим в 'processing' + claimed_at=now. Конкурентный свип/инстанс
+    #    пропустит залоченные → одно напоминание не уйдёт дважды. Протухший
+    #    'processing' (>15 мин — процесс упал между клеймом и отправкой) перезабираем.
+    from datetime import timedelta as _td
+    from sqlalchemy import or_ as _or, and_ as _and
+    _stale = now - _td(minutes=15)
     todo: list[dict] = []
     with session_scope() as s:
         rows = (
             s.query(ScheduledAction)
-            .filter(ScheduledAction.status == "pending")
             .filter(ScheduledAction.executor == "bot")
             .filter(ScheduledAction.action_type == "followup_message")
             .filter(ScheduledAction.due_at <= now)
+            .filter(_or(
+                ScheduledAction.status == "pending",
+                _and(ScheduledAction.status == "processing",
+                     _or(ScheduledAction.claimed_at.is_(None),
+                         ScheduledAction.claimed_at < _stale)),
+            ))
             .order_by(ScheduledAction.due_at.asc())
             .limit(MAX_PER_SWEEP)
+            .with_for_update(skip_locked=True)
             .all()
         )
         for r in rows:
+            r.status = "processing"
+            r.claimed_at = now
             stats["due"] += 1
             payload = r.payload or {}
             todo.append({
@@ -125,15 +138,16 @@ async def run_due_followups(*, tenant_config: Optional[dict] = None) -> dict:
             with session_scope() as s:
                 row = s.get(ScheduledAction, item["id"])
                 if row is not None:
+                    row.claimed_at = None
                     if ok:
                         row.status = "done"
                         row.executed_at = now
                         stats["sent"] += 1
                     else:
                         row.attempts = (row.attempts or 0) + 1
-                        # после 3 неудач — фейл, чтобы не долбить вечно
-                        if row.attempts >= 3:
-                            row.status = "failed"
+                        # <3 неудач — обратно в pending (ретрай на след. свипе);
+                        # после 3 — failed, чтобы не долбить вечно.
+                        row.status = "failed" if row.attempts >= 3 else "pending"
                         stats["failed"] += 1
         except Exception as exc:  # noqa: BLE001
             logger.warning("[scheduled_actions] status update failed row=%s: %s", item["id"], exc)
@@ -286,18 +300,29 @@ async def run_due_call_reminders(*, tenant_config: Optional[dict] = None) -> dic
     token = os.getenv("TELEGRAM_BOT_TOKEN") or (tenant_config or {}).get("telegram_bot_token")
     now = datetime.now(timezone.utc)
 
+    from datetime import timedelta as _td
+    from sqlalchemy import or_ as _or, and_ as _and
+    _stale = now - _td(minutes=15)
     todo: list[dict] = []
     with session_scope() as s:
         rows = (
             s.query(ScheduledAction)
-            .filter(ScheduledAction.status == "pending")
             .filter(ScheduledAction.action_type == "call_reminder")
             .filter(ScheduledAction.due_at <= now)
+            .filter(_or(
+                ScheduledAction.status == "pending",
+                _and(ScheduledAction.status == "processing",
+                     _or(ScheduledAction.claimed_at.is_(None),
+                         ScheduledAction.claimed_at < _stale)),
+            ))
             .order_by(ScheduledAction.due_at.asc())
             .limit(MAX_PER_SWEEP)
+            .with_for_update(skip_locked=True)
             .all()
         )
         for r in rows:
+            r.status = "processing"
+            r.claimed_at = now
             stats["due"] += 1
             payload = r.payload or {}
             todo.append({
@@ -323,14 +348,14 @@ async def run_due_call_reminders(*, tenant_config: Optional[dict] = None) -> dic
             with session_scope() as s:
                 row = s.get(ScheduledAction, item["id"])
                 if row is not None:
+                    row.claimed_at = None
                     if ok:
                         row.status = "done"
                         row.executed_at = now
                         stats["sent"] += 1
                     else:
                         row.attempts = (row.attempts or 0) + 1
-                        if row.attempts >= 3:
-                            row.status = "failed"
+                        row.status = "failed" if row.attempts >= 3 else "pending"
                         stats["failed"] += 1
         except Exception as exc:  # noqa: BLE001
             logger.warning("[scheduled_actions] call-reminder status update failed row=%s: %s", item["id"], exc)
