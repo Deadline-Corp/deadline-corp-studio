@@ -216,6 +216,24 @@ def _resolve_pending_deal_id(conversation_id: str) -> str:
     )
 
 
+def _existing_deal_id(conversation_id: Optional[str]) -> Optional[str]:
+    """Вернуть уже созданный deal_id диалога (или None). НЕ бросает — для
+    идемпотентности create_deal: если предыдущий create_deal уже записал
+    deal_id, второй (гонка двух turn'ов) НЕ создаёт дубль сделки."""
+    if not conversation_id:
+        return None
+    from db.connection import session_scope
+    from db.models import Conversation
+    from uuid import UUID
+    try:
+        with session_scope() as s:
+            conv = s.query(Conversation).filter(Conversation.id == UUID(conversation_id)).first()
+            return conv.crm_deal_id if conv else None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[crm] _existing_deal_id failed for %s: %s", conversation_id, exc)
+        return None
+
+
 async def _dispatch(ev: CRMEvent, adapter: CRMAdapter) -> None:
     """Translate event type → adapter call.
 
@@ -242,6 +260,16 @@ async def _dispatch(ev: CRMEvent, adapter: CRMAdapter) -> None:
         return
 
     if ev.type == "create_deal":
+        # Идемпотентность: если у диалога УЖЕ есть deal_id (предыдущий create_deal
+        # успел записать) — не создаём дубль сделки (гонка двух сообщений подряд).
+        _conv_id = p.get("conversation_id")
+        _already = await asyncio.to_thread(_existing_deal_id, _conv_id)
+        if _already:
+            logger.info("[crm] create_deal skip — conv %s already has deal %s", _conv_id, _already)
+            cb = p.get("on_deal_id")
+            if cb is not None:
+                await asyncio.to_thread(cb, _already)
+            return
         contact_id = p["contact_id"]
         if contact_id == "pending":
             contact_id = await asyncio.to_thread(_resolve_pending_contact_id, ev.customer_id)

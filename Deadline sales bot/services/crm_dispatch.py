@@ -740,8 +740,12 @@ def _make_contact_id_writeback(customer_id: str):
                         customer_id, contact_id,
                     )
         except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "[crm_dispatch] contact_id writeback failed for %s: %s",
+            # ERROR (не WARNING): провал writeback = contact_id остаётся None,
+            # следующие события с 'pending' будут зря ретраиться часами. Это
+            # должно всплывать в алертах, а не тонуть в потоке предупреждений.
+            logger.error(
+                "[crm_dispatch] CONTACT_ID WRITEBACK FAILED for %s: %s — "
+                "pending-события не зарезолвятся пока не пройдёт следующий upsert_contact",
                 customer_id, exc,
             )
     return writeback
@@ -763,8 +767,9 @@ def _make_deal_id_writeback(conversation_id: str):
                         conversation_id, deal_id,
                     )
         except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "[crm_dispatch] deal_id writeback failed for %s: %s",
+            logger.error(
+                "[crm_dispatch] DEAL_ID WRITEBACK FAILED for %s: %s — "
+                "сделка создана, но conv.crm_deal_id не записан (риск дубля при ретрае)",
                 conversation_id, exc,
             )
     return writeback

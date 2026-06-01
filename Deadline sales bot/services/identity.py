@@ -116,10 +116,23 @@ def resolve_or_create_customer(
 
     if existing_identity is not None:
         customer = existing_identity.customer
-        # Backfill email if the lead just provided one
-        if email and not customer.email:
-            customer.email = email
-            db.flush()
+        # Лид назвал email на УЖЕ известной идентичности. Если этот email
+        # принадлежит ДРУГОМУ customer (писал с другого канала) — это сигнал
+        # «один человек», нужно СЛИТЬ записи, а не просто записать email.
+        # update_email() делает merge-aware апдейт (re-point identities + delete
+        # orphan). Оборачиваем в try/except: сбой склейки НЕ должен ронять
+        # обработку сообщения — в худшем случае останется как было.
+        if email and customer.email != email:
+            try:
+                customer = update_email(db, customer.id, email)
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "[identity] email-merge failed for customer %s (email=%s): %s — "
+                    "fallback: оставляю как есть", customer.id, email, exc,
+                )
+                if not customer.email:
+                    customer.email = email
+                    db.flush()
         # Backfill username on the identity if it was empty
         if username and not existing_identity.username:
             existing_identity.username = username

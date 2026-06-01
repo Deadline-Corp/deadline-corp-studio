@@ -2254,6 +2254,7 @@ async def _process_telegram_update(payload: dict) -> None:
 # очередь: обрабатываются строго последовательно, ничего не пропадает.
 _chat_locks: dict = {}
 _chat_locks_guard = threading.Lock()
+_CHAT_LOCKS_MAX = 2000  # потолок, чтобы словарь локов не тёк бесконечно
 
 
 def _get_chat_lock(key: str) -> threading.Lock:
@@ -2261,6 +2262,14 @@ def _get_chat_lock(key: str) -> threading.Lock:
         lk = _chat_locks.get(key)
         if lk is None:
             lk = threading.Lock()
+            # Эвикт самых старых НЕзанятых локов при переполнении (insertion-order
+            # dict). Занятые (idет обработка) не трогаем — иначе порвём сериализацию.
+            if len(_chat_locks) >= _CHAT_LOCKS_MAX:
+                for k in list(_chat_locks.keys()):
+                    if not _chat_locks[k].locked():
+                        del _chat_locks[k]
+                        if len(_chat_locks) < _CHAT_LOCKS_MAX:
+                            break
             _chat_locks[key] = lk
         return lk
 
