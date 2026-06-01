@@ -445,9 +445,20 @@ class HubSpotAdapter(CRMAdapter):
 
         # Build properties payload. Email/phone come from lead.identity_keys
         # or contact_handle (depends on channel).
-        email = lead.identity_keys.get("email") or (
-            lead.contact_handle if lead.contact_handle and "@" in (lead.contact_handle or "") else None
-        )
+        # ВАЖНО: contact_handle у Telegram-лида = "@username" (содержит '@', но это
+        # НЕ email!). Раньше проверка была просто `'@' in handle` → telegram-ник
+        # уходил в поле email → HubSpot 400 «invalid email» → НЕТ контакта/карточки
+        # для всех ТГ-лидов без почты. Теперь требуем настоящий формат email
+        # (символ перед '@', точка в домене после '@').
+        def _looks_like_email(s: Optional[str]) -> bool:
+            if not s or "@" not in s:
+                return False
+            local, _, domain = s.partition("@")
+            return bool(local) and "." in domain and not domain.endswith(".")
+
+        email = lead.identity_keys.get("email")
+        if not email and _looks_like_email(lead.contact_handle):
+            email = lead.contact_handle
         phone = lead.identity_keys.get("phone")
         tg_handle = lead.identity_keys.get("tg_handle") or (
             lead.contact_handle if lead.channel == "telegram" and lead.contact_handle else None

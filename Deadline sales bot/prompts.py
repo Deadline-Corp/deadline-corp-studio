@@ -683,7 +683,17 @@ def build_chat_prompt(
             f"вайбер) — мягко предложи выбрать из наших. Предлагай созвон ОДИН раз; если лид ещё "
             f"спрашивает — помогай и отвечай, не дави. Слоты не выдумывай — бери эти."
         )
-    annotated_question = f"{question}\n{first_marker}\n{comment_marker}\n{channel_marker}{call_block}"
+    # Язык ответа: если реплика лида ЧИСТО латиницей (есть латиница, НЕТ кириллицы)
+    # → отвечать по-английски. Консервативно: русский текст с одним англ. словом
+    # содержит кириллицу → не триггерит. Фикс «бот отвечает по-русски англоязычному».
+    _q = question or ""
+    _has_cyr = any("а" <= ch.lower() <= "я" or ch.lower() == "ё" for ch in _q)
+    _has_lat = any("a" <= ch.lower() <= "z" for ch in _q)
+    lang_marker = ""
+    if _has_lat and not _has_cyr:
+        lang_marker = "\n[REPLY_LANGUAGE: English — отвечай ТОЛЬКО на английском, весь ответ]"
+
+    annotated_question = f"{question}\n{first_marker}\n{comment_marker}\n{channel_marker}{lang_marker}{call_block}"
 
     corrections_text = format_corrections_block(corrections or [])
 

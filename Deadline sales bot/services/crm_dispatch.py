@@ -539,7 +539,8 @@ def dispatch_on_message_turn(
             # на сайте — обычное «связаться». Задача вешается на менеджера
             # (HUBSPOT_OWNER_ID, если задан в env). C1.2-смысл сохранён: на сайте
             # это CRM-задача (to-do в карточке), а не реал-тайм пинг оператору.
-            _name = customer.name or customer.email or "лид"
+            _name = (customer.name or customer.email
+                     or (customer.identity_keys or {}).get("tg_handle") or "новый лид")
             if (channel or "").lower() != "website":
                 _task_title = f"Подхватить в Telegram — {_name} ждёт"
             else:
@@ -572,7 +573,8 @@ def dispatch_on_message_turn(
                     _mins = max(
                         1, int((_fu - datetime.now(timezone.utc)).total_seconds() / 60)
                     )
-                    _nm = customer.name or customer.email or "лид"
+                    _nm = (customer.name or customer.email
+                           or (customer.identity_keys or {}).get("tg_handle") or "новый лид")
                     dispatch_operator_task(
                         customer_id=customer_id,
                         crm_contact_id=contact_id,
