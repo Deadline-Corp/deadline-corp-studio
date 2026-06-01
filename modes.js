@@ -2214,7 +2214,7 @@
       tocLabels.map((l, i) =>
         `<a class="noir-toc-item${i === 0 ? ' is-active' : ''}" href="#noir-ch-${i}" data-ch="${i}">${l}</a>`
       ).join('')
-    }</nav>`;
+    }<a class="noir-toc-item noir-toc-cases" href="cases.html" style="color:#C9AB6E"><span class="lang-ru">→ КЕЙСЫ</span><span class="lang-en">→ CASES</span></a></nav>`;
 
     return parts.join('') + toc;
   }
@@ -2342,6 +2342,7 @@
     const clickHandlers = [];
     items.forEach(it => {
       const onClick = (ev) => {
+        if (it.dataset.ch === undefined) return;  // external link (e.g. cases.html) — let it navigate
         ev.preventDefault();
         const target = book.querySelector(`#noir-ch-${it.dataset.ch}`);
         if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
