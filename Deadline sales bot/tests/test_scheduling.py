@@ -59,6 +59,22 @@ def test_reminder_schedule_drops_past():
     assert all(fire > NOW for fire, _ in sched)
 
 
+def test_no_false_booking_on_question_turns():
+    """Бот не должен «случайно» забронировать, пока лид задаёт вопросы."""
+    slots = _slots()
+    questions = [
+        "а сколько это стоит примерно?",
+        "вы делаете мобильные приложения?",
+        "а сроки какие?",
+        "интересно, расскажите подробнее",
+        "нужно 5 страниц и интеграция с CRM",
+    ]
+    for q in questions:
+        assert S.parse_slot_choice(q, slots) is None, f"ложная бронь на: {q!r}"
+    # И только явный выбор — бронирует.
+    assert S.parse_slot_choice("ок, давайте второй вариант", slots) == slots[1]
+
+
 def test_reminder_texts_contain_key_info():
     call_at = S.compute_free_slots(NOW + timedelta(days=2), n=1)[0]
     lead = S.lead_reminder_text(call_at, "через час", medium="Zoom")

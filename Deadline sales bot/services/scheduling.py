@@ -108,11 +108,15 @@ def parse_slot_choice(text: str, offered: list[datetime]) -> Optional[datetime]:
         return None
     t = (text or "").lower()
 
-    # 1) Явное время сначала (самое специфичное): HH или HH:MM, сопоставляем с
-    #    локальным временем слотов. Так «в 15:00» не спутается с порядковым «1».
-    for h, mm in re.findall(r"\b([01]?\d|2[0-3])(?::([0-5]\d))?\b", t):
-        hour = int(h)
-        minute = int(mm) if mm else 0
+    # 1) Явное время (самое специфичное). Чтобы случайные числа («5 страниц»,
+    #    «к 15 числу») НЕ принимались за выбор времени, засчитываем только:
+    #    (а) HH:MM с двоеточием, либо (б) число сразу после предлога в/во/к/на.
+    time_hits: list[tuple[int, int]] = []
+    for hh, mm in re.findall(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", t):
+        time_hits.append((int(hh), int(mm)))
+    for hh in re.findall(r"\b(?:во|в|к|на)\s+([01]?\d|2[0-3])(?!\d)", t):
+        time_hits.append((int(hh), 0))
+    for hour, minute in time_hits:
         for slot in offered:
             loc = _to_local(slot)
             if loc.hour == hour and (minute == 0 or loc.minute == minute):
@@ -124,10 +128,17 @@ def parse_slot_choice(text: str, offered: list[datetime]) -> Optional[datetime]:
     if "перв" in t:
         return offered[0]
 
-    # 3) Одиночная цифра-порядковый (не часть числа): «вариант 2», «1».
-    if len(offered) >= 2 and re.search(r"(?<!\d)2(?!\d)", t):
+    # 3) Цифра-порядковый — ТОЛЬКО безопасно: либо всё сообщение ≈ сама цифра
+    #    («2», «2)», «2.»), либо рядом слово «вариант/слот». Иначе «в 2 раза»,
+    #    «2 страницы», «за 1 день» НЕ должны считаться выбором слота.
+    t_core = t.strip().rstrip(").!").strip()
+    if t_core in ("1", "2"):
+        idx = int(t_core) - 1
+        if idx < len(offered):
+            return offered[idx]
+    if len(offered) >= 2 and re.search(r"(?:вариант|вар\.?|слот|option)\s*2\b|\b2\s*(?:вариант|вар|слот)", t):
         return offered[1]
-    if re.search(r"(?<!\d)1(?!\d)", t):
+    if re.search(r"(?:вариант|вар\.?|слот|option)\s*1\b|\b1\s*(?:вариант|вар|слот)", t):
         return offered[0]
     return None
 
