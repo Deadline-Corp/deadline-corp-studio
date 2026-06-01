@@ -71,10 +71,25 @@ def test_drop_imperative_reask_no_qmark():
 def test_drop_false_telegram_record():
     # Лид сказал «я напишу в телеграм» (без ника) → «записал ваш телеграм» — ложь, режем.
     ans = ("Отлично, записал ваш телеграм — команда напишет вам в telegram. "
-           "Давайте продолжим в telegram @deadline_corp.")
+           "Как вас зовут?")
     out = R.polish(ans, lead_message="Ок я напишу в телеграм", is_first_turn=False)
     assert "записал ваш телеграм" not in out.lower()
-    assert "@deadline_corp" in out
+    assert "как вас зовут" in out.lower()
+
+
+def test_drop_repush_when_lead_already_going_to_tg():
+    # Лид сказал «напишу в телеграм» → бот не должен опять звать «давайте продолжим в telegram».
+    ans = "Как вас зовут? Давайте продолжим в telegram @deadline_corp. На email тоже продублируем."
+    out = R.polish(ans, lead_message="Ок я напишу в телеграм", is_first_turn=False)
+    assert "продолжим в telegram" not in out.lower()
+    assert "как вас зовут" in out.lower()
+
+
+def test_keep_tg_invite_when_lead_not_going():
+    # Лид НЕ говорил про телеграм → приглашение оставляем (это цель на сайте).
+    ans = "Понял задачу. Давайте продолжим в telegram @deadline_corp."
+    out = R.polish(ans, lead_message="нужен интернет-магазин", is_first_turn=False)
+    assert "telegram" in out.lower()
 
 
 def test_keep_telegram_record_when_handle_given():

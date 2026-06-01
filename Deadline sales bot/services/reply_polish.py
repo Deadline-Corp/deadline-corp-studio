@@ -30,6 +30,23 @@ FALSE_RECORD = (
     "сохранил ваш телеграм", "записал ваш ник", "записал ваш аккаунт",
 )
 
+# Повторный пуш «перейдём/продолжим в telegram», когда лид УЖЕ согласился сам туда написать.
+TG_REPUSH = (
+    "давайте продолжим в telegram", "давайте продолжим в телеграм", "продолжим в telegram",
+    "продолжим в телеграм", "давайте перейдём в telegram", "давайте перейдем в telegram",
+    "перейдём в telegram", "перейдем в telegram", "перейти в telegram", "давайте в telegram",
+    "продолжить в telegram", "перейдём в телеграм", "перейдем в телеграм",
+)
+
+
+def lead_going_to_tg(lead_message):
+    """Лид сам сказал, что напишет/перейдёт в Telegram (тогда повторно туда не зовём)."""
+    lm = (lead_message or "").lower()
+    if not re.search(r"телеграм|telegram|\bтг\b|\bтелег\b", lm):
+        return False
+    return bool(re.search(r"напиш|перейд|перейт|зайд|буд|свяж|пишу|\bсам\b|\bок\b|хорош|давай|\bда\b", lm))
+
+
 NAME_ASK = ("как вас зовут", "как к вам обращаться", "ваше имя", "подскажите имя", "представьтесь")
 # Только ASK-фразы (не ловим statements вроде «на email продублируем»).
 EMAIL_ASK = (
@@ -73,8 +90,10 @@ def mirror_greeting(answer, lead_message, is_first_turn):
     return answer
 
 
-def drop_bad_questions(answer, *, name_known=False, email_known=False, tg_handle_given=False):
-    """Убрать вопросы-выпытывания, повтор контакта и ложное «записал ваш телеграм»."""
+def drop_bad_questions(answer, *, name_known=False, email_known=False,
+                       tg_handle_given=False, lead_to_tg=False):
+    """Убрать вопросы-выпытывания, повтор контакта, ложное «записал ваш телеграм»
+    и повторный пуш в telegram, когда лид уже сам согласился туда написать."""
     if not answer:
         return answer
     kept = []
@@ -86,6 +105,9 @@ def drop_bad_questions(answer, *, name_known=False, email_known=False, tg_handle
         is_q = s.rstrip().endswith("?")
         # Ложное «записал ваш телеграм/контакт» — лид ника не давал.
         if not tg_handle_given and any(w in low for w in FALSE_RECORD):
+            continue
+        # Повторный пуш в telegram, когда лид уже сказал, что сам туда напишет.
+        if lead_to_tg and any(w in low for w in TG_REPUSH):
             continue
         # Выпытывание деталей — только если это ВОПРОС (statements про наценку оставляем).
         if is_q and any(w in low for w in SPECIFICS_MARKERS):
@@ -128,9 +150,11 @@ def polish(answer, *, lead_message="", is_first_turn=False,
         return answer
     # Лид реально дал @ник (тогда «записал ваш телеграм» — правда, не трогаем).
     tg_handle_given = bool(re.search(r"@[A-Za-z0-9_]{3,}", lead_message or ""))
+    lead_to_tg = lead_going_to_tg(lead_message)
     out = mirror_greeting(answer, lead_message, is_first_turn)
     cleaned = drop_bad_questions(
-        out, name_known=name_known, email_known=email_known, tg_handle_given=tg_handle_given
+        out, name_known=name_known, email_known=email_known,
+        tg_handle_given=tg_handle_given, lead_to_tg=lead_to_tg,
     )
     cleaned = limit_questions(cleaned, max_questions=1)
     return cleaned or out
