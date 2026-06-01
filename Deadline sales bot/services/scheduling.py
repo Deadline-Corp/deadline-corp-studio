@@ -33,6 +33,32 @@ REMINDERS: tuple[tuple[timedelta, str], ...] = (
 # Способы созвона на выбор лида.
 CALL_MEDIA = ("WhatsApp", "Telegram", "Zoom", "Google Meet")
 
+# Явное согласие лида (выбор слота). «не» рядом → НЕ согласие (см. has_neg).
+_AFFIRM = (
+    "да ", "да,", "да.", "ага", "давай", "ок", "окей", "хорошо", "годит",
+    "подходит", "подойдёт", "подойдет", "удобн", "выбираю", "бронир", "запиш",
+    "пусть", "идёт", "идет", "согласен", "согласна", "договорились", "беру",
+)
+# Маркеры вопроса-уточнения (не выбор слота, даже если упомянут час).
+_QUESTION_CUES = (
+    "только", "тоже", "разве", "неужели", "а есть", "а можно ли", "других нет",
+    "другого нет", "что друг", "а друг", "а раньше", "а позже", "а пораньше",
+)
+# Отмена / перенос / отказ от созвона. Границы слова обязательны: иначе «не удобно»
+# ловится внутри «МНЕ удобно» (ложная отмена согласия).
+_CANCEL_RE = re.compile(
+    r"\b(?:отмен\w*|переду\w*|перенес\w*|перенест\w*|перенос\w*|отказ\w*|"
+    r"не\s+надо|ненадо|без\s+созвон\w*|"
+    r"не\s+удобно|неудобно|не\s+получится|не\s+смогу|не\s+сейчас|"
+    r"в\s+друг(?:ой|ое)\s+раз|пока\s+не\s+(?:надо|нужно)|потом\s+созвон\w*)",
+    re.IGNORECASE,
+)
+
+
+def detect_cancel_intent(text: str) -> bool:
+    """Лид отказывается / просит перенести / отменить созвон."""
+    return bool(_CANCEL_RE.search(text or ""))
+
 _RU_WEEKDAYS = [
     "понедельник", "вторник", "среда", "четверг",
     "пятница", "суббота", "воскресенье",
@@ -166,6 +192,18 @@ def parse_time_preference(text: str, now_utc: datetime):
         if any(w in t for w in words):
             hour_min, hour_max = lo, hi
             break
+
+    # Явный единственный час («в 14», «14:00») в рабочем окне → точное предпочтение.
+    # Несколько разных часов («в 11 и 12») — это пересказ оффера, не предпочтение.
+    if hour_min is None:
+        expl = re.findall(r"\b([01]?\d|2[0-3]):[0-5]\d\b", t)
+        expl += re.findall(r"\b(?:во|в|на)\s+([01]?\d|2[0-3])(?!\d)", t)  # без «к» (≈ «к 15 числу»)
+        distinct = {int(x) for x in expl}
+        if len(distinct) == 1:
+            h = distinct.pop()
+            if WORK_START_HOUR <= h <= WORK_LAST_START_HOUR:
+                hour_min = hour_max = h
+
     return not_before, hour_min, hour_max
 
 
@@ -187,15 +225,56 @@ def format_slot_human(dt_utc: datetime, now_utc: Optional[datetime] = None) -> s
     return f"{_RU_WEEKDAYS[loc.weekday()]}, {loc.day} {_RU_MONTHS[loc.month]}, в {hhmm}"
 
 
-def parse_slot_choice(text: str, offered: list[datetime]) -> Optional[datetime]:
+def _match_offered_by_day(t: str, offered: list[datetime], now_utc: Optional[datetime]) -> Optional[datetime]:
+    """Выбор слота по дню («четверг», «завтра», «сегодня»), если он однозначен."""
+    for i, wd in enumerate(_RU_WEEKDAYS):
+        if wd[:-1] in t:
+            cand = [s for s in offered if _to_local(s).weekday() == i]
+            return cand[0] if len(cand) == 1 else None
+    if now_utc is not None:
+        today = _to_local(now_utc).date()
+        target = None
+        if "послезавтра" in t:
+            target = today + timedelta(days=2)
+        elif "завтра" in t:
+            target = today + timedelta(days=1)
+        elif "сегодня" in t:
+            target = today
+        if target is not None:
+            cand = [s for s in offered if _to_local(s).date() == target]
+            return cand[0] if len(cand) == 1 else None
+    return None
+
+
+def parse_slot_choice(
+    text: str, offered: list[datetime], now_utc: Optional[datetime] = None
+) -> Optional[datetime]:
     """Понять, какой из предложенных слотов выбрал лид. None — если непонятно.
 
-    Понимает: «первый/1/первое», «второй/2», а также явное время («в 14», «14:00»),
-    совпадающее с одним из предложенных (по локальному часу).
+    Понимает: «первый/1», «второй/2», явное время («в 14», «14:00»), день недели
+    («четверг») / «сегодня»/«завтра» — но ТОЛЬКО когда выбор ОДНОЗНАЧЕН.
+
+    НЕ считает выбором: вопрос-уточнение («…только в 11 и 12?»), упоминание
+    нескольких времён сразу, отрицание («не в 11») — иначе бронируем то, что лид
+    не выбирал (реальный баг из живого теста).
     """
     if not offered:
         return None
     t = (text or "").lower()
+    # «не» как отдельное слово (не «мНЕ»), а также «неудобно»/«ненадо».
+    has_neg = bool(re.search(r"\bне\b", t) or re.search(r"неудоб|ненад", t))
+    has_affirm = (not has_neg) and any(w in t for w in _AFFIRM)
+    has_qcue = any(w in t for w in _QUESTION_CUES)
+    # Уточнение («…только в 11 и 12?») или отказ без явного согласия — НЕ выбор слота.
+    if (has_qcue or has_neg) and not has_affirm:
+        return None
+
+    # Упоминание НЕСКОЛЬКИХ предложенных часов (в т.ч. голым числом: «11 и 12») —
+    # это пересказ оффера, не выбор одного слота.
+    offered_hours = {_to_local(s).hour for s in offered}
+    bare_hours = {int(x) for x in re.findall(r"\b(\d{1,2})\b", t)}
+    if len(offered_hours & bare_hours) >= 2:
+        return None
 
     # 1) Явное время (самое специфичное). Чтобы случайные числа («5 страниц»,
     #    «к 15 числу») НЕ принимались за выбор времени, засчитываем только:
@@ -205,13 +284,23 @@ def parse_slot_choice(text: str, offered: list[datetime]) -> Optional[datetime]:
         time_hits.append((int(hh), int(mm)))
     for hh in re.findall(r"\b(?:во|в|к|на)\s+([01]?\d|2[0-3])(?!\d)", t):
         time_hits.append((int(hh), 0))
+    matched: list[datetime] = []
     for hour, minute in time_hits:
         for slot in offered:
             loc = _to_local(slot)
-            if loc.hour == hour and (minute == 0 or loc.minute == minute):
-                return slot
+            if loc.hour == hour and (minute == 0 or loc.minute == minute) and slot not in matched:
+                matched.append(slot)
+    if len(matched) == 1:
+        return matched[0]
+    if len(matched) >= 2:
+        return None  # назвал несколько времён → выбор не однозначен
 
-    # 2) Порядковые слова.
+    # 2) Выбор по дню (когда слоты различаются датой).
+    by_day = _match_offered_by_day(t, offered, now_utc)
+    if by_day is not None:
+        return by_day
+
+    # 3) Порядковые слова.
     if len(offered) >= 2 and "втор" in t:
         return offered[1]
     if "перв" in t:

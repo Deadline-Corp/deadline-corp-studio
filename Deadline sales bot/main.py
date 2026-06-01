@@ -1192,6 +1192,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     _call_medium = None
     _call_booked_at = None       # → dispatch_on_message_turn: создаст сделку + стадию on_call
     _booked_info_human = None    # созвон уже назначен ранее → бот не зацикливается
+    _call_cancelled = False      # лид отказался/переносит → не настаивать
     _booking_channel_ok = (req.channel or "website").lower() != "website"
     if settings.crm_enabled and not is_comment_mode and _booking_channel_ok:
         try:
@@ -1216,12 +1217,38 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                     _offered = []
                     _profile.pop("offered_call_slots", None)
                     customer.profile_data = _profile
-            _chosen = _sched.parse_slot_choice(req.content, _offered) if _offered else None
+            _chosen = _sched.parse_slot_choice(req.content, _offered, _now) if _offered else None
+            _wants_cancel = _sched.detect_cancel_intent(req.content)
             _lead_msg_n = sum(
                 1 for m in recent
                 if (m.role.value if hasattr(m.role, "value") else str(m.role)) == "user"
             )
-            if _booked:
+            if _booked and _wants_cancel:
+                # --- ОТМЕНА / ПЕРЕНОС --- лид отказался: снимаем бронь, гасим напоминания,
+                # откатываем стадию CRM. НЕ настаиваем (фикс «уже записан» по кругу).
+                _profile.pop("booked_call_at", None)
+                _profile.pop("offered_call_slots", None)
+                _profile.pop("call_medium_asked", None)
+                customer.profile_data = _profile
+                conversation.lead_stage = "qualified"
+                try:
+                    from services.scheduled_actions import cancel_call_actions
+                    await asyncio.to_thread(cancel_call_actions, str(conversation.id))
+                except Exception as _ce:  # noqa: BLE001
+                    log.warning(f"[{str(conversation.id)[:8]}] cancel_call_actions failed: {_ce}")
+                try:
+                    from services.crm_dispatch import dispatch_stage_change
+                    dispatch_stage_change(
+                        customer_id=str(customer.id),
+                        crm_deal_id=getattr(conversation, "crm_deal_id", None),
+                        new_stage="qualified",
+                        conversation_id=str(conversation.id),
+                    )
+                except Exception as _ce:  # noqa: BLE001
+                    log.warning(f"[{str(conversation.id)[:8]}] cancel stage revert failed: {_ce}")
+                _call_cancelled = True
+                log.info(f"[{str(conversation.id)[:8]}] call booking cancelled by lead")
+            elif _booked:
                 # --- УЖЕ ЗАБРОНИРОВАНО --- не переспрашивать время/канал, не зацикливаться.
                 # Если лид только сейчас назвал канал — дозаписываем (без повторного вопроса).
                 _new_medium = _sched.detect_call_medium(req.content)
@@ -1289,6 +1316,12 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 except Exception as _re:  # noqa: BLE001
                     log.warning(f"[{str(conversation.id)[:8]}] call reminders write failed: {_re}")
                 log.info(f"[{str(conversation.id)[:8]}] call booked at {_chosen.isoformat()} medium={_medium}")
+            elif _wants_cancel:
+                # Лид отказался ещё до брони — не навязываем созвон, чистим слоты.
+                if _offered or _profile.get("offered_call_slots"):
+                    _profile.pop("offered_call_slots", None)
+                    customer.profile_data = _profile
+                _call_cancelled = True
             elif _lead_msg_n >= 2:
                 # --- ПРЕДЛОЖИТЬ СЛОТЫ --- (не на первом «привет»)
                 # Если лид в ЭТОМ сообщении выразил пожелание («завтра утром»,
@@ -1329,6 +1362,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         just_booked=_just_booked_human,
         call_medium=_call_medium,
         booked_info=_booked_info_human,
+        call_cancelled=_call_cancelled,
     )
 
     # Show "печатает..." indicator in the lead's Telegram chat while the LLM

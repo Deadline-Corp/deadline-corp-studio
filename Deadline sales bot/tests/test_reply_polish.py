@@ -68,10 +68,41 @@ def test_drop_imperative_reask_no_qmark():
     assert "telegram @deadline_corp" in out
 
 
+def test_drop_false_telegram_record():
+    # Лид сказал «я напишу в телеграм» (без ника) → «записал ваш телеграм» — ложь, режем.
+    ans = ("Отлично, записал ваш телеграм — команда напишет вам в telegram. "
+           "Давайте продолжим в telegram @deadline_corp.")
+    out = R.polish(ans, lead_message="Ок я напишу в телеграм", is_first_turn=False)
+    assert "записал ваш телеграм" not in out.lower()
+    assert "@deadline_corp" in out
+
+
+def test_keep_telegram_record_when_handle_given():
+    # Лид реально дал @ник → «записал» правомерно, не трогаем.
+    ans = "Записал ваш телеграм, передам команде."
+    out = R.polish(ans, lead_message="мой тг @petrov_dev", is_first_turn=False)
+    assert "телеграм" in out.lower()
+
+
 def test_keep_contact_ask_when_unknown():
     ans = "Понял задачу. На какой email написать?"
     out = R.drop_bad_questions(ans, name_known=False, email_known=False)
     assert "email" in out                       # email ещё не дали — спрашивать НАДО
+
+
+def test_limit_questions_keeps_last_cta():
+    # Кейс сайта: лишний переспрос «какие функции?» + нужный «как вас зовут?» → оставляем последний.
+    ans = ("Понял — полноценный сайт. Какие функции обязательно — меню или магазин? "
+           "Как вас зовут и на какой email написать?")
+    out = R.limit_questions(ans)
+    assert "какие функции" not in out.lower()
+    assert "как вас зовут" in out.lower()
+    assert "понял" in out.lower()
+
+
+def test_limit_questions_single_unchanged():
+    ans = "Понял задачу. Как вас зовут?"
+    assert R.limit_questions(ans) == ans
 
 
 def test_polish_full_bad_reply():

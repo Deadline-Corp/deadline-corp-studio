@@ -22,6 +22,14 @@ SPECIFICS_MARKERS = (
     "как часто", "частот обновл", "тех-стек", "техническ детал",
 )
 
+# Ложное «записал ваш телеграм/контакт» — на сайте бот НЕ получает ник из фразы
+# «я напишу в телеграм», значит обещание ложное. Вырезаем (если лид не дал @ник).
+FALSE_RECORD = (
+    "записал ваш телеграм", "записала ваш телеграм", "записал ваш телеграмм",
+    "записал ваш тг", "записала ваш тг", "записал ваш контакт", "записала ваш контакт",
+    "сохранил ваш телеграм", "записал ваш ник", "записал ваш аккаунт",
+)
+
 NAME_ASK = ("как вас зовут", "как к вам обращаться", "ваше имя", "подскажите имя", "представьтесь")
 # Только ASK-фразы (не ловим statements вроде «на email продублируем»).
 EMAIL_ASK = (
@@ -65,8 +73,8 @@ def mirror_greeting(answer, lead_message, is_first_turn):
     return answer
 
 
-def drop_bad_questions(answer, *, name_known=False, email_known=False):
-    """Убрать вопросы-выпытывания и повторный запрос уже данных имени+email."""
+def drop_bad_questions(answer, *, name_known=False, email_known=False, tg_handle_given=False):
+    """Убрать вопросы-выпытывания, повтор контакта и ложное «записал ваш телеграм»."""
     if not answer:
         return answer
     kept = []
@@ -76,6 +84,9 @@ def drop_bad_questions(answer, *, name_known=False, email_known=False):
         s = _strip_probe_clause(s)
         low = s.lower()
         is_q = s.rstrip().endswith("?")
+        # Ложное «записал ваш телеграм/контакт» — лид ника не давал.
+        if not tg_handle_given and any(w in low for w in FALSE_RECORD):
+            continue
         # Выпытывание деталей — только если это ВОПРОС (statements про наценку оставляем).
         if is_q and any(w in low for w in SPECIFICS_MARKERS):
             continue
@@ -92,12 +103,34 @@ def drop_bad_questions(answer, *, name_known=False, email_known=False):
     return " ".join(kept).strip()
 
 
+def limit_questions(answer, max_questions=1):
+    """Анти-перегруз: оставить не более N вопросов (последних). Стейтменты не трогаем.
+
+    Лид в живом тесте получал по 3 вопроса за реплику. Обычно последний вопрос —
+    нужный CTA (имя/email/созвон), а лишние зонды-переспросы идут раньше → их и режем.
+    """
+    if not answer:
+        return answer
+    sents = _sentences(answer)
+    q_idx = [i for i, s in enumerate(sents) if s.rstrip().endswith("?")]
+    if len(q_idx) <= max_questions:
+        return answer
+    keep_q = set(q_idx[-max_questions:])
+    out = [s for i, s in enumerate(sents) if not s.rstrip().endswith("?") or i in keep_q]
+    return " ".join(out).strip()
+
+
 def polish(answer, *, lead_message="", is_first_turn=False,
            name_known=False, email_known=False):
     """Применить все гарды. Если вырезали всё — вернуть версию после greeting-фикса
     (пустой ответ хуже неидеального)."""
     if not answer:
         return answer
+    # Лид реально дал @ник (тогда «записал ваш телеграм» — правда, не трогаем).
+    tg_handle_given = bool(re.search(r"@[A-Za-z0-9_]{3,}", lead_message or ""))
     out = mirror_greeting(answer, lead_message, is_first_turn)
-    cleaned = drop_bad_questions(out, name_known=name_known, email_known=email_known)
+    cleaned = drop_bad_questions(
+        out, name_known=name_known, email_known=email_known, tg_handle_given=tg_handle_given
+    )
+    cleaned = limit_questions(cleaned, max_questions=1)
     return cleaned or out

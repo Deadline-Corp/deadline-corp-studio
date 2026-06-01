@@ -225,6 +225,33 @@ def write_call_reminder(
         return None
 
 
+def cancel_call_actions(conversation_id: str) -> int:
+    """Отменить будущий созвон и его напоминания у диалога (лид отказался/переносит).
+
+    НЕ удаляет строки — переводит pending → cancelled (обратимо, для истории).
+    Возвращает число отменённых строк. Sync — звать через to_thread.
+    """
+    from db.connection import session_scope
+    from db.models import ScheduledAction
+    n = 0
+    try:
+        with session_scope() as s:
+            rows = (
+                s.query(ScheduledAction)
+                .filter(ScheduledAction.conversation_id == conversation_id)
+                .filter(ScheduledAction.status == "pending")
+                .filter(ScheduledAction.action_type.in_(("call_booked", "call_reminder")))
+                .all()
+            )
+            for r in rows:
+                r.status = "cancelled"
+                n += 1
+        logger.info("[scheduled_actions] cancelled %d call rows for conv=%s", n, conversation_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[scheduled_actions] cancel_call_actions failed: %s", exc)
+    return n
+
+
 def get_taken_call_slots(now_utc: datetime) -> list[datetime]:
     """Времена будущих назначенных созвонов (для анти-дабл-брони)."""
     from db.connection import session_scope
