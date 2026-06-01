@@ -1216,7 +1216,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                     _profile["call_medium"] = _medium
                 _profile.pop("offered_call_slots", None)
                 customer.profile_data = _profile
-                _just_booked_human = _sched.format_slot_human(_chosen)
+                _just_booked_human = _sched.format_slot_human(_chosen, _now)
                 conversation.lead_stage = "on_call"
                 try:
                     from services.crm_dispatch import dispatch_stage_change
@@ -1273,9 +1273,14 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                     log.warning(f"[{str(conversation.id)[:8]}] call reminders write failed: {_re}")
                 log.info(f"[{str(conversation.id)[:8]}] call booked at {_chosen.isoformat()} medium={_medium}")
             elif not _booked and _lead_msg_n >= 2:
-                # --- ПРЕДЛОЖИТЬ СЛОТЫ --- (не на первом «привет»; стабильны между ходами)
+                # --- ПРЕДЛОЖИТЬ СЛОТЫ --- (не на первом «привет»)
+                # Если лид в ЭТОМ сообщении выразил пожелание («завтра утром»,
+                # «в среду») — пересчитываем под него; иначе переиспользуем ранее
+                # предложенные (стабильность между ходами), либо считаем ближайшие.
+                _pref_nb, _pref_hmin, _pref_hmax = _sched.parse_time_preference(req.content, _now)
+                _has_pref = _pref_nb is not None or _pref_hmin is not None
                 _valid = [s for s in _offered if s > _now]
-                if len(_valid) >= 2:
+                if _valid and len(_valid) >= 2 and not _has_pref:
                     _slots = _valid[:2]
                 else:
                     try:
@@ -1283,12 +1288,15 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                         _taken = await asyncio.to_thread(get_taken_call_slots, _now)
                     except Exception:  # noqa: BLE001
                         _taken = []
-                    _slots = _sched.compute_free_slots(_now, taken=_taken, n=2)
+                    _slots = _sched.compute_free_slots(
+                        _now, taken=_taken, n=2,
+                        not_before=_pref_nb, hour_min=_pref_hmin, hour_max=_pref_hmax,
+                    )
                     if _slots:
                         _profile["offered_call_slots"] = [s.isoformat() for s in _slots]
                         customer.profile_data = _profile
                 if _slots:
-                    _call_slots_human = [_sched.format_slot_human(s) for s in _slots]
+                    _call_slots_human = [_sched.format_slot_human(s, _now) for s in _slots]
         except Exception as _se:  # noqa: BLE001
             log.warning(f"[{str(conversation.id)[:8]}] call-booking flow skipped: {_se}")
 

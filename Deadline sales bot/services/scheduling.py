@@ -63,39 +63,128 @@ def _in_window(dt_utc: datetime) -> bool:
     return loc.weekday() < 5 and WORK_START_HOUR <= loc.hour <= WORK_LAST_START_HOUR
 
 
-def compute_free_slots(
+def _start_of_local_day(now_utc: datetime, days_ahead: int = 0) -> datetime:
+    """Начало локального (Бангкок) дня now+days_ahead, как UTC-aware datetime."""
+    loc = _to_local(now_utc) + timedelta(days=days_ahead)
+    loc = loc.replace(hour=0, minute=0, second=0, microsecond=0)
+    return loc.astimezone(timezone.utc)
+
+
+def _search_slots(
     now_utc: datetime,
-    taken: Optional[Iterable[datetime]] = None,
-    n: int = 2,
+    taken_keys: set,
+    n: int,
+    start_from: datetime,
+    hour_min: Optional[int],
+    hour_max: Optional[int],
 ) -> list[datetime]:
-    """Вернуть n ближайших свободных слотов (часовые границы, UTC-aware).
-
-    - старт не раньше now + LEAD_TIME_HOURS, выровнен вверх до целого часа;
-    - только будни в окне 11:00–19:00 (локально);
-    - пропускаем уже занятые слоты (`taken`, сравнение по началу часа UTC).
-    """
-    if now_utc.tzinfo is None:
-        now_utc = now_utc.replace(tzinfo=timezone.utc)
-    taken_keys = {_hour_key(t) for t in (taken or [])}
-
-    start = now_utc + timedelta(hours=LEAD_TIME_HOURS)
-    cur = start.replace(minute=0, second=0, microsecond=0)
-    if cur < start:
+    cur = start_from.replace(minute=0, second=0, microsecond=0)
+    if cur < start_from:
         cur += timedelta(hours=1)
-
     horizon = now_utc + timedelta(days=SEARCH_HORIZON_DAYS)
     out: list[datetime] = []
     while cur <= horizon and len(out) < n:
-        if _in_window(cur) and _hour_key(cur) not in taken_keys:
-            out.append(_hour_key(cur))
+        if _in_window(cur):
+            loc = _to_local(cur)
+            if (hour_min is None or loc.hour >= hour_min) and (hour_max is None or loc.hour <= hour_max):
+                k = _hour_key(cur)
+                if k not in taken_keys and k not in out:
+                    out.append(k)
         cur += timedelta(hours=1)
     return out
 
 
-def format_slot_human(dt_utc: datetime) -> str:
-    """«вторник, 3 июня, 14:00» (локальное время Бангкок)."""
+def compute_free_slots(
+    now_utc: datetime,
+    taken: Optional[Iterable[datetime]] = None,
+    n: int = 2,
+    *,
+    not_before: Optional[datetime] = None,
+    hour_min: Optional[int] = None,
+    hour_max: Optional[int] = None,
+) -> list[datetime]:
+    """Вернуть n ближайших свободных слотов (часовые границы, UTC-aware).
+
+    Будни в окне 11:00–19:00 (локально), не раньше now + LEAD_TIME_HOURS, занятые
+    пропускаем. Если заданы предпочтения лида (not_before — «завтра»/день недели;
+    hour_min/hour_max — «утром/днём/вечером»), сначала ищем под них; если столько
+    не набралось — мягко ослабляем (сначала окно времени, потом дату), чтобы
+    ВСЕГДА предложить варианты.
+    """
+    if now_utc.tzinfo is None:
+        now_utc = now_utc.replace(tzinfo=timezone.utc)
+    taken_keys = {_hour_key(t) for t in (taken or [])}
+    base_start = now_utc + timedelta(hours=LEAD_TIME_HOURS)
+    start = max(base_start, not_before) if not_before else base_start
+
+    out = _search_slots(now_utc, taken_keys, n, start, hour_min, hour_max)
+    if len(out) < n and (hour_min is not None or hour_max is not None):
+        # ослабляем окно времени, дату-предпочтение оставляем
+        out += _search_slots(now_utc, taken_keys | set(out), n - len(out), start, None, None)
+    if len(out) < n:
+        # ослабляем и дату — ближайшие вообще
+        out += _search_slots(now_utc, taken_keys | set(out), n - len(out), base_start, None, None)
+    return out[:n]
+
+
+# Время суток: утро / день / вечер → часовые окна старта (локально).
+_TOD = (
+    (("вечер", "вечером"), 17, 19),
+    (("обед", "после обеда", "днём", "днем", " дня"), 13, 16),
+    (("утро", "утром", "с утра"), 11, 12),
+)
+
+
+def parse_time_preference(text: str, now_utc: datetime):
+    """Из реплики лида вытащить пожелание по времени созвона.
+
+    Возвращает (not_before, hour_min, hour_max) для compute_free_slots.
+    Понимает: сегодня / завтра / послезавтра / день недели («в среду»),
+    и время суток (утром / днём / вечером).
+    """
+    t = (text or "").lower()
+    not_before = None
+    if "послезавтра" in t:
+        not_before = _start_of_local_day(now_utc, 2)
+    elif "завтра" in t:
+        not_before = _start_of_local_day(now_utc, 1)
+    elif "сегодня" in t:
+        not_before = None  # ближайшие и так начинаются с сегодня
+    else:
+        cur_wd = _to_local(now_utc).weekday()
+        for i, wd in enumerate(_RU_WEEKDAYS):
+            stem = wd[:-1]  # «вторник»→«вторни», ловит «во вторник/вторника»
+            if stem in t:
+                days_ahead = (i - cur_wd) % 7
+                if days_ahead == 0:
+                    days_ahead = 7  # «в понедельник» в понедельник → следующий
+                not_before = _start_of_local_day(now_utc, days_ahead)
+                break
+
+    hour_min = hour_max = None
+    for words, lo, hi in _TOD:
+        if any(w in t for w in words):
+            hour_min, hour_max = lo, hi
+            break
+    return not_before, hour_min, hour_max
+
+
+def format_slot_human(dt_utc: datetime, now_utc: Optional[datetime] = None) -> str:
+    """Человекочитаемое время слота (локально, Бангкок).
+
+    Если передан now_utc: сегодня → «сегодня в 14:00», завтра → «завтра в 14:00»,
+    иначе — «вторник, 3 июня, в 14:00». Без now_utc — всегда по дню недели.
+    """
     loc = _to_local(dt_utc)
-    return f"{_RU_WEEKDAYS[loc.weekday()]}, {loc.day} {_RU_MONTHS[loc.month]}, {loc.strftime('%H:%M')}"
+    hhmm = loc.strftime("%H:%M")
+    if now_utc is not None:
+        today = _to_local(now_utc).date()
+        d = loc.date()
+        if d == today:
+            return f"сегодня в {hhmm}"
+        if d == today + timedelta(days=1):
+            return f"завтра в {hhmm}"
+    return f"{_RU_WEEKDAYS[loc.weekday()]}, {loc.day} {_RU_MONTHS[loc.month]}, в {hhmm}"
 
 
 def parse_slot_choice(text: str, offered: list[datetime]) -> Optional[datetime]:
@@ -191,9 +280,9 @@ def admin_reminder_text(
     return f"📞 Созвон {label} — {when}{via}\nЛид: {who}{contact_s}"
 
 
-def offer_slots_text(slots: list[datetime]) -> str:
+def offer_slots_text(slots: list[datetime], now_utc: Optional[datetime] = None) -> str:
     """Человекочитаемый список предложенных слотов (для инъекции в промпт)."""
     if not slots:
         return "(нет свободных слотов в ближайшее время — предложи лиду написать удобное время)"
-    lines = [f"{i + 1}) {format_slot_human(s)}" for i, s in enumerate(slots)]
+    lines = [f"{i + 1}) {format_slot_human(s, now_utc)}" for i, s in enumerate(slots)]
     return "; ".join(lines)

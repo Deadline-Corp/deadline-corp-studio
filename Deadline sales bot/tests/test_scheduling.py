@@ -81,3 +81,35 @@ def test_reminder_texts_contain_key_info():
     admin = S.admin_reminder_text(call_at, "Иван", "через час", medium="Zoom", contact="ivan@x.com")
     assert "Zoom" in lead and S.format_slot_human(call_at) in lead
     assert "Иван" in admin and "Zoom" in admin
+
+
+def test_format_today_tomorrow_vs_weekday():
+    today_slot = S.compute_free_slots(NOW, n=1)[0]  # сегодня (Пн 13:00)
+    assert S.format_slot_human(today_slot, NOW).startswith("сегодня в")
+    tomorrow_slot = S.compute_free_slots(
+        NOW, n=1, not_before=S._start_of_local_day(NOW, 1))[0]
+    assert S.format_slot_human(tomorrow_slot, NOW).startswith("завтра в")
+    # без now_utc — по дню недели (для напоминаний)
+    assert "июн" in S.format_slot_human(today_slot)
+
+
+def test_preference_tomorrow_morning():
+    nb, hmin, hmax = S.parse_time_preference("давайте созвонимся завтра утром", NOW)
+    assert nb is not None and (hmin, hmax) == (11, 12)
+    slots = S.compute_free_slots(NOW, n=2, not_before=nb, hour_min=hmin, hour_max=hmax)
+    assert len(slots) == 2
+    tomorrow = S._to_local(nb).date()
+    for s in slots:
+        loc = S._to_local(s)
+        assert loc.date() == tomorrow and 11 <= loc.hour <= 12
+
+
+def test_preference_weekday_and_evening():
+    nb, hmin, hmax = S.parse_time_preference("можно в среду вечером?", NOW)
+    assert S._to_local(nb).weekday() == 2  # среда
+    assert (hmin, hmax) == (17, 19)
+
+
+def test_no_preference_returns_none():
+    nb, hmin, hmax = S.parse_time_preference("хочу сайт для кофейни", NOW)
+    assert nb is None and hmin is None and hmax is None
