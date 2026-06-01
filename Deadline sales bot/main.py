@@ -1193,6 +1193,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     _call_booked_at = None       # → dispatch_on_message_turn: создаст сделку + стадию on_call
     _booked_info_human = None    # созвон уже назначен ранее → бот не зацикливается
     _call_cancelled = False      # лид отказался/переносит → не настаивать
+    _call_ask_time = False       # уже предлагали, лид не выбрал → спросить его время
     _booking_channel_ok = (req.channel or "website").lower() != "website"
     if settings.crm_enabled and not is_comment_mode and _booking_channel_ok:
         try:
@@ -1219,6 +1220,19 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                     customer.profile_data = _profile
             _chosen = _sched.parse_slot_choice(req.content, _offered, _now) if _offered else None
             _wants_cancel = _sched.detect_cancel_intent(req.content)
+            # Лид сам назвал конкретное валидное время с согласием («давайте в четверг
+            # в 14») → бронируем напрямую, даже если его не было среди предложенных.
+            if _chosen is None and not _booked and not _wants_cancel:
+                _explicit = _sched.parse_explicit_datetime(req.content, _now)
+                if _explicit is not None:
+                    try:
+                        from services.scheduled_actions import get_taken_call_slots
+                        _taken_x = await asyncio.to_thread(get_taken_call_slots, _now)
+                    except Exception:  # noqa: BLE001
+                        _taken_x = []
+                    _ek = _sched._hour_key(_explicit)
+                    if not any(_sched._hour_key(t) == _ek for t in _taken_x):
+                        _chosen = _explicit
             _lead_msg_n = sum(
                 1 for m in recent
                 if (m.role.value if hasattr(m.role, "value") else str(m.role)) == "user"
@@ -1330,9 +1344,13 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 _pref_nb, _pref_hmin, _pref_hmax = _sched.parse_time_preference(req.content, _now)
                 _has_pref = _pref_nb is not None or _pref_hmin is not None
                 _valid = [s for s in _offered if s > _now]
-                if _valid and len(_valid) >= 2 and not _has_pref:
-                    _slots = _valid[:2]
+                if _valid and not _has_pref:
+                    # Уже предлагали времена, лид НЕ выбрал и НЕ назвал своё → НЕ долбим
+                    # тем же списком (фикс зацикливания «где удобно?» по кругу).
+                    # Просим назвать удобное ЕМУ время — его учтём (явный час парсится).
+                    _call_ask_time = True
                 else:
+                    # Первое предложение ИЛИ лид назвал пожелание → (пере)считать слоты.
                     try:
                         from services.scheduled_actions import get_taken_call_slots
                         _taken = await asyncio.to_thread(get_taken_call_slots, _now)
@@ -1363,6 +1381,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         call_medium=_call_medium,
         booked_info=_booked_info_human,
         call_cancelled=_call_cancelled,
+        call_ask_time=_call_ask_time,
     )
 
     # Show "печатает..." indicator in the lead's Telegram chat while the LLM

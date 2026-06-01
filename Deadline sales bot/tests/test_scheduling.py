@@ -112,6 +112,23 @@ def test_choose_slot_by_weekday():
     assert S.parse_slot_choice("первый", offered, NOW) == thu14
 
 
+def test_parse_explicit_datetime_books_directly():
+    # «давайте в четверг в 14» — согласие + явное время → прямой слот для брони.
+    dt = S.parse_explicit_datetime("давайте в четверг в 14", NOW)
+    assert dt is not None
+    assert S._to_local(dt).weekday() == 3 and S._to_local(dt).hour == 14
+    # «мне удобно завтра в 15»
+    dt2 = S.parse_explicit_datetime("мне удобно завтра в 15", NOW)
+    assert dt2 is not None and S._to_local(dt2).hour == 15
+
+
+def test_parse_explicit_datetime_rejects_ambiguous_and_negative():
+    assert S.parse_explicit_datetime("В четверг тоже только в 11 и 12 ?", NOW) is None  # вопрос+2 часа
+    assert S.parse_explicit_datetime("мне не удобно в 14", NOW) is None                  # отрицание
+    assert S.parse_explicit_datetime("сколько стоит лендинг", NOW) is None               # без времени
+    assert S.parse_explicit_datetime("давайте в 9 утра", NOW) is None                    # вне окна 11–19
+
+
 def test_detect_cancel_intent():
     assert S.detect_cancel_intent("Ладно не надо тогда")
     assert S.detect_cancel_intent("Мне не удобно")

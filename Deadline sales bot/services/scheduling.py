@@ -321,6 +321,42 @@ def parse_slot_choice(
     return None
 
 
+def parse_explicit_datetime(text: str, now_utc: datetime) -> Optional[datetime]:
+    """Лид САМ назвал конкретное время с согласием → вернуть UTC-слот для прямой брони.
+
+    Срабатывает на «давайте в четверг в 14», «мне удобно завтра в 15» — когда есть
+    согласие (affirm) + единственный явный час + НЕТ отрицания/вопроса-уточнения.
+    Валидирует рабочее окно (будни 11–19 локал) и lead-time. Занятость слота
+    проверяет вызывающий (через get_taken_call_slots). None — если не однозначно.
+    """
+    t = (text or "").lower()
+    has_neg = bool(re.search(r"\bне\b", t) or re.search(r"неудоб|ненад", t))
+    if has_neg or any(w in t for w in _QUESTION_CUES):
+        return None
+    if not any(w in t for w in _AFFIRM):
+        return None
+
+    hh = mm = None
+    hm = re.findall(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", t)
+    if hm:
+        pairs = {(int(a), int(b)) for a, b in hm}
+        if len(pairs) == 1:
+            hh, mm = pairs.pop()
+    if hh is None:
+        bare = {int(x) for x in re.findall(r"\b(?:во|в|на)\s+([01]?\d|2[0-3])(?!\d)", t)}
+        if len(bare) == 1:
+            hh, mm = bare.pop(), 0
+    if hh is None or not (WORK_START_HOUR <= hh <= WORK_LAST_START_HOUR):
+        return None
+
+    nb, _, _ = parse_time_preference(text, now_utc)
+    day_local = _to_local(nb) if nb is not None else _to_local(now_utc)
+    cand = day_local.replace(hour=hh, minute=mm, second=0, microsecond=0).astimezone(timezone.utc)
+    if not _in_window(cand) or cand < now_utc + timedelta(hours=LEAD_TIME_HOURS):
+        return None
+    return cand
+
+
 def detect_call_medium(text: str) -> Optional[str]:
     """Определить предпочтительный способ созвона из текста лида."""
     t = (text or "").lower()
