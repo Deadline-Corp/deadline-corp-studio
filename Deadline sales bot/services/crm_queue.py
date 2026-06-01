@@ -260,6 +260,7 @@ async def _dispatch(ev: CRMEvent, adapter: CRMAdapter) -> None:
             title=p.get("title"),
             description=p.get("description"),
             project_type=p.get("project_type"),
+            next_meeting_at=p.get("next_meeting_at"),
         )
         return
 
@@ -376,6 +377,7 @@ def make_update_stage_event(
     title: Optional[str] = None,
     description: Optional[str] = None,
     project_type: Optional[str] = None,
+    next_meeting_at=None,
 ) -> CRMEvent:
     return CRMEvent(
         type="update_deal_stage",
@@ -385,6 +387,8 @@ def make_update_stage_event(
             "conversation_id": conversation_id,  # needed for lazy resolution when deal_id="pending"
             # Phase C1: optional readable card content, set at handoff/qualified
             "title": title, "description": description, "project_type": project_type,
+            # Созвон: дата/время назначенного созвона (datetime) → в карточку сделки.
+            "next_meeting_at": next_meeting_at,
         },
     )
 

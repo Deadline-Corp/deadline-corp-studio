@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 import httpx
@@ -582,6 +582,7 @@ class HubSpotAdapter(CRMAdapter):
         title: Optional[str] = None,
         description: Optional[str] = None,
         project_type: Optional[str] = None,
+        next_meeting_at: Optional[datetime] = None,
     ) -> None:
         await self._ensure_setup()
 
@@ -591,6 +592,13 @@ class HubSpotAdapter(CRMAdapter):
             return
 
         props: dict[str, Any] = {"dealstage": stage_id}
+        # Созвон назначен — пишем дату/время в карточку (HubSpot datetime-проперти
+        # принимает unix-миллисекунды). Видно в HubSpot UI без календарной интеграции.
+        if next_meeting_at is not None:
+            _dt = next_meeting_at
+            if _dt.tzinfo is None:
+                _dt = _dt.replace(tzinfo=timezone.utc)
+            props["next_meeting_at"] = int(_dt.timestamp() * 1000)
         if stage == "lost" and lost_reason:
             props["lost_reason_internal"] = lost_reason
         # Phase C1 (2026-05-29): write a readable deal name + structured brief

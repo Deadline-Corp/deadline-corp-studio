@@ -1178,6 +1178,115 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     # reply + redirect-to-DM; no email ask; no handoff brief.
     is_comment_mode = req.message_type == "comment"
 
+    # ---- Созвон (call booking, 2026-06-01) ----
+    # Сервер считает свободные слоты (будни 11–20, UTC+7) и кладёт их в промпт —
+    # бот предлагает РОВНО эти времена. Когда лид выбирает слот, сервер бронирует:
+    # стадия «📞 Созвон назначен» + next_meeting_at в CRM + напоминания лиду (в его
+    # чат) и админу (опер-группа) за день / 3ч / 1ч. Логика — в services/scheduling.
+    _call_slots_human = None
+    _just_booked_human = None
+    if settings.crm_enabled and not is_comment_mode:
+        try:
+            from services import scheduling as _sched
+            from datetime import datetime as _dtm, timezone as _tzu
+            _profile = dict(customer.profile_data or {})
+            _now = _dtm.now(_tzu.utc)
+            _booked = _profile.get("booked_call_at")
+            _offered = []
+            for _x in (_profile.get("offered_call_slots") or []):
+                try:
+                    _offered.append(_dtm.fromisoformat(_x))
+                except Exception:  # noqa: BLE001
+                    pass
+            _chosen = _sched.parse_slot_choice(req.content, _offered) if _offered else None
+            _lead_msg_n = sum(
+                1 for m in recent
+                if (m.role.value if hasattr(m.role, "value") else str(m.role)) == "user"
+            )
+            if _chosen is not None and not _booked:
+                # --- БРОНЬ ---
+                _medium = _sched.detect_call_medium(req.content) or _profile.get("call_medium")
+                _profile["booked_call_at"] = _chosen.isoformat()
+                if _medium:
+                    _profile["call_medium"] = _medium
+                _profile.pop("offered_call_slots", None)
+                customer.profile_data = _profile
+                _just_booked_human = _sched.format_slot_human(_chosen)
+                conversation.lead_stage = "on_call"
+                try:
+                    from services.crm_dispatch import dispatch_stage_change
+                    dispatch_stage_change(
+                        customer_id=str(customer.id),
+                        crm_deal_id=conversation.crm_deal_id,
+                        new_stage="on_call",
+                        conversation_id=str(conversation.id),
+                        next_meeting_at=_chosen,
+                    )
+                except Exception as _ce:  # noqa: BLE001
+                    log.warning(f"[{str(conversation.id)[:8]}] call stage dispatch failed: {_ce}")
+                try:
+                    from services.scheduled_actions import write_call_booking, write_call_reminder
+                    _chat = getattr(conversation, "channel_conversation_id", None)
+                    _is_msgr = (req.channel or "website").lower() != "website"
+                    _lead_name = (customer.name or customer.email or "лид")
+                    _contact = customer.email or (customer.identity_keys or {}).get("tg_handle") or ""
+                    await asyncio.to_thread(
+                        write_call_booking,
+                        customer_id=str(customer.id),
+                        conversation_id=str(conversation.id),
+                        channel=req.channel,
+                        chat_id=str(_chat) if _chat else None,
+                        call_at=_chosen,
+                        medium=_medium,
+                    )
+                    for _fire, _label in _sched.reminder_schedule(_chosen, _now):
+                        # Лиду — только если есть канал, куда писать (мессенджер).
+                        if _chat and _is_msgr:
+                            await asyncio.to_thread(
+                                write_call_reminder,
+                                customer_id=str(customer.id),
+                                conversation_id=str(conversation.id),
+                                channel=req.channel,
+                                chat_id=str(_chat),
+                                due_at=_fire,
+                                text=_sched.lead_reminder_text(_chosen, _label, _medium),
+                                audience="lead",
+                            )
+                        # Админу — в опер-группу.
+                        if settings.telegram_operator_group_id:
+                            await asyncio.to_thread(
+                                write_call_reminder,
+                                customer_id=str(customer.id),
+                                conversation_id=str(conversation.id),
+                                channel=req.channel,
+                                chat_id=str(settings.telegram_operator_group_id),
+                                due_at=_fire,
+                                text=_sched.admin_reminder_text(_chosen, _lead_name, _label, _medium, _contact),
+                                audience="admin",
+                            )
+                except Exception as _re:  # noqa: BLE001
+                    log.warning(f"[{str(conversation.id)[:8]}] call reminders write failed: {_re}")
+                log.info(f"[{str(conversation.id)[:8]}] call booked at {_chosen.isoformat()} medium={_medium}")
+            elif not _booked and _lead_msg_n >= 2:
+                # --- ПРЕДЛОЖИТЬ СЛОТЫ --- (не на первом «привет»; стабильны между ходами)
+                _valid = [s for s in _offered if s > _now]
+                if len(_valid) >= 2:
+                    _slots = _valid[:2]
+                else:
+                    try:
+                        from services.scheduled_actions import get_taken_call_slots
+                        _taken = await asyncio.to_thread(get_taken_call_slots, _now)
+                    except Exception:  # noqa: BLE001
+                        _taken = []
+                    _slots = _sched.compute_free_slots(_now, taken=_taken, n=2)
+                    if _slots:
+                        _profile["offered_call_slots"] = [s.isoformat() for s in _slots]
+                        customer.profile_data = _profile
+                if _slots:
+                    _call_slots_human = [_sched.format_slot_human(s) for s in _slots]
+        except Exception as _se:  # noqa: BLE001
+            log.warning(f"[{str(conversation.id)[:8]}] call-booking flow skipped: {_se}")
+
     prompt = build_chat_prompt(
         context=context,
         history=history_str,
@@ -1186,6 +1295,8 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         is_comment_mode=is_comment_mode,
         corrections=correction_rules,
         channel=req.channel,
+        call_slots=_call_slots_human,
+        just_booked=_just_booked_human,
     )
 
     # Show "печатает..." indicator in the lead's Telegram chat while the LLM
@@ -2463,13 +2574,14 @@ async def admin_cron_sweep(_: None = Depends(_verify_training_token)):
     """Force-run крон-свипа + само-исполнения отложенных действий (для теста,
     чтобы не ждать часовой интервал крона)."""
     from services.cron import sweep_once
-    from services.scheduled_actions import run_due_followups
+    from services.scheduled_actions import run_due_followups, run_due_call_reminders
     try:
         sweep_stats = await sweep_once(tenant_config={})
     except Exception as e:  # noqa: BLE001
         sweep_stats = {"error": str(e)}
     fu_stats = await run_due_followups(tenant_config=None)
-    return {"sweep": sweep_stats, "followups": fu_stats}
+    call_stats = await run_due_call_reminders(tenant_config=None)
+    return {"sweep": sweep_stats, "followups": fu_stats, "call_reminders": call_stats}
 
 
 @app.get("/admin/scheduled-actions")

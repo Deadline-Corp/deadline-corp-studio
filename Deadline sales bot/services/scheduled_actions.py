@@ -143,3 +143,173 @@ async def run_due_followups(*, tenant_config: Optional[dict] = None) -> dict:
         stats["due"], stats["sent"], stats["failed"], stats["skipped_no_chat"],
     )
     return stats
+
+
+# =============================================================================
+# СОЗВОНЫ (call booking) — записи созвонов + напоминания лиду и админу
+# =============================================================================
+# Действия:
+#   action_type="call_booked"   — сам факт созвона (due_at = время созвона),
+#                                  executor="human"; нужен для (а) анти-дабл-брони
+#                                  и (б) истории. Бот его НЕ «исполняет».
+#   action_type="call_reminder" — напоминание (бот шлёт), payload.audience =
+#                                  "lead" | "admin", chat_id = куда слать.
+
+def write_call_booking(
+    *,
+    customer_id: str,
+    conversation_id: Optional[str],
+    channel: str,
+    chat_id: Optional[str],
+    call_at: datetime,
+    medium: Optional[str] = None,
+) -> Optional[str]:
+    """Записать факт назначенного созвона (call_booked). Sync — звать через to_thread."""
+    from db.connection import session_scope
+    from db.models import ScheduledAction
+    try:
+        with session_scope() as s:
+            row = ScheduledAction(
+                customer_id=customer_id,
+                conversation_id=conversation_id,
+                channel=channel,
+                chat_id=chat_id,
+                action_type="call_booked",
+                executor="human",
+                due_at=call_at,
+                status="pending",
+                payload={"medium": medium},
+            )
+            s.add(row)
+            s.flush()
+            rid = str(row.id)
+        logger.info("[scheduled_actions] call booked row=%s at=%s medium=%s", rid, call_at, medium)
+        return rid
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[scheduled_actions] write_call_booking failed: %s", exc)
+        return None
+
+
+def write_call_reminder(
+    *,
+    customer_id: str,
+    conversation_id: Optional[str],
+    channel: str,
+    chat_id: Optional[str],
+    due_at: datetime,
+    text: str,
+    audience: str,  # "lead" | "admin"
+) -> Optional[str]:
+    """Записать одно напоминание о созвоне (бот отправит в due_at)."""
+    from db.connection import session_scope
+    from db.models import ScheduledAction
+    try:
+        with session_scope() as s:
+            row = ScheduledAction(
+                customer_id=customer_id,
+                conversation_id=conversation_id,
+                channel=channel,
+                chat_id=chat_id,
+                action_type="call_reminder",
+                executor="bot",
+                due_at=due_at,
+                status="pending",
+                payload={"text": text, "audience": audience},
+            )
+            s.add(row)
+            s.flush()
+            rid = str(row.id)
+        return rid
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[scheduled_actions] write_call_reminder failed: %s", exc)
+        return None
+
+
+def get_taken_call_slots(now_utc: datetime) -> list[datetime]:
+    """Времена будущих назначенных созвонов (для анти-дабл-брони)."""
+    from db.connection import session_scope
+    from db.models import ScheduledAction
+    out: list[datetime] = []
+    try:
+        with session_scope() as s:
+            rows = (
+                s.query(ScheduledAction.due_at)
+                .filter(ScheduledAction.action_type == "call_booked")
+                .filter(ScheduledAction.status == "pending")
+                .filter(ScheduledAction.due_at >= now_utc)
+                .all()
+            )
+            out = [r[0] for r in rows if r[0] is not None]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[scheduled_actions] get_taken_call_slots failed: %s", exc)
+    return out
+
+
+async def run_due_call_reminders(*, tenant_config: Optional[dict] = None) -> dict:
+    """Крон-шаг: разослать созревшие напоминания о созвонах (лиду и админу).
+
+    Лиду — в его chat_id; админу — в chat_id напоминания (обычно опер-группа).
+    Изолированно, ошибка одной строки не валит остальные.
+    """
+    from db.connection import session_scope
+    from db.models import ScheduledAction
+    from channels.telegram import send_telegram_reply
+
+    stats = {"due": 0, "sent": 0, "failed": 0, "skipped_no_chat": 0}
+    token = os.getenv("TELEGRAM_BOT_TOKEN") or (tenant_config or {}).get("telegram_bot_token")
+    now = datetime.now(timezone.utc)
+
+    todo: list[dict] = []
+    with session_scope() as s:
+        rows = (
+            s.query(ScheduledAction)
+            .filter(ScheduledAction.status == "pending")
+            .filter(ScheduledAction.action_type == "call_reminder")
+            .filter(ScheduledAction.due_at <= now)
+            .order_by(ScheduledAction.due_at.asc())
+            .limit(MAX_PER_SWEEP)
+            .all()
+        )
+        for r in rows:
+            stats["due"] += 1
+            payload = r.payload or {}
+            todo.append({
+                "id": str(r.id),
+                "chat_id": r.chat_id,
+                "text": payload.get("text") or "Напоминаю про наш созвон 🙂",
+            })
+
+    if not todo:
+        return stats
+
+    for item in todo:
+        ok = False
+        if not item["chat_id"] or not token:
+            stats["skipped_no_chat"] += 1
+        else:
+            try:
+                ok = await send_telegram_reply(token, str(item["chat_id"]), item["text"])
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[scheduled_actions] call-reminder send failed row=%s: %s", item["id"], exc)
+                ok = False
+        try:
+            with session_scope() as s:
+                row = s.get(ScheduledAction, item["id"])
+                if row is not None:
+                    if ok:
+                        row.status = "done"
+                        row.executed_at = now
+                        stats["sent"] += 1
+                    else:
+                        row.attempts = (row.attempts or 0) + 1
+                        if row.attempts >= 3:
+                            row.status = "failed"
+                        stats["failed"] += 1
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[scheduled_actions] call-reminder status update failed row=%s: %s", item["id"], exc)
+
+    logger.info(
+        "[scheduled_actions] run_due_call_reminders: due=%d sent=%d failed=%d skipped=%d",
+        stats["due"], stats["sent"], stats["failed"], stats["skipped_no_chat"],
+    )
+    return stats

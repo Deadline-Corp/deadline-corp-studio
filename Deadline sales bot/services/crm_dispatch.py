@@ -253,6 +253,7 @@ def dispatch_stage_change(
     title: Optional[str] = None,
     description: Optional[str] = None,
     project_type: Optional[str] = None,
+    next_meeting_at=None,
 ) -> None:
     """Push a funnel-stage transition to the CRM deal.
 
@@ -264,6 +265,9 @@ def dispatch_stage_change(
     Phase C1: optional title/description/project_type ride along so the deal
     card gets a readable name + structured brief in the SAME PATCH as the
     stage move (used on handoff→qualified).
+
+    next_meeting_at (datetime): при переходе в «📞 Созвон назначен» — дата/время
+    созвона, пишется в карточку сделки (HubSpot next_meeting_at).
     """
     deal_id = crm_deal_id if crm_deal_id else "pending"
     enqueue(make_update_stage_event(
@@ -275,6 +279,7 @@ def dispatch_stage_change(
         title=title,
         description=description,
         project_type=project_type,
+        next_meeting_at=next_meeting_at,
     ))
 
 
