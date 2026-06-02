@@ -602,6 +602,8 @@ def build_chat_prompt(
     booked_info: Optional[str] = None,
     call_cancelled: bool = False,
     call_ask_time: bool = False,
+    alt_channel: Optional[str] = None,
+    alt_channel_contact: Optional[str] = None,
 ) -> str:
     """
     Собирает финальный prompt для LLM.
@@ -707,7 +709,32 @@ def build_chat_prompt(
             "попроси email/телеграм, чтобы связать обращения и поднять историю."
         )
 
-    annotated_question = f"{question}\n{first_marker}\n{comment_marker}\n{channel_marker}{lang_marker}{prior_marker}{call_block}"
+    # Лид просит ДРУГОЙ канал связи (WhatsApp/телефон/Viber) — НЕ упираемся в
+    # Telegram: соглашаемся и обещаем, что человек свяжется ИМЕННО там.
+    alt_channel_block = ""
+    if alt_channel:
+        _ch = alt_channel
+        if alt_channel_contact:
+            alt_channel_block = (
+                f"\n[ALT_CHANNEL: {_ch}] Лид хочет общаться в «{_ch}» (НЕ Telegram). Согласись тепло "
+                f"(«Да, конечно»), скажи, что передашь менеджеру и человек свяжется с вами в «{_ch}». "
+                f"НЕ зови в Telegram/@deadline_corp и НЕ проси перейти туда. Контакт уже есть — просто "
+                f"подтверди, что с вами свяжутся. Возьми имя, если ещё не знаешь."
+            )
+        elif _ch == "другой канал":
+            alt_channel_block = (
+                "\n[ALT_CHANNEL_NEED_CONTACT] Лид не пользуется Telegram и хочет другой канал. "
+                "Согласись («Да, без проблем»), спроси, как удобнее — WhatsApp, телефон или email, "
+                "и попроси контакт. НЕ настаивай на Telegram. Скажи, что передашь менеджеру и он свяжется."
+            )
+        else:
+            alt_channel_block = (
+                f"\n[ALT_CHANNEL_NEED_CONTACT: {_ch}] Лид хочет общаться в «{_ch}» (НЕ Telegram). "
+                f"Согласись («Да, конечно»), скажи, что передашь менеджеру — он свяжется с вами в «{_ch}», "
+                f"и попроси номер/контакт для «{_ch}». НЕ зови в Telegram/@deadline_corp."
+            )
+
+    annotated_question = f"{question}\n{first_marker}\n{comment_marker}\n{channel_marker}{lang_marker}{prior_marker}{call_block}{alt_channel_block}"
 
     corrections_text = format_corrections_block(corrections or [])
 

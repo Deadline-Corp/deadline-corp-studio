@@ -1408,6 +1408,27 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         (req.content or "").lower(),
     ))
 
+    # Лид просит ДРУГОЙ канал связи (WhatsApp/телефон/Viber) — НЕ упираться в
+    # Telegram, согласиться + пообещать что человек свяжется там + взять контакт.
+    # НЕ во время выбора слота/брони: там «в whatsapp» = канал созвона
+    # (scheduling.detect_call_medium), а не просьба сменить канал переписки.
+    _alt_channel = None
+    _alt_contact = None
+    _in_call_ctx = bool(
+        _call_slots_human or _just_booked_human or _booked_info_human
+        or _call_ask_time or _call_cancelled
+    )
+    if not _in_call_ctx:
+        try:
+            from services.channel_prefs import detect_alt_channel
+            _ac = detect_alt_channel(req.content)
+            if _ac:
+                _alt_channel, _alt_contact = _ac
+                if not _alt_contact and (getattr(customer, "phone", None) or "").strip():
+                    _alt_contact = customer.phone
+        except Exception as _ace:  # noqa: BLE001
+            log.debug(f"alt-channel detect skipped: {_ace}")
+
     prompt = build_chat_prompt(
         context=context,
         history=history_str,
@@ -1423,6 +1444,8 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         booked_info=_booked_info_human,
         call_cancelled=_call_cancelled,
         call_ask_time=_call_ask_time,
+        alt_channel=_alt_channel,
+        alt_channel_contact=_alt_contact,
     )
 
     # Show "печатает..." indicator in the lead's Telegram chat while the LLM
@@ -1532,6 +1555,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
             name_known=bool((getattr(customer, "name", None) or "").strip()),
             email_known=bool((getattr(customer, "email", None) or "").strip()),
             channel=req.channel,
+            suppress_tg_push=bool(_alt_channel),
         )
     except Exception as _pe:  # noqa: BLE001
         log.debug(f"reply_polish skipped: {_pe}")
@@ -1852,6 +1876,29 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 handoff_data=handoff_data,  # Phase C1: readable deal title + brief
                 call_booked_at=_call_booked_at,  # бронь созвона → создать сделку + on_call
             )
+            # Лид попросил другой канал (WhatsApp/телефон/Viber) → задача оператору
+            # «связаться там». Дедуп: одна задача на (диалог, канал) — флаг в profile.
+            if _alt_channel:
+                try:
+                    _p = dict(getattr(customer, "profile_data", None) or {})
+                    if _p.get("alt_channel_task") != _alt_channel:
+                        from services.crm_dispatch import dispatch_operator_task
+                        _contact_txt = _alt_contact or "уточнить контакт у лида"
+                        dispatch_operator_task(
+                            customer_id=str(customer.id),
+                            crm_contact_id=getattr(customer, "crm_contact_id", None),
+                            crm_deal_id=getattr(conversation, "crm_deal_id", None),
+                            conversation_id=str(conversation.id),
+                            title=f"Связаться с лидом в {_alt_channel}: {_contact_txt}",
+                            category="callback",
+                            due_in_minutes=15,
+                            description=(req.content or "")[:500],
+                        )
+                        _p["alt_channel_task"] = _alt_channel
+                        customer.profile_data = _p
+                        log.info(f"[{str(conversation.id)[:8]}] alt-channel task → {_alt_channel} ({_contact_txt})")
+                except Exception as _ate:  # noqa: BLE001
+                    log.warning(f"[{str(conversation.id)[:8]}] alt-channel task failed: {_ate}")
         except Exception as exc:  # noqa: BLE001
             log.warning(f"[{str(conversation.id)[:8]}] crm dispatch failed: {exc}")
 

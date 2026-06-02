@@ -116,9 +116,14 @@ def mirror_greeting(answer, lead_message, is_first_turn):
 
 
 def drop_bad_questions(answer, *, name_known=False, email_known=False,
-                       tg_handle_given=False, lead_to_tg=False, on_messenger=False):
+                       tg_handle_given=False, lead_to_tg=False, on_messenger=False,
+                       suppress_tg_push=False):
     """Убрать вопросы-выпытывания, повтор контакта, ложное «записал ваш телеграм»
-    и повторный пуш в telegram, когда лид уже сам согласился туда написать."""
+    и повторный пуш в telegram, когда лид уже сам согласился туда написать.
+
+    suppress_tg_push=True: лид попросил ДРУГОЙ канал (WhatsApp/телефон) → вырезаем
+    любые «перейдём/продолжим в Telegram / @deadline_corp», чтобы бот не звал в ТГ
+    наперекор просьбе."""
     if not answer:
         return answer
     kept = []
@@ -140,6 +145,9 @@ def drop_bad_questions(answer, *, name_known=False, email_known=False,
             continue
         # Повторный пуш в telegram, когда лид уже сказал, что сам туда напишет.
         if lead_to_tg and any(w in low for w in TG_REPUSH):
+            continue
+        # Лид попросил другой канал → вырезаем любой пуш в Telegram/@deadline_corp.
+        if suppress_tg_push and ("@deadline_corp" in low or any(w in low for w in TG_REPUSH)):
             continue
         # Выпытывание деталей — только если это ВОПРОС (statements про наценку оставляем).
         if is_q and any(w in low for w in SPECIFICS_MARKERS):
@@ -175,9 +183,11 @@ def limit_questions(answer, max_questions=1):
 
 
 def polish(answer, *, lead_message="", is_first_turn=False,
-           name_known=False, email_known=False, channel=""):
+           name_known=False, email_known=False, channel="", suppress_tg_push=False):
     """Применить все гарды. Если вырезали всё — вернуть версию после greeting-фикса
-    (пустой ответ хуже неидеального)."""
+    (пустой ответ хуже неидеального).
+
+    suppress_tg_push: лид попросил другой канал → не пушим Telegram/@deadline_corp."""
     if not answer:
         return answer
     # Лид реально дал @ник (тогда «записал ваш телеграм» — правда, не трогаем).
@@ -200,7 +210,7 @@ def polish(answer, *, lead_message="", is_first_turn=False,
     cleaned = drop_bad_questions(
         out, name_known=name_known, email_known=email_known,
         tg_handle_given=tg_handle_given, lead_to_tg=lead_to_tg,
-        on_messenger=on_messenger,
+        on_messenger=on_messenger, suppress_tg_push=suppress_tg_push,
     )
     cleaned = limit_questions(cleaned, max_questions=1)
     return cleaned or out
