@@ -76,6 +76,31 @@ def _strip_probe_clause(s):
     return _PROBE_CLAUSE.sub("", s)
 
 
+# Переспрос «куда/на какой telegram·email вам написать» — в МЕССЕНДЖЕРЕ бессмыслица:
+# мы уже в чате с лидом (chat_id есть), писать ему есть куда. Бот в живом тесте в
+# телеге спросил «на какой email или telegram удобнее написать?». Вырезаем ТОЛЬКО
+# эту клаузу (с ведущим союзом «и/,»), сохраняя остальное предложение — напр.
+# «…как вас зовут и на какой telegram написать?» → «…как вас зовут?».
+_CHANNEL_REASK_RE = re.compile(
+    r"(?:\s*(?:,|;|—|–|-|\bи\b)\s*)?"
+    r"(?:на\s+как(?:ой|ое)\s+(?:e-?mail|email|почт\w*|telegram|телеграм|тг)"
+    r"(?:\s+или\s+(?:telegram|телеграм|e-?mail|email|почт\w*))?"
+    r"|куда(?:\s+вам)?(?:\s+удобн\w+)?)"
+    r"[^?.!]{0,40}?(?:написать|продублир\w+|связ\w+|скинуть)",
+    re.IGNORECASE,
+)
+
+
+def _strip_channel_clause(s):
+    """Убрать клаузу «куда/на какой telegram·email написать» (для мессенджера)."""
+    out = _CHANNEL_REASK_RE.sub("", s)
+    # Подчистить висящие союзы/пробелы перед финальным знаком.
+    out = re.sub(r"\s*(?:,|;|—|–|-|\bи\b)\s*([?!.…])", r"\1", out)
+    out = re.sub(r"\s+([?!.…])", r"\1", out)
+    out = re.sub(r"\s{2,}", " ", out).strip()
+    return out
+
+
 def mirror_greeting(answer, lead_message, is_first_turn):
     """Первый ход + лид поздоровался формально, а бот открыл «Привет» → «Здравствуйте»."""
     if not is_first_turn or not answer:
@@ -91,7 +116,7 @@ def mirror_greeting(answer, lead_message, is_first_turn):
 
 
 def drop_bad_questions(answer, *, name_known=False, email_known=False,
-                       tg_handle_given=False, lead_to_tg=False):
+                       tg_handle_given=False, lead_to_tg=False, on_messenger=False):
     """Убрать вопросы-выпытывания, повтор контакта, ложное «записал ваш телеграм»
     и повторный пуш в telegram, когда лид уже сам согласился туда написать."""
     if not answer:
@@ -101,6 +126,13 @@ def drop_bad_questions(answer, *, name_known=False, email_known=False,
         # Сначала вырезаем вшитую клаузу-зонд («… и как считать наценку …»),
         # затем решаем по очищенному предложению.
         s = _strip_probe_clause(s)
+        # В мессенджере «куда/на какой telegram·email вам написать?» — бессмыслица
+        # (мы уже в чате). Вырезаем клаузу; если предложение состояло только из неё —
+        # оно станет пустым и отсеется ниже.
+        if on_messenger:
+            s = _strip_channel_clause(s)
+            if not s.strip() or s.strip() in {"?", ".", "!", "…"}:
+                continue
         low = s.lower()
         is_q = s.rstrip().endswith("?")
         # Ложное «записал ваш телеграм/контакт» — лид ника не давал.
@@ -143,7 +175,7 @@ def limit_questions(answer, max_questions=1):
 
 
 def polish(answer, *, lead_message="", is_first_turn=False,
-           name_known=False, email_known=False):
+           name_known=False, email_known=False, channel=""):
     """Применить все гарды. Если вырезали всё — вернуть версию после greeting-фикса
     (пустой ответ хуже неидеального)."""
     if not answer:
@@ -163,10 +195,12 @@ def polish(answer, *, lead_message="", is_first_turn=False,
             name_known = True
     if re.search(r"(меня\s+зовут|зовут\s+меня|\bзовут\b|\bмо[её]\s+имя\b|\bимя\s*[:—-])\s*[А-ЯЁA-Z]", _msg):
         name_known = True
+    on_messenger = bool(channel) and str(channel).lower() != "website"
     out = mirror_greeting(answer, lead_message, is_first_turn)
     cleaned = drop_bad_questions(
         out, name_known=name_known, email_known=email_known,
         tg_handle_given=tg_handle_given, lead_to_tg=lead_to_tg,
+        on_messenger=on_messenger,
     )
     cleaned = limit_questions(cleaned, max_questions=1)
     return cleaned or out

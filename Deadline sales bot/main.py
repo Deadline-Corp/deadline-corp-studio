@@ -1206,6 +1206,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     _booked_info_human = None    # созвон уже назначен ранее → бот не зацикливается
     _call_cancelled = False      # лид отказался/переносит → не настаивать
     _call_ask_time = False       # уже предлагали, лид не выбрал → спросить его время
+    _is_postpone = False         # лид просит «напишите позже» → не давить слотами
     _booking_channel_ok = (req.channel or "website").lower() != "website"
     if settings.crm_enabled and not is_comment_mode and _booking_channel_ok:
         try:
@@ -1249,6 +1250,20 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 1 for m in recent
                 if (m.role.value if hasattr(m.role, "value") else str(m.role)) == "user"
             )
+            # ПЕРЕНОС/«напишите позже»: лид просит связаться потом, а НЕ бронирует
+            # сейчас. Такое сообщение часто содержит слово-время («завтра утром»),
+            # из-за чего parse_time_preference считало его выбором слота и бот лез
+            # с «Давайте завтра в 11:00?». Отдельный followup на эту просьбу уже
+            # ставит dispatch_on_message_turn (parse_followup_when) — здесь слоты
+            # НЕ предлагаем, чтобы не давить.
+            import re as _re_pp
+            _is_postpone = bool(_re_pp.search(
+                r"напиш\w+\s+(мне|мне\s+)?(позже|потом|завтра|после|как)|"
+                r"\bпозже\b|\bпотом\b|\bпойм\w+\b|не\s+получ\w+|форс[\s-]?мажор|"
+                r"не\s+могу\s+(сейчас|пока)|сейчас\s+(занят|на\s+встрече|неудобно)|"
+                r"свяж\w+\s+(со\s+мной\s+)?(позже|потом)|перезвон\w+\s+(позже|потом)",
+                (req.content or "").lower(),
+            ))
             if _booked and _wants_cancel:
                 # --- ОТМЕНА / ПЕРЕНОС --- лид отказался: снимаем бронь, гасим напоминания,
                 # откатываем стадию CRM. НЕ настаиваем (фикс «уже записан» по кругу).
@@ -1348,7 +1363,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                     _profile.pop("offered_call_slots", None)
                     customer.profile_data = _profile
                 _call_cancelled = True
-            elif _lead_msg_n >= 2 or _sched.detect_call_request(req.content):
+            elif (_lead_msg_n >= 2 or _sched.detect_call_request(req.content)) and not _is_postpone:
                 # --- ПРЕДЛОЖИТЬ СЛОТЫ --- (не на первом «привет», НО если лид
                 # сразу просит созвон — предлагаем времена уже на первом ходе,
                 # а не спрашиваем только канал без времён).
@@ -1516,6 +1531,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
             is_first_turn=is_first_turn,
             name_known=bool((getattr(customer, "name", None) or "").strip()),
             email_known=bool((getattr(customer, "email", None) or "").strip()),
+            channel=req.channel,
         )
     except Exception as _pe:  # noqa: BLE001
         log.debug(f"reply_polish skipped: {_pe}")
@@ -1525,7 +1541,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     # из-за чего лид не видит вариантов и диалог зацикливается, бронь не ставится.
     # Если предлагаем слоты, а в ответе нет КОНКРЕТНОГО времени — дописываем сами.
     try:
-        if _call_slots_human and not _booked and not _just_booked_human:
+        if _call_slots_human and not _booked and not _just_booked_human and not _is_postpone:
             import re as _re_slot
             if not _re_slot.search(r"\d{1,2}\s*[:.]\s*\d{2}|\bв\s+\d{1,2}\b", answer):
                 # Склеиваем без дубля дня: «завтра в 11:00» + «завтра в 12:00»
@@ -1538,7 +1554,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                     if _ma and _mb and _a[:_ma.start()] == _b[:_mb.start()]:
                         _slots_txt = f"{_a} или {_mb.group(1)}"
                 answer = (
-                    answer.rstrip(" \n.")
+                    answer.rstrip(" \n.?!,;:")
                     + f". Давайте {_slots_txt}? Или скажите своё удобное время — "
                       f"подстроюсь (будни, 11:00–20:00)."
                 ).strip()

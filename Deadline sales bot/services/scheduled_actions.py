@@ -45,6 +45,24 @@ def write_scheduled_action(
     from db.models import ScheduledAction
     try:
         with session_scope() as s:
+            # ДЕДУП (latest-wins): у одного диалога — максимум ОДИН pending
+            # bot-followup. dispatch_on_message_turn зовёт parse_followup_when на
+            # КАЖДОМ сообщении лида, поэтому «удобно завтра» + «давайте в пятницу»
+            # + «напишите завтра утром» наплодили бы 3-4 отдельных пинга на одно и
+            # то же утро → спам. Последняя просьба лида заменяет прежние: гасим все
+            # ещё-не-сработавшие bot-followup'ы этого диалога перед вставкой новой.
+            superseded = 0
+            if conversation_id:
+                superseded = (
+                    s.query(ScheduledAction)
+                    .filter(
+                        ScheduledAction.conversation_id == conversation_id,
+                        ScheduledAction.action_type == "followup_message",
+                        ScheduledAction.status == "pending",
+                        ScheduledAction.executor == "bot",
+                    )
+                    .update({"status": "superseded"}, synchronize_session=False)
+                )
             row = ScheduledAction(
                 customer_id=customer_id,
                 conversation_id=conversation_id,
@@ -61,8 +79,8 @@ def write_scheduled_action(
             s.flush()
             rid = str(row.id)
         logger.info(
-            "[scheduled_actions] queued followup row=%s chat_id=%s due=%s",
-            rid, chat_id, due_at,
+            "[scheduled_actions] queued followup row=%s chat_id=%s due=%s superseded=%d",
+            rid, chat_id, due_at, superseded,
         )
         return rid
     except Exception as exc:  # noqa: BLE001
