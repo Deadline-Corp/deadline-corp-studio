@@ -1383,6 +1383,16 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         except Exception as _se:  # noqa: BLE001
             log.warning(f"[{str(conversation.id)[:8]}] call-booking flow skipped: {_se}")
 
+    # Лид ссылается на прошлый контакт («писал вам на сайте», «обращался раньше»)?
+    # Тогда НЕ представляться заново как при первом контакте — тепло продолжить.
+    import re as _re_prior
+    _mentions_prior = bool(_re_prior.search(
+        r"(писал|писала|обраща\w+|обрати\w+)\s+(вам|к вам|вас|на сайт|сюда)|"
+        r"был[аи]?\s+на\s+(вашем\s+)?сайт|уже\s+(обща\w+|писал\w*|говорил\w*|свя\w+)|"
+        r"вы\s+мне\s+(писал|отвеч)",
+        (req.content or "").lower(),
+    ))
+
     prompt = build_chat_prompt(
         context=context,
         history=history_str,
@@ -1391,6 +1401,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         is_comment_mode=is_comment_mode,
         corrections=correction_rules,
         channel=req.channel,
+        lead_mentions_prior=_mentions_prior,
         call_slots=_call_slots_human,
         just_booked=_just_booked_human,
         call_medium=_call_medium,
@@ -1517,7 +1528,15 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         if _call_slots_human and not _booked and not _just_booked_human:
             import re as _re_slot
             if not _re_slot.search(r"\d{1,2}\s*[:.]\s*\d{2}|\bв\s+\d{1,2}\b", answer):
+                # Склеиваем без дубля дня: «завтра в 11:00» + «завтра в 12:00»
+                # → «завтра в 11:00 или 12:00».
                 _slots_txt = " или ".join(_call_slots_human)
+                if len(_call_slots_human) == 2:
+                    _a, _b = _call_slots_human
+                    _ma = _re_slot.search(r"(\d{1,2}[:.]\d{2})\s*$", _a)
+                    _mb = _re_slot.search(r"(\d{1,2}[:.]\d{2})\s*$", _b)
+                    if _ma and _mb and _a[:_ma.start()] == _b[:_mb.start()]:
+                        _slots_txt = f"{_a} или {_mb.group(1)}"
                 answer = (
                     answer.rstrip(" \n.")
                     + f". Давайте {_slots_txt}? Или скажите своё удобное время — "
