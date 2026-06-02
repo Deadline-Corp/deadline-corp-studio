@@ -1509,6 +1509,23 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     except Exception as _pe:  # noqa: BLE001
         log.debug(f"reply_polish skipped: {_pe}")
 
+    # ДЕТЕРМИНИРОВАННЫЙ показ слотов созвона. llama часто пишет «какое время вам
+    # удобно?» вместо конкретных «завтра в 11:00 или 12:00» (игнорит [CALL_SLOTS]),
+    # из-за чего лид не видит вариантов и диалог зацикливается, бронь не ставится.
+    # Если предлагаем слоты, а в ответе нет КОНКРЕТНОГО времени — дописываем сами.
+    try:
+        if _call_slots_human and not _booked and not _just_booked_human:
+            import re as _re_slot
+            if not _re_slot.search(r"\d{1,2}\s*[:.]\s*\d{2}|\bв\s+\d{1,2}\b", answer):
+                _slots_txt = " или ".join(_call_slots_human)
+                answer = (
+                    answer.rstrip(" \n.")
+                    + f". Давайте {_slots_txt}? Или скажите своё удобное время — "
+                      f"подстроюсь (будни, 11:00–20:00)."
+                ).strip()
+    except Exception as _se2:  # noqa: BLE001
+        log.debug(f"slot-render guard skipped: {_se2}")
+
     log.info(f"[{str(conversation.id)[:8]}/{req.channel}/{req.message_type}] A: {answer[:200]}")
 
     # 7. Persist assistant reply (normalized form — keeps DB clean for future reads)
