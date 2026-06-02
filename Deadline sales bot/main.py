@@ -1884,11 +1884,16 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                     if _p.get("alt_channel_task") != _alt_channel:
                         from services.crm_dispatch import dispatch_operator_task
                         _contact_txt = _alt_contact or "уточнить контакт у лида"
+                        # conversation_id передаём только если сделка УЖЕ есть —
+                        # иначе worker зря ретраил бы pending-резолв deal_id (у
+                        # нового лида сделки может ещё не быть). Без него — задача
+                        # на контакт (тоже видно оператору).
+                        _deal = getattr(conversation, "crm_deal_id", None)
                         dispatch_operator_task(
                             customer_id=str(customer.id),
                             crm_contact_id=getattr(customer, "crm_contact_id", None),
-                            crm_deal_id=getattr(conversation, "crm_deal_id", None),
-                            conversation_id=str(conversation.id),
+                            crm_deal_id=_deal,
+                            conversation_id=str(conversation.id) if _deal else None,
                             title=f"Связаться с лидом в {_alt_channel}: {_contact_txt}",
                             category="callback",
                             due_in_minutes=15,
