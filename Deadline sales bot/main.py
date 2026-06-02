@@ -2785,12 +2785,19 @@ async def admin_cron_sweep(_: None = Depends(_verify_training_token)):
     чтобы не ждать часовой интервал крона)."""
     from services.cron import sweep_once
     from services.scheduled_actions import run_due_followups, run_due_call_reminders
+    import traceback as _tb
     try:
         sweep_stats = await sweep_once(tenant_config={})
     except Exception as e:  # noqa: BLE001
         sweep_stats = {"error": str(e)}
-    fu_stats = await run_due_followups(tenant_config=None)
-    call_stats = await run_due_call_reminders(tenant_config=None)
+    try:
+        fu_stats = await run_due_followups(tenant_config=None)
+    except Exception as e:  # noqa: BLE001
+        fu_stats = {"error": f"{type(e).__name__}: {e}", "tb": _tb.format_exc()[-800:]}
+    try:
+        call_stats = await run_due_call_reminders(tenant_config=None)
+    except Exception as e:  # noqa: BLE001
+        call_stats = {"error": f"{type(e).__name__}: {e}", "tb": _tb.format_exc()[-800:]}
     return {"sweep": sweep_stats, "followups": fu_stats, "call_reminders": call_stats}
 
 
