@@ -250,6 +250,10 @@
       addMsg(data.answer, "b");
       if (data.handoff) {
         closeWithHandoff(text);
+      } else if (/telegram|телеграм|@deadline_corp/i.test(data.answer || "")) {
+        // Бот в ПЕРВЫЙ раз зовёт в Telegram → сразу даём кнопку на бота
+        // (не дожидаясь финального handoff). Чат не закрываем — лид может писать.
+        showTgCta(false, data.answer);
       }
     } catch (e) {
       hideTyping();
@@ -264,11 +268,34 @@
     }
   }
 
+  // Кнопка-ссылка на НАШЕГО БОТА в Telegram (не канал, не номер) — лид жмёт и
+  // продолжает с тем же ботом в мессенджере. Показывается ОДИН раз (idempotent).
+  const TG_BOT_URL = "https://t.me/Deadline_Corp_bot";
+  let _ctaShown = false;
+  function showTgCta(closing, text) {
+    const isEng = /[a-zA-Z]/.test(text || "") && !/[а-яА-Я]/.test(text || "");
+    if (!_ctaShown) {
+      const cta = document.createElement("a");
+      cta.className = "dl-cta";
+      cta.href = TG_BOT_URL;
+      cta.target = "_blank";
+      cta.rel = "noopener";
+      cta.textContent = isEng ? "Open Telegram →" : "Написать в Telegram →";
+      $msg.appendChild(cta);
+      $msg.scrollTop = $msg.scrollHeight;
+      _ctaShown = true;
+    }
+    if (closing) {
+      // Финальный хендофф — разговор продолжается в мессенджере, ввод на сайте гасим.
+      root.dataset.closed = "1";
+      $inp.disabled = true;
+      $btn.disabled = true;
+      $inp.placeholder = isEng ? "Continue on Telegram →" : "Продолжаем в Telegram →";
+    }
+  }
+
   // Phase C1.2: handoff → бот «передал команде» и уводит лида в Telegram.
-  // Закрывающая строка + кнопка, дальнейший ввод на сайте отключаем
-  // (разговор продолжается в мессенджере, где лид не потеряется).
   function closeWithHandoff(lastText) {
-    root.dataset.closed = "1";
     const isEng = /[a-zA-Z]/.test(lastText) && !/[а-яА-Я]/.test(lastText);
     addMsg(
       isEng
@@ -276,17 +303,7 @@
         : "Взяли в работу. Продолжим в Telegram — так удобнее и не потеряемся. 📩",
       "sys", { persist: false }
     );
-    const cta = document.createElement("a");
-    cta.className = "dl-cta";
-    cta.href = "https://t.me/deadline_corp";
-    cta.target = "_blank";
-    cta.rel = "noopener";
-    cta.textContent = isEng ? "Open Telegram →" : "Написать в Telegram →";
-    $msg.appendChild(cta);
-    $msg.scrollTop = $msg.scrollHeight;
-    $inp.disabled = true;
-    $btn.disabled = true;
-    $inp.placeholder = isEng ? "Continue on Telegram →" : "Продолжаем в Telegram →";
+    showTgCta(true, lastText);
   }
 
   // ============================================================
