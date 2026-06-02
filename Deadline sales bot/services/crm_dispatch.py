@@ -308,11 +308,16 @@ def dispatch_operator_task(
     due_in_minutes: int = 15,
     description: Optional[str] = None,
     conversation_id: Optional[str] = None,
+    on_task_id=None,
 ) -> None:
     """Create an operator task in the CRM. Used after handoff, dunning, etc.
 
     Both contact_id and deal_id may be 'pending' — the worker resolves
     them lazily from DB. conversation_id is needed for deal_id resolution.
+
+    on_task_id: опц. колбэк(task_id) — воркер зовёт его с реальным CRM task_id
+    после создания. Используется, чтобы привязать задачу к followup-строке
+    (тогда крон закроет её в CRM при исполнении).
     """
     contact_id = crm_contact_id if crm_contact_id else "pending"
     deal_id_for_event: Optional[str] = (
@@ -328,6 +333,7 @@ def dispatch_operator_task(
         due_at=due_at,
         category=category,  # type: ignore[arg-type]
         description=description,
+        on_task_id=on_task_id,
     ))
 
 
@@ -562,42 +568,31 @@ def dispatch_on_message_turn(
             )
 
         # Task Engine: лид просит связаться позже («через неделю / в субботу /
-        # завтра») → задача-напоминание менеджеру на распарсенную дату. Реюзаем
-        # проверенный путь dispatch_operator_task (срок = минуты до даты, TZ UTC+7
-        # внутри парсера). Срабатывает на любой реплике с явной просьбой о времени.
+        # завтра») → задача-напоминание + (в мессенджере) бот сам напишет в срок.
+        # ВЗАИМОСВЯЗЬ С CRM (Вариант 1, 2026-06-02):
+        #  • Мессенджер: единый путь — событие schedule_followup с task_*-полями.
+        #    Воркер пишет ОДНУ followup-строку (дедуп latest-wins) и создаёт
+        #    зеркальную CRM-задачу ТОЛЬКО для нового followup, привязывая её к
+        #    строке. Крон при исполнении followup закроет задачу в CRM
+        #    (complete_task). Повтор просьбы → строка переносится, задача не дублится.
+        #  • Сайт (нет chat_id): бот сам не пишет → прямая задача оператору, как было
+        #    (закрывает её человек; авто-закрытия нет).
         if last_lead_message:
             try:
                 from services.followup_parse import parse_followup_when
                 _fu = parse_followup_when(last_lead_message)
                 if _fu is not None:
-                    _mins = max(
-                        1, int((_fu - datetime.now(timezone.utc)).total_seconds() / 60)
-                    )
                     _nm = (customer.name or customer.email
                            or (customer.identity_keys or {}).get("tg_handle") or "новый лид")
-                    dispatch_operator_task(
-                        customer_id=customer_id,
-                        crm_contact_id=contact_id,
-                        crm_deal_id=deal_id if deal_id else None,
-                        conversation_id=str(conversation.id),
-                        title=f"Написать лиду {_nm} — просил связаться позже",
-                        category="callback",
-                        due_in_minutes=_mins,
-                        description=(last_lead_message or "")[:500],
-                    )
-                    logger.info(
-                        "[crm_dispatch] followup task conv=%s due_in_min=%d "
-                        "(lead asked to be contacted later)",
-                        str(conversation.id)[:8], _mins,
-                    )
-                    # Task Engine B2 — если лид в мессенджере (есть chat_id), бот
-                    # САМ напишет ему в срок: ставим строку в scheduled_actions
-                    # (через воркер, off event loop). На сайте chat_id нет →
-                    # только задача-напоминание выше.
+                    _title = f"Написать лиду {_nm} — просил связаться позже"
+                    _desc = (last_lead_message or "")[:500]
                     _chat_id = getattr(conversation, "channel_conversation_id", None)
-                    if _chat_id and (channel or "").lower() in (
+                    _is_msgr = (channel or "").lower() in (
                         "telegram", "whatsapp", "instagram", "messenger"
-                    ):
+                    )
+                    if _chat_id and _is_msgr:
+                        # Мессенджер: followup-строка ведёт всё; задачу создаёт/дедупит
+                        # воркер по task_*-полям и линкует к строке.
                         from services.crm_queue import make_schedule_followup_event
                         enqueue(make_schedule_followup_event(
                             customer_id=customer_id,
@@ -606,10 +601,33 @@ def dispatch_on_message_turn(
                             chat_id=str(_chat_id),
                             due_at=_fu,
                             text=None,  # дефолтный тёплый текст в scheduled_actions
+                            task_title=_title,
+                            task_description=_desc,
+                            task_contact_id=contact_id,
+                            task_deal_id=deal_id if deal_id else None,
                         ))
                         logger.info(
-                            "[crm_dispatch] bot self-followup scheduled conv=%s chat=%s",
+                            "[crm_dispatch] bot self-followup scheduled conv=%s chat=%s (CRM task linked)",
                             str(conversation.id)[:8], _chat_id,
+                        )
+                    else:
+                        # Сайт / нет канала — задача оператору (человек напишет сам).
+                        _mins = max(
+                            1, int((_fu - datetime.now(timezone.utc)).total_seconds() / 60)
+                        )
+                        dispatch_operator_task(
+                            customer_id=customer_id,
+                            crm_contact_id=contact_id,
+                            crm_deal_id=deal_id if deal_id else None,
+                            conversation_id=str(conversation.id),
+                            title=_title,
+                            category="callback",
+                            due_in_minutes=_mins,
+                            description=_desc,
+                        )
+                        logger.info(
+                            "[crm_dispatch] operator callback task conv=%s due_in_min=%d (website)",
+                            str(conversation.id)[:8], _mins,
                         )
             except Exception as _fe:  # noqa: BLE001
                 logger.debug("[crm_dispatch] followup detect skipped: %s", _fe)
@@ -774,4 +792,32 @@ def _make_deal_id_writeback(conversation_id: str):
                 "сделка создана, но conv.crm_deal_id не записан (риск дубля при ретрае)",
                 conversation_id, exc,
             )
+    return writeback
+
+
+def _make_followup_task_writeback(conversation_id: str):
+    """Factory: колбэк, привязывающий CRM task_id к pending bot-followup строке
+    диалога. После этого крон (run_due_followups) при исполнении followup закроет
+    задачу в CRM через complete_task. Дедуп гарантирует ОДНУ pending-строку, так
+    что обновляем все pending bot-followup'ы диалога (по факту — одну)."""
+    def writeback(task_id: str) -> None:
+        if not task_id:
+            return
+        try:
+            from db.connection import session_scope
+            from db.models import ScheduledAction
+            from uuid import UUID
+            with session_scope() as s:
+                (s.query(ScheduledAction)
+                 .filter(ScheduledAction.conversation_id == UUID(conversation_id),
+                         ScheduledAction.action_type == "followup_message",
+                         ScheduledAction.status == "pending",
+                         ScheduledAction.executor == "bot")
+                 .update({"crm_task_id": task_id}, synchronize_session=False))
+            logger.info("[crm_dispatch] followup(conv=%s) crm_task_id <- %s",
+                        conversation_id[:8], task_id)
+        except Exception as exc:  # noqa: BLE001
+            # Некритично: задача просто не авто-закроется (оператор закроет руками).
+            logger.warning("[crm_dispatch] followup task writeback skipped conv=%s: %s",
+                           conversation_id, exc)
     return writeback

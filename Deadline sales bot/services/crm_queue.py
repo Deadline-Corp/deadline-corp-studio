@@ -57,6 +57,7 @@ EventType = Literal[
     "update_lead_temperature",
     "log_message",
     "create_task",
+    "complete_task",       # закрыть задачу в CRM, когда бот её исполнил (followup отправлен)
     "schedule_followup",   # Task Engine B2 — записать отложенное действие бота
 ]
 
@@ -504,11 +505,19 @@ async def _dispatch(ev: CRMEvent, adapter: CRMAdapter) -> None:
             await asyncio.to_thread(cb, task_id)
         return
 
+    if ev.type == "complete_task":
+        # Бот исполнил отложенное действие (отправил followup лиду) → закрываем
+        # зеркальную задачу в CRM, чтобы оператор не видел «вечно открытую».
+        tid = p.get("task_id")
+        if tid:
+            await adapter.complete_task(str(tid))
+        return
+
     if ev.type == "schedule_followup":
         # Task Engine B2 — записать строку отложенного действия бота (off event
         # loop, через to_thread). Само-отправку делает крон run_due_followups.
         from services.scheduled_actions import write_scheduled_action
-        await asyncio.to_thread(
+        rid, was_new = await asyncio.to_thread(
             write_scheduled_action,
             customer_id=p["customer_id"],
             conversation_id=p.get("conversation_id"),
@@ -518,6 +527,24 @@ async def _dispatch(ev: CRMEvent, adapter: CRMAdapter) -> None:
             text=p.get("text"),
             crm_task_id=p.get("crm_task_id"),
         )
+        # Взаимосвязь с CRM: только для НОВОГО followup (не повтора) создаём
+        # зеркальную CRM-задачу «написать лиду» и привязываем её к этой строке
+        # (on_task_id → крон закроет её при исполнении). Повтор просьбы task_id
+        # унаследовал в write_scheduled_action — новую задачу не плодим (дедуп).
+        conv_id = p.get("conversation_id")
+        if rid and was_new and p.get("task_title") and conv_id:
+            from services.crm_dispatch import _make_followup_task_writeback
+            enqueue(make_create_task_event(
+                customer_id=p["customer_id"],
+                contact_id=p.get("task_contact_id") or "pending",
+                deal_id=p.get("task_deal_id"),
+                conversation_id=conv_id,
+                title=p["task_title"],
+                due_at=p["due_at"],
+                category="callback",
+                description=p.get("task_description"),
+                on_task_id=_make_followup_task_writeback(conv_id),
+            ))
         return
 
     logger.error("[crm_queue] unknown event type: %s", ev.type)
@@ -642,6 +669,16 @@ def make_create_task_event(
     )
 
 
+def make_complete_task_event(customer_id: str, task_id: str) -> CRMEvent:
+    """Закрыть задачу в CRM (бот исполнил followup). payload — простая строка,
+    переживает persist/recovery (колбэков нет)."""
+    return CRMEvent(
+        type="complete_task",
+        customer_id=customer_id,
+        payload={"task_id": task_id},
+    )
+
+
 def make_schedule_followup_event(
     customer_id: str,
     conversation_id: Optional[str],
@@ -650,8 +687,17 @@ def make_schedule_followup_event(
     due_at: datetime,
     text: Optional[str] = None,
     crm_task_id: Optional[str] = None,
+    task_title: Optional[str] = None,
+    task_description: Optional[str] = None,
+    task_contact_id: Optional[str] = None,
+    task_deal_id: Optional[str] = None,
 ) -> CRMEvent:
-    """Task Engine B2 — событие записи отложенного действия бота в scheduled_actions."""
+    """Task Engine B2 — событие записи отложенного действия бота в scheduled_actions.
+
+    task_* (опц.): если переданы, воркер создаст зеркальную CRM-задачу «написать
+    лиду» и привяжет её к followup-строке — НО только когда followup НОВЫЙ (не
+    повтор). При повторе (лид снова просит «позже») write_scheduled_action
+    переносит task_id со старой строки и новую задачу не плодим (дедуп)."""
     return CRMEvent(
         type="schedule_followup",
         customer_id=customer_id,
@@ -663,5 +709,9 @@ def make_schedule_followup_event(
             "due_at": due_at,
             "text": text,
             "crm_task_id": crm_task_id,
+            "task_title": task_title,
+            "task_description": task_description,
+            "task_contact_id": task_contact_id,
+            "task_deal_id": task_deal_id,
         },
     )

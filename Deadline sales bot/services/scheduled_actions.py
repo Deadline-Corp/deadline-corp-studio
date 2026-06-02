@@ -35,25 +35,31 @@ def write_scheduled_action(
     due_at: datetime,
     text: Optional[str] = None,
     crm_task_id: Optional[str] = None,
-) -> Optional[str]:
+) -> tuple[Optional[str], bool]:
     """Записать ScheduledAction (followup_message). Sync — звать через to_thread.
 
     executor='bot' если есть chat_id (бот сам напишет), иначе 'human'.
-    Возвращает id строки или None при ошибке.
+    Возвращает (id_строки, was_new): was_new=True если у диалога НЕ было pending
+    bot-followup до этого (т.е. это первая просьба, а не повтор). По нему воркер
+    решает, создавать ли НОВУЮ зеркальную CRM-задачу или это reschedule.
+    При ошибке — (None, False).
     """
     from db.connection import session_scope
     from db.models import ScheduledAction
     try:
+        superseded = 0
+        inherited_task_id: Optional[str] = None
         with session_scope() as s:
             # ДЕДУП (latest-wins): у одного диалога — максимум ОДИН pending
             # bot-followup. dispatch_on_message_turn зовёт parse_followup_when на
             # КАЖДОМ сообщении лида, поэтому «удобно завтра» + «давайте в пятницу»
             # + «напишите завтра утром» наплодили бы 3-4 отдельных пинга на одно и
-            # то же утро → спам. Последняя просьба лида заменяет прежние: гасим все
-            # ещё-не-сработавшие bot-followup'ы этого диалога перед вставкой новой.
-            superseded = 0
+            # то же утро → спам. Последняя просьба заменяет прежние: гасим все
+            # ещё-не-сработавшие bot-followup'ы диалога. task_id со старой строки
+            # ПЕРЕНОСИМ на новую — чтобы при исполнении закрылась та же CRM-задача
+            # (а не плодилась новая).
             if conversation_id:
-                superseded = (
+                prev = (
                     s.query(ScheduledAction)
                     .filter(
                         ScheduledAction.conversation_id == conversation_id,
@@ -61,8 +67,13 @@ def write_scheduled_action(
                         ScheduledAction.status == "pending",
                         ScheduledAction.executor == "bot",
                     )
-                    .update({"status": "superseded"}, synchronize_session=False)
+                    .all()
                 )
+                for r in prev:
+                    if r.crm_task_id and not inherited_task_id:
+                        inherited_task_id = r.crm_task_id
+                    r.status = "superseded"
+                superseded = len(prev)
             row = ScheduledAction(
                 customer_id=customer_id,
                 conversation_id=conversation_id,
@@ -73,7 +84,7 @@ def write_scheduled_action(
                 due_at=due_at,
                 status="pending",
                 payload={"text": text or DEFAULT_FOLLOWUP_TEXT},
-                crm_task_id=crm_task_id,
+                crm_task_id=crm_task_id or inherited_task_id,
             )
             s.add(row)
             s.flush()
@@ -82,10 +93,10 @@ def write_scheduled_action(
             "[scheduled_actions] queued followup row=%s chat_id=%s due=%s superseded=%d",
             rid, chat_id, due_at, superseded,
         )
-        return rid
+        return rid, (superseded == 0)
     except Exception as exc:  # noqa: BLE001
         logger.warning("[scheduled_actions] write failed: %s", exc)
-        return None
+        return None, False
 
 
 async def run_due_followups(*, tenant_config: Optional[dict] = None) -> dict:
@@ -135,6 +146,8 @@ async def run_due_followups(*, tenant_config: Optional[dict] = None) -> dict:
                 "id": str(r.id),
                 "chat_id": r.chat_id,
                 "text": payload.get("text") or DEFAULT_FOLLOWUP_TEXT,
+                "crm_task_id": r.crm_task_id,
+                "customer_id": str(r.customer_id) if r.customer_id else None,
             })
 
     if not todo:
@@ -169,6 +182,21 @@ async def run_due_followups(*, tenant_config: Optional[dict] = None) -> dict:
                         stats["failed"] += 1
         except Exception as exc:  # noqa: BLE001
             logger.warning("[scheduled_actions] status update failed row=%s: %s", item["id"], exc)
+
+        # 4) Взаимосвязь с CRM: followup исполнен → закрываем зеркальную задачу в
+        #    CRM (через очередь — адаптер живёт в её воркере). Best-effort: сбой
+        #    закрытия не валит отправку (она уже состоялась).
+        if ok and item.get("crm_task_id") and item.get("customer_id"):
+            try:
+                from services.crm_queue import enqueue, make_complete_task_event
+                enqueue(make_complete_task_event(
+                    customer_id=item["customer_id"],
+                    task_id=str(item["crm_task_id"]),
+                ))
+                logger.info("[scheduled_actions] enqueued complete_task crm_task_id=%s (followup done)",
+                            item["crm_task_id"])
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[scheduled_actions] complete_task enqueue failed: %s", exc)
 
     logger.info(
         "[scheduled_actions] run_due: due=%d sent=%d failed=%d skipped=%d",
