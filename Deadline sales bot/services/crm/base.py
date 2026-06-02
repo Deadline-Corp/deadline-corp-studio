@@ -199,6 +199,15 @@ class CRMAdapter(ABC):
         custom properties — driven by tenant config.crm.auto_create_pipeline.
         """
 
+    async def find_open_deal_for_contact(self, contact_id: Optional[str]) -> Optional[str]:
+        """Вернуть id ОТКРЫТОЙ сделки контакта (не закрытой won/lost) или None.
+
+        Дедуп #2: один клиент = одна активная сделка. Перед созданием новой
+        сделки воркер зовёт это; если открытая уже есть — переиспользует её
+        вместо плодения «2 карточек». Дефолт — None (адаптеры без поддержки
+        просто всегда создают новую, как раньше)."""
+        return None
+
     @abstractmethod
     async def update_deal_stage(
         self,

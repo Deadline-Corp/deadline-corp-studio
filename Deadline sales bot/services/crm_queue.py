@@ -449,6 +449,20 @@ async def _dispatch(ev: CRMEvent, adapter: CRMAdapter) -> None:
         contact_id = p["contact_id"]
         if contact_id == "pending":
             contact_id = await asyncio.to_thread(_resolve_pending_contact_id, ev.customer_id)
+        # ДЕДУП #2: у контакта уже есть ОТКРЫТАЯ сделка (другой диалог / другой канал
+        # с тем же контактом)? → переиспользуем её, не плодим «2 карточки на одного».
+        # Один клиент = одна активная сделка; новую заводим только если все закрыты.
+        try:
+            _reuse = await adapter.find_open_deal_for_contact(contact_id)
+        except Exception as _re:  # noqa: BLE001
+            logger.warning("[crm] find_open_deal_for_contact failed: %s", _re)
+            _reuse = None
+        if _reuse:
+            logger.info("[crm] create_deal REUSE open deal %s for contact %s (no dup card)", _reuse, contact_id)
+            cb = p.get("on_deal_id")
+            if cb is not None:
+                await asyncio.to_thread(cb, _reuse)
+            return
         deal_id = await adapter.create_deal(p["deal"], contact_id)
         cb = p.get("on_deal_id")
         if cb is not None:

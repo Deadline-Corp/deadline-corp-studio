@@ -489,8 +489,8 @@ class HubSpotAdapter(CRMAdapter):
         if known_id:
             existing_id = known_id
         else:
-            # Search by email first (most reliable dedup key), then by phone
-            existing_id = await self._search_contact(email=email, phone=phone)
+            # Search by email/phone/telegram-ник (дедуп #1: телеграм-лиды без почты).
+            existing_id = await self._search_contact(email=email, phone=phone, tg_handle=tg_handle)
 
         if existing_id:
             await self._req(
@@ -512,8 +512,14 @@ class HubSpotAdapter(CRMAdapter):
 
     async def _search_contact(
         self, email: Optional[str], phone: Optional[str],
+        tg_handle: Optional[str] = None,
     ) -> Optional[str]:
-        """Find existing contact by email or phone. Returns id or None."""
+        """Find existing contact by email, phone OR telegram-ник. Returns id or None.
+
+        tg_handle добавлен (дедуп #1): телеграм-лиды БЕЗ почты раньше не находились
+        (искали только email/phone) → один и тот же человек из телеги плодил
+        новые контакты. Теперь ищем и по telegram_handle.
+        """
         filters: list[dict] = []
         if email:
             filters.append({
@@ -526,6 +532,12 @@ class HubSpotAdapter(CRMAdapter):
                 "propertyName": "phone",
                 "operator": "EQ",
                 "value": phone,
+            })
+        if tg_handle:
+            filters.append({
+                "propertyName": "telegram_handle",
+                "operator": "EQ",
+                "value": tg_handle.lstrip("@"),
             })
         if not filters:
             return None
@@ -589,6 +601,46 @@ class HubSpotAdapter(CRMAdapter):
             deal_id, deal.conversation_id, deal.stage,
         )
         return deal_id
+
+    async def find_open_deal_for_contact(self, contact_id: Optional[str]) -> Optional[str]:
+        """Дедуп #2: вернуть id открытой (не closed-won/lost) сделки контакта в НАШЕМ
+        пайплайне, иначе None. Чтобы один клиент не плодил несколько карточек."""
+        if not contact_id or contact_id == "pending":
+            return None
+        await self._ensure_setup()
+        try:
+            resp = await self._req(
+                "GET", f"/crm/v3/objects/contacts/{contact_id}/associations/deals",
+            )
+            if resp.status_code != 200:
+                return None
+            ids = [r.get("toObjectId") or r.get("id") for r in resp.json().get("results", [])]
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[hubspot] list deals for contact %s failed: %s", contact_id, exc)
+            return None
+        if not ids:
+            return None
+        # Закрытые стадии нашего пайплайна — их НЕ переиспользуем (лид вернулся
+        # после закрытой сделки → можно завести новую).
+        closed = {self._stage_map.get("lost"), self._stage_map.get("completed_won")}
+        closed.discard(None)
+        for did in ids:
+            try:
+                dr = await self._req(
+                    "GET", f"/crm/v3/objects/deals/{did}",
+                    params={"properties": "dealstage,pipeline"},
+                )
+                if dr.status_code != 200:
+                    continue
+                pr = dr.json().get("properties", {})
+                # Чужой пайплайн не трогаем (вдруг у портала есть и другие воронки).
+                if pr.get("pipeline") and self._pipeline_id and pr.get("pipeline") != self._pipeline_id:
+                    continue
+                if pr.get("dealstage") not in closed:
+                    return str(did)
+            except Exception:  # noqa: BLE001
+                continue
+        return None
 
     async def update_deal_stage(
         self,
