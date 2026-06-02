@@ -44,10 +44,11 @@ from services.warming import plan_warming
 logger = logging.getLogger(__name__)
 
 
-# How often the worker wakes. 1 hour is the safest minimum for the warming
-# cadence (hot bucket = 1d) and temperature decay (14d step). Going lower
-# than 1h wastes wakeups; higher than 1h delays warm-touch by up to a day.
-DEFAULT_CRON_INTERVAL_SEC: int = 60 * 60   # 1 hour
+# How often the worker wakes. 10 минут: прогрев/декей идемпотентны (повторный
+# прогон безопасен, warming-cadence сам не пере-шлёт), но КРИТИЧНО для своевременной
+# отправки follow-up и напоминаний о созвоне (за сутки/3ч/1ч) — на часовом интервале
+# «за 1 час» могло прийти за 0-60 мин. 10 мин = напоминания точны в пределах 10 минут.
+DEFAULT_CRON_INTERVAL_SEC: int = 10 * 60   # 10 минут
 
 # How many customers to process per cycle. Bounded so a single bad cycle
 # never lasts longer than ~5 minutes even with HubSpot at 100ms/request.
