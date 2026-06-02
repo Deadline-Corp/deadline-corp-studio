@@ -200,9 +200,15 @@ def polish(answer, *, lead_message="", is_first_turn=False,
     _msg = lead_message or ""
     if re.search(r"[\w.+-]+@[\w-]+\.[A-Za-z]{2,}", _msg):
         email_known = True
-        # «Андрей, andrey@…» — ведущее имя + email в одном сообщении.
-        if re.match(r"^\s*[А-ЯЁA-Z][а-яёa-z]{1,}\s*[,.]", _msg):
-            name_known = True
+    # Имя в начале сообщения. Ловим «Имя,» / «Имя.» / «Имя <email>» / «Имя Фамилия»
+    # (лид часто пишет «Александр alexandr@mail.ru» БЕЗ запятой — раньше не ловилось
+    # → бот переспрашивал имя/email, которые только что дали). НЕ ловим одиночное
+    # слово вроде «Привет» (нет запятой/email/второго имени → не сработает).
+    if re.match(
+        r"^\s*[А-ЯЁA-Z][а-яёa-z]{1,}(\s*[,.]|\s+[\w.+-]+@[\w-]+\.[A-Za-z]{2,}|\s+[А-ЯЁA-Z][а-яёa-z]+)",
+        _msg,
+    ):
+        name_known = True
     if re.search(r"(меня\s+зовут|зовут\s+меня|\bзовут\b|\bмо[её]\s+имя\b|\bимя\s*[:—-])\s*[А-ЯЁA-Z]", _msg):
         name_known = True
     on_messenger = bool(channel) and str(channel).lower() != "website"

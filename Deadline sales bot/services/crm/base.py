@@ -181,12 +181,14 @@ class CRMAdapter(ABC):
     provider_name: str = "abstract"
 
     @abstractmethod
-    async def upsert_contact(self, lead: Lead) -> str:
+    async def upsert_contact(self, lead: Lead, known_id: Optional[str] = None) -> str:
         """Create or update a contact. Returns the CRM-side contact id.
 
         Implementations should dedup by lead.identity_keys (email, phone,
         tg_handle) before creating a new contact, so the same person from
         different channels lands on one record.
+
+        known_id: если задан — обновлять контакт по этому id (минуя поиск).
         """
 
     @abstractmethod

@@ -440,7 +440,7 @@ class HubSpotAdapter(CRMAdapter):
             logger.warning("[hubspot] health_check failed: %s", exc)
             return False
 
-    async def upsert_contact(self, lead: Lead) -> str:
+    async def upsert_contact(self, lead: Lead, known_id: Optional[str] = None) -> str:
         await self._ensure_setup()
 
         # Build properties payload. Email/phone come from lead.identity_keys
@@ -483,8 +483,14 @@ class HubSpotAdapter(CRMAdapter):
         if tg_handle:
             props["telegram_handle"] = tg_handle.lstrip("@")
 
-        # Search by email first (most reliable dedup key), then by phone
-        existing_id = await self._search_contact(email=email, phone=phone)
+        # known_id: обновляем КОНКРЕТНЫЙ контакт по id (минуя поиск). Нужно когда
+        # контакт уже создан «пустым» на 1-м ходе, а имя/email лид дал позже —
+        # поиск по новому email НЕ нашёл бы пустой контакт → создал бы дубль.
+        if known_id:
+            existing_id = known_id
+        else:
+            # Search by email first (most reliable dedup key), then by phone
+            existing_id = await self._search_contact(email=email, phone=phone)
 
         if existing_id:
             await self._req(

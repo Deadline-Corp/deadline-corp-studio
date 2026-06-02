@@ -37,8 +37,17 @@ if DATABASE_URL.startswith("postgres://"):
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,        # Проверять соединение перед запросом — спасает от dropped connections
-    pool_size=5,
-    max_overflow=10,
+    # Пул увеличен (было 5/10). Архитектура: async FastAPI + sync SQLAlchemy —
+    # каждый запрос держит соединение на весь ход, ВКЛЮЧАЯ медленный вызов LLM
+    # (2-6с). Плюс CRM-воркер, крон и to_thread-операции тоже берут соединения.
+    # На 5/10 под параллельной нагрузкой пул исчерпывался → checkout БЛОКИРОВАЛ
+    # event-loop → зависал весь процесс (инцидент 2026-06-02). 20/30 = запас.
+    pool_size=20,
+    max_overflow=30,
+    # КРИТИЧНО: если соединения нет — НЕ висеть (дефолт 30с блокирует loop),
+    # а упасть с ошибкой за 10с. Один запрос отвалится, процесс жив.
+    pool_timeout=10,
+    pool_recycle=1800,         # пересоздавать соединения раз в 30 мин (anti-stale)
     echo=os.getenv("SQL_ECHO", "false").lower() == "true",
 )
 

@@ -428,7 +428,7 @@ async def _dispatch(ev: CRMEvent, adapter: CRMAdapter) -> None:
     # loop stays free. Adapter calls are already async (httpx) and stay awaited.
     p = ev.payload
     if ev.type == "upsert_contact":
-        contact_id = await adapter.upsert_contact(p["lead"])
+        contact_id = await adapter.upsert_contact(p["lead"], known_id=p.get("known_id"))
         # Caller can read this back via the optional callback in payload
         cb = p.get("on_contact_id")
         if cb is not None:
@@ -583,12 +583,12 @@ async def _handle_failure(
 # =============================================================================
 
 def make_upsert_contact_event(
-    customer_id: str, lead: Lead, on_contact_id=None,
+    customer_id: str, lead: Lead, on_contact_id=None, known_id=None,
 ) -> CRMEvent:
     return CRMEvent(
         type="upsert_contact",
         customer_id=customer_id,
-        payload={"lead": lead, "on_contact_id": on_contact_id},
+        payload={"lead": lead, "on_contact_id": on_contact_id, "known_id": known_id},
     )
 
 

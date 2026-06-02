@@ -1561,6 +1561,18 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     # данных имени+email. См. services/reply_polish.
     try:
         from services import reply_polish as _rp
+        # Лид УЖЕ согласился идти в Telegram в одном из недавних сообщений
+        # («ок в тг напишу») → не пушить туда повторно (раньше lead_going_to_tg
+        # смотрел только текущую реплику и забывал прошлый ход → бот звал в ТГ 2-3 раза).
+        _lead_agreed_tg = False
+        try:
+            for _m in recent:
+                _r = _m.role.value if hasattr(_m.role, "value") else str(_m.role)
+                if _r == "user" and _rp.lead_going_to_tg(_m.content or ""):
+                    _lead_agreed_tg = True
+                    break
+        except Exception:  # noqa: BLE001
+            pass
         answer = _rp.polish(
             answer,
             lead_message=req.content,
@@ -1568,7 +1580,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
             name_known=bool((getattr(customer, "name", None) or "").strip()),
             email_known=bool((getattr(customer, "email", None) or "").strip()),
             channel=req.channel,
-            suppress_tg_push=bool(_alt_channel),
+            suppress_tg_push=bool(_alt_channel) or _lead_agreed_tg,
         )
     except Exception as _pe:  # noqa: BLE001
         log.debug(f"reply_polish skipped: {_pe}")

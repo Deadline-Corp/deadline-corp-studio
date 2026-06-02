@@ -341,6 +341,19 @@ def dispatch_operator_task(
 # Helpers
 # =============================================================================
 
+_RU_DAYS = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
+_RU_MON = ["", "января", "февраля", "марта", "апреля", "мая", "июня",
+           "июля", "августа", "сентября", "октября", "ноября", "декабря"]
+
+
+def _fmt_call_time(dt: datetime) -> str:
+    """Человекочитаемое время созвона в UTC+7 (Бангкок) для CRM-задачи."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    loc = dt + timedelta(hours=7)
+    return f"{_RU_DAYS[loc.weekday()]}, {loc.day} {_RU_MON[loc.month]}, {loc.hour:02d}:{loc.minute:02d} (Бангкок, UTC+7)"
+
+
 def _build_deal_title(
     customer_name: Optional[str],
     project_type: Optional[str],
@@ -460,6 +473,29 @@ def dispatch_on_message_turn(
                 customer=customer,
                 channel=channel,
             )
+        else:
+            # Контакт уже есть, НО имя/email/телефон лид часто даёт ПОЗЖЕ первого
+            # хода (когда контакт уже создан «пустым»). Раньше повторного апдейта не
+            # было → в HubSpot оставались name=None/email=None. upsert_contact
+            # идемпотентен (найдёт по email/handle и обновит). Дедуп флагом
+            # synced_contact, чтобы не дёргать HubSpot каждый ход без изменений.
+            _nm = (getattr(customer, "name", None) or "").strip()
+            _em = (getattr(customer, "email", None) or "").strip()
+            _ph = (getattr(customer, "phone", None) or "").strip()
+            if _nm or _em or _ph:
+                _sig = f"{_nm}|{_em}|{_ph}"
+                _prof = getattr(customer, "profile_data", None) or {}
+                if _prof.get("synced_contact") != _sig:
+                    _enqueue_upsert_contact(customer=customer, channel=channel, known_id=contact_id)
+                    try:
+                        _np = dict(_prof); _np["synced_contact"] = _sig
+                        customer.profile_data = _np
+                    except Exception:  # noqa: BLE001
+                        pass
+                    logger.info(
+                        "[crm_dispatch] contact re-upsert (name/email/phone updated) conv=%s",
+                        str(conversation.id)[:8],
+                    )
 
         # 2. Lazy deal creation. Only fire when there's a real sales signal
         #    AND the deal doesn't already exist (idempotency).
@@ -495,9 +531,29 @@ def dispatch_on_message_turn(
                 conversation_id=str(conversation.id),
                 next_meeting_at=call_booked_at,
             )
+            # Видимая CRM-задача со ВРЕМЕНЕМ и КАНАЛОМ созвона. next_meeting_at
+            # пишется в проперти сделки, но его часто нет на дефолтном лэйауте
+            # карточки → оператор «не видит время/канал». Задача — нагляднее всего:
+            # видна в таймлайне карточки + это и есть «напоминание по созвону» в CRM.
+            _medium = (getattr(customer, "profile_data", None) or {}).get("call_medium")
+            _when = _fmt_call_time(call_booked_at)
+            _nm = (customer.name or customer.email
+                   or (customer.identity_keys or {}).get("tg_handle") or "лид")
+            _ch_txt = f", канал: {_medium}" if _medium else ""
+            _due_min = max(1, int((call_booked_at - datetime.now(timezone.utc)).total_seconds() / 60))
+            dispatch_operator_task(
+                customer_id=customer_id,
+                crm_contact_id=contact_id,
+                crm_deal_id=deal_id,
+                conversation_id=str(conversation.id),
+                title=f"Созвон с {_nm}: {_when}{_ch_txt}",
+                category="callback",
+                due_in_minutes=_due_min,
+                description=f"Созвон назначен: {_when}. Канал: {_medium or 'уточнить у лида'}.",
+            )
             logger.info(
-                "[crm_dispatch] call booked → stage on_call conv=%s at=%s",
-                str(conversation.id)[:8], call_booked_at,
+                "[crm_dispatch] call booked → stage on_call + task conv=%s at=%s medium=%s",
+                str(conversation.id)[:8], call_booked_at, _medium,
             )
 
         # 3. Log lead message
@@ -684,6 +740,7 @@ def _enqueue_upsert_contact(
     *,
     customer: Any,
     channel: str,
+    known_id: Optional[str] = None,
 ) -> None:
     """Phase 12 (2026-05-28): enqueue ONLY upsert_contact, not deal.
 
@@ -700,6 +757,7 @@ def _enqueue_upsert_contact(
         customer_id=customer_id,
         lead=lead,
         on_contact_id=_make_contact_id_writeback(customer_id),
+        known_id=known_id,
     ))
 
 
