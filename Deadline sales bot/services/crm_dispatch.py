@@ -354,6 +354,35 @@ def _fmt_call_time(dt: datetime) -> str:
     return f"{_RU_DAYS[loc.weekday()]}, {loc.day} {_RU_MON[loc.month]}, {loc.hour:02d}:{loc.minute:02d} (Бангкок, UTC+7)"
 
 
+def _fmt_call_short(dt: datetime) -> str:
+    """Короткий формат для заголовка задачи: «чт 04.06 11:00»."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    loc = dt + timedelta(hours=7)
+    short = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"][loc.weekday()]
+    return f"{short} {loc.day:02d}.{loc.month:02d} {loc.hour:02d}:{loc.minute:02d}"
+
+
+def _suggest_call_dt(now: datetime) -> datetime:
+    """Предложить разумное время связи, если лид НЕ назвал точное. Возвращает UTC.
+
+    Логика (локально UTC+7): до 10:00 → сегодня 11:00; до 15:00 → сегодня 16:00;
+    позже → завтра 11:00. Выходные пропускаем на ближайший будний 11:00.
+    11:00 и 16:00 — «удобные всем» окна (идея пользователя)."""
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    loc = now + timedelta(hours=7)
+    if loc.hour < 10:
+        cand = loc.replace(hour=11, minute=0, second=0, microsecond=0)
+    elif loc.hour < 15:
+        cand = loc.replace(hour=16, minute=0, second=0, microsecond=0)
+    else:
+        cand = (loc + timedelta(days=1)).replace(hour=11, minute=0, second=0, microsecond=0)
+    while cand.weekday() >= 5:  # сб/вс → ближайший будний 11:00
+        cand = (cand + timedelta(days=1)).replace(hour=11, minute=0, second=0, microsecond=0)
+    return (cand - timedelta(hours=7)).replace(tzinfo=timezone.utc)
+
+
 def _build_deal_title(
     customer_name: Optional[str],
     project_type: Optional[str],
@@ -550,6 +579,9 @@ def dispatch_on_message_turn(
                 category="callback",
                 due_in_minutes=_due_min,
                 description=f"Созвон назначен: {_when}. Канал: {_medium or 'уточнить у лида'}.",
+                # Запоминаем id задачи: если канал назовут СЛЕДУЮЩИМ сообщением —
+                # дополним эту же задачу (dispatch_update_call_task), не плодя новую.
+                on_task_id=_make_call_task_writeback(customer_id),
             )
             logger.info(
                 "[crm_dispatch] call booked → stage on_call + task conv=%s at=%s medium=%s",
@@ -603,10 +635,22 @@ def dispatch_on_message_turn(
             # это CRM-задача (to-do в карточке), а не реал-тайм пинг оператору.
             _name = (customer.name or customer.email
                      or (customer.identity_keys or {}).get("tg_handle") or "новый лид")
+            _task_desc = (_desc or last_lead_message or "")[:1000]
             if (channel or "").lower() != "website":
+                # Мессенджер — лид УЖЕ перешёл и ждёт прямо сейчас → срочно (15 мин).
                 _task_title = f"Подхватить в Telegram — {_name} ждёт"
+                _task_due_min = 15
             else:
-                _task_title = f"Связаться с лидом — {_name}"
+                # Сайт — связи нет в реал-тайме. Лид точное время НЕ назвал →
+                # ставим задачу на разумное окно (11:00/16:00, удобно всем), чтобы у
+                # менеджера была задача С ДАТОЙ И ВРЕМЕНЕМ, а не просто «связаться».
+                _sug = _suggest_call_dt(datetime.now(timezone.utc))
+                _task_title = f"Связаться с лидом — {_name} · предв. {_fmt_call_short(_sug)}"
+                _task_due_min = max(1, int((_sug - datetime.now(timezone.utc)).total_seconds() / 60))
+                _task_desc = (
+                    f"Предлагаемое время связи: {_fmt_call_time(_sug)} (лид точное не "
+                    f"назвал — дефолтное удобное окно).\n\n" + _task_desc
+                )
             dispatch_operator_task(
                 customer_id=customer_id,
                 crm_contact_id=contact_id,
@@ -614,8 +658,8 @@ def dispatch_on_message_turn(
                 conversation_id=str(conversation.id),
                 title=_task_title,
                 category="callback",
-                due_in_minutes=15,
-                description=(_desc or last_lead_message or "")[:1000],
+                due_in_minutes=_task_due_min,
+                description=_task_desc,
             )
             logger.info(
                 "[crm_dispatch] handoff conv=%s channel=%s — deal qualified + "
@@ -801,6 +845,42 @@ def _enqueue_create_deal(
 # =============================================================================
 # DB writeback callbacks — worker calls these once it has the real CRM ids
 # =============================================================================
+
+def _make_call_task_writeback(customer_id: str):
+    """Factory: колбэк, сохраняющий id задачи созвона в customer.profile_data —
+    чтобы потом (когда лид назовёт канал СЛЕДУЮЩИМ сообщением) дополнить эту же
+    задачу через update_task, а не плодить новую."""
+    def writeback(task_id: str) -> None:
+        if not task_id:
+            return
+        try:
+            from db.connection import session_scope
+            from db.models import Customer
+            from uuid import UUID
+            with session_scope() as s:
+                cust = s.query(Customer).filter(Customer.id == UUID(customer_id)).first()
+                if cust:
+                    _p = dict(cust.profile_data or {})
+                    _p["call_task_id"] = task_id
+                    cust.profile_data = _p
+            logger.info("[crm_dispatch] call_task_id <- %s (customer %s)", task_id, customer_id[:8])
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[crm_dispatch] call task writeback skipped: %s", exc)
+    return writeback
+
+
+def dispatch_update_call_task(*, customer_id: str, task_id: str, lead_name: str,
+                              call_at: datetime, medium: str) -> None:
+    """Дополнить задачу созвона каналом, названным позже. Enqueue update_task."""
+    from services.crm_queue import enqueue, make_update_task_event
+    _when = _fmt_call_time(call_at)
+    enqueue(make_update_task_event(
+        customer_id=str(customer_id),
+        task_id=str(task_id),
+        subject=f"Созвон с {lead_name}: {_when}, канал: {medium}",
+        body=f"Созвон назначен: {_when}. Канал: {medium}.",
+    ))
+
 
 def _make_contact_id_writeback(customer_id: str):
     """Factory: returns a callback that writes contact_id to Customer.crm_contact_id."""

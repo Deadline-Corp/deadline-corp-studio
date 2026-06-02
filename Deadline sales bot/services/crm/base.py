@@ -246,6 +246,10 @@ class CRMAdapter(ABC):
         самоисполнения ботом). Default no-op — переопределяется в адаптере."""
         return False
 
+    async def update_task(self, task_id: str, subject=None, body=None) -> bool:
+        """Дополнить задачу (тема/тело). Default no-op — переопределяется в адаптере."""
+        return False
+
     @abstractmethod
     async def health_check(self) -> bool:
         """Cheap call to verify credentials + connectivity. Called at startup."""

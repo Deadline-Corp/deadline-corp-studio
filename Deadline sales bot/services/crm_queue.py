@@ -58,6 +58,7 @@ EventType = Literal[
     "log_message",
     "create_task",
     "complete_task",       # закрыть задачу в CRM, когда бот её исполнил (followup отправлен)
+    "update_task",         # дополнить задачу (напр. канал созвона, названный позже)
     "schedule_followup",   # Task Engine B2 — записать отложенное действие бота
 ]
 
@@ -527,6 +528,14 @@ async def _dispatch(ev: CRMEvent, adapter: CRMAdapter) -> None:
             await adapter.complete_task(str(tid))
         return
 
+    if ev.type == "update_task":
+        # Дополнить существующую задачу (напр. канал созвона, названный лидом
+        # СЛЕДУЮЩИМ сообщением после брони — раньше канал не попадал в задачу).
+        tid = p.get("task_id")
+        if tid:
+            await adapter.update_task(str(tid), subject=p.get("subject"), body=p.get("body"))
+        return
+
     if ev.type == "schedule_followup":
         # Task Engine B2 — записать строку отложенного действия бота (off event
         # loop, через to_thread). Само-отправку делает крон run_due_followups.
@@ -690,6 +699,17 @@ def make_complete_task_event(customer_id: str, task_id: str) -> CRMEvent:
         type="complete_task",
         customer_id=customer_id,
         payload={"task_id": task_id},
+    )
+
+
+def make_update_task_event(
+    customer_id: str, task_id: str, subject: Optional[str] = None, body: Optional[str] = None,
+) -> CRMEvent:
+    """Дополнить задачу (subject/body) — напр. добавить канал созвона."""
+    return CRMEvent(
+        type="update_task",
+        customer_id=customer_id,
+        payload={"task_id": task_id, "subject": subject, "body": body},
     )
 
 

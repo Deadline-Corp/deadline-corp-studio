@@ -832,6 +832,27 @@ class HubSpotAdapter(CRMAdapter):
         logger.info("[hubspot] task %s → COMPLETED", task_id)
         return True
 
+    async def update_task(
+        self, task_id: str, subject: Optional[str] = None, body: Optional[str] = None,
+    ) -> bool:
+        """Дополнить задачу (тема/тело) — напр. добавить канал созвона."""
+        if not task_id:
+            return False
+        await self._ensure_setup()
+        props: dict[str, Any] = {}
+        if subject:
+            props["hs_task_subject"] = subject[:255]
+        if body:
+            props["hs_task_body"] = body[:65000]
+        if not props:
+            return False
+        resp = await self._req(
+            "PATCH", f"/crm/v3/objects/tasks/{task_id}", json={"properties": props},
+        )
+        resp.raise_for_status()
+        logger.info("[hubspot] task %s updated (subject=%s)", task_id, bool(subject))
+        return True
+
 
 # ----------------------------------------------------------------------- helpers
 
