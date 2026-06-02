@@ -1414,18 +1414,31 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     # (scheduling.detect_call_medium), а не просьба сменить канал переписки.
     _alt_channel = None
     _alt_contact = None
-    _in_call_ctx = bool(
-        _call_slots_human or _just_booked_human or _booked_info_human
-        or _call_ask_time or _call_cancelled
-    )
-    if not _in_call_ctx:
+    # Созвон уже подтверждён/назначен → «в whatsapp» здесь = канал созвона, не смена.
+    if not (_just_booked_human or _booked_info_human):
         try:
             from services.channel_prefs import detect_alt_channel
             _ac = detect_alt_channel(req.content)
             if _ac:
-                _alt_channel, _alt_contact = _ac
-                if not _alt_contact and (getattr(customer, "phone", None) or "").strip():
-                    _alt_contact = customer.phone
+                _label, _contact = _ac
+                if not _contact and (getattr(customer, "phone", None) or "").strip():
+                    _contact = customer.phone
+                # Защита выбора МЕДИУМА созвона: если слоты уже предлагали раньше и
+                # лид просто назвал мессенджер БЕЗ номера/«позвоните» — это канал
+                # созвона (Zoom/TG/WA), а не просьба сменить канал переписки.
+                _offered_before = bool(
+                    (getattr(customer, "profile_data", None) or {}).get("offered_call_slots")
+                )
+                _bare_medium = (
+                    _offered_before and not _contact
+                    and _label in ("WhatsApp", "Viber", "Signal")
+                )
+                if not _bare_medium:
+                    _alt_channel, _alt_contact = _label, _contact
+                    # alt-channel перекрывает РАЗОВОЕ предложение слотов этого хода:
+                    # лид хочет связь в своём канале, а не выбор времени Zoom.
+                    _call_slots_human = None
+                    _call_ask_time = False
         except Exception as _ace:  # noqa: BLE001
             log.debug(f"alt-channel detect skipped: {_ace}")
 
