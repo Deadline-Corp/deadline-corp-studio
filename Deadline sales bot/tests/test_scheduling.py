@@ -59,6 +59,19 @@ def test_reminder_schedule_drops_past():
     assert all(fire > NOW for fire, _ in sched)
 
 
+def test_parse_choice_same_hour_different_days_disambiguated_by_day():
+    """Оба слота в один час, но в разные дни → день лида разрешает выбор.
+    Регрессия: «в среду в 15» при слотах [среда 15:00, четверг 15:00] раньше
+    возвращало None (час 15 матчил оба), теперь бронирует среду."""
+    wed = datetime(2026, 6, 3, 8, 0, tzinfo=UTC)   # среда 15:00 локального (UTC+7)
+    thu = datetime(2026, 6, 4, 8, 0, tzinfo=UTC)   # четверг 15:00 локального
+    offered = [wed, thu]
+    assert S.parse_slot_choice("в среду в 15", offered, NOW) == wed
+    assert S.parse_slot_choice("давайте четверг в 15", offered, NOW) == thu
+    # без дня (только общий час) — по-прежнему неоднозначно
+    assert S.parse_slot_choice("в 15", offered, NOW) is None
+
+
 def test_no_false_booking_on_question_turns():
     """Бот не должен «случайно» забронировать, пока лид задаёт вопросы."""
     slots = _slots()
