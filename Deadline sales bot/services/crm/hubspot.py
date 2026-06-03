@@ -73,18 +73,23 @@ DEFAULT_API_BASE = "https://api.hubapi.com"
 # region na2) was already updated via API to match these exact labels;
 # `_reconcile_stages` will find every stage on first start without
 # adding duplicates.
+# 2026-06-03: воронка упрощена 12 → 8 стадий (запрос: «слишком много столбцов,
+# оставить те что реально используются»). Бот авто-двигает только до on_call/lost;
+# остальное — ручные сейл-вехи. Вырезаны нишевые: 📜 NDA, 🎯 ТЗ согласовано,
+# 🤝 В работе (слита в «Аванс»), 🔁 Постпродажа. Их _our_stage-ключи ОСТАЮТСЯ в
+# base.LeadStage и funnel.py (внутренняя стейт-машина + крон/тесты их импортят),
+# но в HubSpot они больше не материализуются: _reconcile_stages только ДОБАВЛЯЕТ
+# недостающие из этого списка, никогда не удаляет — старые 4 стадии удалены в
+# HubSpot вручную. Если внутренний код вдруг попросит несуществующую стадию,
+# update_deal_stage логирует «unknown stage» и мягко пропускает (deal не двигается).
 STAGE_DEFS: list[dict[str, Any]] = [
     {"label": "🆕 Новый лид",        "metadata": {"probability": "0.05", "isClosed": "false"}, "_our_stage": "new_lead"},
     {"label": "💬 В диалоге",         "metadata": {"probability": "0.10", "isClosed": "false"}, "_our_stage": "in_dialog"},
     {"label": "✅ Квалифицирован",    "metadata": {"probability": "0.20", "isClosed": "false"}, "_our_stage": "qualified"},
-    {"label": "📜 NDA подписан",      "metadata": {"probability": "0.30", "isClosed": "false"}, "_our_stage": "nda"},
     {"label": "📞 Созвон назначен",   "metadata": {"probability": "0.40", "isClosed": "false"}, "_our_stage": "on_call"},
-    {"label": "🎯 ТЗ согласовано",    "metadata": {"probability": "0.55", "isClosed": "false"}, "_our_stage": "tz_approved"},
     {"label": "📄 КП отправлено",     "metadata": {"probability": "0.65", "isClosed": "false"}, "_our_stage": "proposal"},
     {"label": "💰 Аванс получен",     "metadata": {"probability": "0.80", "isClosed": "false"}, "_our_stage": "prepayment"},
-    {"label": "🤝 В работе",          "metadata": {"probability": "0.90", "isClosed": "false"}, "_our_stage": "in_work"},
     {"label": "✅ Сдано",             "metadata": {"probability": "1.00", "isClosed": "true"},  "_our_stage": "completed_won"},
-    {"label": "🔁 Постпродажа",       "metadata": {"probability": "1.00", "isClosed": "true"},  "_our_stage": "post_sale"},
     {"label": "❌ Проигран",          "metadata": {"probability": "0.00", "isClosed": "true"},  "_our_stage": "lost"},
 ]
 
