@@ -1358,24 +1358,24 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 if _new_medium and _profile.get("call_medium") != _new_medium:
                     _profile["call_medium"] = _new_medium
                     customer.profile_data = _profile
-                    # Канал назван СЛЕДУЮЩИМ сообщением после брони → дополняем уже
-                    # созданную задачу созвона каналом (а не плодим новую). Фикс
-                    # «канал не попадает в задачу».
-                    _ctid = _profile.get("call_task_id")
-                    if _ctid:
-                        try:
-                            from services.crm_dispatch import dispatch_update_call_task
-                            _lead_nm = (customer.name or customer.email
-                                        or (customer.identity_keys or {}).get("tg_handle") or "лид")
-                            dispatch_update_call_task(
-                                customer_id=str(customer.id),
-                                task_id=str(_ctid),
-                                lead_name=_lead_nm,
-                                call_at=_dtm.fromisoformat(_booked),
-                                medium=_new_medium,
-                            )
-                        except Exception as _ute:  # noqa: BLE001
-                            log.warning(f"[{str(conversation.id)[:8]}] update call task failed: {_ute}")
+                    # Канал назван СЛЕДУЮЩИМ сообщением после брони → дозаписываем
+                    # его в ОБЕ задачи-подтверждения (за день и за час). Если их id
+                    # ещё нет в profile (задачи только создаются async-воркером) —
+                    # их writeback допишет канал сам, когда id появится. Гонка
+                    # закрыта с обеих сторон.
+                    try:
+                        from services.crm_dispatch import dispatch_sync_call_task_medium
+                        _lead_nm = (customer.name or customer.email
+                                    or (customer.identity_keys or {}).get("tg_handle") or "лид")
+                        dispatch_sync_call_task_medium(
+                            customer_id=str(customer.id),
+                            profile=_profile,
+                            lead_name=_lead_nm,
+                            call_at=_dtm.fromisoformat(_booked),
+                            medium=_new_medium,
+                        )
+                    except Exception as _ute:  # noqa: BLE001
+                        log.warning(f"[{str(conversation.id)[:8]}] sync call task medium failed: {_ute}")
                 try:
                     _when = _sched.format_slot_human(_dtm.fromisoformat(_booked), _now)
                 except Exception:  # noqa: BLE001
