@@ -1,5 +1,5 @@
 /**
- * Deadline Sales Bot вЂ” embeddable chat widget
+ * Deadline Sales Bot — embeddable chat widget
  *
  * Embed on the website:
  *     <script src="https://your-domain/widget.js" defer></script>
@@ -21,8 +21,8 @@
     (typeof window !== "undefined" && window.DEADLINE_BOT_API) ||
     "https://deadline-sales-bot-production.up.railway.app/chat";
 
-  // Phase C1.2: РёСЃС‚РѕС‡РЅРёРє С‚СЂР°С„РёРєР° (referrer-С…РѕСЃС‚ + UTM) вЂ” СЃРЅРёРјР°РµРј РїСЂРё Р·Р°РіСЂСѓР·РєРµ,
-  // С€Р»С‘Рј СЃ РєР°Р¶РґС‹Рј СЃРѕРѕР±С‰РµРЅРёРµРј; РЅР° handoff РїРѕРїР°РґР°РµС‚ РІ РєР°СЂС‚РѕС‡РєСѓ Р»РёРґР° РІ CRM.
+  // Phase C1.2: источник трафика (referrer-хост + UTM) — снимаем при загрузке,
+  // шлём с каждым сообщением; на handoff попадает в карточку лида в CRM.
   const DL_SRC = (function () {
     try {
       var p = new URLSearchParams(window.location.search);
@@ -37,7 +37,7 @@
 
   // Session id is persisted in localStorage so the conversation survives page
   // reloads, language switches AND skin switches (those don't reload, but if
-  // the user ever does F5 the bot's memory stays вЂ” same session_id reaches
+  // the user ever does F5 the bot's memory stays — same session_id reaches
   // the backend, which keeps the conversation thread intact).
   const SESSION_STORAGE_KEY = "dl-bot-session-id";
   const SESSION_ID = (function () {
@@ -52,7 +52,7 @@
   // Visible chat history is also persisted so on reload / new tab the user
   // sees their previous messages, not just an empty widget. Capped at the
   // last 100 messages and expired after 30 days of inactivity. Transient
-  // error messages (network failures) are explicitly NOT stored вЂ” they'd
+  // error messages (network failures) are explicitly NOT stored — they'd
   // be confusing to see on next visit.
   const MESSAGES_STORAGE_KEY = "dl-bot-messages";
   const MAX_STORED_MESSAGES = 100;
@@ -157,15 +157,15 @@
   root.id = "dl-bot";
   root.innerHTML = `
     <div id="dl-bot-header">
-      <span>DEADLINE В· РћРїРёС€РёС‚Рµ Р·Р°РґР°С‡Сѓ РѕРґРЅРёРј СЃРѕРѕР±С‰РµРЅРёРµРј</span>
-      <span id="dl-bot-toggle">в†•</span>
+      <span>DEADLINE · Опишите задачу одним сообщением</span>
+      <span id="dl-bot-toggle">↕</span>
     </div>
     <div id="dl-bot-msg">
-      <div class="dl-msg b">РџСЂРёРІРµС‚. РћРїРёС€РёС‚Рµ Р·Р°РґР°С‡Сѓ РѕРґРЅРёРј СЃРѕРѕР±С‰РµРЅРёРµРј вЂ” РїР»Р°РЅ Рё СЃСЂРѕРє РїСЂРёР»РµС‚СЏС‚ СЂР°РЅСЊС€Рµ, С‡РµРј СѓР±РµСЂС‘С‚Рµ СЂСѓРєРё РѕС‚ РєР»Р°РІРёР°С‚СѓСЂС‹.</div>
+      <div class="dl-msg b">Привет. Опишите задачу одним сообщением — план и срок прилетят раньше, чем уберёте руки от клавиатуры.</div>
     </div>
     <div id="dl-bot-wrap">
-      <input id="dl-inp" placeholder="РћРїРёС€РёС‚Рµ Р·Р°РґР°С‡Сѓ..." autocomplete="off" />
-      <button id="dl-btn" aria-label="Send">в†’</button>
+      <input id="dl-inp" placeholder="Опишите задачу..." autocomplete="off" />
+      <button id="dl-btn" aria-label="Send">→</button>
     </div>
   `;
   document.body.appendChild(root);
@@ -220,7 +220,7 @@
   // SEND
   // ============================================================
   async function send() {
-    // Phase C1.2: РїРѕСЃР»Рµ СѓРІРѕРґР° (handoff) Р±РѕС‚ В«Р·Р°С‚РёС…Р°РµС‚В» РЅР° СЃР°Р№С‚Рµ вЂ” Р±Р»РѕРєРёСЂСѓРµРј РІРІРѕРґ.
+    // Phase C1.2: после увода (handoff) бот «затихает» на сайте — блокируем ввод.
     if (root.dataset.closed === "1") return;
     const text = $inp.value.trim();
     if (!text) return;
@@ -239,9 +239,9 @@
 
       if (!r.ok) {
         if (r.status === 503) {
-          addMsg("РЎРµСЂРІРёСЃ РІСЂРµРјРµРЅРЅРѕ РЅРµРґРѕСЃС‚СѓРїРµРЅ. РќР°РїРёС€РёС‚Рµ РІ Telegram @deadline_corp", "b", { persist: false });
+          addMsg("Сервис временно недоступен. Напишите в Telegram @deadline_corp", "b", { persist: false });
         } else {
-          addMsg("РћС€РёР±РєР° СЃРІСЏР·Рё. РќР°РїРёС€РёС‚Рµ РІ Telegram @deadline_corp", "b", { persist: false });
+          addMsg("Ошибка связи. Напишите в Telegram @deadline_corp", "b", { persist: false });
         }
         return;
       }
@@ -250,17 +250,17 @@
       addMsg(data.answer, "b");
       if (data.handoff) {
         closeWithHandoff(text);
-      } else if (/telegram|С‚РµР»РµРіСЂР°Рј|@deadline_corp/i.test(data.answer || "")) {
-        // Р‘РѕС‚ РІ РџР•Р Р’Р«Р™ СЂР°Р· Р·РѕРІС‘С‚ РІ Telegram в†’ СЃСЂР°Р·Сѓ РґР°С‘Рј РєРЅРѕРїРєСѓ РЅР° Р±РѕС‚Р°
-        // (РЅРµ РґРѕР¶РёРґР°СЏСЃСЊ С„РёРЅР°Р»СЊРЅРѕРіРѕ handoff). Р§Р°С‚ РЅРµ Р·Р°РєСЂС‹РІР°РµРј вЂ” Р»РёРґ РјРѕР¶РµС‚ РїРёСЃР°С‚СЊ.
+      } else if (/telegram|телеграм|@deadline_corp/i.test(data.answer || "")) {
+        // Бот в ПЕРВЫЙ раз зовёт в Telegram → сразу даём кнопку на бота
+        // (не дожидаясь финального handoff). Чат не закрываем — лид может писать.
         showTgCta(false, data.answer);
       }
     } catch (e) {
       hideTyping();
-      addMsg("РЎР±РѕР№ СЃРІСЏР·Рё. РќР°РїРёС€РёС‚Рµ РІ Telegram @deadline_corp", "b", { persist: false });
+      addMsg("Сбой связи. Напишите в Telegram @deadline_corp", "b", { persist: false });
       console.error("[dl-bot]", e);
     } finally {
-      // РЅРµ СЂРµР°РєС‚РёРІРёСЂСѓРµРј РІРІРѕРґ, РµСЃР»Рё РґРёР°Р»РѕРі Р·Р°РєСЂС‹С‚ СѓРІРѕРґРѕРј РІ Telegram
+      // не реактивируем ввод, если диалог закрыт уводом в Telegram
       if (root.dataset.closed !== "1") {
         $btn.disabled = false;
         $inp.focus();
@@ -268,39 +268,39 @@
     }
   }
 
-  // РљРЅРѕРїРєР°-СЃСЃС‹Р»РєР° РЅР° РќРђРЁР•Р“Рћ Р‘РћРўРђ РІ Telegram (РЅРµ РєР°РЅР°Р», РЅРµ РЅРѕРјРµСЂ) вЂ” Р»РёРґ Р¶РјС‘С‚ Рё
-  // РїСЂРѕРґРѕР»Р¶Р°РµС‚ СЃ С‚РµРј Р¶Рµ Р±РѕС‚РѕРј РІ РјРµСЃСЃРµРЅРґР¶РµСЂРµ. РџРѕРєР°Р·С‹РІР°РµС‚СЃСЏ РћР”РРќ СЂР°Р· (idempotent).
+  // Кнопка-ссылка на НАШЕГО БОТА в Telegram (не канал, не номер) — лид жмёт и
+  // продолжает с тем же ботом в мессенджере. Показывается ОДИН раз (idempotent).
   const TG_BOT_URL = "https://t.me/Deadline_Corp_bot";
   let _ctaShown = false;
   function showTgCta(closing, text) {
-    const isEng = /[a-zA-Z]/.test(text || "") && !/[Р°-СЏРђ-РЇ]/.test(text || "");
+    const isEng = /[a-zA-Z]/.test(text || "") && !/[а-яА-Я]/.test(text || "");
     if (!_ctaShown) {
       const cta = document.createElement("a");
       cta.className = "dl-cta";
       cta.href = TG_BOT_URL;
       cta.target = "_blank";
       cta.rel = "noopener";
-      cta.textContent = isEng ? "Open Telegram в†’" : "РќР°РїРёСЃР°С‚СЊ РІ Telegram в†’";
+      cta.textContent = isEng ? "Open Telegram →" : "Написать в Telegram →";
       $msg.appendChild(cta);
       $msg.scrollTop = $msg.scrollHeight;
       _ctaShown = true;
     }
     if (closing) {
-      // Р¤РёРЅР°Р»СЊРЅС‹Р№ С…РµРЅРґРѕС„С„ вЂ” СЂР°Р·РіРѕРІРѕСЂ РїСЂРѕРґРѕР»Р¶Р°РµС‚СЃСЏ РІ РјРµСЃСЃРµРЅРґР¶РµСЂРµ, РІРІРѕРґ РЅР° СЃР°Р№С‚Рµ РіР°СЃРёРј.
+      // Финальный хендофф — разговор продолжается в мессенджере, ввод на сайте гасим.
       root.dataset.closed = "1";
       $inp.disabled = true;
       $btn.disabled = true;
-      $inp.placeholder = isEng ? "Continue on Telegram в†’" : "РџСЂРѕРґРѕР»Р¶Р°РµРј РІ Telegram в†’";
+      $inp.placeholder = isEng ? "Continue on Telegram →" : "Продолжаем в Telegram →";
     }
   }
 
-  // Phase C1.2: handoff в†’ Р±РѕС‚ В«РїРµСЂРµРґР°Р» РєРѕРјР°РЅРґРµВ» Рё СѓРІРѕРґРёС‚ Р»РёРґР° РІ Telegram.
+  // Phase C1.2: handoff → бот «передал команде» и уводит лида в Telegram.
   function closeWithHandoff(lastText) {
-    const isEng = /[a-zA-Z]/.test(lastText) && !/[Р°-СЏРђ-РЇ]/.test(lastText);
+    const isEng = /[a-zA-Z]/.test(lastText) && !/[а-яА-Я]/.test(lastText);
     addMsg(
       isEng
-        ? "Got it вЂ” taken into work. Let's continue on Telegram so nothing gets lost. рџ“©"
-        : "Р’Р·СЏР»Рё РІ СЂР°Р±РѕС‚Сѓ. РџСЂРѕРґРѕР»Р¶РёРј РІ Telegram вЂ” С‚Р°Рє СѓРґРѕР±РЅРµРµ Рё РЅРµ РїРѕС‚РµСЂСЏРµРјСЃСЏ. рџ“©",
+        ? "Got it — taken into work. Let's continue on Telegram so nothing gets lost. 📩"
+        : "Взяли в работу. Продолжим в Telegram — так удобнее и не потеряемся. 📩",
       "sys", { persist: false }
     );
     showTgCta(true, lastText);
@@ -337,7 +337,7 @@
 
 
 /**
- * Deadline Sales Bot вЂ” TRAINER WIDGET (opt-in)
+ * Deadline Sales Bot — TRAINER WIDGET (opt-in)
  *
  * Activates only when the URL contains ?admin=<TRAINING_AUTH_TOKEN>.
  * Renders a second widget on the left side of the page where an operator
@@ -348,11 +348,11 @@
  * bot reply through RAG retrieval.
  *
  * Backend endpoints used (see main.py /admin/training/*):
- *   POST /admin/training/draft   вЂ” start session, get first proposal
- *   POST /admin/training/refine  вЂ” iterate with operator feedback
- *   POST /admin/training/approve вЂ” persist the latest proposal
- *   POST /admin/training/discard вЂ” abandon without saving
- *   GET  /admin/training/list    вЂ” list current rules
+ *   POST /admin/training/draft   — start session, get first proposal
+ *   POST /admin/training/refine  — iterate with operator feedback
+ *   POST /admin/training/approve — persist the latest proposal
+ *   POST /admin/training/discard — abandon without saving
+ *   GET  /admin/training/list    — list current rules
  *
  * All require `Authorization: Bearer <token>` header.
  */
@@ -365,12 +365,12 @@
   // scripts (Meta Pixel / Clarity / CDNs), and never lands in server access logs.
   const URL_PARAMS = new URLSearchParams(window.location.hash.slice(1));
   const ADMIN_TOKEN = URL_PARAMS.get("admin");
-  if (!ADMIN_TOKEN) return;  // not in admin mode в†’ don't render anything
+  if (!ADMIN_TOKEN) return;  // not in admin mode → don't render anything
   // Strip the token from the address bar immediately so it doesn't linger in
   // browser history or session-replay tools after first read.
   try { history.replaceState(null, "", window.location.pathname + window.location.search); } catch (e) {}
 
-  // Detect API base URL вЂ” same host as the regular widget's /chat endpoint
+  // Detect API base URL — same host as the regular widget's /chat endpoint
   const BASE_URL = (
     (typeof window !== "undefined" && window.DEADLINE_BOT_API) ||
     "https://deadline-sales-bot-production.up.railway.app/chat"
@@ -382,11 +382,11 @@
     "Authorization": "Bearer " + ADMIN_TOKEN,
   });
 
-  // Live session state вЂ” null until first draft, then UUID returned by backend
+  // Live session state — null until first draft, then UUID returned by backend
   let sessionId = null;
 
   // ============================================================
-  // STYLES вЂ” visually distinct from the client widget (orange accent)
+  // STYLES — visually distinct from the client widget (orange accent)
   // ============================================================
   const trainerStyles = `
     #dl-trainer {
@@ -477,23 +477,23 @@
   tRoot.id = "dl-trainer";
   tRoot.innerHTML = `
     <div class="dl-trainer-header" id="dl-trainer-header">
-      <strong>рџЋ“ TRAINER В· РѕР±СѓС‡РµРЅРёРµ Р±РѕС‚Р°</strong>
-      <span id="dl-trainer-toggle">в–ј</span>
+      <strong>🎓 TRAINER · обучение бота</strong>
+      <span id="dl-trainer-toggle">▼</span>
     </div>
     <div class="dl-trainer-body" id="dl-trainer-body">
       <div class="dl-trainer-section">
-        <label class="dl-trainer-label">РЁР°Рі 1 вЂ” Р”РёР°Р»РѕРі РіРґРµ Р±РѕС‚ РѕС‚РІРµС‚РёР» РЅРµ С‚Р°Рє</label>
-        <textarea class="dl-trainer-textarea" id="dl-trainer-dialog" placeholder="user: СЃРєРѕР»СЊРєРѕ СЃС‚РѕРёС‚ СЃР°Р№С‚?
-assistant: С†РµРЅР° РѕС‚ $2000
-user: РґРѕСЂРѕРіРѕ..."></textarea>
+        <label class="dl-trainer-label">Шаг 1 — Диалог где бот ответил не так</label>
+        <textarea class="dl-trainer-textarea" id="dl-trainer-dialog" placeholder="user: сколько стоит сайт?
+assistant: цена от $2000
+user: дорого..."></textarea>
       </div>
       <div class="dl-trainer-section">
-        <label class="dl-trainer-label">РЁР°Рі 2 вЂ” Р§С‚Рѕ Р±С‹Р»Рѕ РЅРµ С‚Р°Рє / РєР°Рє РЅР°РґРѕ</label>
-        <textarea class="dl-trainer-textarea" id="dl-trainer-note" placeholder="Р‘РѕС‚ РЅРµ РґРѕР»Р¶РµРЅ РЅР°Р·С‹РІР°С‚СЊ РєРѕРЅРєСЂРµС‚РЅСѓСЋ СЃСѓРјРјСѓ Р±РµР· Discovery. РќР°РґРѕ Р±С‹Р»Рѕ РїСЂРµРґР»РѕР¶РёС‚СЊ СЂР°Р·РѕР±СЂР°С‚СЊСЃСЏ СЃ Р·Р°РґР°С‡РµР№ Рё СѓР·РЅР°С‚СЊ email."></textarea>
+        <label class="dl-trainer-label">Шаг 2 — Что было не так / как надо</label>
+        <textarea class="dl-trainer-textarea" id="dl-trainer-note" placeholder="Бот не должен называть конкретную сумму без Discovery. Надо было предложить разобраться с задачей и узнать email."></textarea>
       </div>
       <div class="dl-trainer-section">
-        <button class="dl-trainer-btn" id="dl-trainer-draft-btn">РџРѕР»СѓС‡РёС‚СЊ РІР°СЂРёР°РЅС‚</button>
-        <button class="dl-trainer-btn secondary" id="dl-trainer-list-btn">рџ“љ РЎРїРёСЃРѕРє РїСЂР°РІРёР»</button>
+        <button class="dl-trainer-btn" id="dl-trainer-draft-btn">Получить вариант</button>
+        <button class="dl-trainer-btn secondary" id="dl-trainer-list-btn">📚 Список правил</button>
       </div>
       <div id="dl-trainer-proposals"></div>
     </div>
@@ -524,19 +524,19 @@ user: РґРѕСЂРѕРіРѕ..."></textarea>
     const wrap = document.createElement("div");
     wrap.className = "dl-trainer-proposal";
     wrap.innerHTML = `
-      <h4>РџСЂРµРґР»РѕР¶РµРЅРЅРѕРµ РїСЂР°РІРёР»Рѕ</h4>
-      <div>${escapeHtml(p.proposed_rule || "(РїСѓСЃС‚Рѕ)")}</div>
-      <h4 style="margin-top:8px;">РџСЂРёРјРµСЂ РѕС‚РІРµС‚Р° Р±РѕС‚Р°</h4>
-      <div>${escapeHtml(p.proposed_response || "(РїСѓСЃС‚Рѕ)")}</div>
-      <h4 style="margin-top:8px;">Р’РѕРїСЂРѕСЃ РѕС‚ С‚СЂРµРЅРµСЂР°</h4>
-      <div style="color:#ffb86b;">${escapeHtml(p.confirmation_question || "РџРѕРґС…РѕРґРёС‚?")}</div>
+      <h4>Предложенное правило</h4>
+      <div>${escapeHtml(p.proposed_rule || "(пусто)")}</div>
+      <h4 style="margin-top:8px;">Пример ответа бота</h4>
+      <div>${escapeHtml(p.proposed_response || "(пусто)")}</div>
+      <h4 style="margin-top:8px;">Вопрос от тренера</h4>
+      <div style="color:#ffb86b;">${escapeHtml(p.confirmation_question || "Подходит?")}</div>
       <div style="margin-top:10px;">
-        <button class="dl-trainer-btn" data-act="approve">вњ“ РЎРѕС…СЂР°РЅРёС‚СЊ</button>
-        <button class="dl-trainer-btn secondary" data-act="discard">вњ— РћС‚РјРµРЅРёС‚СЊ</button>
+        <button class="dl-trainer-btn" data-act="approve">✓ Сохранить</button>
+        <button class="dl-trainer-btn secondary" data-act="discard">✗ Отменить</button>
       </div>
       <div style="margin-top:8px;">
-        <input type="text" class="dl-trainer-input" placeholder="...РёР»Рё РїРѕРґСЃРєР°Р¶Рё РєР°Рє РЅР°РґРѕ РёРЅР°С‡Рµ" data-act="refine-input"/>
-        <button class="dl-trainer-btn" data-act="refine" style="margin-top:4px;">в†» РќРѕРІС‹Р№ РІР°СЂРёР°РЅС‚</button>
+        <input type="text" class="dl-trainer-input" placeholder="...или подскажи как надо иначе" data-act="refine-input"/>
+        <button class="dl-trainer-btn" data-act="refine" style="margin-top:4px;">↻ Новый вариант</button>
       </div>
     `;
     wrap.querySelector('[data-act="approve"]').addEventListener("click", () => approveSession(wrap));
@@ -586,29 +586,29 @@ user: РґРѕСЂРѕРіРѕ..."></textarea>
     const dialog = $tDialog.value.trim();
     const note = $tNote.value.trim();
     if (!dialog || !note) {
-      showStatus("РќСѓР¶РЅРѕ Р·Р°РїРѕР»РЅРёС‚СЊ Рё РґРёР°Р»РѕРі, Рё РєРѕРјРјРµРЅС‚Р°СЂРёР№", true);
+      showStatus("Нужно заполнить и диалог, и комментарий", true);
       return;
     }
     $tDraftBtn.disabled = true;
-    $tDraftBtn.textContent = "Р”СѓРјР°СЋ...";
+    $tDraftBtn.textContent = "Думаю...";
     try {
       const proposal = await postJSON("/admin/training/draft", {
         dialog, correction_note: note,
       });
       sessionId = proposal.session_id;
-      // Phase 11 вЂ” surface nearby existing rules BEFORE the proposal so
+      // Phase 11 — surface nearby existing rules BEFORE the proposal so
       // the operator knows what they might be conflicting with.
       renderSimilarWarning(proposal.similar_existing_rules || []);
       renderProposal(proposal);
     } catch (e) {
-      showStatus("РћС€РёР±РєР°: " + e.message, true);
+      showStatus("Ошибка: " + e.message, true);
     } finally {
       $tDraftBtn.disabled = false;
-      $tDraftBtn.textContent = "РџРѕР»СѓС‡РёС‚СЊ РІР°СЂРёР°РЅС‚";
+      $tDraftBtn.textContent = "Получить вариант";
     }
   }
 
-  // Phase 11 вЂ” render the list of pre-existing active rules with similar
+  // Phase 11 — render the list of pre-existing active rules with similar
   // trigger context. Goes ABOVE the proposal in the trainer panel.
   function renderSimilarWarning(rules) {
     // Remove old block if any
@@ -623,8 +623,8 @@ user: РґРѕСЂРѕРіРѕ..."></textarea>
       "background:#3a2010;border:1px solid #c98a3a;border-radius:6px;" +
       "padding:8px 10px;margin-bottom:8px;color:#ffb86b;font-size:12px;";
     const header = document.createElement("strong");
-    header.textContent = "вљ  " + rules.length +
-      " РїРѕС…РѕР¶РёС… Р°РєС‚РёРІРЅС‹С… РїСЂР°РІРёР» СѓР¶Рµ РµСЃС‚СЊ РІ Р±Р°Р·Рµ. РџРѕСЃРјРѕС‚СЂРёС‚Рµ РїСЂРµР¶РґРµ С‡РµРј СЃРѕС…СЂР°РЅСЏС‚СЊ:";
+    header.textContent = "⚠ " + rules.length +
+      " похожих активных правил уже есть в базе. Посмотрите прежде чем сохранять:";
     wrap.appendChild(header);
     rules.forEach((r) => {
       const item = document.createElement("div");
@@ -633,8 +633,8 @@ user: РґРѕСЂРѕРіРѕ..."></textarea>
       const created = (r.created_at || "").slice(0, 10);
       item.innerHTML =
         "<small style='opacity:.7'>id " + escapeHtml(String(r.id).slice(0, 8)) +
-        " В· created " + escapeHtml(created) + " by " + escapeHtml(r.created_by || "?") +
-        " В· cosine " + dist + "</small><br>" +
+        " · created " + escapeHtml(created) + " by " + escapeHtml(r.created_by || "?") +
+        " · cosine " + dist + "</small><br>" +
         escapeHtml((r.guidance || "").slice(0, 220));
       wrap.appendChild(item);
     });
@@ -643,11 +643,11 @@ user: РґРѕСЂРѕРіРѕ..."></textarea>
 
   async function refineSession(feedback) {
     if (!sessionId) {
-      showStatus("РЎРЅР°С‡Р°Р»Р° РїРѕР»СѓС‡РёС‚Рµ РїРµСЂРІС‹Р№ РІР°СЂРёР°РЅС‚ (РЁР°Рі 1)", true);
+      showStatus("Сначала получите первый вариант (Шаг 1)", true);
       return;
     }
     if (!feedback) {
-      showStatus("РћРїРёС€РёС‚Рµ С‡С‚Рѕ РёР·РјРµРЅРёС‚СЊ РІ РІР°СЂРёР°РЅС‚Рµ", true);
+      showStatus("Опишите что изменить в варианте", true);
       return;
     }
     try {
@@ -656,7 +656,7 @@ user: РґРѕСЂРѕРіРѕ..."></textarea>
       });
       renderProposal(proposal);
     } catch (e) {
-      showStatus("РћС€РёР±РєР°: " + e.message, true);
+      showStatus("Ошибка: " + e.message, true);
     }
   }
 
@@ -667,9 +667,9 @@ user: РґРѕСЂРѕРіРѕ..."></textarea>
       if (forceAction) payload.force_action = forceAction;
       const result = await postJSON("/admin/training/approve", payload);
       const supSuffix = (result.superseded && result.superseded.length)
-        ? " (РґРµР°РєС‚РёРІРёСЂРѕРІР°РЅРѕ СЃС‚Р°СЂС‹С…: " + result.superseded.length + ")"
+        ? " (деактивировано старых: " + result.superseded.length + ")"
         : "";
-      showStatus("вњ“ РЎРѕС…СЂР°РЅРµРЅРѕ! ID РїСЂР°РІРёР»Р°: " +
+      showStatus("✓ Сохранено! ID правила: " +
         result.correction_id.slice(0, 8) + supSuffix);
       sessionId = null;
       $tDialog.value = "";
@@ -677,17 +677,17 @@ user: РґРѕСЂРѕРіРѕ..."></textarea>
       const sim = document.getElementById("trainer-similar");
       if (sim) sim.remove();
     } catch (e) {
-      // Phase 11 вЂ” 409 means active rules conflict with this one.
+      // Phase 11 — 409 means active rules conflict with this one.
       // Show the operator a choice instead of a generic error.
       if (e.status === 409 && e.body && Array.isArray(e.body.detail?.conflicts)) {
         showConflictModal(e.body.detail.conflicts, e.body.detail.message || "");
       } else {
-        showStatus("РћС€РёР±РєР° СЃРѕС…СЂР°РЅРµРЅРёСЏ: " + e.message, true);
+        showStatus("Ошибка сохранения: " + e.message, true);
       }
     }
   }
 
-  // Phase 11 вЂ” modal to resolve a 409-conflict from /approve.
+  // Phase 11 — modal to resolve a 409-conflict from /approve.
   // Inline implementation (no external library) to stay zero-dep.
   function showConflictModal(conflicts, summary) {
     // Remove any prior modal
@@ -708,7 +708,7 @@ user: РґРѕСЂРѕРіРѕ..."></textarea>
 
     const title = document.createElement("h3");
     title.style.cssText = "margin:0 0 8px;color:#ffb86b;font-size:15px;";
-    title.textContent = "вљ  РљРѕРЅС„Р»РёРєС‚ СЃ " + conflicts.length + " Р°РєС‚РёРІРЅС‹РјРё РїСЂР°РІРёР»Р°РјРё";
+    title.textContent = "⚠ Конфликт с " + conflicts.length + " активными правилами";
 
     const subtitle = document.createElement("div");
     subtitle.style.cssText = "font-size:12px;opacity:.8;margin-bottom:10px;";
@@ -726,13 +726,13 @@ user: РґРѕСЂРѕРіРѕ..."></textarea>
       item.innerHTML =
         "<strong>" + (i + 1) + ". " + escapeHtml(String(c.id).slice(0, 8)) +
         "</strong>  <small style='opacity:.7'>" +
-        escapeHtml(created) + " В· cosine " +
+        escapeHtml(created) + " · cosine " +
         (typeof c.distance === "number" ? c.distance.toFixed(2) : "?") +
         "</small><br><em style='opacity:.85;display:block;margin-top:4px;'>" +
         escapeHtml((c.guidance || "").slice(0, 280)) + "</em>" +
-        "<div style='margin-top:4px;color:#ffb86b;'>РЎСѓРґСЊСЏ: " +
+        "<div style='margin-top:4px;color:#ffb86b;'>Судья: " +
         escapeHtml(c.judge_reason || "") + "</div>" +
-        "<div style='font-size:11px;opacity:.7'>РїСЂРµРґР»РѕР¶РµРЅРѕ: " +
+        "<div style='font-size:11px;opacity:.7'>предложено: " +
         escapeHtml(c.suggested_action || "supersede") + "</div>";
       card.appendChild(item);
     });
@@ -750,15 +750,15 @@ user: РґРѕСЂРѕРіРѕ..."></textarea>
       return b;
     }
 
-    btnRow.appendChild(mkBtn("Р—Р°РјРµРЅРёС‚СЊ СЃС‚Р°СЂС‹Рµ (supersede)", "#ffb86b", () => {
+    btnRow.appendChild(mkBtn("Заменить старые (supersede)", "#ffb86b", () => {
       overlay.remove();
       approveSession(null, "supersede");
     }));
-    btnRow.appendChild(mkBtn("РћСЃС‚Р°РІРёС‚СЊ РѕР±Р° (coexist)", "#c98a3a", () => {
+    btnRow.appendChild(mkBtn("Оставить оба (coexist)", "#c98a3a", () => {
       overlay.remove();
       approveSession(null, "coexist");
     }));
-    btnRow.appendChild(mkBtn("РћС‚РјРµРЅР°", "#5a3a20", () => {
+    btnRow.appendChild(mkBtn("Отмена", "#5a3a20", () => {
       overlay.remove();
     }));
 
@@ -774,7 +774,7 @@ user: РґРѕСЂРѕРіРѕ..."></textarea>
       } catch (_) { /* not fatal */ }
     }
     sessionId = null;
-    showStatus("РћС‚РјРµРЅРµРЅРѕ. РњРѕР¶РЅРѕ РЅР°С‡Р°С‚СЊ РЅРѕРІС‹Р№ СЂР°Р·Р±РѕСЂ.");
+    showStatus("Отменено. Можно начать новый разбор.");
   }
 
   async function listRules() {
@@ -782,21 +782,21 @@ user: РґРѕСЂРѕРіРѕ..."></textarea>
       const r = await fetch(BASE_URL + "/admin/training/list?limit=20", { headers: authHeaders() });
       if (!r.ok) throw new Error("HTTP " + r.status);
       const data = await r.json();
-      showStatus("РђРєС‚РёРІРЅС‹С… РїСЂР°РІРёР»: " + data.count);
+      showStatus("Активных правил: " + data.count);
       data.rules.slice(0, 10).forEach((rule) => {
         const el = document.createElement("div");
         el.className = "dl-trainer-proposal";
         el.innerHTML = `
-          <h4>РџСЂР°РІРёР»Рѕ В· ${escapeHtml(rule.channel || "РІСЃРµ РєР°РЅР°Р»С‹")}</h4>
+          <h4>Правило · ${escapeHtml(rule.channel || "все каналы")}</h4>
           <div>${escapeHtml(rule.guidance)}</div>
-          ${rule.suggested_response ? `<h4 style="margin-top:6px;">РџСЂРёРјРµСЂ</h4><div>${escapeHtml(rule.suggested_response)}</div>` : ""}
+          ${rule.suggested_response ? `<h4 style="margin-top:6px;">Пример</h4><div>${escapeHtml(rule.suggested_response)}</div>` : ""}
           <div style="margin-top:4px; color:#888; font-size:11px;">${escapeHtml(rule.created_at || "")}</div>
         `;
         $tProposals.appendChild(el);
       });
       $tBody.scrollTop = $tBody.scrollHeight;
     } catch (e) {
-      showStatus("РћС€РёР±РєР° Р·Р°РіСЂСѓР·РєРё РїСЂР°РІРёР»: " + e.message, true);
+      showStatus("Ошибка загрузки правил: " + e.message, true);
     }
   }
 
@@ -805,12 +805,12 @@ user: РґРѕСЂРѕРіРѕ..."></textarea>
   // ============================================================
   $tHeader.addEventListener("click", () => {
     tRoot.classList.toggle("collapsed");
-    $tToggle.textContent = tRoot.classList.contains("collapsed") ? "в–І" : "в–ј";
+    $tToggle.textContent = tRoot.classList.contains("collapsed") ? "▲" : "▼";
   });
   $tDraftBtn.addEventListener("click", startDraft);
   $tListBtn.addEventListener("click", listRules);
 
-  // Expose for debugging ONLY on localhost вЂ” never in production, where a
+  // Expose for debugging ONLY on localhost — never in production, where a
   // compromised/third-party script could call listRules() with the operator's
   // bearer token via this global.
   if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
