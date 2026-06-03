@@ -60,6 +60,7 @@ EventType = Literal[
     "complete_task",       # закрыть задачу в CRM, когда бот её исполнил (followup отправлен)
     "update_task",         # дополнить задачу (напр. канал созвона, названный позже)
     "schedule_followup",   # Task Engine B2 — записать отложенное действие бота
+    "merge_contacts",      # слить две CRM-карточки в одну (Postgres-кастомеры склеились)
 ]
 
 
@@ -520,6 +521,14 @@ async def _dispatch(ev: CRMEvent, adapter: CRMAdapter) -> None:
             await asyncio.to_thread(cb, task_id)
         return
 
+    if ev.type == "merge_contacts":
+        # Два наших Postgres-кастомера склеились в один (общий email / deep-link),
+        # а в CRM остались ДВЕ карточки на человека. Сливаем secondary в primary.
+        prim = p.get("primary_id"); sec = p.get("secondary_id")
+        if prim and sec and str(prim) != str(sec):
+            await adapter.merge_contacts(str(prim), str(sec))
+        return
+
     if ev.type == "complete_task":
         # Бот исполнил отложенное действие (отправил followup лиду) → закрываем
         # зеркальную задачу в CRM, чтобы оператор не видел «вечно открытую».
@@ -699,6 +708,18 @@ def make_complete_task_event(customer_id: str, task_id: str) -> CRMEvent:
         type="complete_task",
         customer_id=customer_id,
         payload={"task_id": task_id},
+    )
+
+
+def make_merge_contacts_event(
+    customer_id: str, primary_id: str, secondary_id: str,
+) -> CRMEvent:
+    """Слить secondary CRM-контакт в primary. payload — простые строки,
+    переживает persist/recovery (колбэков нет)."""
+    return CRMEvent(
+        type="merge_contacts",
+        customer_id=customer_id,
+        payload={"primary_id": primary_id, "secondary_id": secondary_id},
     )
 
 

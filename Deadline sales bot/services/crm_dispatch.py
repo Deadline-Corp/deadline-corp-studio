@@ -536,6 +536,29 @@ def dispatch_on_message_turn(
                         str(conversation.id)[:8],
                     )
 
+        # 1b. CRM-merge карточек: два Postgres-кастомера склеились (общий email /
+        #     deep-link), а в HubSpot остались ДВЕ карточки на человека. Флаг
+        #     crm_merge_absorb проставила identity._absorb_crm_contacts при
+        #     слиянии. Сливаем secondary в выжившую (primary = текущий contact_id),
+        #     снимаем флаг. Если контакт ещё не синкнут (contact_id пуст) — флаг
+        #     останется, сольём на следующем ходе.
+        _prof_m = getattr(customer, "profile_data", None) or {}
+        _absorb = _prof_m.get("crm_merge_absorb")
+        if _absorb and contact_id and str(_absorb) != str(contact_id):
+            from services.crm_queue import enqueue as _enq, make_merge_contacts_event
+            _enq(make_merge_contacts_event(
+                customer_id=customer_id, primary_id=contact_id, secondary_id=str(_absorb),
+            ))
+            try:
+                _npm = dict(_prof_m); _npm.pop("crm_merge_absorb", None)
+                customer.profile_data = _npm
+            except Exception:  # noqa: BLE001
+                pass
+            logger.info(
+                "[crm_dispatch] enqueued contact merge primary=%s ← secondary=%s conv=%s",
+                contact_id, _absorb, str(conversation.id)[:8],
+            )
+
         # 2. Lazy deal creation. Only fire when there's a real sales signal
         #    AND the deal doesn't already exist (idempotency).
         should_create_deal = (not deal_id) and (

@@ -250,6 +250,13 @@ class CRMAdapter(ABC):
         """Дополнить задачу (тема/тело). Default no-op — переопределяется в адаптере."""
         return False
 
+    async def merge_contacts(self, primary_id: str, secondary_id: str) -> bool:
+        """Слить два контакта в CRM в один (primary выживает, secondary
+        вливается). Нужно когда два наших Postgres-кастомера склеились в один
+        (общий email / deep-link), а в CRM остались две карточки на человека.
+        Default no-op — переопределяется в адаптере, поддерживающем merge."""
+        return False
+
     @abstractmethod
     async def health_check(self) -> bool:
         """Cheap call to verify credentials + connectivity. Called at startup."""

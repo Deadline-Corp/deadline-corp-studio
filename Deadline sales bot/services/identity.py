@@ -264,6 +264,32 @@ def link_identity(
     return identity
 
 
+def _absorb_crm_contacts(survivor: Customer, dying: Customer) -> None:
+    """При слиянии двух кастомеров согласовать crm_contact_id, чтобы в CRM не
+    осталось ДВУХ карточек на одного человека (баг «дубль контакта при merge»).
+
+      • у survivor карточки ещё нет, у dying есть → просто усыновляем id;
+      • у обоих есть и они РАЗНЫЕ → помечаем survivor.profile_data['crm_merge_absorb']
+        = dying_id. CRM-слой (dispatch_on_message_turn) на следующем ходе сольёт
+        их через HubSpot Merge API (primary=survivor, secondary=dying).
+
+    Чисто DB-операция — без импорта CRM-слоя, чтобы identity.py оставался
+    свободным от сетевых зависимостей (склейка не должна ронять обработку)."""
+    dying_cid = getattr(dying, "crm_contact_id", None)
+    if not dying_cid:
+        return
+    surv_cid = getattr(survivor, "crm_contact_id", None)
+    if not surv_cid:
+        survivor.crm_contact_id = dying_cid
+        return
+    if str(surv_cid) != str(dying_cid):
+        _p = dict(getattr(survivor, "profile_data", None) or {})
+        _p["crm_merge_absorb"] = str(dying_cid)
+        survivor.profile_data = _p
+        log.info("[identity] CRM merge intent: contact %s ← %s (survivor customer %s)",
+                 surv_cid, dying_cid, survivor.id)
+
+
 def update_email(db: Session, customer_id: UUID, email: str) -> Customer:
     """Set email on a customer. If email already belongs to another customer,
     MERGE both customers: re-point the other's identities to this one, then
@@ -339,6 +365,11 @@ def update_email(db: Session, customer_id: UUID, email: str) -> Customer:
     target.email = email
     db.flush()
 
+    # (3.5) CRM dedup: согласовать crm_contact_id, чтобы в HubSpot не осталось
+    #       двух карточек на человека. ДО удаления other — иначе потеряем его id.
+    _absorb_crm_contacts(target, other)
+    db.flush()
+
     # (4) delete the now-orphaned customer (its identities list is empty
     #     after the UPDATE in step 1, so cascade has nothing to delete)
     db.delete(other)
@@ -410,6 +441,9 @@ def bridge_telegram_to_website_session(
         from db.models import Conversation
         db.execute(update(ChannelIdentity).where(ChannelIdentity.customer_id == T.id).values(customer_id=W.id))
         db.execute(update(Conversation).where(Conversation.customer_id == T.id).values(customer_id=W.id))
+        # CRM dedup: у телеграм-кастомера T могла быть СВОЯ карточка в HubSpot.
+        # Согласуем crm_contact_id ДО удаления T, иначе карточка осиротеет.
+        _absorb_crm_contacts(W, T)
         db.expire(T, ["identities"])
         db.flush()
         db.delete(T)

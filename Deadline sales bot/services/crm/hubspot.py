@@ -828,6 +828,29 @@ class HubSpotAdapter(CRMAdapter):
         )
         return task_id
 
+    async def merge_contacts(self, primary_id: str, secondary_id: str) -> bool:
+        """Слить secondary-контакт в primary через HubSpot Merge API.
+        primary выживает (его id сохраняется), secondary исчезает, его
+        свойства/история/ассоциации вливаются в primary. Идемпотентно по
+        смыслу: повторный вызов с уже слитым id вернёт ошибку — глушим в False,
+        не роняя воркер (склейка уже произошла)."""
+        if not primary_id or not secondary_id or str(primary_id) == str(secondary_id):
+            return False
+        await self._ensure_setup()
+        resp = await self._req(
+            "POST", "/crm/v3/objects/contacts/merge",
+            json={"primaryObjectId": str(primary_id), "objectIdToMerge": str(secondary_id)},
+        )
+        if resp.status_code in (200, 201):
+            logger.info("[hubspot] merged contact %s INTO %s", secondary_id, primary_id)
+            return True
+        # 4xx — например secondary уже слит/удалён. Не критично, не ретраим вечно.
+        logger.warning(
+            "[hubspot] merge_contacts %s<-%s -> %d: %s",
+            primary_id, secondary_id, resp.status_code, resp.text[:200],
+        )
+        return False
+
     async def complete_task(self, task_id: str) -> bool:
         """Пометить задачу COMPLETED (после самоисполнения ботом)."""
         if not task_id:
