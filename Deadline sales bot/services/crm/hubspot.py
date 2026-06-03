@@ -493,10 +493,19 @@ class HubSpotAdapter(CRMAdapter):
             existing_id = await self._search_contact(email=email, phone=phone, tg_handle=tg_handle)
 
         if existing_id:
+            # first_touch_channel и interaction_type — «set once at first touch»
+            # (см. описания пропертей). На АПДЕЙТЕ их не перезаписываем: иначе
+            # ре-апсерт с другого канала (deep-link сайт→телега, или возврат лида
+            # из другого мессенджера) затёр бы первый канал касания и тип лида.
+            # Имя/почта/телефон/tg-ник/температура/скор обновляются нормально.
+            update_props = {
+                k: v for k, v in props.items()
+                if k not in ("first_touch_channel", "interaction_type")
+            }
             await self._req(
                 "PATCH",
                 f"/crm/v3/objects/contacts/{existing_id}",
-                json={"properties": props},
+                json={"properties": update_props},
             )
             logger.info("[hubspot] updated contact %s (lead=%s)", existing_id, lead.id)
             return existing_id
