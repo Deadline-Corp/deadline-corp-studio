@@ -511,8 +511,18 @@ def dispatch_on_message_turn(
             _nm = (getattr(customer, "name", None) or "").strip()
             _em = (getattr(customer, "email", None) or "").strip()
             _ph = (getattr(customer, "phone", None) or "").strip()
-            if _nm or _em or _ph:
-                _sig = f"{_nm}|{_em}|{_ph}"
+            # tg-ник часто появляется ПОЗЖЕ — особенно через deep-link мост
+            # (сайт→телега): контакт создан с сайта, телеграм-личность повисла
+            # потом. Раньше ник в триггер НЕ входил → @username оставался только
+            # в Postgres, в HubSpot telegram_handle был пуст. channel в БД =
+            # Enum (хранится как 'TELEGRAM'), поэтому сверяем по .endswith.
+            _tg = ""
+            for _idn in (getattr(customer, "identities", None) or []):
+                if str(getattr(_idn, "channel", "")).lower().endswith("telegram") and _idn.username:
+                    _tg = _idn.username
+                    break
+            if _nm or _em or _ph or _tg:
+                _sig = f"{_nm}|{_em}|{_ph}|{_tg}"
                 _prof = getattr(customer, "profile_data", None) or {}
                 if _prof.get("synced_contact") != _sig:
                     _enqueue_upsert_contact(customer=customer, channel=channel, known_id=contact_id)
@@ -522,7 +532,7 @@ def dispatch_on_message_turn(
                     except Exception:  # noqa: BLE001
                         pass
                     logger.info(
-                        "[crm_dispatch] contact re-upsert (name/email/phone updated) conv=%s",
+                        "[crm_dispatch] contact re-upsert (name/email/phone/tg updated) conv=%s",
                         str(conversation.id)[:8],
                     )
 
