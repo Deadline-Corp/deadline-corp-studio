@@ -302,6 +302,47 @@ async def sweep_once(*, tenant_config: dict) -> dict:
                 conversation.last_warmed_at = now
                 stats["warming_tasks_enqueued"] += 1
 
+            # Проактивный бот-нудж: свежий вовлечённый лид в МЕССЕНДЖЕРЕ пропал
+            # (не handoff, не бронь, не «позже»). Бот ОДИН раз мягко пингует —
+            # чтобы не терять лида (для сейл-бота это важно). Дедуп: только если
+            # у диалога ещё НЕТ ни одного bot-followup (включая «позже»/отправленные)
+            # → один нудж за диалог, не спамим. Кадэнс/пороги — config warming.*
+            try:
+                _nudge_after = float(warming_cfg.get("nudge_after_hours", 1))
+                _nudge_max = float(warming_cfg.get("nudge_max_hours", 36))
+                _chan = (conversation.channel or "").lower()
+                _chat = conversation.channel_conversation_id
+                _booked = bool((customer.profile_data or {}).get("booked_call_at"))
+                _engaged = int(customer.lead_score or 0) >= 40
+                if (_chat and _chan in ("telegram", "whatsapp", "instagram", "messenger")
+                        and _engaged and not _booked
+                        and _nudge_after <= silent_hours <= _nudge_max):
+                    from db.models import ScheduledAction
+                    _exists = (
+                        s.query(ScheduledAction.id)
+                        .filter(ScheduledAction.conversation_id == conversation.id,
+                                ScheduledAction.action_type == "followup_message",
+                                ScheduledAction.executor == "bot")
+                        .first()
+                    )
+                    if not _exists:
+                        from services.scheduled_actions import write_scheduled_action
+                        write_scheduled_action(
+                            customer_id=str(customer.id),
+                            conversation_id=str(conversation.id),
+                            channel=conversation.channel,
+                            chat_id=str(_chat),
+                            due_at=now,
+                            text=("Здравствуйте! Вы недавно интересовались — подскажите, "
+                                  "актуально ещё? С радостью помогу с проектом 🙂 Если сейчас "
+                                  "неудобно, просто скажите, когда вам написать."),
+                        )
+                        stats["bot_nudges"] = stats.get("bot_nudges", 0) + 1
+                        logger.info("[cron] bot-nudge → silent %s lead conv=%s (%.1fh)",
+                                    customer.lead_temperature, str(conversation.id)[:8], silent_hours)
+            except Exception as _ne:  # noqa: BLE001
+                logger.warning("[cron] bot-nudge skipped: %s", _ne)
+
         # session_scope commits on exit
 
     if any(v for k, v in stats.items() if k != "examined") or stats["examined"] > 0:
