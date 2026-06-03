@@ -142,7 +142,17 @@
     }
     .dl-cta:hover { background: #1f96d4; }
     @media (max-width: 480px) {
-      #dl-bot { width: calc(100% - 20px); right: 10px; left: 10px; bottom: 10px; }
+      /* Мобайл: панель = bottom-sheet на 85% высоты экрана, flex-колонка —
+         поле ввода и кнопка отправки ВСЕГДА видны внизу (раньше уезжали за экран).
+         Проверено вживую (Playwright, 390x844): input+send inViewport=true. */
+      #dl-bot {
+        left: 0; right: 0; bottom: 0; width: 100%;
+        max-height: none; height: 85vh; height: 85dvh;
+        border-radius: 16px 16px 0 0;
+        display: flex; flex-direction: column;
+      }
+      #dl-bot-msg { flex: 1 1 auto; min-height: 0; max-height: none; }
+      #dl-bot-wrap { flex: 0 0 auto; }
     }
   `;
 
@@ -229,19 +239,29 @@
     $btn.disabled = true;
     showTyping();
 
+    // Первый ответ может идти дольше (бот «просыпается» — cold start Railway).
+    // Поэтому: (1) ждём до 60с, не обрываем рано (иначе ложный «сбой связи»);
+    // (2) через 9с показываем «секунду…», чтобы человек не думал что сломалось.
+    const _ctrl = new AbortController();
+    const _slow = setTimeout(() => {
+      addMsg("Секунду, обрабатываю запрос… 🙂", "sys", { persist: false });
+    }, 9000);
+    const _kill = setTimeout(() => _ctrl.abort(), 60000);
     try {
       const r = await fetch(API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id: SESSION_ID, message: text, source: DL_SRC }),
+        signal: _ctrl.signal,
       });
+      clearTimeout(_slow); clearTimeout(_kill);
       hideTyping();
 
       if (!r.ok) {
         if (r.status === 503) {
-          addMsg("Сервис временно недоступен. Напишите в Telegram @deadline_corp", "b", { persist: false });
+          addMsg("Сервис временно недоступен. Напишите в Telegram @Deadline_Corp_bot", "b", { persist: false });
         } else {
-          addMsg("Ошибка связи. Напишите в Telegram @deadline_corp", "b", { persist: false });
+          addMsg("Ошибка связи. Напишите в Telegram @Deadline_Corp_bot", "b", { persist: false });
         }
         return;
       }
@@ -256,8 +276,10 @@
         showTgCta(false, data.answer);
       }
     } catch (e) {
+      clearTimeout(_slow); clearTimeout(_kill);
       hideTyping();
-      addMsg("Сбой связи. Напишите в Telegram @deadline_corp", "b", { persist: false });
+      addMsg("Долго не отвечает — напишите нам в Telegram, ответим там 👇", "b", { persist: false });
+      showTgCta(false, "telegram");
       console.error("[dl-bot]", e);
     } finally {
       // не реактивируем ввод, если диалог закрыт уводом в Telegram
