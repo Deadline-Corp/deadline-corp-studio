@@ -611,29 +611,19 @@ def dispatch_on_message_turn(
             _due_hour = max(1, int((call_booked_at - timedelta(hours=1) - _now).total_seconds() / 60))
             _t_day_subj, _t_day_body = _call_task_subject("day", _nm, _when, _medium)
             _t_hour_subj, _t_hour_body = _call_task_subject("hour", _nm, _when, _medium)
-            # Обе задачи получают writeback с kind — сохраняют свой id в profile и,
-            # если канал назван РАНЬШЕ создания задачи, сразу его дозаписывают.
+            # Две задачи-подтверждения. Канал, названный ПОЗЖЕ отдельным сообщением,
+            # дозапишет dispatch_sync_call_medium (находит задачи по сделке в HubSpot,
+            # не через гоночный profile_data). FIFO-воркер: задачи уже созданы к
+            # моменту sync. Если канал назван ВМЕСТЕ с бронью — он уже в _medium тут.
             dispatch_operator_task(
-                customer_id=customer_id,
-                crm_contact_id=contact_id,
-                crm_deal_id=deal_id,
-                conversation_id=str(conversation.id),
-                title=_t_day_subj,
-                category="callback",
-                due_in_minutes=_due_day,
-                description=_t_day_body,
-                on_task_id=_make_call_task_writeback(customer_id, "day", call_booked_at, _nm),
+                customer_id=customer_id, crm_contact_id=contact_id, crm_deal_id=deal_id,
+                conversation_id=str(conversation.id), title=_t_day_subj,
+                category="callback", due_in_minutes=_due_day, description=_t_day_body,
             )
             dispatch_operator_task(
-                customer_id=customer_id,
-                crm_contact_id=contact_id,
-                crm_deal_id=deal_id,
-                conversation_id=str(conversation.id),
-                title=_t_hour_subj,
-                category="callback",
-                due_in_minutes=_due_hour,
-                description=_t_hour_body,
-                on_task_id=_make_call_task_writeback(customer_id, "hour", call_booked_at, _nm),
+                customer_id=customer_id, crm_contact_id=contact_id, crm_deal_id=deal_id,
+                conversation_id=str(conversation.id), title=_t_hour_subj,
+                category="callback", due_in_minutes=_due_hour, description=_t_hour_body,
             )
             logger.info(
                 "[crm_dispatch] call booked → on_call + 2 confirm tasks (-1d/-1h) conv=%s at=%s medium=%s",
@@ -912,59 +902,23 @@ def _call_task_subject(kind: str, lead_name: str, when: str, medium: Optional[st
             f"Через час созвон. Время: {when}. Канал: {_chd}.")
 
 
-def _enqueue_call_task_medium_update(customer_id: str, task_id: str, kind: str,
-                                     lead_name: str, call_at: datetime, medium: str) -> None:
-    """Дозаписать канал в КОНКРЕТНУЮ задачу-подтверждение (id уже известен)."""
-    from services.crm_queue import enqueue, make_update_task_event
-    _subj, _body = _call_task_subject(kind, lead_name, _fmt_call_time(call_at), medium)
-    enqueue(make_update_task_event(customer_id=str(customer_id), task_id=str(task_id),
-                                   subject=_subj, body=_body))
-
-
-def _make_call_task_writeback(customer_id: str, kind: str, call_at: datetime, lead_name: str):
-    """Factory: сохранить id задачи-подтверждения (kind='day'/'hour') в profile.
-    Если канал УЖЕ известен (лид назвал «в телеге» до того как id задачи появился
-    из async-воркера) — сразу дозаписываем канал в эту задачу. Это закрывает
-    гонку «канал назван раньше, чем создалась задача»."""
-    def writeback(task_id: str) -> None:
-        if not task_id:
-            return
-        try:
-            from db.connection import session_scope
-            from db.models import Customer
-            from uuid import UUID
-            _medium = None
-            with session_scope() as s:
-                cust = s.query(Customer).filter(Customer.id == UUID(customer_id)).first()
-                if cust:
-                    _p = dict(cust.profile_data or {})
-                    _p[f"call_task_id_{kind}"] = task_id
-                    cust.profile_data = _p
-                    _medium = _p.get("call_medium")
-            logger.info("[crm_dispatch] call_task_id_%s <- %s (customer %s)", kind, task_id, customer_id[:8])
-            if _medium:  # канал уже был — дозаписываем сразу
-                _enqueue_call_task_medium_update(customer_id, task_id, kind, lead_name, call_at, _medium)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("[crm_dispatch] call task writeback skipped: %s", exc)
-    return writeback
-
-
-def dispatch_sync_call_task_medium(*, customer_id: str, profile: dict, lead_name: str,
-                                   call_at: datetime, medium: str) -> None:
-    """Канал назван ПОСЛЕ брони → дозаписать его в ОБЕ задачи-подтверждения, если
-    их id уже в profile. Если id ещё нет (задачи только создаются) — ничего, их
-    writeback допишет канал сам, когда id появится (см. _make_call_task_writeback).
-    Так закрыта гонка с обеих сторон."""
-    for _kind in ("day", "hour"):
-        _tid = (profile or {}).get(f"call_task_id_{_kind}")
-        if _tid:
-            _enqueue_call_task_medium_update(customer_id, _tid, _kind, lead_name, call_at, medium)
-
-
-def dispatch_update_call_task(*, customer_id: str, task_id: str, lead_name: str,
+def dispatch_sync_call_medium(*, customer_id: str, conversation_id: str,
+                              deal_id: Optional[str], lead_name: str,
                               call_at: datetime, medium: str) -> None:
-    """[deprecated] Совместимость: дозаписать канал в одну задачу созвона."""
-    _enqueue_call_task_medium_update(customer_id, task_id, "day", lead_name, call_at, medium)
+    """Канал назван ПОСЛЕ брони → дозаписать его в обе задачи-подтверждения.
+    Не через гоночный profile_data, а через сделку: воркер найдёт задачи созвона
+    по сделке в HubSpot и обновит их. FIFO-очередь гарантирует, что задачи (из
+    хода брони) уже созданы к моменту этого события. deal_id='pending' резолвится
+    воркером из conversation.crm_deal_id."""
+    from services.crm_queue import enqueue, make_sync_call_medium_event
+    enqueue(make_sync_call_medium_event(
+        customer_id=str(customer_id),
+        conversation_id=str(conversation_id),
+        deal_id=deal_id or "pending",
+        lead_name=lead_name,
+        call_at=call_at,
+        medium=medium,
+    ))
 
 
 def _make_contact_id_writeback(customer_id: str):

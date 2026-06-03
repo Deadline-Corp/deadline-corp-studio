@@ -856,6 +856,31 @@ class HubSpotAdapter(CRMAdapter):
         )
         return False
 
+    async def list_tasks_for_deal(self, deal_id: str) -> list[dict]:
+        """Задачи, привязанные к сделке: [{id, subject}]. Для дозаписи канала в
+        задачи созвона, найденные ПО СДЕЛКЕ (не по гоночному profile_data)."""
+        if not deal_id:
+            return []
+        await self._ensure_setup()
+        try:
+            resp = await self._req("GET", f"/crm/v3/objects/deals/{deal_id}/associations/tasks")
+            if resp.status_code != 200:
+                return []
+            ids = [r.get("toObjectId") or r.get("id") for r in resp.json().get("results", [])]
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[hubspot] list tasks for deal %s failed: %s", deal_id, exc)
+            return []
+        out: list[dict] = []
+        for tid in ids:
+            if not tid:
+                continue
+            tr = await self._req("GET", f"/crm/v3/objects/tasks/{tid}",
+                                 params={"properties": "hs_task_subject"})
+            if tr.status_code == 200:
+                out.append({"id": str(tid),
+                            "subject": tr.json().get("properties", {}).get("hs_task_subject", "")})
+        return out
+
     async def complete_task(self, task_id: str) -> bool:
         """Пометить задачу COMPLETED (после самоисполнения ботом)."""
         if not task_id:

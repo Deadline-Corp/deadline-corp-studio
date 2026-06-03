@@ -61,6 +61,7 @@ EventType = Literal[
     "update_task",         # дополнить задачу (напр. канал созвона, названный позже)
     "schedule_followup",   # Task Engine B2 — записать отложенное действие бота
     "merge_contacts",      # слить две CRM-карточки в одну (Postgres-кастомеры склеились)
+    "sync_call_medium",    # дозаписать канал в задачи созвона (найти их по сделке)
 ]
 
 
@@ -521,6 +522,31 @@ async def _dispatch(ev: CRMEvent, adapter: CRMAdapter) -> None:
             await asyncio.to_thread(cb, task_id)
         return
 
+    if ev.type == "sync_call_medium":
+        # Канал назван после брони → найти задачи созвона ПО СДЕЛКЕ в HubSpot и
+        # дозаписать канал в тему/тело. Не зависит от гоночного profile_data.
+        _deal = p.get("deal_id")
+        if _deal == "pending":
+            try:
+                _deal = await asyncio.to_thread(_resolve_pending_deal_id, p["conversation_id"])
+            except Exception:  # noqa: BLE001
+                return  # сделки ещё нет — ретрай по backoff
+        if not _deal:
+            return
+        tasks = await adapter.list_tasks_for_deal(_deal)
+        if not tasks:
+            return
+        from services.crm_dispatch import _call_task_subject, _fmt_call_time
+        _when = _fmt_call_time(p["call_at"])
+        for t in tasks:
+            subj = t.get("subject") or ""
+            kind = "day" if subj.startswith("📞 Подтвердить созвон") else (
+                "hour" if subj.startswith("⏰ Через час созвон") else None)
+            if kind:
+                _ns, _nb = _call_task_subject(kind, p["lead_name"], _when, p["medium"])
+                await adapter.update_task(str(t["id"]), subject=_ns, body=_nb)
+        return
+
     if ev.type == "merge_contacts":
         # Два наших Postgres-кастомера склеились в один (общий email / deep-link),
         # а в CRM остались ДВЕ карточки на человека. Сливаем secondary в primary.
@@ -708,6 +734,25 @@ def make_complete_task_event(customer_id: str, task_id: str) -> CRMEvent:
         type="complete_task",
         customer_id=customer_id,
         payload={"task_id": task_id},
+    )
+
+
+def make_sync_call_medium_event(
+    customer_id: str, conversation_id: str, deal_id: str,
+    lead_name: str, call_at: datetime, medium: str,
+) -> CRMEvent:
+    """Дозаписать канал в задачи созвона (воркер найдёт их по сделке). datetime
+    в payload кодируется при persist/recovery (см. _encode)."""
+    return CRMEvent(
+        type="sync_call_medium",
+        customer_id=customer_id,
+        payload={
+            "conversation_id": conversation_id,
+            "deal_id": deal_id,
+            "lead_name": lead_name,
+            "call_at": call_at,
+            "medium": medium,
+        },
     )
 
 

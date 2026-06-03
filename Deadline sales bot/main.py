@@ -1359,23 +1359,23 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                     _profile["call_medium"] = _new_medium
                     customer.profile_data = _profile
                     # Канал назван СЛЕДУЮЩИМ сообщением после брони → дозаписываем
-                    # его в ОБЕ задачи-подтверждения (за день и за час). Если их id
-                    # ещё нет в profile (задачи только создаются async-воркером) —
-                    # их writeback допишет канал сам, когда id появится. Гонка
-                    # закрыта с обеих сторон.
+                    # его в обе задачи-подтверждения. Воркер найдёт задачи ПО СДЕЛКЕ
+                    # в HubSpot (не через гоночный profile_data). FIFO-очередь: задачи
+                    # из хода брони уже созданы к моменту этого события.
                     try:
-                        from services.crm_dispatch import dispatch_sync_call_task_medium
+                        from services.crm_dispatch import dispatch_sync_call_medium
                         _lead_nm = (customer.name or customer.email
                                     or (customer.identity_keys or {}).get("tg_handle") or "лид")
-                        dispatch_sync_call_task_medium(
+                        dispatch_sync_call_medium(
                             customer_id=str(customer.id),
-                            profile=_profile,
+                            conversation_id=str(conversation.id),
+                            deal_id=getattr(conversation, "crm_deal_id", None),
                             lead_name=_lead_nm,
                             call_at=_dtm.fromisoformat(_booked),
                             medium=_new_medium,
                         )
                     except Exception as _ute:  # noqa: BLE001
-                        log.warning(f"[{str(conversation.id)[:8]}] sync call task medium failed: {_ute}")
+                        log.warning(f"[{str(conversation.id)[:8]}] sync call medium failed: {_ute}")
                 try:
                     _when = _sched.format_slot_human(_dtm.fromisoformat(_booked), _now)
                 except Exception:  # noqa: BLE001

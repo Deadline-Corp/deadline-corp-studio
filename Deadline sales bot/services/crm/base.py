@@ -250,6 +250,10 @@ class CRMAdapter(ABC):
         """Дополнить задачу (тема/тело). Default no-op — переопределяется в адаптере."""
         return False
 
+    async def list_tasks_for_deal(self, deal_id: str) -> list:
+        """Задачи сделки [{id, subject}]. Default — пусто; переопределяется в адаптере."""
+        return []
+
     async def merge_contacts(self, primary_id: str, secondary_id: str) -> bool:
         """Слить два контакта в CRM в один (primary выживает, secondary
         вливается). Нужно когда два наших Postgres-кастомера склеились в один
