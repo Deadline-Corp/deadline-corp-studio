@@ -386,7 +386,10 @@ def detect_call_medium(text: str) -> Optional[str]:
         return "Zoom"
     if any(w in t for w in ("google meet", "гугл мит", "гугл-мит", "гуглмит", "g meet", "meet", "мит")):
         return "Google Meet"
-    if any(w in t for w in ("telegram", "телеграм", "телега", "тг", "tg")):
+    # «телег» — стем, ловит телега/телеге/телегу/телеграм (раньше «телега» не
+    # матчил склонение «в телеге» → канал созвона терялся). \bтг\b/tg как слова.
+    import re as _re_m
+    if "телег" in t or "telegram" in t or _re_m.search(r"\b(тг|tg)\b", t):
         return "Telegram"
     return None
 

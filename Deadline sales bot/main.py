@@ -1167,6 +1167,26 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     else:
         recent = get_recent_messages(db, conversation.id, limit=13)
 
+    # Имя голым ответом: бот СПРОСИЛ «как вас зовут?» прошлым ходом, лид ответил
+    # просто «Иван». «меня зовут X» ловится раньше (после resolve); тут — кейс
+    # «вопрос бота → короткий ответ-имя». Без контекста (бот спросил) не ловим,
+    # чтобы не принять «Картошка»/«Сайт» за имя.
+    if not (getattr(customer, "name", None) or "").strip():
+        try:
+            from services.reply_polish import looks_like_bare_name, mentions_name_ask
+            _last_bot = next(
+                (m.content for m in reversed(recent)
+                 if (m.role.value if hasattr(m.role, "value") else str(m.role)).lower() in ("assistant", "bot")),
+                "",
+            )
+            if mentions_name_ask(_last_bot):
+                _bn = looks_like_bare_name(req.content)
+                if _bn:
+                    customer.name = _bn[:200]
+                    db.flush()
+        except Exception:  # noqa: BLE001
+            pass
+
     # 5b. Per-turn lead signals (Phase 9, 2026-05-27) — update interaction_type
     # (set once on first touch), lead_score (incremental + content keywords),
     # and lead_temperature (engagement triggers + decay). Mutates `customer`

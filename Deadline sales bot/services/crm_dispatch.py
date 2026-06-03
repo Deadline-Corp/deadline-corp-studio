@@ -602,22 +602,37 @@ def dispatch_on_message_turn(
             _nm = (customer.name or customer.email
                    or (customer.identity_keys or {}).get("tg_handle") or "лид")
             _ch_txt = f", канал: {_medium}" if _medium else ""
-            _due_min = max(1, int((call_booked_at - datetime.now(timezone.utc)).total_seconds() / 60))
+            _ch_desc = _medium or "уточнить у лида"
+            _now = datetime.now(timezone.utc)
+            # ДВЕ задачи-подтверждения оператору в CRM (запрос пользователя): за
+            # ДЕНЬ — подтвердить созвон, за ЧАС — финальное напоминание. Обе со
+            # ВРЕМЕНЕМ и КАНАЛОМ. Если до созвона <суток/<часа — due клампим в now.
+            _due_day = max(1, int((call_booked_at - timedelta(hours=24) - _now).total_seconds() / 60))
+            _due_hour = max(1, int((call_booked_at - timedelta(hours=1) - _now).total_seconds() / 60))
             dispatch_operator_task(
                 customer_id=customer_id,
                 crm_contact_id=contact_id,
                 crm_deal_id=deal_id,
                 conversation_id=str(conversation.id),
-                title=f"Созвон с {_nm}: {_when}{_ch_txt}",
+                title=f"📞 Подтвердить созвон с {_nm}: {_when}{_ch_txt}",
                 category="callback",
-                due_in_minutes=_due_min,
-                description=f"Созвон назначен: {_when}. Канал: {_medium or 'уточнить у лида'}.",
-                # Запоминаем id задачи: если канал назовут СЛЕДУЮЩИМ сообщением —
-                # дополним эту же задачу (dispatch_update_call_task), не плодя новую.
+                due_in_minutes=_due_day,
+                description=f"За день до созвона — подтвердить с лидом. Время: {_when}. Канал: {_ch_desc}.",
+                # Канал, названный ПОЗЖЕ, допишем в ЭТУ задачу (главная — подтверждение).
                 on_task_id=_make_call_task_writeback(customer_id),
             )
+            dispatch_operator_task(
+                customer_id=customer_id,
+                crm_contact_id=contact_id,
+                crm_deal_id=deal_id,
+                conversation_id=str(conversation.id),
+                title=f"⏰ Через час созвон с {_nm}: {_when}{_ch_txt}",
+                category="callback",
+                due_in_minutes=_due_hour,
+                description=f"Через час созвон. Время: {_when}. Канал: {_ch_desc}.",
+            )
             logger.info(
-                "[crm_dispatch] call booked → stage on_call + task conv=%s at=%s medium=%s",
+                "[crm_dispatch] call booked → on_call + 2 confirm tasks (-1d/-1h) conv=%s at=%s medium=%s",
                 str(conversation.id)[:8], call_booked_at, _medium,
             )
 
