@@ -709,6 +709,27 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
       8. Handoff check + (if real contact) fire brief + mark conversation HANDED_OFF
       9. Commit transaction once at the end
     """
+    # Deep-link мост: «/start <session_id>» из телеги (лид нажал на сайте кнопку
+    # «Написать в Telegram» → ссылка t.me/bot?start=<session_id>). Склеиваем
+    # телеграм-чат с website-кастомером → ОДНА карточка + телеграм-ник в контакт.
+    # Делаем ДО resolve: bridge вешает телеграм-идентичность на website-кастомера,
+    # и resolve ниже естественно вернёт его (Step 1 по telegram external_id).
+    if (req.channel or "").lower() == "telegram" and (req.content or "").lstrip().lower().startswith("/start"):
+        import re as _re_dl
+        _mdl = _re_dl.match(r"^\s*/start\s+(sess_[A-Za-z0-9_-]{3,})\s*$", req.content or "")
+        if _mdl:
+            _tok = _mdl.group(1)
+            try:
+                from services.identity import bridge_telegram_to_website_session
+                _wcust = bridge_telegram_to_website_session(db, req.external_id, req.username, _tok)
+                if _wcust is not None:
+                    # Тёплое узнавание (LEAD_MENTIONS_PRIOR сработает, без холодного
+                    # представления). Карточка уже склеена — оператор видит всё.
+                    req.content = "Здравствуйте! Я писал вам на сайте — продолжим здесь 🙂"
+                    log.info(f"[deep-link] telegram {req.external_id} bridged → website session {_tok}")
+            except Exception as _dle:  # noqa: BLE001
+                log.warning(f"[deep-link] bridge skipped: {_dle}")
+
     customer, was_returning_match = resolve_or_create_customer_with_meta(
         db,
         channel=req.channel,
