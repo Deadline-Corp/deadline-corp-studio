@@ -748,6 +748,18 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         channel_conversation_id=conv_thread_id,
     )
 
+    # Имя лида — детерминированно из «меня зовут X» (llama кладёт его в handoff_data
+    # ненадёжно → имя в карточке/задаче часто пустое). Ставим сразу, если ещё нет.
+    if not (getattr(customer, "name", None) or "").strip():
+        try:
+            from services.reply_polish import extract_lead_name
+            _nm = extract_lead_name(req.content)
+            if _nm:
+                customer.name = _nm[:200]
+                db.flush()
+        except Exception:  # noqa: BLE001
+            pass
+
     # Lazy-create a forum topic in the operator supergroup on first message
     # of this conversation. Topic name = "<channel>: <username or short id>".
     # Skip silently if TELEGRAM_OPERATOR_GROUP_ID isn't configured (the team

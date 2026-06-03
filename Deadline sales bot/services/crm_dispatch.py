@@ -710,7 +710,10 @@ def dispatch_on_message_turn(
         #    (complete_task). Повтор просьбы → строка переносится, задача не дублится.
         #  • Сайт (нет chat_id): бот сам не пишет → прямая задача оператору, как было
         #    (закрывает её человек; авто-закрытия нет).
-        if last_lead_message:
+        # NB: если этим же сообщением лид ЗАБРОНИРОВАЛ созвон (call_booked_at не
+        # None) — НЕ заводим followup «написать позже». Иначе фраза «созвонимся
+        # завтра в 15:00» из-за слова «завтра» плодила лишний followup + задачу.
+        if last_lead_message and call_booked_at is None:
             try:
                 from services.followup_parse import parse_followup_when
                 _fu = parse_followup_when(last_lead_message)
