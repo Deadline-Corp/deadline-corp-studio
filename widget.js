@@ -292,14 +292,20 @@
 
   // Кнопка-ссылка на НАШЕГО БОТА в Telegram (не канал, не номер) — лид жмёт и
   // продолжает с тем же ботом в мессенджере. Показывается ОДИН раз (idempotent).
+  // DEEP-LINK: ?start=<session_id> → когда лид жмёт Start, Telegram шлёт боту
+  // «/start <session_id>», бот склеивает этот ТГ-чат с диалогом на сайте в ОДНУ
+  // карточку (см. bridge_telegram_to_website_session). Токен Telegram-старта —
+  // только [A-Za-z0-9_-], до 64 симв.; наш session_id («sess_...») подходит.
   const TG_BOT_URL = "https://t.me/Deadline_Corp_bot";
+  const TG_START = String(SESSION_ID || "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 64);
+  const TG_DEEP_LINK = TG_START ? (TG_BOT_URL + "?start=" + TG_START) : TG_BOT_URL;
   let _ctaShown = false;
   function showTgCta(closing, text) {
     const isEng = /[a-zA-Z]/.test(text || "") && !/[а-яА-Я]/.test(text || "");
     if (!_ctaShown) {
       const cta = document.createElement("a");
       cta.className = "dl-cta";
-      cta.href = TG_BOT_URL;
+      cta.href = TG_DEEP_LINK;
       cta.target = "_blank";
       cta.rel = "noopener";
       cta.textContent = isEng ? "Open Telegram →" : "Написать в Telegram →";
