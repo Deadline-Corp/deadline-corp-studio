@@ -552,15 +552,27 @@
 
   function applyFilter(cards, key, btn) {
     document.querySelectorAll('.filter-btn').forEach(function (b) { b.setAttribute('aria-pressed', b === btn ? 'true' : 'false'); });
-    var shown = 0;
-    cards.forEach(function (card) {
-      var match = key === 'all' || card._case.type === key;
-      if (match) {
-        card.classList.remove('is-hidden');
-        if (!REDUCE) { card.classList.add('filtering'); requestAnimationFrame(function () { setTimeout(function () { card.classList.remove('filtering'); }, shown * 45); }); }
-        shown++;
+    function match(c) { return key === 'all' || c._case.type === key; }
+    if (REDUCE) { cards.forEach(function (c) { c.classList.toggle('is-hidden', !match(c)); }); return; }
+    // FLIP — First → Last → Invert → Play (smooth reflow)
+    var first = {};
+    cards.forEach(function (c) { if (!c.classList.contains('is-hidden')) first[c._case.id] = c.getBoundingClientRect(); });
+    cards.forEach(function (c) { c.classList.toggle('is-hidden', !match(c)); });
+    cards.forEach(function (c) {
+      if (c.classList.contains('is-hidden')) return;
+      var f = first[c._case.id], last = c.getBoundingClientRect();
+      var cleanup = function () { c.style.transition = ''; c.style.transform = ''; c.style.opacity = ''; c.removeEventListener('transitionend', cleanup); };
+      if (!f) {
+        c.style.transition = 'none'; c.style.opacity = '0'; c.style.transform = 'scale(0.94)';
+        requestAnimationFrame(function () { c.style.transition = 'opacity 0.45s ease, transform 0.45s cubic-bezier(0.34,1.3,0.4,1)'; c.style.opacity = '1'; c.style.transform = ''; });
+        c.addEventListener('transitionend', cleanup);
       } else {
-        card.classList.add('is-hidden');
+        var dx = f.left - last.left, dy = f.top - last.top;
+        if (dx || dy) {
+          c.style.transition = 'none'; c.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+          requestAnimationFrame(function () { c.style.transition = 'transform 0.5s cubic-bezier(0.4,0,0.2,1)'; c.style.transform = ''; });
+          c.addEventListener('transitionend', cleanup);
+        }
       }
     });
   }
@@ -720,14 +732,55 @@
   }
 
   /* ───────── boot ───────── */
+  /* ───────── Lenis smooth scroll (synced with ScrollTrigger) ───────── */
+  function setupLenis() {
+    if (REDUCE || !window.Lenis) return;
+    var lenis = new window.Lenis({ duration: 1.1, smoothWheel: true });
+    function raf(t) { lenis.raf(t); requestAnimationFrame(raf); }
+    requestAnimationFrame(raf);
+    if (window.ScrollTrigger) lenis.on('scroll', window.ScrollTrigger.update);
+  }
+
+  /* ───────── kinetic hero headline — words rise in, staggered ───────── */
+  function splitWords(src, dst) {
+    Array.prototype.slice.call(src.childNodes).forEach(function (n) {
+      if (n.nodeType === 3) {
+        n.textContent.split(/(\s+)/).forEach(function (w) {
+          if (!w.length) return;
+          if (/^\s+$/.test(w)) { dst.appendChild(document.createTextNode(w)); return; }
+          var mask = document.createElement('span'); mask.className = 'kw';
+          var inner = document.createElement('span'); inner.className = 'kw-i';
+          inner.textContent = w; mask.appendChild(inner); dst.appendChild(mask);
+        });
+      } else if (n.nodeName === 'BR') { dst.appendChild(document.createElement('br')); }
+      else if (n.nodeName === 'EM') { var em = document.createElement('em'); dst.appendChild(em); splitWords(n, em); }
+      else { dst.appendChild(n.cloneNode(true)); }
+    });
+  }
+  function kineticHeadline() {
+    if (REDUCE) return;
+    var h = document.querySelector('.cases-hero .section-headline');
+    if (!h) return;
+    h.classList.remove('reveal'); h.classList.add('visible');
+    Array.prototype.slice.call(h.querySelectorAll('.lang-ru, .lang-en')).forEach(function (span) {
+      var frag = document.createElement('span'); frag.className = span.className;
+      splitWords(span, frag);
+      span.parentNode.replaceChild(frag, span);
+      frag.querySelectorAll('.kw-i').forEach(function (el, i) { el.style.transitionDelay = (i * 0.07) + 's'; });
+    });
+    requestAnimationFrame(function () { requestAnimationFrame(function () { h.classList.add('kinetic-go'); }); });
+  }
+
   function boot() {
     applyLang(curLang());
     wireLang();
+    kineticHeadline();
     var cards = renderGrid();
     renderFilters(function (key, btn) { applyFilter(cards, key, btn); });
     setupShowcases();
     setupObservers(cards);
     setupTilt();
+    setupLenis();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

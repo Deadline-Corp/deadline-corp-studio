@@ -593,4 +593,23 @@ body.lang-en :where(.lang-ru) { display: none !important; }
   .areveal { opacity: 1; transform: none; }
   .atoast { opacity: 1; transform: none; }
   .bm-btn { opacity: 1; transform: none; }
+  .kw-i { transform: none; }
 }
+
+/* ───────── Lenis smooth scroll ───────── */
+html.lenis, html.lenis body { height: auto; }
+.lenis.lenis-smooth { scroll-behavior: auto !important; }
+.lenis.lenis-smooth [data-lenis-prevent] { overscroll-behavior: contain; }
+.lenis.lenis-stopped { overflow: hidden; }
+
+/* ───────── kinetic ticker marquee ───────── */
+.cases-ticker { overflow: hidden; background: var(--copper); border-top: 4px solid var(--border-dark); border-bottom: 4px solid var(--border-dark); padding: 13px 0; margin-top: 6px; }
+.ct-track { display: inline-flex; white-space: nowrap; animation: ct-scroll 32s linear infinite; will-change: transform; }
+.cases-ticker:hover .ct-track { animation-play-state: paused; }
+.ct-set { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: clamp(13px, 1.6vw, 17px); letter-spacing: 0.05em; text-transform: uppercase; color: var(--bg); }
+@keyframes ct-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
+/* ───────── kinetic hero headline ───────── */
+.section-headline .kw { display: inline-block; overflow: hidden; vertical-align: top; padding-bottom: 0.12em; margin-bottom: -0.12em; }
+.section-headline .kw-i { display: inline-block; transform: translateY(118%); transition: transform 0.85s cubic-bezier(0.16, 1, 0.3, 1); }
+.kinetic-go .kw-i { transform: translateY(0); }
