@@ -142,6 +142,27 @@ window.CASES = [
     }
   },
 
+  /* ── РАСПЕВКА — вокальный тренажёр (app) · LIVE · в паре с SMM ──────────── */
+  {
+    id: 'raspevka',
+    type: 'app',
+    featured: false,
+    title: { ru: 'Тренажёр для вокалистов', en: 'Vocal trainer app' },
+    meta:  { ru: 'РАСПЕВКА · 2026 · WEB APP / PWA', en: 'RASPEVKA · 2026 · WEB APP / PWA' },
+    summary: {
+      ru: 'Игровой вокальный тренажёр в браузере: ежедневные распевки, тюнер высоты ноты в реальном времени («видишь свой голос»), упражнения — мычание по гамме, губной тренаж, удержание ноты, гаммы — плюс дыхание и прогресс. Определяет диапазон голоса, работает с микрофона. Без установки — PWA.',
+      en: 'A gamified in-browser vocal trainer: daily warm-ups, a real-time pitch tuner (“see your voice”), exercises — humming scales, lip trills, note holds, scales — plus breathing and progress. Detects your vocal range, runs off the mic. No install — a PWA.'
+    },
+    chip: 'live',
+    stack: ['Web Audio API', 'Pitch detection', 'Canvas', 'Vite', 'PWA'],
+    metrics: [
+      { value: 5, label: { ru: 'упражнений распевки', en: 'warm-up exercises' } },
+      { value: 0, suffix: ' сек', label: { ru: 'на установку', en: 'to install' } }
+    ],
+    /* мобильный mini-app: небольшой экран по центру + усиленный контраст */
+    media: { mode: 'video', video: 'assets/cases/raspevka/demo.mp4', ar: '16/10', appSize: true, pop: true }
+  },
+
   /* ── ПРОЯВИ — лендинг (web) · LIVE на GitHub Pages ─────────────────────── */
   {
     id: 'proyavi',
@@ -281,27 +302,6 @@ window.CASES = [
       ],
       edges: [['news','ai'],['search','ai'],['ai','channel'],['ai','gen'],['gen','ig']]
     }
-  },
-
-  /* ── РАСПЕВКА — вокальный тренажёр (app) · LIVE ────────────────────────── */
-  {
-    id: 'raspevka',
-    type: 'app',
-    featured: false,
-    title: { ru: 'Тренажёр для вокалистов', en: 'Vocal trainer app' },
-    meta:  { ru: 'РАСПЕВКА · 2026 · WEB APP / PWA', en: 'RASPEVKA · 2026 · WEB APP / PWA' },
-    summary: {
-      ru: 'Игровой вокальный тренажёр в браузере: ежедневные распевки, тюнер высоты ноты в реальном времени («видишь свой голос»), упражнения — мычание по гамме, губной тренаж, удержание ноты, гаммы — плюс дыхание и прогресс. Определяет диапазон голоса, работает с микрофона. Без установки — PWA.',
-      en: 'A gamified in-browser vocal trainer: daily warm-ups, a real-time pitch tuner (“see your voice”), exercises — humming scales, lip trills, note holds, scales — plus breathing and progress. Detects your vocal range, runs off the mic. No install — a PWA.'
-    },
-    chip: 'live',
-    stack: ['Web Audio API', 'Pitch detection', 'Canvas', 'Vite', 'PWA'],
-    metrics: [
-      { value: 5, label: { ru: 'упражнений распевки', en: 'warm-up exercises' } },
-      { value: 0, suffix: ' сек', label: { ru: 'на установку', en: 'to install' } }
-    ],
-    /* мобильный mini-app: небольшой экран по центру + усиленный контраст */
-    media: { mode: 'video', video: 'assets/cases/raspevka/demo.mp4', ar: '16/10', appSize: true, pop: true }
   }
 
 ];
