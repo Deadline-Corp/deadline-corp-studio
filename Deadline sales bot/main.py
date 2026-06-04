@@ -1162,10 +1162,10 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     if recall_continue:
         from services.conversations import get_recent_messages_with_recall
         recent = get_recent_messages_with_recall(
-            db, customer_id=customer.id, active_conv_id=conversation.id, limit=13
+            db, customer_id=customer.id, active_conv_id=conversation.id, limit=30
         )
     else:
-        recent = get_recent_messages(db, conversation.id, limit=13)
+        recent = get_recent_messages(db, conversation.id, limit=30)
 
     # Имя голым ответом: бот СПРОСИЛ «как вас зовут?» прошлым ходом, лид ответил
     # просто «Иван». «меня зовут X» ловится раньше (после resolve); тут — кейс
@@ -3256,6 +3256,29 @@ async def training_list(
 # STARTUP LOG
 # ============================================================================
 
+async def _heartbeat_loop():
+    """Лёгкий пульс каждые 4 мин: DB SELECT 1 + строка в лог. Зачем:
+    (1) не давать контейнеру «застывать» в простое (был idle-freeze 2026-06-03 —
+        4 часа тишины в логах, контейнер не отвечал, помог только рестарт);
+    (2) ДИАГНОСТИКА — если строки [heartbeat] в логах ОБРЫВАЮТСЯ, видно точный
+        момент зависания. Sync-ping уведён в to_thread, event-loop не грузит."""
+    import asyncio as _a
+    from db.connection import engine as _eng
+    from sqlalchemy import text as _t
+
+    def _ping() -> None:
+        with _eng.connect() as c:
+            c.execute(_t("SELECT 1"))
+
+    while True:
+        try:
+            await _a.sleep(240)
+            await _a.to_thread(_ping)
+            log.info("[heartbeat] alive (db ok)")
+        except Exception as _e:  # noqa: BLE001
+            log.warning("[heartbeat] error: %s", _e)
+
+
 @app.on_event("startup")
 async def startup():
     log.info("=" * 60)
@@ -3288,6 +3311,9 @@ async def startup():
     else:
         log.info(f"CRM queue: not started (crm_enabled=False)")
         log.info(f"CRM cron:  not started (crm_enabled=False)")
+    # Heartbeat — всегда: пульс + анти-idle + диагностика зависаний (см. _heartbeat_loop).
+    asyncio.create_task(_heartbeat_loop())
+    log.info("Heartbeat: running (every 4 min)")
     log.info(f"Origins:  {settings.allowed_origins}")
     log.info("=" * 60)
 
