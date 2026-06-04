@@ -2028,8 +2028,10 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
 # ROUTES
 # ============================================================================
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health():
+    # GET и HEAD: UptimeRobot/мониторы по умолчанию шлют HEAD — без него был
+    # 405 → монитор считал бота DOWN (ложные алерты). Теперь оба → 200.
     return {
         "ok": True,
         "vectorstore_loaded": vectorstore is not None,
