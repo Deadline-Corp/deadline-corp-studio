@@ -2964,6 +2964,19 @@ async def lead_validate_contact(req: ContactCheckRequest):
         return {"type": "unknown", "normalized": req.contact, "exists": None, "label": "контакт"}
 
 
+def _leadform_project_type(need: Optional[str]) -> Optional[str]:
+    """Map the form's 'need' selection → CRM deal project_type
+    (web | automation | ai_agents | other)."""
+    n = (need or "").lower()
+    if "сайт" in n or "website" in n or "лендинг" in n or "магазин" in n or "store" in n:
+        return "web"
+    if "ai" in n or "агент" in n or "agent" in n or "ассистент" in n or "assistant" in n:
+        return "ai_agents"
+    if "автоматиз" in n or "automation" in n:
+        return "automation"
+    return "other"
+
+
 def _persist_lead_submission_sync(
     lead: "LeadFormRequest", check: dict, ip, ua, ref, delivered: bool, crm_enabled: bool,
 ) -> dict:
@@ -2971,21 +2984,29 @@ def _persist_lead_submission_sync(
     per the 2026-06-02 event-loop-starvation incident).
 
     Always writes a lead_submissions row (durable history + the contact verdict).
-    If crm_enabled, also creates a Customer (so the lead enters the bot's CRM data
-    and can sync to HubSpot) and returns a Lead value object to enqueue.
-    Returns {customer_id, crm_lead}.
+    If crm_enabled, also creates a Customer + a message-less Conversation so the
+    lead becomes a proper new-lead DEAL in the CRM pipeline (stage 'new_lead').
+    The Conversation has last_message_at=None on purpose — sweep_once (warming/
+    decay cron) only picks conversations WITH messages, so nothing auto-runs on it.
+    Returns {customer_id, conversation_id, crm_lead, crm_deal}.
     """
     from datetime import datetime, timezone
 
     from db.connection import session_scope
-    from db.models import ChannelEnum, Customer, LeadSubmission
-    from services.crm.base import Lead as CRMLead
+    from db.models import (
+        ChannelEnum,
+        Conversation,
+        ConversationStatusEnum,
+        Customer,
+        LeadSubmission,
+    )
+    from services.crm.base import Deal as CRMDeal, Lead as CRMLead
 
     ctype = check.get("type")
     cexists = check.get("exists")
     normalized = check.get("normalized") or lead.contact
 
-    out = {"customer_id": None, "crm_lead": None}
+    out = {"customer_id": None, "conversation_id": None, "crm_lead": None, "crm_deal": None}
     with session_scope() as s:
         sub = LeadSubmission(
             name=lead.name[:200],
@@ -3040,11 +3061,41 @@ def _persist_lead_submission_sync(
         s.flush()  # populate cust.id
         sub.customer_id = cust.id
 
+        # A message-less Conversation so the lead becomes a real DEAL in the
+        # pipeline (a deal is per-conversation). last_message_at stays None →
+        # the warming/decay cron (sweep_once) never picks it up → no automation.
+        conv = Conversation(
+            customer_id=cust.id,
+            channel=ChannelEnum.WEBSITE,
+            channel_conversation_id=f"leadform:{sub.id}",
+            status=ConversationStatusEnum.OPEN,
+            lead_stage="new_lead",
+        )
+        s.add(conv)
+        s.flush()  # populate conv.id
+
         handle = (
             normalized if ctype in ("telegram", "instagram")
             else (email or lead.contact[:200])
         )
+        identity_keys: dict = {}
+        if email:
+            identity_keys["email"] = email
+        elif ctype == "phone":
+            identity_keys["phone"] = normalized
+        elif ctype == "telegram":
+            identity_keys["tg_handle"] = normalized
+
+        brief = (
+            lead.task.strip() if lead.task and lead.task.strip()
+            else (
+                f"Заявка с сайта. Хочет: {lead.need or '—'}. "
+                f"Бизнес: {lead.business or '—'}. Срок: {lead.when or '—'}."
+            )
+        )[:500]
+
         out["customer_id"] = str(cust.id)
+        out["conversation_id"] = str(conv.id)
         out["crm_lead"] = CRMLead(
             id=str(cust.id),
             contact_name=lead.name[:200],
@@ -3056,7 +3107,16 @@ def _persist_lead_submission_sync(
             interaction_type="P1",
             temperature="warm",
             score=70,
+            identity_keys=identity_keys,
             profile={"need": lead.need, "business": lead.business},
+        )
+        out["crm_deal"] = CRMDeal(
+            lead_id=str(cust.id),
+            conversation_id=str(conv.id),
+            title=f"{lead.name[:80]} — {lead.need or 'заявка с сайта'}",
+            stage="new_lead",
+            project_type=_leadform_project_type(lead.need),
+            brief=brief,
         )
     return out
 
@@ -3089,24 +3149,51 @@ async def lead_submit(lead: LeadFormRequest, request: Request):
     ua = request.headers.get("user-agent")
     ref = request.headers.get("referer")
 
-    # 4. Persist (sync DB → thread) + build CRM lead. Never lose the lead.
+    # 4. Persist (sync DB → thread) + build CRM lead/deal. Never lose the lead.
     customer_id = None
+    conversation_id = None
     crm_lead = None
+    crm_deal = None
     try:
         res = await asyncio.to_thread(
             _persist_lead_submission_sync, lead, check, ip, ua, ref,
             bool(delivered), bool(settings.crm_enabled),
         )
         customer_id = res.get("customer_id")
+        conversation_id = res.get("conversation_id")
         crm_lead = res.get("crm_lead")
+        crm_deal = res.get("crm_deal")
     except Exception as exc:  # noqa: BLE001 — persistence must never lose a lead
         log.error(f"lead-submit persist failed: {exc}")
 
-    # 5. CRM upsert — enqueue on the event loop (asyncio.Queue is loop-bound).
+    # 5. CRM — enqueue on the event loop (asyncio.Queue is loop-bound). The lead
+    #    becomes a new-lead DEAL in the pipeline: upsert the contact (writeback
+    #    fills Customer.crm_contact_id), then create the deal at 'new_lead'. The
+    #    single-worker FIFO guarantees the upsert (and its writeback) runs before
+    #    create_deal resolves the pending contact_id; deal_id is written back to
+    #    the conversation.
     if settings.crm_enabled and customer_id and crm_lead is not None:
         try:
-            from services.crm_queue import enqueue, make_upsert_contact_event
-            enqueue(make_upsert_contact_event(str(customer_id), crm_lead))
+            from services.crm_queue import (
+                enqueue,
+                make_create_deal_event,
+                make_upsert_contact_event,
+            )
+            from services.crm_dispatch import (
+                _make_contact_id_writeback,
+                _make_deal_id_writeback,
+            )
+            enqueue(make_upsert_contact_event(
+                str(customer_id), crm_lead,
+                on_contact_id=_make_contact_id_writeback(str(customer_id)),
+            ))
+            if crm_deal is not None and conversation_id:
+                enqueue(make_create_deal_event(
+                    customer_id=str(customer_id),
+                    deal=crm_deal,
+                    contact_id="pending",
+                    on_deal_id=_make_deal_id_writeback(str(conversation_id)),
+                ))
         except Exception as exc:  # noqa: BLE001
             log.warning(f"lead-submit CRM enqueue failed: {exc}")
 
