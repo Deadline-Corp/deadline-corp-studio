@@ -169,6 +169,41 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
   button[type=submit]:hover { background: var(--sand); }
   button[type=submit]:disabled { opacity: 0.5; cursor: not-allowed; }
 
+  /* Contact-check warning (likely-wrong @handle) */
+  .contact-warn { margin-top: -8px; }
+  .warn-box {
+    background: rgba(184,50,39,0.08);
+    border: 1px solid var(--rust);
+    padding: 18px 18px 16px;
+  }
+  .warn-title {
+    color: var(--rust);
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .warn-text { color: var(--text); font-size: 14px; line-height: 1.55; margin-bottom: 14px; }
+  .warn-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .warn-actions button {
+    flex: 1;
+    min-width: 140px;
+    padding: 12px 14px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    transition: all 0.15s;
+  }
+  .warn-fix { border-color: var(--copper); color: var(--copper); }
+  .warn-fix:hover { background: rgba(199,106,45,0.10); }
+  .warn-send:hover { border-color: var(--muted); }
+
   .footer-note {
     margin-top: 32px;
     text-align: center;
@@ -286,6 +321,17 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
     </div>
   </div>
 
+  <div class="field contact-warn" id="contactWarn" style="display:none">
+    <div class="warn-box">
+      <div class="warn-title">⚠️ Check your contact</div>
+      <p class="warn-text" id="contactWarnText"></p>
+      <div class="warn-actions">
+        <button type="button" class="warn-fix" id="contactFix">Fix contact</button>
+        <button type="button" class="warn-send" id="contactSendAnyway">Send anyway</button>
+      </div>
+    </div>
+  </div>
+
   <button type="submit" id="submitBtn">Get estimate in 24 hours →</button>
 </form>
 
@@ -313,26 +359,43 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
   });
 
   // Form submission
+  const API = 'https://deadline-sales-bot-production.up.railway.app';
+  const VALIDATE_ENDPOINT = API + '/lead-validate-contact';
+  const SUBMIT_ENDPOINT = API + '/lead-submit';
+
   const form = document.getElementById('leadForm');
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const btn = document.getElementById('submitBtn');
-    btn.disabled = true;
-    btn.textContent = 'Sending...';
+  const btn = document.getElementById('submitBtn');
+  const warnBox = document.getElementById('contactWarn');
+  const warnText = document.getElementById('contactWarnText');
+  let contactConfirmed = false;   // set when the visitor chooses "send anyway"
 
-    // Validate at least one "need" checked
-    const needsChecked = form.querySelectorAll('input[name=need]:checked').length > 0;
-    if (!needsChecked) {
-      alert('Please select at least one option in "What do you need"');
-      btn.disabled = false;
-      btn.textContent = 'Get estimate in 24 hours →';
-      return;
-    }
+  function resetBtn() {
+    btn.disabled = false;
+    btn.textContent = 'Get estimate in 24 hours →';
+  }
 
+  document.getElementById('contactFix').addEventListener('click', () => {
+    warnBox.style.display = 'none';
+    const c = document.getElementById('contact');
+    c.focus();
+    c.select();
+    resetBtn();
+  });
+  document.getElementById('contactSendAnyway').addEventListener('click', () => {
+    contactConfirmed = true;
+    warnBox.style.display = 'none';
+    form.requestSubmit();
+  });
+  document.getElementById('contact').addEventListener('input', () => {
+    contactConfirmed = false;
+    warnBox.style.display = 'none';
+  });
+
+  async function doSubmit() {
     const formData = new FormData(form);
     const data = {
       name: formData.get('name'),
-      contact: formData.get('contact'),
+      contact: (formData.get('contact') || '').trim(),
       need: Array.from(formData.getAll('need')).join(', '),
       business: formData.get('business') || '',
       task: formData.get('task') || '',
@@ -342,32 +405,66 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
       source: new URLSearchParams(window.location.search).get('utm_source') || 'direct',
       campaign: new URLSearchParams(window.location.search).get('utm_campaign') || '',
     };
-
-    // Endpoint: existing DEADLINE sales bot on Railway (forwards to Telegram)
-    const ENDPOINT = 'https://deadline-sales-bot-production.up.railway.app/lead-submit';
-
-    if (ENDPOINT) {
-      try {
-        await fetch(ENDPOINT, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-        });
-      } catch (err) {
-        console.error('Submit failed:', err);
-      }
-    } else {
-      console.log('Lead data (no endpoint set):', data);
+    try {
+      await fetch(SUBMIT_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+    } catch (err) {
+      console.error('Submit failed:', err);
     }
-
-    // Track Meta Pixel Lead event if Pixel is loaded
     if (typeof fbq !== 'undefined') {
       fbq('track', 'Lead', { content_name: 'lead-form-en-submit' });
     }
-
-    // Show thank-you state
     document.body.classList.add('submitted');
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    btn.disabled = true;
+    btn.textContent = 'Sending...';
+
+    const needsChecked = form.querySelectorAll('input[name=need]:checked').length > 0;
+    if (!needsChecked) {
+      alert('Please select at least one option in "What do you need"');
+      resetBtn();
+      return;
+    }
+
+    const contact = (document.getElementById('contact').value || '').trim();
+
+    // Contact existence check (Telegram/Instagram). Non-blocking: only warns
+    // when the account is definitively NOT found, and never blocks on errors.
+    if (!contactConfirmed && contact) {
+      btn.textContent = 'Checking contact...';
+      try {
+        const resp = await fetch(VALIDATE_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contact }),
+        });
+        if (resp.ok) {
+          const v = await resp.json();
+          if (v && v.exists === false) {
+            const label = v.label || 'Telegram';
+            warnText.textContent =
+              'We could not find “' + (v.normalized || contact) + '” on ' + label +
+              '. If the contact is wrong, we won’t be able to reach you. Fix it or send as is.';
+            warnBox.style.display = 'block';
+            warnBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            resetBtn();
+            return; // wait for the visitor's choice
+          }
+        }
+      } catch (err) {
+        console.warn('contact check skipped:', err);
+      }
+    }
+
+    btn.textContent = 'Sending...';
+    await doSubmit();
   });
 </script>
 
