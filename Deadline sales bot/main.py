@@ -3021,11 +3021,12 @@ def _persist_lead_submission_sync(
             first_channel=ChannelEnum.WEBSITE,
             utm_source=(lead.source or None),
             utm_campaign=(lead.campaign or None),
-            lead_score=60,
-            lead_temperature="cold",
-            interaction_type="P2",
+            lead_score=70,
+            lead_temperature="warm",   # fresh inbound form lead — NOT cold
+            interaction_type="P1",     # direct request: they stated need + timeframe
             profile_data={
                 "lead_form": True,
+                "lead_stage": "new_lead",
                 "need": lead.need,
                 "business": lead.business,
                 "task": lead.task,
@@ -3052,9 +3053,9 @@ def _persist_lead_submission_sync(
             channel_user_id=f"leadform:{sub.id}",
             first_message_at=datetime.now(timezone.utc),
             source_url=None,
-            interaction_type="P2",
-            temperature="cold",
-            score=60,
+            interaction_type="P1",
+            temperature="warm",
+            score=70,
             profile={"need": lead.need, "business": lead.business},
         )
     return out
