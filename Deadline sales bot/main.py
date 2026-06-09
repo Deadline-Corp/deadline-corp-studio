@@ -2843,8 +2843,13 @@ class LeadFormRequest(BaseModel):
     lang: str = Field("ru", max_length=5)  # ru | en — landing page language
 
 
-async def send_lead_to_telegram(lead: LeadFormRequest) -> bool:
-    """Forward lead-form submission to Telegram. Returns True on success."""
+async def send_lead_to_telegram(lead: LeadFormRequest, contact_check: Optional[dict] = None) -> bool:
+    """Forward lead-form submission to Telegram. Returns True on success.
+
+    contact_check (optional) is the verdict from services.contact_check — when it
+    says the typed contact does NOT resolve to a real Telegram/Instagram account
+    we flag it inline so the operator sees a likely-unreachable lead at a glance.
+    """
     token = settings.telegram_bot_token
     chat_id = settings.telegram_chat_id
     if not token or not chat_id:
@@ -2889,11 +2894,29 @@ async def send_lead_to_telegram(lead: LeadFormRequest) -> bool:
     # Optional task description — only show if filled in
     task_block = f"\n📝 Описание задачи:\n{lead.task.strip()}\n" if lead.task and lead.task.strip() else ""
 
+    # Contact-check verdict — flag a likely-wrong contact right where the operator
+    # reads it. A typo'd @handle = an unreachable lead (the reason this exists).
+    contact_suffix = ""
+    contact_warn_line = ""
+    if contact_check:
+        _exists = contact_check.get("exists")
+        _label = contact_check.get("label") or "контакт"
+        if _exists is False:
+            contact_suffix = "  ⚠️"
+            _typed = contact_check.get("normalized") or lead.contact
+            contact_warn_line = (
+                f"⚠️ ВНИМАНИЕ: {_label} «{_typed}» НЕ найден — вероятно опечатка, "
+                f"ответить может быть некуда!\n"
+            )
+        elif _exists is True:
+            contact_suffix = "  ✅"
+
     text = (
         f"{header}\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
         f"👤 Имя: {lead.name}\n"
-        f"📱 Контакт: {lead.contact}\n"
+        f"📱 Контакт: {lead.contact}{contact_suffix}\n"
+        f"{contact_warn_line}"
         f"🎯 Хочет: {lead.need or '—'}\n"
         f"🏢 Бизнес: {lead.business or '—'}\n"
         f"⏰ Срок: {lead.when or '—'}"
@@ -2920,13 +2943,177 @@ async def send_lead_to_telegram(lead: LeadFormRequest) -> bool:
         return False
 
 
+class ContactCheckRequest(BaseModel):
+    contact: str = Field(..., min_length=1, max_length=200)
+
+
+@app.post("/lead-validate-contact")
+async def lead_validate_contact(req: ContactCheckRequest):
+    """Pre-submit probe for the lead form: does this typed contact resolve to a
+    real Telegram/Instagram account?
+
+    Returns {type, normalized, exists, label}. exists: True / False / None
+    (None = not checkable, e.g. phone/email, or we couldn't verify). Always 200 —
+    the form must never break because of this check; on any error exists=None.
+    """
+    from services.contact_check import check_contact_exists
+    try:
+        return await check_contact_exists(req.contact)
+    except Exception as exc:  # noqa: BLE001
+        log.warning(f"lead-validate-contact failed: {exc}")
+        return {"type": "unknown", "normalized": req.contact, "exists": None, "label": "контакт"}
+
+
+def _persist_lead_submission_sync(
+    lead: "LeadFormRequest", check: dict, ip, ua, ref, delivered: bool, crm_enabled: bool,
+) -> dict:
+    """SYNC DB work for /lead-submit — run via asyncio.to_thread (off the loop,
+    per the 2026-06-02 event-loop-starvation incident).
+
+    Always writes a lead_submissions row (durable history + the contact verdict).
+    If crm_enabled, also creates a Customer (so the lead enters the bot's CRM data
+    and can sync to HubSpot) and returns a Lead value object to enqueue.
+    Returns {customer_id, crm_lead}.
+    """
+    from datetime import datetime, timezone
+
+    from db.connection import session_scope
+    from db.models import ChannelEnum, Customer, LeadSubmission
+    from services.crm.base import Lead as CRMLead
+
+    ctype = check.get("type")
+    cexists = check.get("exists")
+    normalized = check.get("normalized") or lead.contact
+
+    out = {"customer_id": None, "crm_lead": None}
+    with session_scope() as s:
+        sub = LeadSubmission(
+            name=lead.name[:200],
+            contact=lead.contact[:200],
+            contact_type=ctype,
+            contact_exists=cexists,
+            need=(lead.need or None),
+            business=(lead.business or None),
+            task=(lead.task or None),
+            timeframe=(lead.when or None),
+            source=(lead.source or None),
+            campaign=(lead.campaign or None),
+            lang=(lead.lang or None),
+            ip=((ip or "")[:64] or None),
+            user_agent=(ua or None),
+            referer=(ref or None),
+            telegram_delivered=bool(delivered),
+            crm_enqueued=bool(crm_enabled),
+        )
+        s.add(sub)
+        s.flush()  # populate sub.id
+
+        if not crm_enabled:
+            return out
+
+        # CRM on → create a Customer (the bot's native lead record).
+        phone = normalized if ctype == "phone" else None
+        email = normalized if ctype == "email" else None
+        cust = Customer(
+            name=lead.name[:200],
+            email=email,
+            phone=phone,
+            first_channel=ChannelEnum.WEBSITE,
+            utm_source=(lead.source or None),
+            utm_campaign=(lead.campaign or None),
+            lead_score=60,
+            lead_temperature="cold",
+            interaction_type="P2",
+            profile_data={
+                "lead_form": True,
+                "need": lead.need,
+                "business": lead.business,
+                "task": lead.task,
+                "when": lead.when,
+                "contact_raw": lead.contact,
+                "contact_type": ctype,
+                "contact_exists": cexists,
+            },
+        )
+        s.add(cust)
+        s.flush()  # populate cust.id
+        sub.customer_id = cust.id
+
+        handle = (
+            normalized if ctype in ("telegram", "instagram")
+            else (email or lead.contact[:200])
+        )
+        out["customer_id"] = str(cust.id)
+        out["crm_lead"] = CRMLead(
+            id=str(cust.id),
+            contact_name=lead.name[:200],
+            contact_handle=handle,
+            channel="website",
+            channel_user_id=f"leadform:{sub.id}",
+            first_message_at=datetime.now(timezone.utc),
+            source_url=None,
+            interaction_type="P2",
+            temperature="cold",
+            score=60,
+            profile={"need": lead.need, "business": lead.business},
+        )
+    return out
+
+
 @app.post("/lead-submit")
-async def lead_submit(lead: LeadFormRequest):
+async def lead_submit(lead: LeadFormRequest, request: Request):
     """Accepts form data from deadlinecorp.com/lead-form/.
-    Always returns 200 (we don't want to leak errors to the form UI)."""
-    success = await send_lead_to_telegram(lead)
-    log.info(f"Lead received: {lead.name} | {lead.contact} | need={lead.need!r}")
-    return {"ok": True, "delivered": success}
+    Always returns 200 (we don't want to leak errors to the form UI).
+
+    Each step is fail-safe — a lead is never lost to a downstream error:
+      1. Server-side contact check (authoritative — never trust the client).
+      2. Forward to Telegram, flagging a likely-wrong contact.
+      3. Persist to lead_submissions (durable history + verdict + ip/ua); if CRM
+         is enabled, create a Customer and enqueue a HubSpot upsert.
+    """
+    from services.contact_check import check_contact_exists
+
+    # 1. Authoritative contact check (never raises).
+    check = await check_contact_exists(lead.contact)
+
+    # 2. Telegram notify (with the contact-check flag).
+    delivered = await send_lead_to_telegram(lead, contact_check=check)
+
+    # 3. Request fingerprint (real client IP is in X-Forwarded-For behind
+    #    Railway's proxy; request.client.host is the proxy itself).
+    fwd = request.headers.get("x-forwarded-for", "")
+    ip = (fwd.split(",")[0].strip() if fwd else None) or (
+        request.client.host if request.client else None
+    )
+    ua = request.headers.get("user-agent")
+    ref = request.headers.get("referer")
+
+    # 4. Persist (sync DB → thread) + build CRM lead. Never lose the lead.
+    customer_id = None
+    crm_lead = None
+    try:
+        res = await asyncio.to_thread(
+            _persist_lead_submission_sync, lead, check, ip, ua, ref,
+            bool(delivered), bool(settings.crm_enabled),
+        )
+        customer_id = res.get("customer_id")
+        crm_lead = res.get("crm_lead")
+    except Exception as exc:  # noqa: BLE001 — persistence must never lose a lead
+        log.error(f"lead-submit persist failed: {exc}")
+
+    # 5. CRM upsert — enqueue on the event loop (asyncio.Queue is loop-bound).
+    if settings.crm_enabled and customer_id and crm_lead is not None:
+        try:
+            from services.crm_queue import enqueue, make_upsert_contact_event
+            enqueue(make_upsert_contact_event(str(customer_id), crm_lead))
+        except Exception as exc:  # noqa: BLE001
+            log.warning(f"lead-submit CRM enqueue failed: {exc}")
+
+    log.info(
+        "Lead received: %s | %s | need=%r | contact=%s/%s",
+        lead.name, lead.contact, lead.need, check.get("type"), check.get("exists"),
+    )
+    return {"ok": True, "delivered": delivered}
 
 
 # ============================================================================
