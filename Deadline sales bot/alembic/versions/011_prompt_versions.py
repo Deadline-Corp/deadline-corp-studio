@@ -1,7 +1,7 @@
 """prompt_versions — редактируемый системный промпт («мозг») из Admin UI
 
-Revision ID: 010_prompt_versions
-Revises: 009_crm_events_durable
+Revision ID: 011_prompt_versions
+Revises: 010_lead_submissions
 Create Date: 2026-06-11
 
 Аддитивная миграция (новая таблица) — безопасна, прод не трогает.
@@ -18,8 +18,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
 
 
-revision: str = "010_prompt_versions"
-down_revision: Union[str, None] = "009_crm_events_durable"
+revision: str = "011_prompt_versions"
+down_revision: Union[str, None] = "010_lead_submissions"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
