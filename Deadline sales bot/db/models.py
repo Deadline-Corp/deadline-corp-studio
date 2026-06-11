@@ -19,6 +19,7 @@ from sqlalchemy import (
     String,
     Text,
     Integer,
+    Boolean,
     DateTime,
     ForeignKey,
     UniqueConstraint,
@@ -552,3 +553,64 @@ class ProcessedUpdate(Base):
 
     def __repr__(self) -> str:
         return f"<ProcessedUpdate {self.event_key}>"
+
+
+class LeadSubmission(Base):
+    """Каждая отправка лид-формы (deadlinecorp.com/lead-form/) — сырой
+    исторический след.
+
+    Раньше POST /lead-submit был fire-and-forget (только сообщение в Telegram):
+    опечатка в поле «контакт» = безвозвратно потерянный лид (мы напоролись на
+    «@saswee21», которого не существует — восстановить было нечем). Теперь каждая
+    заявка пишется сюда: поля формы + вердикт проверки контакта + ip/ua/referer.
+
+    contact_exists: True=проверен и существует, False=проверен и НЕ существует
+    (подозрение на опечатку), NULL=не проверяли (телефон/email) или не смогли.
+    Без FK на customers намеренно (как crm_events) — reset/удаление клиента не
+    должен ломать историю заявок.
+    """
+    __tablename__ = "lead_submissions"
+    __table_args__ = (
+        Index("ix_lead_submissions_created", "created_at"),
+        Index("ix_lead_submissions_customer", "customer_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    contact: Mapped[str] = mapped_column(String(200), nullable=False)
+    contact_type: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    contact_exists: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+
+    need: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    business: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    task: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # 'when' is a SQL reserved word — store under 'timeframe'.
+    timeframe: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    source: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    campaign: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    lang: Mapped[Optional[str]] = mapped_column(String(5), nullable=True)
+
+    # Контекст запроса — отпечаток лида даже при кривом контакте.
+    ip: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    referer: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Customer, созданный для CRM-апсёрта (если crm_enabled). Без FK.
+    customer_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    telegram_delivered: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    crm_enqueued: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<LeadSubmission {str(self.id)[:8]} {self.name!r} "
+            f"type={self.contact_type} exists={self.contact_exists}>"
+        )
