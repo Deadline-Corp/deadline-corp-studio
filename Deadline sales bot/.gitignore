@@ -18,6 +18,12 @@ ENV/
 build/
 dist/
 node_modules/
+
+# admin-ui манифесты: корневой .gitignore студии прячет ЛЮБОЙ package.json/lock,
+# из-за чего railway up не заливал их в build-контекст → Docker COPY падал
+# («/admin-ui/package.json: not found»). Явно возвращаем их в индексацию.
+!admin-ui/package.json
+!admin-ui/package-lock.json
 *.egg-info/
 *.egg
 
