@@ -55,6 +55,7 @@ from services.conversations import (
 )
 # Tenant + CRM (Phase 1+7, 2026-05-26 — see ADR v1.3 in Obsidian Vault)
 from services.tenant import load_tenant, Tenant
+from services.operator_actions import deliver_operator_reply
 from services.crm import build_adapter, CRMAdapter
 from services import crm_queue as crm_queue
 from channels.telegram import (
@@ -272,6 +273,21 @@ app.add_middleware(
     allow_origins=[o.strip() for o in settings.allowed_origins.split(",") if o.strip()],
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
+)
+
+# ---- Admin UI (визуальная панель управления, 2026-06-11) ----
+# API-слой в admin_api.py (Bearer ADMIN_UI_TOKEN / TRAINING_AUTH_TOKEN),
+# SPA (React, admin-ui/dist) монтируется same-origin → CORS не участвует.
+# check_dir=False: отсутствие dist (локальный запуск без npm build) не валит бота.
+import admin_api as _admin_api  # noqa: E402 — после app, безопасно (lazy main внутри)
+app.include_router(_admin_api.router)
+
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+app.mount(
+    "/admin/ui",
+    StaticFiles(directory=str(Path(__file__).parent / "admin-ui" / "dist"),
+                html=True, check_dir=False),
+    name="admin-ui",
 )
 
 
@@ -2207,7 +2223,9 @@ async def _handle_operator_message(msg: dict, db: Session) -> None:
         return
 
     if text and not attachment and text.startswith("/close"):
-        conv.status = ConversationStatusEnum.CLOSED.value
+        # FIX 2026-06-11: было ConversationStatusEnum.CLOSED — такого члена в
+        # enum НЕТ (есть RESOLVED) → /close падал AttributeError у оператора.
+        conv.status = ConversationStatusEnum.RESOLVED.value
         db.commit()
         await send_to_topic(token, settings.telegram_operator_group_id, topic_id,
                             "🔒 Conversation closed.")
@@ -2233,58 +2251,9 @@ async def _handle_operator_message(msg: dict, db: Session) -> None:
     # replies work even beyond Meta's standard 24-hour reply window.
     # HUMAN_AGENT extends the window to 7 days. Requires the `human_agent`
     # permission on the Meta App (Standard Access in App Review).
-    delivered = False
-    if conv.channel == "telegram" and conv.channel_conversation_id:
-        if attachment:
-            attachment_type, file_id, _ = attachment
-            delivered = await forward_attachment(
-                token, conv.channel_conversation_id,
-                attachment_type, file_id,
-                caption=text or None,
-            )
-            log.info(
-                f"[{str(conv.id)[:8]}] operator forwarded {attachment_type} "
-                f"to telegram lead (delivered={delivered})"
-            )
-        else:
-            delivered = await send_telegram_reply(token, conv.channel_conversation_id, text)
-    elif conv.channel == "instagram" and conv.channel_conversation_id:
-        if attachment:
-            log.warning(
-                f"[{str(conv.id)[:8]}] operator sent {attachment[0]} to IG lead — "
-                f"attachment forwarding not implemented for Meta channels yet "
-                f"(would need /me/message_attachments upload). Operator should send text only."
-            )
-            delivered = False
-        else:
-            delivered = await send_instagram_reply(
-                settings.meta_page_access_token,
-                conv.channel_conversation_id,
-                text,
-                messaging_type="MESSAGE_TAG",
-                tag="HUMAN_AGENT",
-            )
-    elif conv.channel == "messenger" and conv.channel_conversation_id:
-        if attachment:
-            log.warning(
-                f"[{str(conv.id)[:8]}] operator sent {attachment[0]} to Messenger lead — "
-                f"attachment forwarding not implemented for Meta channels yet "
-                f"(would need /me/message_attachments upload). Operator should send text only."
-            )
-            delivered = False
-        else:
-            delivered = await send_messenger_reply(
-                settings.meta_page_access_token,
-                conv.channel_conversation_id,
-                text,
-                messaging_type="MESSAGE_TAG",
-                tag="HUMAN_AGENT",
-            )
-    else:
-        # Website — no push. Message just lives in DB; the widget will see
-        # it on the next /chat poll (Phase 2: switch widget to long-poll or SSE).
-        log.info(f"[{str(conv.id)[:8]}] operator wrote on channel={conv.channel} (no push, stored only)")
-        delivered = True
+    # Доставка вынесена в services/operator_actions.py (общий код с Admin UI —
+    # одна логика для форум-пути и веб-панели, поведение бит-в-бит прежнее).
+    delivered = await deliver_operator_reply(conv, text, settings, attachment=attachment)
 
     append_message(
         db, conv.id, role="operator", content=text,
