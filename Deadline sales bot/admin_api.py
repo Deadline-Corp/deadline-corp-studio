@@ -76,20 +76,6 @@ async def me(_: None = Depends(_verify_admin_token)):
 # OVERVIEW — данные для канваса
 # ============================================================================
 
-# Порядок и подписи стадий воронки (совпадает с HubSpot STAGE_DEFS 8 стадий;
-# legacy-стадии из funnel.ALL_STAGES, встречающиеся в старых строках,
-# отдаём как есть — фронт покажет их в колонке «Другое»).
-FUNNEL_STAGES = [
-    ("new_lead", "🆕 Новый лид"),
-    ("in_dialog", "💬 В диалоге"),
-    ("qualified", "✅ Квалифицирован"),
-    ("on_call", "📞 Созвон назначен"),
-    ("proposal", "📄 КП"),
-    ("prepayment", "💰 Аванс"),
-    ("completed_won", "🏁 Сдано"),
-    ("lost", "❌ Проигран"),
-]
-
 CHANNELS = ("website", "telegram", "instagram", "messenger")
 
 
@@ -132,15 +118,19 @@ async def overview(
             "last_message_at": last.isoformat() if last else None,
         })
 
-    # Воронка: counts по lead_stage среди не-терминальных диалогов.
+    # Воронка: динамический набор стадий (funnel_store: кастомные из БД или
+    # встроенные 8) + counts по lead_stage.
+    from services import funnel_store
     stage_counts = dict(db.execute(
         sql_select(Conversation.lead_stage, sql_func.count()).group_by(Conversation.lead_stage)
     ).fetchall())
+    all_stages = funnel_store.get_stages(db)
     funnel_stages = [
-        {"stage": st, "label": label, "count": int(stage_counts.get(st, 0))}
-        for st, label in FUNNEL_STAGES
+        {"stage": s["key"], "label": s["label"], "kind": s["kind"],
+         "count": int(stage_counts.get(s["key"], 0))}
+        for s in all_stages if s["active"]
     ]
-    known = {st for st, _ in FUNNEL_STAGES}
+    known = {s["key"] for s in all_stages if s["active"]}
     other = sum(int(c) for st, c in stage_counts.items() if st not in known)
 
     # KB / training / CRM / tasks / inbox.
@@ -467,18 +457,29 @@ async def conversation_stage(
     _: None = Depends(_verify_admin_token),
     db: Session = Depends(get_db),
 ):
-    from services.funnel import validate_transition
+    from services.funnel import LOST_REASONS
+    from services import funnel_store
     from services.conversations import append_message
 
     conv, cust = _get_conv_or_404(db, conv_id)
     from_stage = conv.lead_stage
-    try:
-        validate_transition(from_stage, req.to_stage, req.lost_reason, operator_override=True)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+
+    # Валидация по ЭФФЕКТИВНОМУ набору стадий (кастомные из БД или встроенные).
+    allowed = funnel_store.valid_target_keys(db)
+    if req.to_stage not in allowed:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Неизвестная/скрытая стадия {req.to_stage!r}. Доступные: {sorted(allowed)}",
+        )
+    is_lost = (req.to_stage == "lost") or (funnel_store.stage_kind(db, req.to_stage) == "lost")
+    if is_lost:
+        if not req.lost_reason:
+            raise HTTPException(status_code=422, detail="Для «Проигран» нужна причина (lost_reason)")
+        if req.lost_reason not in LOST_REASONS:
+            raise HTTPException(status_code=422, detail=f"Причина {req.lost_reason!r} не из списка {sorted(LOST_REASONS)}")
 
     conv.lead_stage = req.to_stage
-    conv.lost_reason = req.lost_reason if req.to_stage == "lost" else None
+    conv.lost_reason = req.lost_reason if is_lost else None
     # Аудит-трейл бесплатно — system-сообщение в самом диалоге.
     append_message(
         db, conv.id, role="system",
@@ -487,19 +488,333 @@ async def conversation_stage(
     )
     db.commit()
 
-    # Зеркало в HubSpot через durable-очередь (не блокирует ответ).
+    # Зеркало в HubSpot через durable-очередь — только для встроенных ключей
+    # (кастомные стадии живут в нашей воронке, у HubSpot их нет).
     import main as _main
-    if _main.settings.crm_enabled:
+    mirrored = False
+    if _main.settings.crm_enabled and req.to_stage in funnel_store.BUILTIN_KEYS:
         from services.crm_dispatch import dispatch_stage_change
         dispatch_stage_change(
             customer_id=str(conv.customer_id),
             crm_deal_id=conv.crm_deal_id,
             new_stage=req.to_stage,
-            lost_reason=req.lost_reason,
+            lost_reason=req.lost_reason if is_lost else None,
             conversation_id=str(conv.id),
         )
+        mirrored = True
 
-    return {"ok": True, "from_stage": from_stage, "to_stage": req.to_stage}
+    return {"ok": True, "from_stage": from_stage, "to_stage": req.to_stage, "crm_mirrored": mirrored}
+
+
+# ============================================================================
+# FUNNEL STAGES — редактор стадий (своя CRM)
+# ============================================================================
+
+class StageItem(BaseModel):
+    key: Optional[str] = None
+    label: str = Field(..., min_length=1, max_length=80)
+    kind: str = Field("active", pattern="^(active|won|lost)$")
+    active: bool = True
+
+
+class StagesSaveRequest(BaseModel):
+    items: list[StageItem] = Field(..., min_length=2, max_length=30)
+
+
+@router.get("/funnel/stages")
+async def funnel_stages_get(
+    _: None = Depends(_verify_admin_token),
+    db: Session = Depends(get_db),
+):
+    from services import funnel_store
+    return {"items": funnel_store.get_stages(db), "custom": _stages_customized(db)}
+
+
+@router.post("/funnel/stages")
+async def funnel_stages_save(
+    req: StagesSaveRequest,
+    _: None = Depends(_verify_admin_token),
+    db: Session = Depends(get_db),
+):
+    from services import funnel_store
+    try:
+        items = funnel_store.save_stages(db, [it.model_dump() for it in req.items])
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(e))
+    db.commit()
+    return {"ok": True, "items": items}
+
+
+@router.post("/funnel/stages/reset")
+async def funnel_stages_reset(
+    _: None = Depends(_verify_admin_token),
+    db: Session = Depends(get_db),
+):
+    from services import funnel_store
+    items = funnel_store.reset_to_builtin(db)
+    db.commit()
+    return {"ok": True, "items": items}
+
+
+def _stages_customized(db) -> bool:
+    from db.models import PipelineStage
+    return db.query(PipelineStage.id).first() is not None
+
+
+# ============================================================================
+# TODAY — «Мой день»: задачи бота/человека + созвоны (3 зоны срочности)
+# ============================================================================
+
+@router.get("/today")
+async def today_view(
+    _: None = Depends(_verify_admin_token),
+    db: Session = Depends(get_db),
+):
+    now = datetime.now(timezone.utc)
+    eod = now.replace(hour=23, minute=59, second=59)
+    week = now + timedelta(days=7)
+
+    rows = (
+        db.query(ScheduledAction, Customer)
+        .join(Customer, ScheduledAction.customer_id == Customer.id)
+        .filter(ScheduledAction.status.in_(("pending", "processing")))
+        .filter(ScheduledAction.due_at <= week)
+        .order_by(ScheduledAction.due_at.asc())
+        .limit(200)
+        .all()
+    )
+
+    def pack(a: ScheduledAction, c: Customer) -> dict:
+        return {
+            "id": str(a.id),
+            "action_type": a.action_type,
+            "executor": a.executor,
+            "due_at": a.due_at.isoformat() if a.due_at else None,
+            "channel": a.channel,
+            "text": (a.payload or {}).get("text") or (a.payload or {}).get("title"),
+            "conversation_id": str(a.conversation_id) if a.conversation_id else None,
+            "customer": {"id": str(c.id), "name": c.name, "email": c.email},
+        }
+
+    overdue, today, upcoming = [], [], []
+    for a, c in rows:
+        due = a.due_at
+        if due and due.tzinfo is None:
+            due = due.replace(tzinfo=timezone.utc)
+        item = pack(a, c)
+        if due and due < now:
+            overdue.append(item)
+        elif due and due <= eod:
+            today.append(item)
+        else:
+            upcoming.append(item)
+
+    # Назначенные созвоны (profile_data.booked_call_at) на ближайшую неделю.
+    calls = []
+    custs = (
+        db.query(Customer, Conversation)
+        .join(Conversation, Conversation.customer_id == Customer.id)
+        .filter(Customer.profile_data.isnot(None))
+        .filter(Conversation.lead_stage == "on_call")
+        .limit(100)
+        .all()
+    )
+    seen_cust = set()
+    for c, conv in custs:
+        if c.id in seen_cust:
+            continue
+        seen_cust.add(c.id)
+        booked = (c.profile_data or {}).get("booked_call_at")
+        medium = (c.profile_data or {}).get("call_medium")
+        calls.append({
+            "customer": {"id": str(c.id), "name": c.name, "email": c.email},
+            "conversation_id": str(conv.id),
+            "channel": conv.channel,
+            "call_at": booked,
+            "medium": medium,
+        })
+
+    return {"overdue": overdue, "today": today, "upcoming": upcoming, "calls": calls}
+
+
+class TaskCreateRequest(BaseModel):
+    conversation_id: str
+    text: str = Field(..., min_length=1, max_length=2000)
+    due_at: str
+    executor: str = Field("human", pattern="^(bot|human)$")
+
+
+@router.post("/tasks")
+async def task_create(
+    req: TaskCreateRequest,
+    _: None = Depends(_verify_admin_token),
+    db: Session = Depends(get_db),
+):
+    """Ручная задача из панели. executor=bot → бот сам напишет лиду в срок
+    (только Telegram — ограничение run_due_followups); executor=human →
+    строка в задачнике, человек закроет кнопкой «Сделано»."""
+    conv, cust = _get_conv_or_404(db, req.conversation_id)
+    due = _parse_iso(req.due_at)
+
+    if req.executor == "bot":
+        if conv.channel != "telegram":
+            raise HTTPException(
+                status_code=409,
+                detail="Бот-задачи с автоотправкой пока только для Telegram-лидов. "
+                       "Для этого канала поставьте задачу на человека.",
+            )
+        import asyncio
+        from services.scheduled_actions import write_scheduled_action
+        action_id, _was_new = await asyncio.to_thread(
+            lambda: write_scheduled_action(
+                customer_id=str(conv.customer_id),
+                conversation_id=str(conv.id),
+                channel=conv.channel,
+                chat_id=conv.channel_conversation_id,
+                due_at=due,
+                text=req.text,
+            )
+        )
+        if action_id is None:
+            raise HTTPException(status_code=500, detail="Failed to write task")
+        return {"ok": True, "id": action_id, "executor": "bot"}
+
+    row = ScheduledAction(
+        customer_id=conv.customer_id,
+        conversation_id=conv.id,
+        channel=conv.channel,
+        chat_id=conv.channel_conversation_id,
+        action_type="operator_callback",
+        executor="human",
+        due_at=due,
+        status="pending",
+        payload={"text": req.text, "by": "admin-ui"},
+    )
+    db.add(row)
+    db.commit()
+    return {"ok": True, "id": str(row.id), "executor": "human"}
+
+
+@router.post("/scheduled-actions/{action_id}/done")
+async def scheduled_action_done(
+    action_id: str,
+    _: None = Depends(_verify_admin_token),
+    db: Session = Depends(get_db),
+):
+    """«Сделано» для человеческих задач из задачника."""
+    try:
+        aid = UUID(action_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="action_id must be a UUID")
+    row = db.get(ScheduledAction, aid)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Action not found")
+    if row.status not in ("pending", "processing"):
+        raise HTTPException(status_code=409, detail=f"Уже в статусе {row.status}")
+    row.status = "done"
+    row.executed_at = datetime.now(timezone.utc)
+    db.commit()
+    return {"ok": True}
+
+
+# ============================================================================
+# QUICK TRAINING RULES — «лёгкий мозг»: правило одной строкой
+# ============================================================================
+
+class QuickRuleRequest(BaseModel):
+    rule: str = Field(..., min_length=10, max_length=2000)
+    suggested_response: Optional[str] = Field(None, max_length=2000)
+    channel: Optional[str] = None
+
+
+@router.post("/training-rules/quick")
+async def training_rule_quick(
+    req: QuickRuleRequest,
+    _: None = Depends(_verify_admin_token),
+    db: Session = Depends(get_db),
+):
+    """Быстрое правило без LLM-тренера: текст оператора («когда спрашивают X —
+    отвечай Y») сохраняется как TrainingCorrection с bge-m3 эмбеддингом —
+    тот же retrieval-путь, что у полных коррекций."""
+    import asyncio
+    from services.training import _get_embedder
+
+    rule = req.rule.strip()
+    try:
+        embedder = _get_embedder()
+        embedding = await asyncio.to_thread(embedder.embed_query, rule[:8000])
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Embedding failed: {e}")
+
+    row = TrainingCorrection(
+        trigger_context=rule[:8000],
+        correct_guidance=rule,
+        suggested_response=(req.suggested_response or None),
+        channel=req.channel or None,
+        embedding=embedding,
+        created_by="admin-ui-quick",
+        is_active=True,
+    )
+    db.add(row)
+    db.commit()
+    return {"ok": True, "id": str(row.id)}
+
+
+@router.post("/training-rules/{rule_id}/deactivate")
+async def training_rule_deactivate(
+    rule_id: str,
+    _: None = Depends(_verify_admin_token),
+    db: Session = Depends(get_db),
+):
+    """Выключить правило (soft, версионно — как принято в training_corrections)."""
+    try:
+        rid = UUID(rule_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="rule_id must be a UUID")
+    row = db.get(TrainingCorrection, rid)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    row.is_active = False
+    db.commit()
+    return {"ok": True}
+
+
+# ============================================================================
+# BEHAVIOR — настройки поведения бота (прогрев/нудж) без деплоя
+# ============================================================================
+
+class BehaviorSaveRequest(BaseModel):
+    values: dict
+
+
+@router.get("/behavior")
+async def behavior_get(_: None = Depends(_verify_admin_token)):
+    from services import bot_settings
+    return {
+        "overrides": bot_settings.get_all(),
+        "defaults": {
+            "nudge_enabled": True,
+            "nudge_after_hours": 1,
+            "nudge_max_hours": 36,
+            "nudge_text": None,
+            "silence_lost_days": 7,
+        },
+        "known_keys": sorted(bot_settings.KNOWN_KEYS.keys()),
+    }
+
+
+@router.post("/behavior")
+async def behavior_save(
+    req: BehaviorSaveRequest,
+    _: None = Depends(_verify_admin_token),
+):
+    from services import bot_settings
+    try:
+        current = bot_settings.set_many(req.values)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"ok": True, "overrides": current}
 
 
 # ============================================================================

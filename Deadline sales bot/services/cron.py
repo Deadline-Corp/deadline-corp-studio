@@ -145,6 +145,23 @@ async def sweep_once(*, tenant_config: dict) -> dict:
     temperature_cfg = (tenant_config or {}).get("temperature", {}) or {}
     warming_cfg = (tenant_config or {}).get("warming", {}) or {}
     funnel_cfg = (tenant_config or {}).get("funnel", {}) or {}
+
+    # Admin UI оверрайды (bot_settings, TTL-кэш 60с) поверх config.yaml —
+    # прогрев/нудж настраивается из панели без деплоя. Ошибка чтения → дефолты.
+    try:
+        from services import bot_settings as _bot_settings
+        _ui_overrides = _bot_settings.get_all()
+    except Exception:  # noqa: BLE001
+        _ui_overrides = {}
+    if _ui_overrides:
+        warming_cfg = dict(warming_cfg)
+        for _k in ("nudge_after_hours", "nudge_max_hours"):
+            if _k in _ui_overrides:
+                warming_cfg[_k] = _ui_overrides[_k]
+        if "silence_lost_days" in _ui_overrides:
+            funnel_cfg = {**funnel_cfg, "silence_lost_threshold_d": _ui_overrides["silence_lost_days"]}
+    _nudge_enabled = bool(_ui_overrides.get("nudge_enabled", True))
+    _nudge_text_override = _ui_overrides.get("nudge_text") or None
     decay_per_48h = int(scoring_cfg.get("decay_per_48h", -1))
     temp_decay_days = int(temperature_cfg.get("decay_days", 14))
     temp_frozen_after = int(temperature_cfg.get("frozen_after_days", 21))
@@ -314,7 +331,8 @@ async def sweep_once(*, tenant_config: dict) -> dict:
                 _chat = conversation.channel_conversation_id
                 _booked = bool((customer.profile_data or {}).get("booked_call_at"))
                 _engaged = int(customer.lead_score or 0) >= 40
-                if (_chat and _chan in ("telegram", "whatsapp", "instagram", "messenger")
+                if (_nudge_enabled
+                        and _chat and _chan in ("telegram", "whatsapp", "instagram", "messenger")
                         and _engaged and not _booked
                         and _nudge_after <= silent_hours <= _nudge_max):
                     from db.models import ScheduledAction
@@ -333,7 +351,8 @@ async def sweep_once(*, tenant_config: dict) -> dict:
                             channel=conversation.channel,
                             chat_id=str(_chat),
                             due_at=now,
-                            text=("Здравствуйте! Вы недавно интересовались — подскажите, "
+                            text=(_nudge_text_override or
+                                  "Здравствуйте! Вы недавно интересовались — подскажите, "
                                   "актуально ещё? С радостью помогу с проектом 🙂 Если сейчас "
                                   "неудобно, просто скажите, когда вам написать."),
                         )

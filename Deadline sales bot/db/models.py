@@ -536,6 +536,60 @@ class PromptVersion(Base):
         return f"<PromptVersion {str(self.id)[:8]} kind={self.kind} active={self.is_active}>"
 
 
+class PipelineStage(Base):
+    """Кастомные стадии воронки (своя CRM в Admin UI, 2026-06-11).
+
+    Пустая таблица = поведение как раньше (встроенные 8 стадий из admin_api/
+    hubspot). Оператор в UI настраивает свой набор: добавляет/переименовывает/
+    скрывает/меняет порядок. conversations.lead_stage хранит key. Бот
+    авто-двигает только по встроенным ключам (funnel.py) — кастомные стадии
+    оператор двигает руками. HubSpot-зеркало шлётся только для известных
+    HubSpot ключей (services/crm/hubspot.py STAGE_DEFS), остальные живут
+    только у нас.
+    """
+    __tablename__ = "pipeline_stages"
+    __table_args__ = (
+        Index("ix_pipeline_stages_pos", "active", "position"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    key: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
+    label: Mapped[str] = mapped_column(String(80), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # active=False — скрыта с канбана (сделки на ней остаются, видны в «Другое»)
+    active: Mapped[bool] = mapped_column(default=True, nullable=False)
+    # kind: active | won | lost — lost требует lost_reason, won/lost терминальные
+    kind: Mapped[str] = mapped_column(String(10), nullable=False, server_default="active")
+    # builtin=True — посеяна из встроенного набора (key совпадает с funnel.py);
+    # её нельзя удалить (бот на неё ссылается), можно переименовать/скрыть.
+    builtin: Mapped[bool] = mapped_column(default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"<PipelineStage {self.key} pos={self.position} active={self.active}>"
+
+
+class BotSetting(Base):
+    """Поведенческие настройки бота, редактируемые из Admin UI (key-value).
+
+    Перекрывают значения tenant config.yaml БЕЗ деплоя: cron/логика читает
+    через services.bot_settings (TTL-кэш 60с). Пустая таблица = дефолты
+    из config.yaml, поведение 1:1 как раньше.
+    """
+    __tablename__ = "bot_settings"
+
+    key: Mapped[str] = mapped_column(String(60), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSONB, nullable=False)  # {"v": <значение>}
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<BotSetting {self.key}={self.value}>"
+
+
 class ProcessedUpdate(Base):
     """Дедуп входящих апдейтов вебхуков, переживающий рестарт процесса.
 
