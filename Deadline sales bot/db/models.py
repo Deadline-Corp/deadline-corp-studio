@@ -505,6 +505,36 @@ class CRMEvent(Base):
         return f"<CRMEvent {str(self.id)[:8]} {self.event_type} status={self.status}>"
 
 
+class PromptVersion(Base):
+    """Редактируемые версии системного промпта («мозг» бота) — Admin UI.
+
+    Боевой промпт исторически — константа prompts.SYSTEM_PROMPT. Эта таблица
+    позволяет менять его БЕЗ деплоя: build_chat_prompt берёт активную строку
+    отсюда (через services.prompt_store, TTL-кэш 60с), а если активных строк
+    нет — падает обратно на константу. Версионирование как у
+    training_corrections: новая строка is_active=True, прежняя деактивируется;
+    откат = активировать любую старую версию. Никогда не hard-delete.
+    """
+    __tablename__ = "prompt_versions"
+    __table_args__ = (
+        Index("ix_prompt_versions_active", "kind", "is_active"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    # Пока только 'system_prompt'; задел под greeting/handoff-шаблоны.
+    kind: Mapped[str] = mapped_column(String(32), nullable=False, server_default="system_prompt")
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    is_active: Mapped[bool] = mapped_column(default=False, nullable=False)
+    comment: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(100), nullable=False, server_default="admin-ui")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"<PromptVersion {str(self.id)[:8]} kind={self.kind} active={self.is_active}>"
+
+
 class ProcessedUpdate(Base):
     """Дедуп входящих апдейтов вебхуков, переживающий рестарт процесса.
 

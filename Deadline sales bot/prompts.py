@@ -768,7 +768,14 @@ def build_chat_prompt(
             "@deadline_corp, faster there and nothing gets lost. We'll email you too. 📩`"
         )
 
-    base = SYSTEM_PROMPT.format(
+    # Admin UI «мозг»: активная DB-версия промпта подменяет константу
+    # (services.prompt_store, TTL-кэш 60с). Нет версии / БД моргнула → константа.
+    try:
+        from services import prompt_store as _prompt_store
+        base_tpl = _prompt_store.get_active_system_prompt() or SYSTEM_PROMPT
+    except Exception:  # noqa: BLE001 — промпт обязан собраться всегда
+        base_tpl = SYSTEM_PROMPT
+    base = base_tpl.format(
         context=context,
         history=history,
         question=annotated_question,
