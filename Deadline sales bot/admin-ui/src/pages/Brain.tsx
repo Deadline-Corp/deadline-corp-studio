@@ -3,25 +3,144 @@ import { api } from '../api/client'
 import { PromptVersionItem } from '../api/types'
 import { fmtTime } from '../lib'
 
-/* «Мозг»: редактор системного промпта с версиями, валидацией и откатом
-   + список активных training-правил. Бот подхватывает новую версию ≤60с. */
+/* «Мозг»: лёгкий режим — правила одной строкой («когда X — отвечай Y»),
+   бот применяет их через retrieval как уроки. Продвинутое (полный системный
+   промпт с версиями) спрятано в раскрывашку, чтобы не мешало глазам. */
 
 export function Brain() {
-  const [content, setContent] = useState('')
-  const [source, setSource] = useState<'db' | 'file'>('file')
-  const [defaultContent, setDefaultContent] = useState('')
-  const [versions, setVersions] = useState<PromptVersionItem[]>([])
   const [rules, setRules] = useState<any[]>([])
-  const [comment, setComment] = useState('')
+  const [newRule, setNewRule] = useState('')
+  const [newResponse, setNewResponse] = useState('')
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState<{ text: string; err?: boolean } | null>(null)
-  const [problems, setProblems] = useState<string[]>([])
-  const [dirty, setDirty] = useState(false)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
 
   const showToast = (text: string, err = false) => {
     setToast({ text, err })
     setTimeout(() => setToast(null), 4500)
   }
+
+  const loadRules = async () => {
+    try {
+      const r = await api.get<{ items: any[] }>('/training-rules')
+      setRules(r.items)
+    } catch { /* ignore */ }
+  }
+
+  useEffect(() => { void loadRules() }, [])
+
+  const addRule = async () => {
+    const rule = newRule.trim()
+    if (rule.length < 10 || busy) return
+    setBusy(true)
+    try {
+      await api.post('/training-rules/quick', {
+        rule,
+        suggested_response: newResponse.trim() || undefined,
+      })
+      showToast('✅ Правило добавлено — бот начнёт применять сразу')
+      setNewRule('')
+      setNewResponse('')
+      await loadRules()
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  const deactivate = async (id: string) => {
+    setBusy(true)
+    try {
+      await api.post(`/training-rules/${id}/deactivate`)
+      showToast('Правило выключено')
+      await loadRules()
+    } catch (e: any) { showToast(`Ошибка: ${e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className="page">
+      <div className="page-head">
+        <h1>Мозг бота</h1>
+        <span className="sub">правила применяются без деплоя</span>
+      </div>
+
+      {/* ---- Лёгкий режим: быстрые правила ---- */}
+      <div className="card" style={{ marginBottom: 14 }}>
+        <b>➕ Новое правило</b>
+        <p className="muted" style={{ margin: '4px 0 10px', fontSize: 12.5 }}>
+          Опишите по-человечески: «Когда спрашивают про цену лендинга — называй вилку от $300
+          и сразу зови на созвон». Бот подхватит при похожих вопросах.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <textarea
+            placeholder="Когда [ситуация] — [что делать / как отвечать]…"
+            value={newRule}
+            onChange={e => setNewRule(e.target.value)}
+            style={{ minHeight: 60 }}
+          />
+          <input
+            placeholder="Пример готового ответа (необязательно)"
+            value={newResponse}
+            onChange={e => setNewResponse(e.target.value)}
+          />
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button className="btn primary" onClick={addRule} disabled={busy || newRule.trim().length < 10}>
+              {busy ? <span className="spin" /> : 'Добавить правило'}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <b>📜 Активные правила ({rules.length})</b>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
+          {rules.length === 0 && <span className="faint" style={{ fontSize: 12.5 }}>Правил пока нет — добавьте первое выше</span>}
+          {rules.map(r => (
+            <div key={r.id} className="version-item" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13 }}>{r.guidance}</div>
+                {r.suggested_response && (
+                  <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>💬 «{r.suggested_response}»</div>
+                )}
+                <div className="faint" style={{ fontSize: 11, marginTop: 3 }}>
+                  {r.channel ? `канал: ${r.channel} · ` : ''}{fmtTime(r.created_at)} · {r.created_by}
+                </div>
+              </div>
+              <button className="btn sm ghost" onClick={() => deactivate(r.id)} disabled={busy} title="Выключить правило">✕</button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ---- Продвинутое: полный системный промпт ---- */}
+      <div className="card">
+        <div style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}
+             onClick={() => setAdvancedOpen(v => !v)}>
+          <b>🛠 Продвинутое: системный промпт</b>
+          <span className="faint" style={{ marginLeft: 10, fontSize: 12 }}>
+            характер и логика бота целиком — трогайте, только если понимаете зачем
+          </span>
+          <div style={{ flex: 1 }} />
+          <span>{advancedOpen ? '▾' : '▸'}</span>
+        </div>
+        {advancedOpen && <PromptEditor showToast={showToast} />}
+      </div>
+
+      {toast && <div className={`toast ${toast.err ? 'err' : ''}`}>{toast.text}</div>}
+    </div>
+  )
+}
+
+/* ---------- Продвинутый редактор промпта (версии/тест/откат) ---------- */
+
+function PromptEditor({ showToast }: { showToast: (t: string, err?: boolean) => void }) {
+  const [content, setContent] = useState('')
+  const [source, setSource] = useState<'db' | 'file'>('file')
+  const [defaultContent, setDefaultContent] = useState('')
+  const [versions, setVersions] = useState<PromptVersionItem[]>([])
+  const [comment, setComment] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [problems, setProblems] = useState<string[]>([])
+  const [dirty, setDirty] = useState(false)
 
   const load = async () => {
     try {
@@ -32,8 +151,6 @@ export function Brain() {
       setDirty(false)
       const v = await api.get<{ items: PromptVersionItem[] }>('/prompt/versions')
       setVersions(v.items)
-      const r = await api.get<{ items: any[] }>('/training-rules')
-      setRules(r.items)
     } catch { /* ignore */ }
   }
 
@@ -77,16 +194,15 @@ export function Brain() {
   }
 
   return (
-    <div className="page">
-      <div className="page-head">
-        <h1>Мозг бота</h1>
+    <div style={{ marginTop: 14 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
         <span className={`chip ${source === 'db' ? 'accent' : ''}`}>
           {source === 'db' ? 'кастомная версия' : 'заводской промпт'}
         </span>
         {dirty && <span className="chip warn">не сохранено</span>}
-        <div className="spacer" />
-        <button className="btn" onClick={test} disabled={busy}>🧪 Проверить</button>
-        <button className="btn primary" onClick={save} disabled={busy || !dirty}>
+        <div style={{ flex: 1 }} />
+        <button className="btn sm" onClick={test} disabled={busy}>🧪 Проверить</button>
+        <button className="btn sm primary" onClick={save} disabled={busy || !dirty}>
           {busy ? <span className="spin" /> : '💾 Сохранить и активировать'}
         </button>
       </div>
@@ -120,7 +236,7 @@ export function Brain() {
           </div>
           <div className="faint" style={{ fontSize: 11.5 }}>
             Обязательные плейсхолдеры: {'{context} {history} {question} {corrections} {handoff_block}'} —
-            без них сохранение заблокируется. Активная версия подхватывается ботом в течение 60 секунд, без деплоя.
+            без них сохранение заблокируется. Активная версия подхватывается ботом за 60 секунд, без деплоя.
           </div>
         </div>
 
@@ -149,25 +265,8 @@ export function Brain() {
               ))}
             </div>
           </div>
-
-          <div className="card" style={{ padding: 12 }}>
-            <b style={{ fontSize: 13 }}>Правила обучения ({rules.length})</b>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 }}>
-              {rules.length === 0 && <span className="faint" style={{ fontSize: 12 }}>Активных правил нет</span>}
-              {rules.map(r => (
-                <div key={r.id} className="version-item">
-                  <div style={{ fontSize: 12 }}>{r.guidance}</div>
-                  <div className="faint" style={{ fontSize: 11 }}>
-                    {r.channel ? `канал: ${r.channel} · ` : ''}{fmtTime(r.created_at)}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
-
-      {toast && <div className={`toast ${toast.err ? 'err' : ''}`}>{toast.text}</div>}
     </div>
   )
 }

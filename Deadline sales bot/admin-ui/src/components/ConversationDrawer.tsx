@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { ConvDetail, Msg } from '../api/types'
 import { usePolling } from '../hooks/usePolling'
-import { CHANNEL_META, STAGES, LOST_REASONS, TEMP_META, stageLabel, fmtTime, initials } from '../lib'
+import { useStages, useStageLabel } from '../overviewContext'
+import { CHANNEL_META, LOST_REASONS, TEMP_META, fmtTime, initials } from '../lib'
 
-/* Карточка лида: переписка + ответ + takeover + стадия + пинок.
-   Один и тот же компонент из Inbox, Канбана и Канваса. */
+/* Карточка лида: переписка + ответ + takeover + стадия + пинок + задача.
+   Один и тот же компонент из Inbox, Канбана и Канваса. Стадии — динамические
+   (кастомная воронка из overview). */
 
 export function ConversationDrawer({ convId, onClose }: { convId: string; onClose: () => void }) {
   const [detail, setDetail] = useState<ConvDetail | null>(null)
@@ -16,8 +18,15 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
   const [stagePick, setStagePick] = useState('')
   const [lostReason, setLostReason] = useState('delayed')
   const [nudgeOpen, setNudgeOpen] = useState(false)
+  const [taskOpen, setTaskOpen] = useState(false)
+  const [taskText, setTaskText] = useState('')
+  const [taskDue, setTaskDue] = useState('')
+  const [taskExec, setTaskExec] = useState<'human' | 'bot'>('human')
   const msgsRef = useRef<HTMLDivElement>(null)
   const lastTsRef = useRef<string | null>(null)
+
+  const stages = useStages()
+  const stageLabel = useStageLabel()
 
   const showToast = (text: string, err = false) => {
     setToast({ text, err })
@@ -91,13 +100,16 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
     finally { setBusy(false) }
   }
 
+  const isLostStage = (key: string) =>
+    key === 'lost' || stages.find(s => s.stage === key)?.kind === 'lost'
+
   const applyStage = async () => {
     if (!stagePick || !detail || busy) return
     setBusy(true)
     try {
       await api.post(`/conversations/${convId}/stage`, {
         to_stage: stagePick,
-        lost_reason: stagePick === 'lost' ? lostReason : undefined,
+        lost_reason: isLostStage(stagePick) ? lostReason : undefined,
       })
       showToast(`Стадия → ${stageLabel(stagePick)}`)
       setStagePick('')
@@ -128,6 +140,25 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
       setNudgeOpen(false)
       showToast('✅ Пинок отправлен от имени бота')
       await loadMessages(false)
+    } catch (e: any) { showToast(`${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  const createTask = async () => {
+    if (!taskText.trim() || !taskDue || busy) return
+    setBusy(true)
+    try {
+      await api.post('/tasks', {
+        conversation_id: convId,
+        text: taskText.trim(),
+        due_at: new Date(taskDue).toISOString(),
+        executor: taskExec,
+      })
+      showToast(taskExec === 'bot' ? '🤖 Бот напишет лиду в срок' : '📋 Задача поставлена')
+      setTaskOpen(false)
+      setTaskText('')
+      setTaskDue('')
+      await loadDetail()
     } catch (e: any) { showToast(`${e.detail ?? e.message}`, true) }
     finally { setBusy(false) }
   }
@@ -164,17 +195,18 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                 </button>
                 <select value={stagePick} onChange={e => setStagePick(e.target.value)} style={{ padding: '4px 8px', fontSize: 12 }}>
                   <option value="">Сменить стадию…</option>
-                  {STAGES.filter(s => s.stage !== detail.lead_stage).map(s => (
+                  {stages.filter(s => s.stage !== detail.lead_stage).map(s => (
                     <option key={s.stage} value={s.stage}>{s.label}</option>
                   ))}
                 </select>
-                {stagePick === 'lost' && (
+                {stagePick && isLostStage(stagePick) && (
                   <select value={lostReason} onChange={e => setLostReason(e.target.value)} style={{ padding: '4px 8px', fontSize: 12 }}>
                     {LOST_REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
                   </select>
                 )}
                 {stagePick && <button className="btn sm primary" onClick={applyStage} disabled={busy}>OK</button>}
-                <button className="btn sm" onClick={() => setNudgeOpen(v => !v)}>⚡ Пинок</button>
+                <button className="btn sm" onClick={() => { setNudgeOpen(v => !v); setTaskOpen(false) }}>⚡ Пинок</button>
+                <button className="btn sm" onClick={() => { setTaskOpen(v => !v); setNudgeOpen(false) }}>📋 Задача</button>
                 {detail.hubspot.contact_url && (
                   <a className="btn sm ghost" href={detail.hubspot.contact_url} target="_blank" rel="noreferrer">HubSpot ↗</a>
                 )}
@@ -184,6 +216,34 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                   <span className="muted" style={{ fontSize: 12 }}>Пинок зависшему лиду (уйдёт от имени бота):</span>
                   <button className="btn sm" onClick={nudgeDraft} disabled={busy}>🪄 Черновик от LLM</button>
                   <button className="btn sm primary" onClick={nudgeNow} disabled={busy}>Отправить сейчас</button>
+                </div>
+              )}
+              {taskOpen && (
+                <div style={{ background: 'var(--panel)', borderRadius: 8, padding: '10px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <input placeholder="Что сделать (напр. «напомнить про КП»)"
+                         value={taskText} onChange={e => setTaskText(e.target.value)} />
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <input type="datetime-local" value={taskDue} onChange={e => setTaskDue(e.target.value)} />
+                    <select value={taskExec} onChange={e => setTaskExec(e.target.value as any)} style={{ fontSize: 12 }}>
+                      <option value="human">👤 Сделаю сам</option>
+                      <option value="bot">🤖 Бот напишет лиду</option>
+                    </select>
+                    <button className="btn sm primary" onClick={createTask} disabled={busy || !taskText.trim() || !taskDue}>
+                      Поставить
+                    </button>
+                  </div>
+                  {taskExec === 'bot' && detail.channel !== 'telegram' && (
+                    <span className="faint" style={{ fontSize: 11.5 }}>⚠️ Бот-автоотправка пока только для Telegram-лидов</span>
+                  )}
+                </div>
+              )}
+              {detail.scheduled_actions.length > 0 && (
+                <div className="d-chips">
+                  {detail.scheduled_actions.map(a => (
+                    <span key={a.id} className="chip info" title={a.payload?.text ?? ''}>
+                      ⏳ {a.executor === 'bot' ? 'бот' : 'я'}: {fmtTime(a.due_at)}
+                    </span>
+                  ))}
                 </div>
               )}
             </>

@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ReactFlow, Background, Controls, Node, Edge, Handle, Position } from '@xyflow/react'
-import { useOverview } from '../components/Layout'
+import { useOverview } from '../overviewContext'
 import { CHANNEL_META, fmtAgo } from '../lib'
 
 /* Канвас в духе eva.bz: бот в центре, слева каналы, справа подсистемы.

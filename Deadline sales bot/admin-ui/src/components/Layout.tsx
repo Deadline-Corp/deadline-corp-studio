@@ -4,21 +4,17 @@ import { api, clearToken } from '../api/client'
 import { Overview } from '../api/types'
 import { usePolling } from '../hooks/usePolling'
 import { DrawerProvider } from './DrawerContext'
-import { createContext, useContext } from 'react'
+import { OverviewCtx } from '../overviewContext'
 
 /* Постоянный сайдбар + общий Overview-контекст (бейджи живут на поллинге 30с). */
-
-const OverviewCtx = createContext<Overview | null>(null)
-export function useOverview() {
-  return useContext(OverviewCtx)
-}
 
 const NAV = [
   { to: '/', icon: '🕸', label: 'Канвас', end: true },
   { to: '/funnel', icon: '📊', label: 'Воронка' },
   { to: '/inbox', icon: '💬', label: 'Переписки' },
-  { to: '/brain', icon: '🧠', label: 'Мозг' },
   { to: '/tasks', icon: '⏰', label: 'Задачи' },
+  { to: '/brain', icon: '🧠', label: 'Мозг' },
+  { to: '/channels', icon: '🔌', label: 'Каналы' },
   { to: '/settings', icon: '⚙️', label: 'Настройки' },
 ]
 

@@ -9,7 +9,42 @@ export interface ChannelInfo {
 export interface FunnelStage {
   stage: string
   label: string
+  kind?: 'active' | 'won' | 'lost'
   count: number
+}
+
+export interface StageDef {
+  id: string | null
+  key: string
+  label: string
+  kind: 'active' | 'won' | 'lost'
+  position: number
+  active: boolean
+  builtin: boolean
+}
+
+export interface TodayItem {
+  id: string
+  action_type: string
+  executor: string
+  due_at: string | null
+  channel: string
+  text: string | null
+  conversation_id: string | null
+  customer: { id: string; name: string | null; email: string | null }
+}
+
+export interface TodayView {
+  overdue: TodayItem[]
+  today: TodayItem[]
+  upcoming: TodayItem[]
+  calls: Array<{
+    customer: { id: string; name: string | null; email: string | null }
+    conversation_id: string
+    channel: string
+    call_at: string | null
+    medium: string | null
+  }>
 }
 
 export interface Overview {

@@ -4,7 +4,8 @@ import { api } from '../api/client'
 import { ConvSummary } from '../api/types'
 import { usePolling } from '../hooks/usePolling'
 import { useDrawer } from '../components/DrawerContext'
-import { CHANNEL_META, STAGES, TEMP_META, stageLabel, fmtAgo, initials } from '../lib'
+import { useStages, useStageLabel } from '../overviewContext'
+import { CHANNEL_META, TEMP_META, fmtAgo, initials } from '../lib'
 
 /* Единый inbox: все переписки всех каналов, фильтры, клик → drawer. */
 
@@ -14,6 +15,8 @@ export function Inbox() {
   const [total, setTotal] = useState(0)
   const [loaded, setLoaded] = useState(false)
   const { openConversation } = useDrawer()
+  const stages = useStages()
+  const stageLabel = useStageLabel()
 
   const channel = params.get('channel') ?? ''
   const stage = params.get('stage') ?? ''
@@ -59,7 +62,7 @@ export function Inbox() {
         </select>
         <select value={stage} onChange={e => setFilter('stage', e.target.value)}>
           <option value="">Все стадии</option>
-          {STAGES.map(s => <option key={s.stage} value={s.stage}>{s.label}</option>)}
+          {stages.map(s => <option key={s.stage} value={s.stage}>{s.label}</option>)}
         </select>
         <select value={temperature} onChange={e => setFilter('temperature', e.target.value)}>
           <option value="">Любая температура</option>
