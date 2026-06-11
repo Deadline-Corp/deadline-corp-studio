@@ -19,6 +19,11 @@ __pycache__/
 .pytest_cache/
 tests/
 
+# Admin UI: node_modules не нужен в контексте (npm ci внутри stage),
+# dist собирается в build-stage — локальный не тащим.
+admin-ui/node_modules/
+admin-ui/dist/
+
 # VCS / editor / local
 .git/
 .gitignore
