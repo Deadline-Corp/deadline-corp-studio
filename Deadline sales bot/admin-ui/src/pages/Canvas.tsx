@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ReactFlow, Background, Controls, Node, Edge, Handle, Position } from '@xyflow/react'
+import { ReactFlow, Background, Controls, Node, Edge, Handle, Position, useNodesState } from '@xyflow/react'
 import { api } from '../api/client'
 import { AnalyticsView } from '../api/types'
 import { useOverview } from '../overviewContext'
@@ -71,7 +71,12 @@ export function Canvas() {
     void api.get<AnalyticsView>('/analytics?days=7').then(setKpi).catch(() => { /* */ })
   }, [])
 
-  const { nodes, edges } = useMemo(() => {
+  // ВАЖНО: ноды держим в state через useNodesState — React Flow в
+  // контролируемом режиме без onNodesChange блокирует перетаскивание
+  // (баг «карточки не двигаются», пойман пользователем 2026-06-12).
+  const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
+
+  const computed = useMemo(() => {
     if (!ov) return { nodes: [] as Node[], edges: [] as Edge[] }
 
     const saved = loadLayout()
@@ -195,6 +200,12 @@ export function Canvas() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ov, kpi, layoutV])
 
+  // Данные обновились (поллинг/раскладка) → пересобрать ноды в state.
+  useEffect(() => {
+    setNodes(computed.nodes)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [computed])
+
   if (!ov) {
     return <div className="page"><div className="empty"><span className="spin" /> Загрузка…</div></div>
   }
@@ -215,7 +226,8 @@ export function Canvas() {
         </button>
         <ReactFlow
           nodes={nodes}
-          edges={edges}
+          edges={computed.edges}
+          onNodesChange={onNodesChange}
           nodeTypes={nodeTypes}
           fitView
           fitViewOptions={{ padding: 0.18 }}

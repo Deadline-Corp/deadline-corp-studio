@@ -5,6 +5,7 @@ import { usePolling } from '../hooks/usePolling'
 import { useStages } from '../overviewContext'
 import { CHANNEL_META, LOST_REASONS, TEMP_META } from '../lib'
 import { HintBar } from '../components/HintBar'
+import { Help } from '../components/Help'
 
 /* Автоматизации: конструктор «Когда → Если → То» без кода (паттерн
    GoHighLevel/Chatwoot). Исполняет крон раз в ~10 минут. */
@@ -189,7 +190,7 @@ function RuleEditor({ rule, onClose, onSaved }: {
                value={name} onChange={e => setName(e.target.value)} />
 
         <div style={block}>
-          <b style={{ fontSize: 13 }}>⏰ КОГДА</b>
+          <b style={{ fontSize: 13 }}>⏰ КОГДА <Help title="Триггер" text="Событие, запускающее правило. «Молчит N часов» — для прогрева и дожима. «Появился новый лид» — для мгновенной реакции: уведомить вас, поставить задачу." /></b>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, flexWrap: 'wrap' }}>
             <select value={ttype} onChange={e => setTtype(e.target.value)} style={{ fontSize: 13 }}>
               <option value="lead_silent">Лид молчит N часов</option>
@@ -209,7 +210,7 @@ function RuleEditor({ rule, onClose, onSaved }: {
         </div>
 
         <div style={block}>
-          <b style={{ fontSize: 13 }}>🔍 ЕСЛИ (пусто = любой)</b>
+          <b style={{ fontSize: 13 }}>🔍 ЕСЛИ (пусто = любой) <Help title="Условия" text="Фильтр: правило сработает только для лидов, подходящих под выбранные канал/стадию/скор. Ничего не выбрано — для всех. Скор — это «теплота» лида от 0 до 100+, бот считает его сам." /></b>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', fontSize: 12.5 }}>
             <span className="muted">Канал:</span>
             {Object.entries(CHANNEL_META).map(([id, m]) => (
@@ -232,7 +233,7 @@ function RuleEditor({ rule, onClose, onSaved }: {
         </div>
 
         <div style={block}>
-          <b style={{ fontSize: 13 }}>⚡ ТО</b>
+          <b style={{ fontSize: 13 }}>⚡ ТО <Help title="Действия" text="Что сделать: бот напишет лиду (только Telegram) · задача вам в «Мой день» · перевести по воронке · уведомить вас в Telegram. Можно несколько действий сразу." /></b>
           {actions.map((a, i) => (
             <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 6, borderBottom: '1px solid var(--border)', paddingBottom: 8 }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -284,6 +285,7 @@ function RuleEditor({ rule, onClose, onSaved }: {
           <span className="muted">Повторять не чаще, чем раз в</span>
           <input type="number" min={0} value={cooldown} onChange={e => setCooldown(e.target.value)} style={{ width: 70 }} />
           <span className="muted">часов (0 = один раз на лида, максимум 5 повторов)</span>
+          <Help title="Защита от спама" text="Правило не долбит одного лида: 0 — сработает один раз и всё; больше нуля — может повториться, но не чаще указанного и максимум 5 раз." />
         </div>
 
         {err && <div style={{ color: 'var(--danger)', fontSize: 13 }}>{err}</div>}

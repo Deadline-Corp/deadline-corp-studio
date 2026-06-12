@@ -5,6 +5,7 @@ import { usePolling } from '../hooks/usePolling'
 import { useDrawer } from '../components/DrawerContext'
 import { CHANNEL_META, fmtTime, fmtAgo } from '../lib'
 import { HintBar } from '../components/HintBar'
+import { Help } from '../components/Help'
 
 /* Задачи: вкладка «Мой день» (просрочено → сегодня → ближайшее + созвоны —
    паттерн HubSpot/Kommo) и «Все задачи» (полный список). */
@@ -119,6 +120,7 @@ function MyDay({ showToast }: { showToast: (t: string) => void }) {
           Бот выполняет 🤖-задачи сам по крону; 👤-задачи закрываете вы. Поставить задачу — из карточки лида (кнопка «📋 Задача»).
         </span>
         <button className="btn sm" onClick={sweep} disabled={busy}>▶ Прогнать крон</button>
+        <Help title="Прогнать крон" text="Бот сам проверяет правила и задачи каждые ~10 минут. Эта кнопка — «не ждать»: запустить проверку прямо сейчас (удобно при тестировании автоматизаций)." />
       </div>
 
       {view.calls.length > 0 && (

@@ -4,6 +4,7 @@ import { ConvDetail, Msg } from '../api/types'
 import { usePolling } from '../hooks/usePolling'
 import { useStages, useStageLabel } from '../overviewContext'
 import { CHANNEL_META, LOST_REASONS, TEMP_META, fmtTime, initials } from '../lib'
+import { Help } from './Help'
 
 /* Карточка лида: переписка + ответ + takeover + стадия + пинок + задача.
    Один и тот же компонент из Inbox, Канбана и Канваса. Стадии — динамические
@@ -207,6 +208,8 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                 <button className="btn sm" onClick={toggleTakeover} disabled={busy}>
                   {detail.operator_takeover ? '🤖 Вернуть боту' : '👤 Взять на себя'}
                 </button>
+                <Help title="Взять на себя" text="Бот замолкает в этом диалоге — отвечаете только вы. Лид ничего не заметит. Когда закончите, верните боту — он продолжит сам с того же места." />
+                <Help title="Стадия" text="Где лид в вашей воронке. Бот двигает сделку сам по мере прогресса; вы можете перевести вручную здесь или перетащив карточку в Воронке. Изменение уходит и в CRM." />
                 <select value={stagePick} onChange={e => setStagePick(e.target.value)} style={{ padding: '4px 8px', fontSize: 12 }}>
                   <option value="">Сменить стадию…</option>
                   {stages.filter(s => s.stage !== detail.lead_stage).map(s => (
@@ -220,7 +223,9 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                 )}
                 {stagePick && <button className="btn sm primary" onClick={applyStage} disabled={busy}>OK</button>}
                 <button className="btn sm" onClick={() => { setNudgeOpen(v => !v); setTaskOpen(false) }}>⚡ Пинок</button>
+                <Help title="Пинок" text="Лид замолчал? Отправьте напоминание от имени бота — диалог продолжится естественно. Кнопка «Черновик от LLM» сама сочинит текст по контексту переписки." />
                 <button className="btn sm" onClick={() => { setTaskOpen(v => !v); setNudgeOpen(false) }}>📋 Задача</button>
+                <Help title="Задача" text="Напоминалка по этому лиду: «👤 сам» — появится в вашем «Моём дне»; «🤖 бот» — бот сам напишет лиду в указанное время (пока только Telegram)." />
                 {detail.hubspot.contact_url && (
                   <a className="btn sm ghost" href={detail.hubspot.contact_url} target="_blank" rel="noreferrer">HubSpot ↗</a>
                 )}

@@ -6,6 +6,7 @@ import { useDrawer } from '../components/DrawerContext'
 import { useStages } from '../overviewContext'
 import { CHANNEL_META, LOST_REASONS, TEMP_META, fmtAgo, initials } from '../lib'
 import { HintBar } from '../components/HintBar'
+import { Help } from '../components/Help'
 
 /* Канбан-воронка: стадии динамические (своя CRM — настраиваются тут же),
    drag → подтверждение → stage override (встроенные стадии зеркалятся в
@@ -97,6 +98,7 @@ export function Funnel() {
         <span className="sub">{loaded ? `${items.length} сделок · перетащите карточку, чтобы сменить стадию` : '…'}</span>
         <div className="spacer" />
         <button className="btn" onClick={() => setEditorOpen(true)}>⚙ Настроить стадии</button>
+        <Help title="Свои стадии" text="Переименуйте этапы под ваш бизнес («Запись на приём» вместо «Созвон»), скройте лишние, добавьте свои. Бот продолжит работать — встроенные этапы под замком 🔒 можно только переименовать/скрыть." />
       </div>
 
       <HintBar id="funnel" icon="📊">
