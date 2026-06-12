@@ -335,6 +335,53 @@
   }
 
   // ============================================================
+  // WEBSITE-PUSH (2026-06-12): поллинг ответов ОПЕРАТОРА и ручных «пинков»
+  // из админ-панели. Обычные ответы бота сюда не попадают (двойной показ
+  // исключён на сервере) — /chat/updates отдаёт только role=operator и
+  // assistant с kind=manual_nudge. Курсор — created_at последнего показанного.
+  // ============================================================
+  const SYNC_STORAGE_KEY = "dl-bot-sync-ts";
+  const UPDATES_URL = API_URL.replace(/\/chat\/?$/, "") + "/chat/updates";
+  let _syncTs = (function () {
+    try {
+      var v = window.localStorage.getItem(SYNC_STORAGE_KEY);
+      if (v) return v;
+    } catch (_) {}
+    // Первый запуск: окно 7 дней назад (не старше), чтобы показать ответ
+    // оператора, пришедший пока вкладка была закрыта.
+    return new Date(Date.now() - 7 * 864e5).toISOString();
+  })();
+  let _pollBusy = false;
+  async function pollUpdates() {
+    if (_pollBusy || document.hidden) return;
+    _pollBusy = true;
+    try {
+      const r = await fetch(
+        UPDATES_URL + "?session_id=" + encodeURIComponent(SESSION_ID) +
+        "&after=" + encodeURIComponent(_syncTs)
+      );
+      if (r.ok) {
+        const data = await r.json();
+        const items = data.items || [];
+        for (const m of items) {
+          addMsg(m.content, "b");
+          if (m.created_at) _syncTs = m.created_at;
+        }
+        if (items.length) {
+          try { window.localStorage.setItem(SYNC_STORAGE_KEY, _syncTs); } catch (_) {}
+          root.classList.add("open"); // менеджер написал — раскрываем чат
+        }
+      }
+    } catch (_) { /* сеть моргнула — повторим следующим тиком */ }
+    finally { _pollBusy = false; }
+  }
+  setInterval(pollUpdates, 8000);
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) pollUpdates();
+  });
+  pollUpdates();
+
+  // ============================================================
   // EVENTS
   // ============================================================
   $header.addEventListener("click", () => {
