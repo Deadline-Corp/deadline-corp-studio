@@ -15,8 +15,8 @@ export function Login() {
     setErr('')
     setToken(token.trim())
     try {
-      await api.get('/me')
-      navigate('/')
+      const me = await api.get<{ onboarding_done: boolean }>('/me')
+      navigate(me.onboarding_done ? '/' : '/onboarding')
     } catch (e: any) {
       clearToken()
       setErr(e.status === 503

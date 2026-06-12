@@ -28,6 +28,8 @@ export function Settings() {
     <div className="page">
       <div className="page-head"><h1>Настройки</h1></div>
 
+      <WorkspaceCard />
+      <div style={{ height: 14 }} />
       <PresetsCard />
       <div style={{ height: 14 }} />
       <BehaviorCard />
@@ -94,6 +96,97 @@ export function Settings() {
         Серые карточки читаются из env/конфига на сервере — секреты живут в Railway.
         Тон и правила бота — во вкладке «Мозг»; стадии воронки — в «Воронке» (⚙ Настроить стадии).
       </p>
+    </div>
+  )
+}
+
+/* ---------- Рабочее пространство: имя, обучение, демо-песочница ---------- */
+
+function WorkspaceCard() {
+  const [name, setName] = useState('')
+  const [demoLeads, setDemoLeads] = useState(0)
+  const [busy, setBusy] = useState(false)
+  const [dirty, setDirty] = useState(false)
+  const [toast, setToast] = useState<{ text: string; err?: boolean } | null>(null)
+
+  const showToast = (text: string, err = false) => {
+    setToast({ text, err })
+    setTimeout(() => setToast(null), 4500)
+  }
+
+  const load = () => api.get<any>('/workspace').then(w => {
+    setName(w.business_name || '')
+    setDemoLeads(w.demo_leads || 0)
+  }).catch(() => { /* */ })
+
+  useEffect(() => { void load() }, [])
+
+  const saveName = async () => {
+    setBusy(true)
+    try {
+      await api.post('/workspace', { business_name: name })
+      setDirty(false)
+      showToast('✅ Сохранено — имя обновится в шапке после перезагрузки страницы')
+    } catch (e: any) { showToast(`Ошибка: ${e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  const seed = async () => {
+    setBusy(true)
+    try {
+      const r = await api.post<any>('/demo/seed')
+      showToast(`🧪 Добавлено демо: ${r.created.customers} лидов, ${r.created.messages} сообщений, ${r.created.tasks} задачи`)
+      await load()
+    } catch (e: any) { showToast(`Ошибка: ${e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  const clear = async () => {
+    if (!confirm(`Удалить ${demoLeads} демо-лидов? Реальные клиенты не затронутся.`)) return
+    setBusy(true)
+    try {
+      await api.post('/demo/clear')
+      showToast('🧹 Демо-данные удалены')
+      await load()
+    } catch (e: any) { showToast(`Ошибка: ${e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className="card">
+      <b>🏢 Рабочее пространство</b>
+      <div style={{ display: 'flex', gap: 18, marginTop: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 280 }}>
+          <span className="muted" style={{ fontSize: 12.5 }}>Название бизнеса (в шапке панели):</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input value={name} onChange={e => { setName(e.target.value); setDirty(true) }} style={{ flex: 1 }} />
+            <button className="btn sm primary" onClick={saveName} disabled={busy || !dirty}>💾</button>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn sm" onClick={() => { import('../components/Tour').then(m => m.startTour()) }}>
+              🎓 Показать обучение
+            </button>
+            <button className="btn sm ghost" onClick={() => { location.hash = '#/onboarding' }}>
+              ↻ Мастер настройки заново
+            </button>
+          </div>
+        </div>
+        <div style={{ flex: 1, minWidth: 280, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <span className="muted" style={{ fontSize: 12.5 }}>
+            🧪 Демо-песочница: учебные лиды с перепиской и задачами — тренируйтесь без риска.
+            {demoLeads > 0 && <b style={{ color: 'var(--text)' }}> Сейчас в системе: {demoLeads} демо-лидов.</b>}
+          </span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn sm" onClick={seed} disabled={busy}>
+              {busy ? <span className="spin" /> : (demoLeads > 0 ? '↻ Пересоздать демо' : '+ Добавить демо-данные')}
+            </button>
+            {demoLeads > 0 && (
+              <button className="btn sm danger" onClick={clear} disabled={busy}>🧹 Удалить демо</button>
+            )}
+          </div>
+        </div>
+      </div>
+      {toast && <div className={`toast ${toast.err ? 'err' : ''}`}>{toast.text}</div>}
     </div>
   )
 }

@@ -11,6 +11,7 @@ import { Settings } from './pages/Settings'
 import { Channels } from './pages/Channels'
 import { Automations } from './pages/Automations'
 import { Analytics } from './pages/Analytics'
+import { Onboarding } from './pages/Onboarding'
 
 /* HashRouter: SPA живёт под /admin/ui/ внутри FastAPI StaticFiles — hash-роуты
    не требуют server-side fallback на index.html для глубоких ссылок. */
@@ -25,6 +26,7 @@ export function App() {
     <HashRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/onboarding" element={<RequireAuth><Onboarding /></RequireAuth>} />
         <Route element={<RequireAuth><Layout /></RequireAuth>}>
           <Route path="/" element={<Canvas />} />
           <Route path="/inbox" element={<Inbox />} />
