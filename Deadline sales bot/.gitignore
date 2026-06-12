@@ -47,3 +47,6 @@ logs/
 
 # Railway
 .railway/
+
+# Список клиентских копий (free-pilot) — не публикуем
+deploy/clients.txt
