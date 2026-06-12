@@ -364,11 +364,21 @@ async def sweep_once(*, tenant_config: dict) -> dict:
 
         # session_scope commits on exit
 
+    # Пользовательские автоматизации «Когда → Если → То» (Admin UI) — после
+    # встроенной логики, изолированно: ошибка движка не валит свип.
+    try:
+        from services.automation import run_automations
+        stats["automations"] = await run_automations()
+    except Exception as _ae:  # noqa: BLE001
+        logger.warning("[cron] automations skipped: %s", _ae)
+        stats["automations"] = {"error": str(_ae)}
+
     if any(v for k, v in stats.items() if k != "examined") or stats["examined"] > 0:
         logger.info(
             "[cron] sweep complete — examined=%d temp_changes=%d score_changes=%d "
-            "warming_tasks=%d funnel_lost=%d",
+            "warming_tasks=%d funnel_lost=%d automations=%s",
             stats["examined"], stats["temperature_changes"], stats["score_changes"],
             stats["warming_tasks_enqueued"], stats["funnel_lost_transitions"],
+            stats.get("automations"),
         )
     return stats

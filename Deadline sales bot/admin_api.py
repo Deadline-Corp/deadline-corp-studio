@@ -36,6 +36,10 @@ from db.models import (
     ScheduledAction,
     CRMEvent,
     PromptVersion,
+    AutomationRule,
+    AutomationRun,
+    CustomFieldDef,
+    StageTransition,
 )
 
 log = logging.getLogger("deadline-bot.admin-api")
@@ -328,8 +332,24 @@ async def conversation_detail(
         .all()
     )
 
+    # Кастомные поля: определения + значения из profile_data['fields'].
+    field_defs = (
+        db.query(CustomFieldDef)
+        .filter(CustomFieldDef.active == True)  # noqa: E712
+        .order_by(CustomFieldDef.position.asc())
+        .all()
+    )
+    field_values = ((cust.profile_data or {}).get("fields") or {})
+
     out = _conv_summary_row(conv, cust, None)
     out.update({
+        "fields": [
+            {
+                "key": f.key, "label": f.label, "field_type": f.field_type,
+                "options": f.options, "value": field_values.get(f.key),
+            }
+            for f in field_defs
+        ],
         "summary": conv.summary,
         "forum_topic_id": conv.forum_topic_id,
         "crm_deal_id": conv.crm_deal_id,
@@ -480,7 +500,11 @@ async def conversation_stage(
 
     conv.lead_stage = req.to_stage
     conv.lost_reason = req.lost_reason if is_lost else None
-    # Аудит-трейл бесплатно — system-сообщение в самом диалоге.
+    # История воронки (для конверсионной аналитики) + аудит в самом диалоге.
+    db.add(StageTransition(
+        conversation_id=conv.id, customer_id=conv.customer_id,
+        from_stage=from_stage, to_stage=req.to_stage, by="admin",
+    ))
     append_message(
         db, conv.id, role="system",
         content=f"[ADMIN] стадия: {from_stage} → {req.to_stage}"
@@ -1184,8 +1208,552 @@ async def kb_view(
 
 
 # ============================================================================
+# AUTOMATIONS — конструктор «Когда → Если → То»
+# ============================================================================
+
+class AutomationSaveRequest(BaseModel):
+    id: Optional[str] = None
+    name: str = Field(..., min_length=1, max_length=120)
+    enabled: bool = True
+    trigger: dict
+    conditions: Optional[dict] = None
+    actions: list
+    cooldown_hours: int = Field(0, ge=0, le=24 * 30)
+
+
+@router.get("/automations")
+async def automations_list(
+    _: None = Depends(_verify_admin_token),
+    db: Session = Depends(get_db),
+):
+    rules = db.query(AutomationRule).order_by(AutomationRule.position.asc(), AutomationRule.created_at.asc()).all()
+    fired = dict(db.execute(
+        sql_select(AutomationRun.rule_id, sql_func.count()).group_by(AutomationRun.rule_id)
+    ).fetchall())
+    return {
+        "items": [
+            {
+                "id": str(r.id), "name": r.name, "enabled": r.enabled,
+                "trigger": r.trigger, "conditions": r.conditions, "actions": r.actions,
+                "cooldown_hours": r.cooldown_hours,
+                "fired_count": int(fired.get(r.id, 0)),
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rules
+        ],
+    }
+
+
+@router.post("/automations")
+async def automation_save(
+    req: AutomationSaveRequest,
+    _: None = Depends(_verify_admin_token),
+    db: Session = Depends(get_db),
+):
+    from services.automation import validate_rule
+    problems = validate_rule(req.trigger, req.conditions, req.actions)
+    if problems:
+        raise HTTPException(status_code=422, detail={"problems": problems})
+
+    if req.id:
+        try:
+            row = db.get(AutomationRule, UUID(req.id))
+        except ValueError:
+            raise HTTPException(status_code=422, detail="id must be a UUID")
+        if row is None:
+            raise HTTPException(status_code=404, detail="Rule not found")
+    else:
+        row = AutomationRule(position=db.query(AutomationRule).count())
+        db.add(row)
+    row.name = req.name.strip()
+    row.enabled = req.enabled
+    row.trigger = req.trigger
+    row.conditions = req.conditions
+    row.actions = req.actions
+    row.cooldown_hours = req.cooldown_hours
+    db.commit()
+    return {"ok": True, "id": str(row.id)}
+
+
+@router.post("/automations/{rule_id}/toggle")
+async def automation_toggle(
+    rule_id: str,
+    _: None = Depends(_verify_admin_token),
+    db: Session = Depends(get_db),
+):
+    row = db.get(AutomationRule, _uuid_or_422(rule_id))
+    if row is None:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    row.enabled = not row.enabled
+    db.commit()
+    return {"ok": True, "enabled": row.enabled}
+
+
+@router.post("/automations/{rule_id}/delete")
+async def automation_delete(
+    rule_id: str,
+    _: None = Depends(_verify_admin_token),
+    db: Session = Depends(get_db),
+):
+    """Удаление правила — явное действие пользователя в UI (с подтверждением).
+    История срабатываний уходит каскадом (FK CASCADE)."""
+    row = db.get(AutomationRule, _uuid_or_422(rule_id))
+    if row is None:
+        raise HTTPException(status_code=404, detail="Rule not found")
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
+
+
+# ============================================================================
+# CUSTOM FIELDS — поля лида под нишу
+# ============================================================================
+
+class FieldDefItem(BaseModel):
+    key: Optional[str] = None
+    label: str = Field(..., min_length=1, max_length=80)
+    field_type: str = Field("text", pattern="^(text|number|select)$")
+    options: Optional[list[str]] = None
+    active: bool = True
+
+
+class FieldDefsSaveRequest(BaseModel):
+    items: list[FieldDefItem] = Field(..., max_length=30)
+
+
+@router.get("/custom-fields")
+async def custom_fields_get(
+    _: None = Depends(_verify_admin_token),
+    db: Session = Depends(get_db),
+):
+    rows = db.query(CustomFieldDef).order_by(CustomFieldDef.position.asc()).all()
+    return {
+        "items": [
+            {"id": str(r.id), "key": r.key, "label": r.label, "field_type": r.field_type,
+             "options": r.options, "active": r.active}
+            for r in rows
+        ],
+    }
+
+
+@router.post("/custom-fields")
+async def custom_fields_save(
+    req: FieldDefsSaveRequest,
+    _: None = Depends(_verify_admin_token),
+    db: Session = Depends(get_db),
+):
+    """Bulk save (как стадии): полная замена определений. Значения у лидов
+    (profile_data['fields']) не трогаются — вернёте поле с тем же key,
+    значения снова видны."""
+    import re
+    seen: set[str] = set()
+    cleaned = []
+    for i, it in enumerate(req.items):
+        key = (it.key or "").strip().lower()
+        if not key:
+            key = re.sub(r"[^a-z0-9_]+", "_", it.label.lower()).strip("_")[:40] or f"field_{i}"
+        if not re.fullmatch(r"[a-z0-9_]{1,40}", key):
+            raise HTTPException(status_code=422, detail=f"Поле «{it.label}»: ключ {key!r} — только [a-z0-9_]")
+        if key in seen:
+            raise HTTPException(status_code=422, detail=f"Дубль ключа {key!r}")
+        seen.add(key)
+        if it.field_type == "select" and not (it.options or []):
+            raise HTTPException(status_code=422, detail=f"Поле «{it.label}»: для списка нужны варианты")
+        cleaned.append({"key": key, "label": it.label.strip()[:80], "field_type": it.field_type,
+                        "options": it.options, "active": it.active})
+
+    db.query(CustomFieldDef).delete()
+    for pos, it in enumerate(cleaned):
+        db.add(CustomFieldDef(position=pos, **it))
+    db.commit()
+    return {"ok": True, "count": len(cleaned)}
+
+
+class FieldValuesRequest(BaseModel):
+    values: dict
+
+
+@router.post("/conversations/{conv_id}/fields")
+async def conversation_fields_save(
+    conv_id: str,
+    req: FieldValuesRequest,
+    _: None = Depends(_verify_admin_token),
+    db: Session = Depends(get_db),
+):
+    conv, cust = _get_conv_or_404(db, conv_id)
+    known = {r.key for r in db.query(CustomFieldDef).all()}
+    bad = [k for k in req.values if k not in known]
+    if bad:
+        raise HTTPException(status_code=422, detail=f"Неизвестные поля: {bad}")
+    pd = dict(cust.profile_data or {})
+    fields = dict(pd.get("fields") or {})
+    for k, v in req.values.items():
+        if v is None or v == "":
+            fields.pop(k, None)
+        else:
+            fields[k] = v
+    pd["fields"] = fields
+    cust.profile_data = pd
+    db.commit()
+    return {"ok": True, "fields": fields}
+
+
+# ============================================================================
+# ANALYTICS — цифры воронки и каналов
+# ============================================================================
+
+@router.get("/analytics")
+async def analytics(
+    days: int = 30,
+    _: None = Depends(_verify_admin_token),
+    db: Session = Depends(get_db),
+):
+    days = max(1, min(days, 365))
+    since = datetime.now(timezone.utc) - timedelta(days=days)
+
+    new_leads = db.execute(
+        sql_select(sql_func.count()).select_from(Customer).where(Customer.created_at >= since)
+    ).scalar() or 0
+    leads_by_channel = dict(db.execute(
+        sql_select(Conversation.channel, sql_func.count(sql_func.distinct(Conversation.customer_id)))
+        .where(Conversation.created_at >= since)
+        .group_by(Conversation.channel)
+    ).fetchall())
+    by_day_rows = db.execute(
+        sql_select(sql_func.date_trunc("day", Customer.created_at).label("d"), sql_func.count())
+        .where(Customer.created_at >= since)
+        .group_by("d").order_by("d")
+    ).fetchall()
+    stage_dist = dict(db.execute(
+        sql_select(Conversation.lead_stage, sql_func.count()).group_by(Conversation.lead_stage)
+    ).fetchall())
+    lost_reasons = dict(db.execute(
+        sql_select(Conversation.lost_reason, sql_func.count())
+        .where(Conversation.lead_stage == "lost", Conversation.lost_reason.isnot(None))
+        .group_by(Conversation.lost_reason)
+    ).fetchall())
+    temp_dist = dict(db.execute(
+        sql_select(Customer.lead_temperature, sql_func.count()).group_by(Customer.lead_temperature)
+    ).fetchall())
+    handoffs = db.execute(
+        sql_select(sql_func.count()).select_from(Conversation)
+        .where(Conversation.handoff_done == True)  # noqa: E712
+    ).scalar() or 0
+    on_call = int(stage_dist.get("on_call", 0))
+    msgs_period = db.execute(
+        sql_select(Message.role, sql_func.count())
+        .where(Message.created_at >= since)
+        .group_by(Message.role)
+    ).fetchall()
+    transitions = db.execute(
+        sql_select(StageTransition.to_stage, sql_func.count())
+        .where(StageTransition.created_at >= since)
+        .group_by(StageTransition.to_stage)
+    ).fetchall()
+    automation_fires = db.execute(
+        sql_select(sql_func.count()).select_from(AutomationRun)
+        .where(AutomationRun.fired_at >= since)
+    ).scalar() or 0
+
+    from services import funnel_store
+    stages = funnel_store.get_stages(db)
+
+    return {
+        "days": days,
+        "totals": {
+            "new_leads": int(new_leads),
+            "handoffs": int(handoffs),
+            "booked_calls": on_call,
+            "automation_fires": int(automation_fires),
+        },
+        "leads_by_channel": {k: int(v) for k, v in leads_by_channel.items()},
+        "leads_by_day": [
+            {"day": r[0].date().isoformat(), "count": int(r[1])} for r in by_day_rows
+        ],
+        "funnel": [
+            {"stage": s["key"], "label": s["label"], "count": int(stage_dist.get(s["key"], 0))}
+            for s in stages if s["active"]
+        ],
+        "lost_reasons": {k: int(v) for k, v in lost_reasons.items()},
+        "temperatures": {k: int(v) for k, v in temp_dist.items()},
+        "messages_by_role": {str(r[0]).lower(): int(r[1]) for r in msgs_period},
+        "stage_moves": {k: int(v) for k, v in transitions},
+    }
+
+
+# ============================================================================
+# NICHE PRESETS — конфигурация под нишу в 1 клик (паттерн GHL Snapshots)
+# ============================================================================
+# Пресет = переименованные встроенные стадии (бот-логика остаётся!) + свои
+# стадии + кастомные поля + правила автоматизации (имена с 📦 — при повторном
+# применении пресет-правила заменяются, ручные не трогаются) + текст пинка.
+
+NICHE_PRESETS: dict = {
+    "web_studio": {
+        "title": "Веб-студия / диджитал-агентство", "emoji": "💻",
+        "desc": "Сайты, боты, автоматизации. Наша родная конфигурация.",
+        "stages": None,  # = заводские
+        "fields": [
+            {"label": "Тип проекта", "key": "project_type", "field_type": "select",
+             "options": ["Лендинг", "Сайт/магазин", "Бот/AI", "Автоматизация", "Другое"]},
+            {"label": "Бюджет", "key": "budget", "field_type": "text"},
+            {"label": "Срок", "key": "deadline", "field_type": "text"},
+        ],
+        "automations": [
+            {"name": "📦 Молчит сутки — мягкий пинг", "trigger": {"type": "lead_silent", "hours": 24},
+             "conditions": {"stages": ["new_lead", "in_dialog"], "channels": ["telegram"]},
+             "actions": [{"type": "bot_message", "text": "Добрый день! Возвращаюсь к вашему проекту — подскажите, актуально? Если удобнее позже, просто скажите когда 🙂"}],
+             "cooldown_hours": 0},
+            {"name": "📦 Созвон назначен, лид пропал 2 дня — задача менеджеру",
+             "trigger": {"type": "lead_silent", "hours": 48},
+             "conditions": {"stages": ["on_call", "qualified"]},
+             "actions": [{"type": "create_task", "text": "Лид завис после квалификации — связаться лично", "due_in_hours": 2},
+                         {"type": "notify_admin", "text": "Тёплый лид завис — поставлена задача"}],
+             "cooldown_hours": 0},
+        ],
+        "nudge_text": None,
+    },
+    "dentistry": {
+        "title": "Стоматология / клиника", "emoji": "🦷",
+        "desc": "Заявка → консультация → запись на приём → лечение.",
+        "stages": [
+            {"key": "new_lead", "label": "🆕 Новая заявка", "kind": "active", "active": True},
+            {"key": "in_dialog", "label": "💬 Уточняем запрос", "kind": "active", "active": True},
+            {"key": "qualified", "label": "✅ Готов записаться", "kind": "active", "active": True},
+            {"key": "on_call", "label": "📅 Запись на приём", "kind": "active", "active": True},
+            {"key": "proposal", "label": "🦷 План лечения", "kind": "active", "active": True},
+            {"key": "prepayment", "label": "💰 Предоплата", "kind": "active", "active": True},
+            {"key": "completed_won", "label": "🏁 Лечение завершено", "kind": "won", "active": True},
+            {"key": "repeat_visit", "label": "🔁 Повторный приём", "kind": "active", "active": True},
+            {"key": "lost", "label": "❌ Не дошёл", "kind": "lost", "active": True},
+        ],
+        "fields": [
+            {"label": "Услуга", "key": "service", "field_type": "select",
+             "options": ["Лечение", "Имплантация", "Брекеты/элайнеры", "Чистка/гигиена", "Протезирование", "Другое"]},
+            {"label": "Жалоба / что беспокоит", "key": "complaint", "field_type": "text"},
+            {"label": "Удобное время", "key": "preferred_time", "field_type": "text"},
+        ],
+        "automations": [
+            {"name": "📦 Не записался за 24ч — напомнить", "trigger": {"type": "lead_silent", "hours": 24},
+             "conditions": {"stages": ["new_lead", "in_dialog", "qualified"], "channels": ["telegram"]},
+             "actions": [{"type": "bot_message", "text": "Здравствуйте! Напомню про запись — есть удобные окна на этой неделе. Подсказать время? 🙂"}],
+             "cooldown_hours": 48},
+            {"name": "📦 Записан, тишина 3 дня — задача администратору",
+             "trigger": {"type": "lead_silent", "hours": 72},
+             "conditions": {"stages": ["on_call"]},
+             "actions": [{"type": "create_task", "text": "Подтвердить запись пациента звонком", "due_in_hours": 3}],
+             "cooldown_hours": 0},
+        ],
+        "nudge_text": "Здравствуйте! Вы интересовались записью — актуально ещё? Подберу удобное время 🙂",
+    },
+    "fitness": {
+        "title": "Фитнес / спортзал / студия", "emoji": "🏋️",
+        "desc": "Лид → пробное занятие → абонемент → продление.",
+        "stages": [
+            {"key": "new_lead", "label": "🆕 Новый лид", "kind": "active", "active": True},
+            {"key": "in_dialog", "label": "💬 В диалоге", "kind": "active", "active": True},
+            {"key": "qualified", "label": "✅ Хочет пробное", "kind": "active", "active": True},
+            {"key": "on_call", "label": "📅 Записан на пробное", "kind": "active", "active": True},
+            {"key": "proposal", "label": "🎟 Предложен абонемент", "kind": "active", "active": True},
+            {"key": "prepayment", "label": "💰 Оплата", "kind": "active", "active": True},
+            {"key": "completed_won", "label": "🏁 Клиент", "kind": "won", "active": True},
+            {"key": "renewal", "label": "🔁 Продление", "kind": "active", "active": True},
+            {"key": "lost", "label": "❌ Потерян", "kind": "lost", "active": True},
+        ],
+        "fields": [
+            {"label": "Цель", "key": "goal", "field_type": "select",
+             "options": ["Похудение", "Набор массы", "Тонус/здоровье", "Групповые", "Персональные"]},
+            {"label": "Опыт тренировок", "key": "experience", "field_type": "select",
+             "options": ["Новичок", "Занимался раньше", "Регулярно тренируюсь"]},
+            {"label": "Удобное время", "key": "preferred_time", "field_type": "text"},
+        ],
+        "automations": [
+            {"name": "📦 Не дошёл до пробного — пинг через сутки", "trigger": {"type": "lead_silent", "hours": 24},
+             "conditions": {"stages": ["new_lead", "in_dialog", "qualified"], "channels": ["telegram"]},
+             "actions": [{"type": "bot_message", "text": "Привет! Пробное занятие ещё в силе 💪 Записать вас на этой неделе?"}],
+             "cooldown_hours": 72},
+        ],
+        "nudge_text": "Привет! Вы спрашивали про занятия — актуально? Могу записать на бесплатное пробное 💪",
+    },
+    "realty": {
+        "title": "Недвижимость / риелтор", "emoji": "🏠",
+        "desc": "Заявка → квалификация → показ → бронь → сделка.",
+        "stages": [
+            {"key": "new_lead", "label": "🆕 Новая заявка", "kind": "active", "active": True},
+            {"key": "in_dialog", "label": "💬 Выясняем запрос", "kind": "active", "active": True},
+            {"key": "qualified", "label": "✅ Квалифицирован", "kind": "active", "active": True},
+            {"key": "on_call", "label": "📅 Назначен показ", "kind": "active", "active": True},
+            {"key": "proposal", "label": "📄 Предложены варианты", "kind": "active", "active": True},
+            {"key": "prepayment", "label": "💰 Бронь/аванс", "kind": "active", "active": True},
+            {"key": "completed_won", "label": "🏁 Сделка", "kind": "won", "active": True},
+            {"key": "lost", "label": "❌ Потерян", "kind": "lost", "active": True},
+        ],
+        "fields": [
+            {"label": "Тип", "key": "deal_type", "field_type": "select",
+             "options": ["Купить", "Снять", "Продать", "Сдать"]},
+            {"label": "Бюджет", "key": "budget", "field_type": "text"},
+            {"label": "Район / локация", "key": "location", "field_type": "text"},
+            {"label": "Срочность", "key": "urgency", "field_type": "select",
+             "options": ["Срочно (до месяца)", "1-3 месяца", "Просто смотрю"]},
+        ],
+        "automations": [
+            {"name": "📦 Лид остыл за 48ч — подборка-пинг", "trigger": {"type": "lead_silent", "hours": 48},
+             "conditions": {"stages": ["new_lead", "in_dialog"], "channels": ["telegram"]},
+             "actions": [{"type": "bot_message", "text": "Добрый день! По вашему запросу появились новые варианты — прислать подборку? 🙂"}],
+             "cooldown_hours": 96},
+            {"name": "📦 После показа тишина 2 дня — задача риелтору",
+             "trigger": {"type": "lead_silent", "hours": 48},
+             "conditions": {"stages": ["on_call", "proposal"]},
+             "actions": [{"type": "create_task", "text": "Взять обратную связь после показа, дожать", "due_in_hours": 4}],
+             "cooldown_hours": 0},
+        ],
+        "nudge_text": "Добрый день! Вы искали недвижимость — запрос ещё актуален? Есть свежие варианты 🙂",
+    },
+    "online_school": {
+        "title": "Онлайн-школа / курсы", "emoji": "🎓",
+        "desc": "Лид → диагностика → пробный урок → оплата курса.",
+        "stages": [
+            {"key": "new_lead", "label": "🆕 Новый лид", "kind": "active", "active": True},
+            {"key": "in_dialog", "label": "💬 В диалоге", "kind": "active", "active": True},
+            {"key": "qualified", "label": "✅ Прошёл диагностику", "kind": "active", "active": True},
+            {"key": "on_call", "label": "📅 Пробный урок", "kind": "active", "active": True},
+            {"key": "proposal", "label": "📄 Предложен тариф", "kind": "active", "active": True},
+            {"key": "prepayment", "label": "💰 Оплата", "kind": "active", "active": True},
+            {"key": "completed_won", "label": "🏁 Ученик", "kind": "won", "active": True},
+            {"key": "lost", "label": "❌ Потерян", "kind": "lost", "active": True},
+        ],
+        "fields": [
+            {"label": "Направление", "key": "course", "field_type": "text"},
+            {"label": "Уровень", "key": "level", "field_type": "select",
+             "options": ["С нуля", "Базовый", "Продвинутый"]},
+            {"label": "Для кого", "key": "for_whom", "field_type": "select",
+             "options": ["Себе", "Ребёнку", "Сотрудникам"]},
+        ],
+        "automations": [
+            {"name": "📦 Не дошёл до пробного — пинг", "trigger": {"type": "lead_silent", "hours": 24},
+             "conditions": {"stages": ["new_lead", "in_dialog", "qualified"], "channels": ["telegram"]},
+             "actions": [{"type": "bot_message", "text": "Привет! Бесплатный пробный урок ещё доступен — выбрать удобное время? 🙂"}],
+             "cooldown_hours": 72},
+        ],
+        "nudge_text": "Привет! Вы интересовались обучением — актуально? Могу предложить бесплатный пробный урок 🙂",
+    },
+    "beauty": {
+        "title": "Салон красоты / мастер", "emoji": "💅",
+        "desc": "Заявка → запись → визит → повторный визит.",
+        "stages": [
+            {"key": "new_lead", "label": "🆕 Новая заявка", "kind": "active", "active": True},
+            {"key": "in_dialog", "label": "💬 Уточняем", "kind": "active", "active": True},
+            {"key": "qualified", "label": "✅ Готов записаться", "kind": "active", "active": True},
+            {"key": "on_call", "label": "📅 Записан", "kind": "active", "active": True},
+            {"key": "proposal", "label": "📄 Доп. услуги", "kind": "active", "active": False},
+            {"key": "prepayment", "label": "💰 Предоплата", "kind": "active", "active": False},
+            {"key": "completed_won", "label": "🏁 Пришёл", "kind": "won", "active": True},
+            {"key": "repeat_visit", "label": "🔁 Повторная запись", "kind": "active", "active": True},
+            {"key": "lost", "label": "❌ Не дошёл", "kind": "lost", "active": True},
+        ],
+        "fields": [
+            {"label": "Услуга", "key": "service", "field_type": "text"},
+            {"label": "Мастер", "key": "master", "field_type": "text"},
+            {"label": "Удобное время", "key": "preferred_time", "field_type": "text"},
+        ],
+        "automations": [
+            {"name": "📦 Не записался за день — напомнить", "trigger": {"type": "lead_silent", "hours": 24},
+             "conditions": {"stages": ["new_lead", "in_dialog", "qualified"], "channels": ["telegram"]},
+             "actions": [{"type": "bot_message", "text": "Здравствуйте! Есть свободные окошки на этой неделе — записать вас? 💅"}],
+             "cooldown_hours": 72},
+        ],
+        "nudge_text": "Здравствуйте! Вы хотели записаться — актуально ещё? Подберу удобное окошко 🙂",
+    },
+}
+
+
+@router.get("/presets")
+async def presets_list(_: None = Depends(_verify_admin_token)):
+    return {
+        "items": [
+            {
+                "key": k, "title": p["title"], "emoji": p["emoji"], "desc": p["desc"],
+                "stages_count": len(p["stages"]) if p["stages"] else 8,
+                "fields_count": len(p["fields"]),
+                "automations_count": len(p["automations"]),
+            }
+            for k, p in NICHE_PRESETS.items()
+        ],
+    }
+
+
+class PresetApplyRequest(BaseModel):
+    key: str
+
+
+@router.post("/presets/apply")
+async def preset_apply(
+    req: PresetApplyRequest,
+    _: None = Depends(_verify_admin_token),
+    db: Session = Depends(get_db),
+):
+    """Применить нишевый пресет: стадии + поля + пресет-автоматизации (📦) +
+    текст пинка. Ручные правила (без 📦) и значения полей у лидов не трогаются.
+    Промпт бота НЕ меняется — тон под нишу правится во вкладке «Мозг»."""
+    preset = NICHE_PRESETS.get(req.key)
+    if preset is None:
+        raise HTTPException(status_code=404, detail=f"Нет пресета {req.key!r}")
+
+    from services import funnel_store, bot_settings
+    applied = {"stages": 0, "fields": 0, "automations": 0}
+
+    # 1. Стадии (None = сброс на заводские).
+    if preset["stages"] is None:
+        funnel_store.reset_to_builtin(db)
+        applied["stages"] = len(funnel_store.BUILTIN_STAGES)
+    else:
+        try:
+            items = funnel_store.save_stages(db, preset["stages"])
+            applied["stages"] = len(items)
+        except ValueError as e:
+            db.rollback()
+            raise HTTPException(status_code=422, detail=f"Стадии пресета: {e}")
+
+    # 2. Поля: полная замена определений (значения у лидов остаются в profile_data).
+    db.query(CustomFieldDef).delete()
+    for pos, f in enumerate(preset["fields"]):
+        db.add(CustomFieldDef(position=pos, key=f["key"], label=f["label"],
+                              field_type=f["field_type"], options=f.get("options"), active=True))
+        applied["fields"] += 1
+
+    # 3. Автоматизации: заменяем только пресетные (📦), ручные не трогаем.
+    db.query(AutomationRule).filter(AutomationRule.name.like("📦%")).delete(synchronize_session=False)
+    base_pos = db.query(AutomationRule).count()
+    for i, r in enumerate(preset["automations"]):
+        db.add(AutomationRule(
+            name=r["name"], enabled=True, trigger=r["trigger"],
+            conditions=r.get("conditions"), actions=r["actions"],
+            cooldown_hours=int(r.get("cooldown_hours", 0)), position=base_pos + i,
+        ))
+        applied["automations"] += 1
+
+    db.commit()
+
+    # 4. Текст пинка (поведение) — через bot_settings.
+    if preset.get("nudge_text"):
+        try:
+            bot_settings.set_many({"nudge_text": preset["nudge_text"]})
+        except Exception:  # noqa: BLE001 — не критично
+            pass
+
+    return {"ok": True, "applied": applied, "preset": preset["title"]}
+
+
+# ============================================================================
 # helpers
 # ============================================================================
+
+def _uuid_or_422(value: str) -> UUID:
+    try:
+        return UUID(value)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="id must be a UUID")
+
 
 def _get_conv_or_404(db: Session, conv_id: str):
     try:

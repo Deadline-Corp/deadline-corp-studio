@@ -590,6 +590,109 @@ class BotSetting(Base):
         return f"<BotSetting {self.key}={self.value}>"
 
 
+class AutomationRule(Base):
+    """Правило автоматизации «Когда → Если → То» (Admin UI, 2026-06-11).
+
+    Сердце мультинишевости (паттерн GoHighLevel/Chatwoot): оператор без кода
+    собирает «лид молчит 24ч → если канал telegram и стадия in_dialog →
+    бот пишет X / задача менеджеру / сменить стадию / уведомить админа».
+    Исполняет крон (services/automation.py), дедуп через automation_runs.
+
+    trigger:    {"type": "lead_silent", "hours": 24}
+    conditions: {"channels": [...], "stages": [...], "temperatures": [...], "min_score": 0}
+    actions:    [{"type": "bot_message", "text": ...},
+                 {"type": "create_task", "text": ..., "due_in_hours": 2},
+                 {"type": "set_stage", "stage": ..., "lost_reason": ...},
+                 {"type": "notify_admin", "text": ...}]
+    """
+    __tablename__ = "automation_rules"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    enabled: Mapped[bool] = mapped_column(default=True, nullable=False, index=True)
+    trigger: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    conditions: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    actions: Mapped[list] = mapped_column(JSONB, nullable=False)
+    # 0 = одно срабатывание на диалог; N>0 = можно повторно через N часов (cap 5 раз)
+    cooldown_hours: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    position: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<AutomationRule {str(self.id)[:8]} {self.name!r} enabled={self.enabled}>"
+
+
+class AutomationRun(Base):
+    """Журнал срабатываний правил — дедуп (одно правило не долбит один диалог)
+    и история «что бот сделал сам» для аналитики/отладки."""
+    __tablename__ = "automation_runs"
+    __table_args__ = (
+        Index("ix_automation_runs_rule_conv", "rule_id", "conversation_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    rule_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("automation_rules.id", ondelete="CASCADE"), nullable=False
+    )
+    conversation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    fired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    detail: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<AutomationRun rule={str(self.rule_id)[:8]} conv={str(self.conversation_id)[:8]}>"
+
+
+class CustomFieldDef(Base):
+    """Определения кастомных полей лида (под нишу: «Бюджет», «Тип лечения»…).
+    Значения живут в customers.profile_data['fields'][key] — без миграций
+    на каждое новое поле."""
+    __tablename__ = "custom_field_defs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    key: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
+    label: Mapped[str] = mapped_column(String(80), nullable=False)
+    field_type: Mapped[str] = mapped_column(String(10), nullable=False, server_default="text")  # text|number|select
+    options: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)  # для select
+    position: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    active: Mapped[bool] = mapped_column(default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"<CustomFieldDef {self.key} ({self.field_type})>"
+
+
+class StageTransition(Base):
+    """История переходов по воронке — фундамент конверсионной аналитики.
+    Пишется из admin stage-endpoint и автоматизаций; авто-переходы бота в
+    hot-path подключим следующим шагом (некритично для v1 отчётов)."""
+    __tablename__ = "stage_transitions"
+    __table_args__ = (
+        Index("ix_stage_transitions_conv", "conversation_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    conversation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    customer_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    from_stage: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    to_stage: Mapped[str] = mapped_column(String(40), nullable=False)
+    by: Mapped[str] = mapped_column(String(20), nullable=False, server_default="admin")  # admin|bot|automation
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    def __repr__(self) -> str:
+        return f"<StageTransition {self.from_stage}→{self.to_stage} by={self.by}>"
+
+
 class ProcessedUpdate(Base):
     """Дедуп входящих апдейтов вебхуков, переживающий рестарт процесса.
 
