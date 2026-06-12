@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>DEADLINE — Технический партнёр для вашего проекта</title>
-<meta name="description" content="Оставьте контакты — посмотрим проект, обсудим и решим куда двигаться дальше. Если проект совпадает с нашим фокусом — вернёмся с предложением по формату партнёрства.">
+<title>DEADLINE — технический партнёр для вашего стартапа</title>
+<meta name="description" content="Есть стартап, но нет сильной тех. команды? Ответьте на 5 вопросов — оценим, можем ли зайти в проект как технический партнёр: сайт, web-продукт, автоматизация и запуск.">
 
 <!-- Meta Pixel — DEADLINE (968268822492865) -->
 <script>
@@ -62,7 +62,7 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 64px;
+    margin-bottom: 48px;
     font-size: 11px;
     letter-spacing: 0.25em;
     text-transform: uppercase;
@@ -70,36 +70,185 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
   }
   .top-bar .brand { color: var(--copper); font-weight: 700; }
 
-  .hero {
-    margin-bottom: 56px;
-  }
+  /* ---- screen manager ---- */
+  .screen { display: none; }
+  .screen.active { display: block; animation: fade 0.25s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  /* ---- hero / intro ---- */
+  .hero { margin-bottom: 40px; }
   .hero h1 {
     font-family: 'Space Grotesk', 'JetBrains Mono', monospace;
     font-weight: 800;
-    font-size: clamp(26px, 6.5vw, 50px);
+    font-size: clamp(28px, 6.5vw, 48px);
     line-height: 1.08;
     letter-spacing: -0.02em;
     text-transform: uppercase;
-    margin-bottom: 24px;
+    margin-bottom: 22px;
   }
   .hero h1 .accent { color: var(--copper); }
-  .hero p {
+  .hero .sub {
     font-size: 16px;
     line-height: 1.6;
+    color: var(--sand);
+    max-width: 580px;
+    margin-bottom: 26px;
+  }
+  .hero .lede {
+    font-size: 15px;
+    line-height: 1.7;
     color: var(--muted);
-    max-width: 540px;
+    max-width: 580px;
+  }
+  .hero .lede p { margin-bottom: 14px; }
+  .hero .lede p:last-child { margin-bottom: 0; }
+  .hero .lede strong { color: var(--text); font-weight: 700; }
+
+  .markers {
+    list-style: none;
+    margin: 28px 0 32px;
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--copper);
+    background: var(--surface);
+    padding: 20px 22px;
+  }
+  .markers li {
+    position: relative;
+    padding: 7px 0 7px 22px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text);
+  }
+  .markers li::before {
+    content: "—";
+    position: absolute; left: 0;
+    color: var(--copper);
   }
 
+  /* ---- shared primary button ---- */
+  .btn-primary {
+    width: 100%;
+    background: var(--copper);
+    color: var(--bg);
+    border: none;
+    padding: 18px 24px;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn-primary:hover { background: var(--sand); }
+  .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .btn-note {
+    margin-top: 16px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--muted);
+    text-align: center;
+  }
+
+  /* ---- quiz ---- */
+  .progress { margin-bottom: 32px; }
+  .progress-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+  .progress-track { height: 3px; background: var(--border); }
+  .progress-fill { height: 3px; width: 0; background: var(--copper); transition: width 0.35s ease; }
+
+  .quiz-q {
+    font-family: 'Space Grotesk', 'JetBrains Mono', monospace;
+    font-weight: 700;
+    font-size: clamp(22px, 4.5vw, 30px);
+    line-height: 1.2;
+    letter-spacing: -0.01em;
+    margin-bottom: 8px;
+  }
+  .quiz-hint {
+    font-size: 12px;
+    color: var(--sand);
+    letter-spacing: 0.04em;
+    margin-bottom: 22px;
+  }
+  .quiz-q + .options { margin-top: 22px; }
+
+  .options { display: flex; flex-direction: column; gap: 10px; }
+  .option {
+    position: relative;
+    width: 100%;
+    text-align: left;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 16px 48px 16px 18px;
+    font-family: inherit;
+    font-size: 15px;
+    line-height: 1.4;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  }
+  .option:hover { border-color: var(--copper); }
+  .option.selected {
+    border-color: var(--copper);
+    background: rgba(199,106,45,0.10);
+    box-shadow: inset 3px 0 0 var(--copper);
+  }
+  .option.selected::after {
+    content: "✓";
+    position: absolute;
+    right: 16px; top: 50%;
+    transform: translateY(-50%);
+    color: var(--copper);
+    font-weight: 700;
+  }
+
+  .quiz-nav { display: flex; align-items: center; gap: 12px; margin-top: 28px; }
+  .btn-back {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 14px 20px;
+    font-family: inherit;
+    font-size: 13px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+  }
+  .btn-back:hover { border-color: var(--muted); color: var(--text); }
+  .quiz-nav .btn-primary { flex: 1; }
+
+  /* ---- contact form ---- */
   .form-card {
     background: var(--surface);
     border: 1px solid var(--border);
     padding: 32px 28px;
-    margin-bottom: 32px;
+    margin-bottom: 20px;
   }
+  .form-head { margin-bottom: 28px; }
+  .form-head h2 {
+    font-family: 'Space Grotesk', monospace;
+    font-weight: 800;
+    font-size: clamp(22px, 4vw, 30px);
+    line-height: 1.12;
+    text-transform: uppercase;
+    letter-spacing: -0.01em;
+    margin-bottom: 14px;
+  }
+  .form-head p { font-size: 14px; line-height: 1.55; color: var(--muted); }
 
-  .field { margin-bottom: 24px; }
+  .field { margin-bottom: 22px; }
   .field:last-child { margin-bottom: 0; }
-
   label {
     display: block;
     font-size: 11px;
@@ -116,8 +265,7 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
     letter-spacing: normal;
     font-weight: 400;
   }
-
-  input[type=text], input[type=email], input[type=tel] {
+  input[type=text], input[type=tel] {
     width: 100%;
     background: var(--bg);
     border: 1px solid var(--border);
@@ -128,39 +276,11 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
     outline: none;
     transition: border 0.15s;
   }
-  input:focus {
-    border-color: var(--copper);
-  }
+  input:focus { border-color: var(--copper); }
   input::placeholder { color: var(--muted); opacity: 0.5; }
 
-  button[type=submit] {
-    width: 100%;
-    background: var(--copper);
-    color: var(--bg);
-    border: none;
-    padding: 18px 24px;
-    font-family: inherit;
-    font-size: 15px;
-    font-weight: 700;
-    letter-spacing: 0.2em;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: background 0.15s;
-    margin-top: 8px;
-  }
-  button[type=submit]:hover { background: var(--sand); }
-  button[type=submit]:disabled { opacity: 0.5; cursor: not-allowed; }
-
-  .btn-note {
-    margin-top: 16px;
-    font-size: 12px;
-    line-height: 1.6;
-    color: var(--muted);
-    text-align: center;
-  }
-
   /* Contact-check warning (likely-wrong @handle) */
-  .contact-warn { margin-top: -8px; }
+  .contact-warn { margin-top: -6px; }
   .warn-box {
     background: rgba(184,50,39,0.08);
     border: 1px solid var(--rust);
@@ -177,8 +297,7 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
   .warn-text { color: var(--text); font-size: 14px; line-height: 1.55; margin-bottom: 14px; }
   .warn-actions { display: flex; gap: 10px; flex-wrap: wrap; }
   .warn-actions button {
-    flex: 1;
-    min-width: 140px;
+    flex: 1; min-width: 140px;
     padding: 12px 14px;
     font-family: inherit;
     font-size: 13px;
@@ -194,20 +313,8 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
   .warn-fix:hover { background: rgba(199,106,45,0.10); }
   .warn-send:hover { border-color: var(--muted); }
 
-  .footer-note {
-    margin-top: 32px;
-    text-align: center;
-    font-size: 11px;
-    color: var(--muted);
-    letter-spacing: 0.1em;
-    line-height: 1.7;
-  }
-  .footer-note a { color: var(--copper); text-decoration: none; }
-  .footer-note a:hover { text-decoration: underline; }
-
-  /* Thank-you state */
+  /* ---- thank-you ---- */
   .thanks {
-    display: none;
     background: var(--surface);
     border: 1px solid var(--copper);
     padding: 48px 32px;
@@ -251,17 +358,28 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
     font-size: 13px;
   }
 
-  body.submitted .form-card { display: none; }
-  body.submitted .hero { display: none; }
-  body.submitted .thanks { display: block; }
+  .footer-note {
+    margin-top: 32px;
+    text-align: center;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    line-height: 1.7;
+  }
+  .footer-note a { color: var(--copper); text-decoration: none; }
+  .footer-note a:hover { text-decoration: underline; }
 
   @media (max-width: 520px) {
     body { padding: 20px 16px 60px; }
-    .top-bar { margin-bottom: 40px; }
-    .hero { margin-bottom: 40px; }
+    .top-bar { margin-bottom: 36px; }
     .form-card { padding: 24px 20px; }
+    .thanks { padding: 36px 24px; }
+    .quiz-nav { flex-wrap: wrap; }
+    .btn-back { width: 100%; order: 2; }
+    .quiz-nav .btn-primary { order: 1; width: 100%; }
   }
 </style>
+
 <!-- Yandex.Metrika counter -->
 <script type="text/javascript">
    (function(m,e,t,r,i,k,a){
@@ -270,7 +388,6 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
        for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}
        k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)
    })(window, document, "script", "https://mc.yandex.ru/metrika/tag.js?id=109612500", "ym");
-
    ym(109612500, "init", {ssr:true, webvisor:true, clickmap:true, ecommerce:"dataLayer", accurateTrackBounce:true, trackLinks:true});
 </script>
 <noscript><div><img src="https://mc.yandex.ru/watch/109612500" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
@@ -283,61 +400,105 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
   <div>EST. 2025</div>
 </div>
 
-<div class="hero">
-  <h1>ОСТАВЬТЕ КОНТАКТЫ —<br>ПОСМОТРИМ ПРОЕКТ,<br>ОБСУДИМ И РЕШИМ<br><span class="accent">КУДА ДВИГАТЬСЯ ДАЛЬШЕ</span></h1>
-  <p>Мы изучим ответы и поймём, может ли DEADLINE зайти в проект как технический партнёр.</p>
-</div>
+<!-- ============ SCREEN 0: INTRO ============ -->
+<section class="screen active" id="screen-intro">
+  <div class="hero">
+    <h1>Есть стартап, но нет <span class="accent">сильной тех. команды?</span></h1>
+    <p class="sub">Ответьте на 5 коротких вопросов — и мы оценим, можем ли зайти в проект как технический партнёр: закрыть сайт, web-продукт, автоматизацию и запуск.</p>
+    <div class="lede">
+      <p>DEADLINE берёт разработку на себя не для всех. Мы смотрим на идею, рынок, потенциал роста, команду и формат партнёрства.</p>
+      <p>Если проект зацепит — вы сможете заниматься развитием, маркетингом и продажами, а мы возьмём на себя <strong>техническую часть</strong>.</p>
+    </div>
+    <ul class="markers">
+      <li>сайт / web app / автоматизация / AI</li>
+      <li>запуск в production, не «вечная демка»</li>
+      <li>техническая команда без найма в штат</li>
+      <li>формат: партнёрство, доля или revenue share</li>
+    </ul>
+  </div>
+  <button type="button" class="btn-primary" id="startBtn">Хочу в партнёрство →</button>
+  <p class="btn-note">5 вопросов · займёт меньше минуты</p>
+</section>
 
-<form class="form-card" id="partnerForm">
-
-  <div class="field">
-    <label for="name">Имя <span class="req">*</span></label>
-    <input type="text" id="name" name="name" placeholder="Александр" required>
+<!-- ============ SCREEN 1: QUIZ ============ -->
+<section class="screen" id="screen-quiz">
+  <div class="progress">
+    <div class="progress-meta">
+      <span id="progressLabel">Вопрос 1 из 5</span>
+      <span id="progressPct">20%</span>
+    </div>
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
   </div>
 
-  <div class="field">
-    <label for="telegram">Telegram <span class="req">*</span></label>
-    <input type="text" id="telegram" name="telegram" placeholder="@username" required>
-  </div>
+  <h2 class="quiz-q" id="quizTitle"></h2>
+  <div class="quiz-hint" id="quizHint">Можно выбрать несколько вариантов</div>
+  <div class="options" id="quizOptions"></div>
 
-  <div class="field">
-    <label for="phone">Телефон <span class="req">*</span></label>
-    <input type="tel" id="phone" name="phone" placeholder="+66 или +7..." required>
+  <div class="quiz-nav">
+    <button type="button" class="btn-back" id="backBtn">← Назад</button>
+    <button type="button" class="btn-primary" id="nextBtn">Далее →</button>
   </div>
+</section>
 
-  <div class="field">
-    <label for="link">Ссылка на сайт / презентацию / прототип <span class="opt">(если есть)</span></label>
-    <input type="text" id="link" name="link" placeholder="https://...">
-  </div>
+<!-- ============ SCREEN 2: CONTACT FORM ============ -->
+<section class="screen" id="screen-contact">
+  <form class="form-card" id="partnerForm">
+    <div class="form-head">
+      <h2>Оставьте контакты — посмотрим проект, обсудим и решим куда двигаться дальше</h2>
+      <p>Мы изучим ответы и поймём, может ли DEADLINE зайти в проект как технический партнёр.</p>
+    </div>
 
-  <div class="field contact-warn" id="contactWarn" style="display:none">
-    <div class="warn-box">
-      <div class="warn-title">⚠️ Проверь контакт</div>
-      <p class="warn-text" id="contactWarnText"></p>
-      <div class="warn-actions">
-        <button type="button" class="warn-fix" id="contactFix">Исправить контакт</button>
-        <button type="button" class="warn-send" id="contactSendAnyway">Всё равно отправить</button>
+    <div class="field">
+      <label for="name">Имя <span class="req">*</span></label>
+      <input type="text" id="name" name="name" placeholder="Александр" required>
+    </div>
+
+    <div class="field">
+      <label for="telegram">Telegram <span class="req">*</span></label>
+      <input type="text" id="telegram" name="telegram" placeholder="@username" required>
+    </div>
+
+    <div class="field">
+      <label for="phone">Телефон <span class="req">*</span></label>
+      <input type="tel" id="phone" name="phone" placeholder="+66 или +7..." required>
+    </div>
+
+    <div class="field">
+      <label for="link">Ссылка на сайт / презентацию / прототип <span class="opt">(если есть)</span></label>
+      <input type="text" id="link" name="link" placeholder="https://...">
+    </div>
+
+    <div class="field contact-warn" id="contactWarn" style="display:none">
+      <div class="warn-box">
+        <div class="warn-title">⚠️ Проверь контакт</div>
+        <p class="warn-text" id="contactWarnText"></p>
+        <div class="warn-actions">
+          <button type="button" class="warn-fix" id="contactFix">Исправить контакт</button>
+          <button type="button" class="warn-send" id="contactSendAnyway">Всё равно отправить</button>
+        </div>
       </div>
     </div>
+
+    <button type="submit" class="btn-primary" id="submitBtn" style="margin-top:8px">Обсудить условия →</button>
+    <p class="btn-note">Если проект совпадает с нашим фокусом — вернёмся с предложением по формату партнёрства.</p>
+  </form>
+</section>
+
+<!-- ============ SCREEN 3: THANK YOU ============ -->
+<section class="screen" id="screen-done">
+  <div class="thanks">
+    <h2>Проект отправлен на&nbsp;рассмотрение</h2>
+    <p>Мы получили ответы и описание проекта.<br>Если увидим потенциал для партнёрства — свяжемся, чтобы обсудить техчасть, запуск и формат участия DEADLINE.</p>
+    <div class="prep">
+      <div class="prep-title">Лучше сразу подготовить:</div>
+      — краткое описание идеи;<br>
+      — кто целевая аудитория;<br>
+      — как проект будет зарабатывать;<br>
+      — что уже есть: сайт, прототип, клиенты, трафик или команда.
+    </div>
+    <a href="https://t.me/deadline_corp" class="tg-btn" target="_blank">Написать в Telegram</a>
   </div>
-
-  <button type="submit" id="submitBtn">Обсудить условия →</button>
-
-  <p class="btn-note">Если проект совпадает с нашим фокусом — вернёмся с предложением по формату партнёрства.</p>
-</form>
-
-<div class="thanks" id="thanks">
-  <h2>Проект отправлен на&nbsp;рассмотрение</h2>
-  <p>Мы получили ответы и описание проекта.<br>Если увидим потенциал для партнёрства — свяжемся, чтобы обсудить техчасть, запуск и формат участия DEADLINE.</p>
-  <div class="prep">
-    <div class="prep-title">Лучше сразу подготовить:</div>
-    — краткое описание идеи;<br>
-    — кто целевая аудитория;<br>
-    — как проект будет зарабатывать;<br>
-    — что уже есть: сайт, прототип, клиенты, трафик или команда.
-  </div>
-  <a href="https://t.me/deadline_corp" class="tg-btn" target="_blank">Написать в Telegram</a>
-</div>
+</section>
 
 <div class="footer-note">
   Phuket × Bangkok · 0 пропущенных дедлайнов<br>
@@ -345,7 +506,187 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
 </div>
 
 <script>
-  // Form submission
+  // ===================== QUIZ DATA =====================
+  const QUESTIONS = [
+    {
+      label: 'Стадия проекта',
+      q: 'На какой стадии сейчас проект?',
+      multi: false,
+      options: [
+        'Есть только идея',
+        'Есть описание / презентация / прототип',
+        'Уже есть сайт или MVP',
+        'Есть первые пользователи или заявки',
+        'Проект уже работает, но нужна сильная тех. часть',
+      ],
+    },
+    {
+      label: 'Что закрыть по разработке',
+      q: 'Что нужно закрыть по разработке?',
+      multi: true,
+      options: [
+        'Лендинг / сайт для запуска рекламы',
+        'MVP или web-приложение',
+        'Личный кабинет / платформа / сервис',
+        'Автоматизация процессов',
+        'AI-бот / AI-агент / интеграции',
+        'Нужна вся техническая часть под ключ',
+      ],
+    },
+    {
+      label: 'Что уже есть для роста',
+      q: 'Что у вас уже есть для роста проекта?',
+      multi: false,
+      options: [
+        'Идея и понимание рынка',
+        'Аудитория / блог / комьюнити',
+        'Рекламный бюджет',
+        'Первые клиенты или заявки',
+        'Партнёры / продажи / команда',
+        'Пока ничего, только идея',
+      ],
+    },
+    {
+      label: 'Формат сотрудничества',
+      q: 'Какой формат сотрудничества вам ближе?',
+      multi: false,
+      options: [
+        'Разработка за долю в проекте',
+        'Revenue share / процент с выручки',
+        'Частично оплата + частично партнёрство',
+        'Хочу обсудить индивидуально',
+        'Пока не знаю, нужен совет',
+      ],
+    },
+    {
+      label: 'Сроки запуска',
+      q: 'Когда нужно запускать техническую часть?',
+      multi: false,
+      options: [
+        'Чем быстрее, тем лучше',
+        'В течение 2–4 недель',
+        'В течение 1–2 месяцев',
+        'Есть время, главное — сделать правильно',
+        'Сначала хочу понять, возможно ли партнёрство',
+      ],
+    },
+  ];
+
+  const answers = {};   // index -> string (single) | array (multi)
+  let cur = 0;
+
+  // ===================== SCREEN MANAGER =====================
+  const screens = {
+    intro:   document.getElementById('screen-intro'),
+    quiz:    document.getElementById('screen-quiz'),
+    contact: document.getElementById('screen-contact'),
+    done:    document.getElementById('screen-done'),
+  };
+  function show(name) {
+    Object.values(screens).forEach(s => s.classList.remove('active'));
+    screens[name].classList.add('active');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  // ===================== QUIZ ENGINE =====================
+  const quizTitle = document.getElementById('quizTitle');
+  const quizHint = document.getElementById('quizHint');
+  const quizOptions = document.getElementById('quizOptions');
+  const nextBtn = document.getElementById('nextBtn');
+  const backBtn = document.getElementById('backBtn');
+  const progressLabel = document.getElementById('progressLabel');
+  const progressPct = document.getElementById('progressPct');
+  const progressFill = document.getElementById('progressFill');
+
+  document.getElementById('startBtn').addEventListener('click', () => {
+    if (typeof fbq !== 'undefined') fbq('trackCustom', 'QuizStarted');
+    cur = 0;
+    renderQuestion();
+    show('quiz');
+  });
+
+  function renderQuestion() {
+    const item = QUESTIONS[cur];
+    const pct = Math.round(((cur + 1) / QUESTIONS.length) * 100);
+    progressLabel.textContent = 'Вопрос ' + (cur + 1) + ' из ' + QUESTIONS.length;
+    progressPct.textContent = pct + '%';
+    progressFill.style.width = pct + '%';
+
+    quizTitle.textContent = item.q;
+    quizHint.style.display = item.multi ? 'block' : 'none';
+
+    quizOptions.innerHTML = '';
+    item.options.forEach(opt => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'option';
+      b.textContent = opt;
+      if (isSelected(opt)) b.classList.add('selected');
+      b.addEventListener('click', () => onPick(opt, b));
+      quizOptions.appendChild(b);
+    });
+
+    // "Далее" button only for multi-select; single auto-advances on pick
+    nextBtn.style.display = item.multi ? 'inline-block' : 'none';
+    updateNext();
+  }
+
+  function isSelected(opt) {
+    const a = answers[cur];
+    if (QUESTIONS[cur].multi) return Array.isArray(a) && a.includes(opt);
+    return a === opt;
+  }
+
+  function onPick(opt, btnEl) {
+    const item = QUESTIONS[cur];
+    if (item.multi) {
+      let arr = Array.isArray(answers[cur]) ? answers[cur].slice() : [];
+      if (arr.includes(opt)) arr = arr.filter(x => x !== opt);
+      else arr.push(opt);
+      answers[cur] = arr;
+      btnEl.classList.toggle('selected');
+      updateNext();
+    } else {
+      answers[cur] = opt;
+      // visual: mark this one, clear siblings
+      Array.from(quizOptions.children).forEach(c => c.classList.remove('selected'));
+      btnEl.classList.add('selected');
+      setTimeout(advance, 280);
+    }
+  }
+
+  function updateNext() {
+    const item = QUESTIONS[cur];
+    if (!item.multi) return;
+    const arr = answers[cur];
+    nextBtn.disabled = !(Array.isArray(arr) && arr.length > 0);
+  }
+
+  function advance() {
+    if (cur < QUESTIONS.length - 1) {
+      cur++;
+      renderQuestion();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+      show('contact');
+    }
+  }
+
+  nextBtn.addEventListener('click', advance);
+  backBtn.addEventListener('click', () => {
+    if (cur === 0) { show('intro'); }
+    else { cur--; renderQuestion(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
+  });
+
+  function quizSummary() {
+    return QUESTIONS.map((it, i) => {
+      let a = answers[i];
+      if (Array.isArray(a)) a = a.join(', ');
+      return (i + 1) + '. ' + it.label + ': ' + (a || '—');
+    }).join('\n');
+  }
+
+  // ===================== CONTACT FORM + SUBMIT =====================
   const API = 'https://deadline-sales-bot-production.up.railway.app';
   const VALIDATE_ENDPOINT = API + '/lead-validate-contact';
   const SUBMIT_ENDPOINT = API + '/lead-submit';
@@ -354,28 +695,24 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
   const btn = document.getElementById('submitBtn');
   const warnBox = document.getElementById('contactWarn');
   const warnText = document.getElementById('contactWarnText');
-  let contactConfirmed = false;   // set when the visitor chooses "send anyway"
+  let contactConfirmed = false;
 
   function resetBtn() {
     btn.disabled = false;
     btn.textContent = 'Обсудить условия →';
   }
 
-  // "Исправить контакт" → hide warning, focus the field, let them edit.
   document.getElementById('contactFix').addEventListener('click', () => {
     warnBox.style.display = 'none';
     const c = document.getElementById('telegram');
-    c.focus();
-    c.select();
+    c.focus(); c.select();
     resetBtn();
   });
-  // "Всё равно отправить" → accept the contact as-is and resubmit.
   document.getElementById('contactSendAnyway').addEventListener('click', () => {
     contactConfirmed = true;
     warnBox.style.display = 'none';
     form.requestSubmit();
   });
-  // Editing the contact clears a prior confirmation (re-check the new value).
   document.getElementById('telegram').addEventListener('input', () => {
     contactConfirmed = false;
     warnBox.style.display = 'none';
@@ -385,16 +722,21 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
     const formData = new FormData(form);
     const phone = (formData.get('phone') || '').trim();
     const link = (formData.get('link') || '').trim();
+
+    let task = 'Телефон: ' + phone;
+    if (link) task += '\nСайт / презентация / прототип: ' + link;
+    task += '\n\n— Анкета —\n' + quizSummary();
+
     const data = {
       name: formData.get('name'),
       contact: (formData.get('telegram') || '').trim(),
-      need: 'Партнёрство — DEADLINE как технический партнёр',
+      need: 'Партнёрство (квиз) — DEADLINE как технический партнёр',
       business: '',
-      task: 'Телефон: ' + phone + (link ? '\nСайт / презентация / прототип: ' + link : ''),
+      task: task,
       when: '',
       lang: 'ru',
       timestamp: new Date().toISOString(),
-      source: new URLSearchParams(window.location.search).get('utm_source') || 'partner-form',
+      source: new URLSearchParams(window.location.search).get('utm_source') || 'partner-quiz',
       campaign: new URLSearchParams(window.location.search).get('utm_campaign') || '',
     };
     try {
@@ -407,10 +749,9 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
       console.error('Submit failed:', err);
     }
     if (typeof fbq !== 'undefined') {
-      fbq('track', 'Lead', { content_name: 'partner-form-submit' });
+      fbq('track', 'Lead', { content_name: 'partner-quiz-submit' });
     }
-    document.body.classList.add('submitted');
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    show('done');
   }
 
   form.addEventListener('submit', async (e) => {
@@ -420,8 +761,8 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
 
     const contact = (document.getElementById('telegram').value || '').trim();
 
-    // Contact existence check (Telegram). Non-blocking: only warns
-    // when the account is definitively NOT found, and never blocks on errors.
+    // Non-blocking Telegram contact check: warns only on a definitive miss,
+    // never blocks on network/endpoint errors.
     if (!contactConfirmed && contact) {
       btn.textContent = 'Проверяем контакт...';
       try {
@@ -440,7 +781,7 @@ src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></n
             warnBox.style.display = 'block';
             warnBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
             resetBtn();
-            return; // wait for the visitor's choice
+            return;
           }
         }
       } catch (err) {
