@@ -693,6 +693,28 @@ class StageTransition(Base):
         return f"<StageTransition {self.from_stage}→{self.to_stage} by={self.by}>"
 
 
+class WorkspaceMember(Base):
+    """Члены команды (роли, 2026-06-12). Owner = главный токен из env
+    (ADMIN_UI_TOKEN/TRAINING_AUTH_TOKEN); менеджеры — строки здесь.
+    Токен показывается один раз при создании, храним только sha256-хэш.
+    Менеджер: работа с лидами (inbox/воронка/задачи/аналитика), без
+    «Мозга», Автоматизаций и Настроек. Деактивация вместо удаления."""
+    __tablename__ = "workspace_members"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False, server_default="manager")
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    active: Mapped[bool] = mapped_column(default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<WorkspaceMember {self.name} role={self.role} active={self.active}>"
+
+
 class ProcessedUpdate(Base):
     """Дедуп входящих апдейтов вебхуков, переживающий рестарт процесса.
 

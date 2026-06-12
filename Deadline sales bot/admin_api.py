@@ -40,6 +40,7 @@ from db.models import (
     AutomationRun,
     CustomFieldDef,
     StageTransition,
+    WorkspaceMember,
 )
 
 log = logging.getLogger("deadline-bot.admin-api")
@@ -51,27 +52,58 @@ router = APIRouter(prefix="/admin/api", tags=["admin-ui"])
 # AUTH
 # ============================================================================
 
-def _verify_admin_token(request: Request) -> None:
-    """Bearer-токен на каждый /admin/api эндпоинт. Fail-closed: ни
-    ADMIN_UI_TOKEN, ни TRAINING_AUTH_TOKEN не заданы → 503 (фича выключена)."""
+def _extract_bearer(request: Request) -> str:
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Bearer token required")
+    return auth.split(None, 1)[1].strip()
+
+
+def _verify_member(request: Request, db: Session = Depends(get_db)) -> dict:
+    """Роли (2026-06-12): owner — главный токен из env (ADMIN_UI_TOKEN /
+    TRAINING_AUTH_TOKEN, fail-closed 503 если не заданы); менеджер — именной
+    токен из workspace_members (sha256-хэш, active=True). Возвращает
+    {"role", "name"} для эндпоинта."""
+    import hashlib
     import os
     import main as _main
+
     expected = os.getenv("ADMIN_UI_TOKEN") or _main.settings.training_auth_token
     if not expected:
         raise HTTPException(
             status_code=503,
             detail="Admin UI disabled — set ADMIN_UI_TOKEN (or TRAINING_AUTH_TOKEN) in env.",
         )
-    auth = request.headers.get("authorization", "")
-    if not auth.lower().startswith("bearer "):
-        raise HTTPException(status_code=401, detail="Bearer token required")
-    token = auth.split(None, 1)[1].strip()
-    if not hmac.compare_digest(token.encode("utf-8"), expected.encode("utf-8")):
+    token = _extract_bearer(request)
+    if hmac.compare_digest(token.encode("utf-8"), expected.encode("utf-8")):
+        return {"role": "owner", "name": "owner"}
+
+    th = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    row = (
+        db.query(WorkspaceMember)
+        .filter(WorkspaceMember.token_hash == th, WorkspaceMember.active == True)  # noqa: E712
+        .first()
+    )
+    if row is None:
         raise HTTPException(status_code=403, detail="Invalid token")
+    try:
+        row.last_seen_at = datetime.now(timezone.utc)
+        db.commit()
+    except Exception:  # noqa: BLE001 — метка посещения не критична
+        db.rollback()
+    return {"role": row.role or "manager", "name": row.name}
+
+
+def _verify_owner(request: Request, db: Session = Depends(get_db)) -> dict:
+    """Owner-only эндпоинты (Мозг, Автоматизации-правка, Настройки, Команда…)."""
+    member = _verify_member(request, db)
+    if member["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Доступно только владельцу")
+    return member
 
 
 @router.get("/me")
-async def me(_: None = Depends(_verify_admin_token)):
+async def me(member: dict = Depends(_verify_member)):
     import main as _main
     from services import bot_settings
     ws = bot_settings.get_all()
@@ -80,7 +112,70 @@ async def me(_: None = Depends(_verify_admin_token)):
         "tenant": _main.tenant.slug,
         "display_name": ws.get("business_name") or _main.tenant.display_name,
         "onboarding_done": bool(ws.get("onboarding_done", False)),
+        "role": member["role"],
+        "member_name": member["name"],
     }
+
+
+# ============================================================================
+# TEAM — команда (owner-only): именные токены менеджеров
+# ============================================================================
+
+class TeamCreateRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=80)
+
+
+@router.get("/team")
+async def team_list(
+    _: dict = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    rows = db.query(WorkspaceMember).order_by(WorkspaceMember.created_at.asc()).all()
+    return {
+        "items": [
+            {
+                "id": str(r.id), "name": r.name, "role": r.role, "active": r.active,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "last_seen_at": r.last_seen_at.isoformat() if r.last_seen_at else None,
+            }
+            for r in rows
+        ],
+    }
+
+
+@router.post("/team")
+async def team_create(
+    req: TeamCreateRequest,
+    _: dict = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    """Создать менеджера. Токен возвращается ОДИН раз — храним только хэш."""
+    import hashlib
+    import secrets
+    token = "mgr_" + secrets.token_urlsafe(24)
+    row = WorkspaceMember(
+        name=req.name.strip(), role="manager",
+        token_hash=hashlib.sha256(token.encode("utf-8")).hexdigest(),
+        active=True,
+    )
+    db.add(row)
+    db.commit()
+    return {"ok": True, "id": str(row.id), "token": token,
+            "note": "Передайте токен менеджеру — он вводит его на экране входа. Повторно показать нельзя."}
+
+
+@router.post("/team/{member_id}/toggle")
+async def team_toggle(
+    member_id: str,
+    _: dict = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    row = db.get(WorkspaceMember, _uuid_or_422(member_id))
+    if row is None:
+        raise HTTPException(status_code=404, detail="Member not found")
+    row.active = not row.active
+    db.commit()
+    return {"ok": True, "active": row.active}
 
 
 # ============================================================================
@@ -92,7 +187,7 @@ CHANNELS = ("website", "telegram", "instagram", "messenger")
 
 @router.get("/overview")
 async def overview(
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_member),
     db: Session = Depends(get_db),
 ):
     import main as _main
@@ -252,7 +347,7 @@ async def conversations_list(
     q: Optional[str] = None,
     limit: int = 50,
     offset: int = 0,
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_member),
     db: Session = Depends(get_db),
 ):
     limit = max(1, min(limit, 200))
@@ -315,7 +410,7 @@ async def conversations_list(
 @router.get("/conversations/{conv_id}")
 async def conversation_detail(
     conv_id: str,
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_member),
     db: Session = Depends(get_db),
 ):
     import main as _main
@@ -384,7 +479,7 @@ async def conversation_messages(
     after: Optional[str] = None,
     before: Optional[str] = None,
     limit: int = 50,
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_member),
     db: Session = Depends(get_db),
 ):
     conv, _cust = _get_conv_or_404(db, conv_id)
@@ -426,7 +521,7 @@ class ReplyRequest(BaseModel):
 async def conversation_reply(
     conv_id: str,
     req: ReplyRequest,
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_member),
     db: Session = Depends(get_db),
 ):
     import main as _main
@@ -457,7 +552,7 @@ class TakeoverRequest(BaseModel):
 async def conversation_takeover(
     conv_id: str,
     req: TakeoverRequest,
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_member),
     db: Session = Depends(get_db),
 ):
     import main as _main
@@ -481,7 +576,7 @@ class StageRequest(BaseModel):
 async def conversation_stage(
     conv_id: str,
     req: StageRequest,
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_member),
     db: Session = Depends(get_db),
 ):
     from services.funnel import LOST_REASONS
@@ -554,7 +649,7 @@ class StagesSaveRequest(BaseModel):
 
 @router.get("/funnel/stages")
 async def funnel_stages_get(
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_member),
     db: Session = Depends(get_db),
 ):
     from services import funnel_store
@@ -564,7 +659,7 @@ async def funnel_stages_get(
 @router.post("/funnel/stages")
 async def funnel_stages_save(
     req: StagesSaveRequest,
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_owner),
     db: Session = Depends(get_db),
 ):
     from services import funnel_store
@@ -579,7 +674,7 @@ async def funnel_stages_save(
 
 @router.post("/funnel/stages/reset")
 async def funnel_stages_reset(
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_owner),
     db: Session = Depends(get_db),
 ):
     from services import funnel_store
@@ -599,7 +694,7 @@ def _stages_customized(db) -> bool:
 
 @router.get("/today")
 async def today_view(
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_member),
     db: Session = Depends(get_db),
 ):
     now = datetime.now(timezone.utc)
@@ -679,7 +774,7 @@ class TaskCreateRequest(BaseModel):
 @router.post("/tasks")
 async def task_create(
     req: TaskCreateRequest,
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_member),
     db: Session = Depends(get_db),
 ):
     """Ручная задача из панели. executor=bot → бот сам напишет лиду в срок
@@ -730,7 +825,7 @@ async def task_create(
 @router.post("/scheduled-actions/{action_id}/done")
 async def scheduled_action_done(
     action_id: str,
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_member),
     db: Session = Depends(get_db),
 ):
     """«Сделано» для человеческих задач из задачника."""
@@ -762,7 +857,7 @@ class QuickRuleRequest(BaseModel):
 @router.post("/training-rules/quick")
 async def training_rule_quick(
     req: QuickRuleRequest,
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_owner),
     db: Session = Depends(get_db),
 ):
     """Быстрое правило без LLM-тренера: текст оператора («когда спрашивают X —
@@ -795,7 +890,7 @@ async def training_rule_quick(
 @router.post("/training-rules/{rule_id}/deactivate")
 async def training_rule_deactivate(
     rule_id: str,
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_owner),
     db: Session = Depends(get_db),
 ):
     """Выключить правило (soft, версионно — как принято в training_corrections)."""
@@ -820,7 +915,7 @@ class BehaviorSaveRequest(BaseModel):
 
 
 @router.get("/behavior")
-async def behavior_get(_: None = Depends(_verify_admin_token)):
+async def behavior_get(_: None = Depends(_verify_owner)):
     from services import bot_settings
     return {
         "overrides": bot_settings.get_all(),
@@ -842,7 +937,7 @@ async def behavior_get(_: None = Depends(_verify_admin_token)):
 @router.post("/behavior")
 async def behavior_save(
     req: BehaviorSaveRequest,
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_owner),
 ):
     from services import bot_settings
     try:
@@ -866,7 +961,7 @@ class NudgeRequest(BaseModel):
 async def conversation_nudge(
     conv_id: str,
     req: NudgeRequest,
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_member),
     db: Session = Depends(get_db),
 ):
     import main as _main
@@ -965,7 +1060,7 @@ class PromptSaveRequest(BaseModel):
 
 
 @router.get("/prompt")
-async def prompt_get(_: None = Depends(_verify_admin_token)):
+async def prompt_get(_: None = Depends(_verify_owner)):
     from services.prompt_store import get_active_system_prompt
     from prompts import SYSTEM_PROMPT
     db_prompt = None
@@ -982,7 +1077,7 @@ async def prompt_get(_: None = Depends(_verify_admin_token)):
 
 @router.get("/prompt/versions")
 async def prompt_versions(
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_owner),
     db: Session = Depends(get_db),
 ):
     rows = (
@@ -1010,7 +1105,7 @@ async def prompt_versions(
 @router.post("/prompt")
 async def prompt_save(
     req: PromptSaveRequest,
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_owner),
 ):
     from services.prompt_store import validate_prompt_template, set_active_system_prompt
     problems = validate_prompt_template(req.content)
@@ -1027,7 +1122,7 @@ class PromptActivateRequest(BaseModel):
 @router.post("/prompt/activate")
 async def prompt_activate(
     req: PromptActivateRequest,
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_owner),
 ):
     from services.prompt_store import activate_version, deactivate_all
     if req.version_id is None:
@@ -1050,7 +1145,7 @@ class PromptTestRequest(BaseModel):
 @router.post("/prompt/test")
 async def prompt_test(
     req: PromptTestRequest,
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_owner),
 ):
     """Dry-run: валидация + сборка format() с заглушками. БЕЗ LLM-вызова
     (быстро и бесплатно); LLM-проверку оператор делает в реальном чате."""
@@ -1074,7 +1169,7 @@ async def prompt_test(
 
 @router.get("/training-rules")
 async def training_rules(
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_owner),
     db: Session = Depends(get_db),
 ):
     rows = (
@@ -1106,7 +1201,7 @@ async def training_rules(
 @router.get("/scheduled-actions")
 async def scheduled_actions_list(
     status: str = "pending",
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_member),
     db: Session = Depends(get_db),
 ):
     rows = (
@@ -1139,7 +1234,7 @@ async def scheduled_actions_list(
 @router.post("/scheduled-actions/{action_id}/cancel")
 async def scheduled_action_cancel(
     action_id: str,
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_member),
     db: Session = Depends(get_db),
 ):
     try:
@@ -1157,7 +1252,7 @@ async def scheduled_action_cancel(
 
 
 @router.post("/cron/sweep")
-async def cron_sweep(_: None = Depends(_verify_admin_token)):
+async def cron_sweep(_: None = Depends(_verify_owner)):
     """Кнопка «прогнать сейчас» — тот же код, что /admin/cron/sweep."""
     from services.cron import sweep_once
     from services.scheduled_actions import run_due_followups, run_due_call_reminders
@@ -1182,7 +1277,7 @@ async def cron_sweep(_: None = Depends(_verify_admin_token)):
 # ============================================================================
 
 @router.get("/settings")
-async def settings_view(_: None = Depends(_verify_admin_token)):
+async def settings_view(_: None = Depends(_verify_member)):
     import main as _main
     s = _main.settings
     return {
@@ -1209,7 +1304,7 @@ async def settings_view(_: None = Depends(_verify_admin_token)):
 
 @router.get("/kb")
 async def kb_view(
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_member),
     db: Session = Depends(get_db),
 ):
     rows = db.execute(
@@ -1234,7 +1329,7 @@ class AutomationSaveRequest(BaseModel):
 
 @router.get("/automations")
 async def automations_list(
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_member),
     db: Session = Depends(get_db),
 ):
     rules = db.query(AutomationRule).order_by(AutomationRule.position.asc(), AutomationRule.created_at.asc()).all()
@@ -1258,7 +1353,7 @@ async def automations_list(
 @router.post("/automations")
 async def automation_save(
     req: AutomationSaveRequest,
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_owner),
     db: Session = Depends(get_db),
 ):
     from services.automation import validate_rule
@@ -1289,7 +1384,7 @@ async def automation_save(
 @router.post("/automations/{rule_id}/toggle")
 async def automation_toggle(
     rule_id: str,
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_owner),
     db: Session = Depends(get_db),
 ):
     row = db.get(AutomationRule, _uuid_or_422(rule_id))
@@ -1303,7 +1398,7 @@ async def automation_toggle(
 @router.post("/automations/{rule_id}/delete")
 async def automation_delete(
     rule_id: str,
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_owner),
     db: Session = Depends(get_db),
 ):
     """Удаление правила — явное действие пользователя в UI (с подтверждением).
@@ -1334,7 +1429,7 @@ class FieldDefsSaveRequest(BaseModel):
 
 @router.get("/custom-fields")
 async def custom_fields_get(
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_member),
     db: Session = Depends(get_db),
 ):
     rows = db.query(CustomFieldDef).order_by(CustomFieldDef.position.asc()).all()
@@ -1350,7 +1445,7 @@ async def custom_fields_get(
 @router.post("/custom-fields")
 async def custom_fields_save(
     req: FieldDefsSaveRequest,
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_owner),
     db: Session = Depends(get_db),
 ):
     """Bulk save (как стадии): полная замена определений. Значения у лидов
@@ -1388,7 +1483,7 @@ class FieldValuesRequest(BaseModel):
 async def conversation_fields_save(
     conv_id: str,
     req: FieldValuesRequest,
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_member),
     db: Session = Depends(get_db),
 ):
     conv, cust = _get_conv_or_404(db, conv_id)
@@ -1416,7 +1511,7 @@ async def conversation_fields_save(
 @router.get("/analytics")
 async def analytics(
     days: int = 30,
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_member),
     db: Session = Depends(get_db),
 ):
     days = max(1, min(days, 365))
@@ -1690,7 +1785,7 @@ NICHE_PRESETS: dict = {
 
 
 @router.get("/presets")
-async def presets_list(_: None = Depends(_verify_admin_token)):
+async def presets_list(_: None = Depends(_verify_owner)):
     return {
         "items": [
             {
@@ -1711,7 +1806,7 @@ class PresetApplyRequest(BaseModel):
 @router.post("/presets/apply")
 async def preset_apply(
     req: PresetApplyRequest,
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_owner),
     db: Session = Depends(get_db),
 ):
     """Применить нишевый пресет: стадии + поля + пресет-автоматизации (📦) +
@@ -1778,7 +1873,7 @@ class WorkspaceSaveRequest(BaseModel):
 
 @router.get("/workspace")
 async def workspace_get(
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_member),
     db: Session = Depends(get_db),
 ):
     import main as _main
@@ -1796,7 +1891,7 @@ async def workspace_get(
 @router.post("/workspace")
 async def workspace_save(
     req: WorkspaceSaveRequest,
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_owner),
 ):
     from services import bot_settings
     values: dict = {}
@@ -1817,7 +1912,7 @@ async def workspace_save(
 
 @router.get("/export/leads.csv")
 async def export_leads_csv(
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_member),
     db: Session = Depends(get_db),
 ):
     """Вся база лидов в CSV (Excel-совместимый, UTF-8 BOM)."""
@@ -1858,7 +1953,7 @@ async def export_leads_csv(
 
 
 @router.post("/digest/test")
-async def digest_test(_: None = Depends(_verify_admin_token)):
+async def digest_test(_: None = Depends(_verify_owner)):
     """Отправить дайджест прямо сейчас (проверка/демо)."""
     from services.digest import send_digest
     return await send_digest()
@@ -1866,7 +1961,7 @@ async def digest_test(_: None = Depends(_verify_admin_token)):
 
 @router.post("/demo/seed")
 async def demo_seed_ep(
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_owner),
     db: Session = Depends(get_db),
 ):
     """Наполнить песочницу демо-лидами (7 шт, разные стадии/каналы + задачи).
@@ -1879,7 +1974,7 @@ async def demo_seed_ep(
 
 @router.post("/demo/clear")
 async def demo_clear_ep(
-    _: None = Depends(_verify_admin_token),
+    _: None = Depends(_verify_owner),
     db: Session = Depends(get_db),
 ):
     """Удалить ТОЛЬКО демо-данные (метка profile_data.demo) — явная кнопка

@@ -37,6 +37,8 @@ export function Settings() {
       </HintBar>
       <WorkspaceCard />
       <div style={{ height: 14 }} />
+      <TeamCard />
+      <div style={{ height: 14 }} />
       <PresetsCard />
       <div style={{ height: 14 }} />
       <BehaviorCard />
@@ -201,6 +203,98 @@ function WorkspaceCard() {
       {toast && <div className={`toast ${toast.err ? 'err' : ''}`}>{toast.text}</div>}
     </div>
   )
+}
+
+/* ---------- Команда: именные токены менеджеров ---------- */
+
+function TeamCard() {
+  const [items, setItems] = useState<any[]>([])
+  const [newName, setNewName] = useState('')
+  const [freshToken, setFreshToken] = useState<{ name: string; token: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [toast, setToast] = useState<{ text: string; err?: boolean } | null>(null)
+
+  const showToast = (text: string, err = false) => {
+    setToast({ text, err })
+    setTimeout(() => setToast(null), 4000)
+  }
+
+  const load = () => api.get<{ items: any[] }>('/team').then(r => setItems(r.items)).catch(() => { /* */ })
+  useEffect(() => { void load() }, [])
+
+  const create = async () => {
+    const name = newName.trim()
+    if (!name || busy) return
+    setBusy(true)
+    try {
+      const r = await api.post<{ token: string }>('/team', { name })
+      setFreshToken({ name, token: r.token })
+      setNewName('')
+      await load()
+    } catch (e: any) { showToast(`Ошибка: ${e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  const toggle = async (id: string) => {
+    setBusy(true)
+    try { await api.post(`/team/${id}/toggle`); await load() }
+    catch (e: any) { showToast(`Ошибка: ${e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className="card">
+      <b>👥 Команда
+        <Help title="Менеджеры" text="Каждому менеджеру — свой токен входа. Он видит лидов, воронку, задачи и аналитику, но не может менять Мозг, Автоматизации и Настройки. Токен показывается один раз — передайте его лично." />
+      </b>
+      <div style={{ display: 'flex', gap: 8, marginTop: 12, maxWidth: 460 }}>
+        <input placeholder="Имя менеджера (напр. «Николай»)"
+               value={newName} onChange={e => setNewName(e.target.value)}
+               onKeyDown={e => { if (e.key === 'Enter') create() }} style={{ flex: 1 }} />
+        <button className="btn sm primary" onClick={create} disabled={busy || !newName.trim()}>
+          {busy ? <span className="spin" /> : '+ Выдать доступ'}
+        </button>
+      </div>
+      {freshToken && (
+        <div className="card" style={{ marginTop: 10, borderColor: 'var(--accent-border)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <b style={{ fontSize: 13 }}>🔑 Токен для «{freshToken.name}» — показывается один раз:</b>
+          <code className="mono" style={{ fontSize: 12.5, wordBreak: 'break-all', background: 'var(--bg-soft)', padding: '8px 10px', borderRadius: 6 }}>
+            {freshToken.token}
+          </code>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn sm" onClick={() => { navigator.clipboard?.writeText(freshToken.token); showToast('Скопировано') }}>
+              📋 Скопировать
+            </button>
+            <button className="btn sm ghost" onClick={() => setFreshToken(null)}>Скрыть</button>
+          </div>
+          <span className="faint" style={{ fontSize: 11.5 }}>
+            Менеджер вводит этот токен на экране входа панели. Потерял — деактивируйте и выдайте новый.
+          </span>
+        </div>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
+        {items.length === 0 && <span className="faint" style={{ fontSize: 12.5 }}>Пока только вы (владелец). Добавьте менеджера — он получит свой вход.</span>}
+        {items.map(m => (
+          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+            <span style={{ opacity: m.active ? 1 : 0.5 }}>👤 {m.name}</span>
+            <span className="chip">{m.role}</span>
+            {m.last_seen_at && <span className="faint" style={{ fontSize: 11 }}>был: {fmtTimeShort(m.last_seen_at)}</span>}
+            <div style={{ flex: 1 }} />
+            <button className={`btn sm ${m.active ? 'danger' : ''}`} onClick={() => toggle(m.id)} disabled={busy}>
+              {m.active ? 'Деактивировать' : 'Включить'}
+            </button>
+          </div>
+        ))}
+      </div>
+      {toast && <div className={`toast ${toast.err ? 'err' : ''}`}>{toast.text}</div>}
+    </div>
+  )
+}
+
+function fmtTimeShort(iso: string): string {
+  const d = new Date(iso)
+  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) + ' ' +
+    d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
 }
 
 /* ---------- Пресеты ниш (паттерн GHL Snapshots) ---------- */

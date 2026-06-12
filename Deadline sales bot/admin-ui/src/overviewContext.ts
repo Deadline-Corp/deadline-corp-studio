@@ -10,6 +10,21 @@ export function useOverview() {
   return useContext(OverviewCtx)
 }
 
+/* Текущий пользователь (роль из /me): owner — всё; manager — работа с лидами,
+   без Мозга/Автоматизаций/Каналов/Настроек (бэкенд это тоже форсит). */
+export interface Me {
+  role: 'owner' | 'manager'
+  display_name: string
+  member_name: string
+  onboarding_done: boolean
+}
+
+export const MeCtx = createContext<Me | null>(null)
+
+export function useMe() {
+  return useContext(MeCtx)
+}
+
 /* Динамические стадии воронки (кастомные или встроенные) c фоллбэком,
    пока overview не загрузился. */
 const FALLBACK: FunnelStage[] = [
