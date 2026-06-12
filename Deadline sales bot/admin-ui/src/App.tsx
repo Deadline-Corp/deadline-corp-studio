@@ -9,6 +9,8 @@ import { Brain } from './pages/Brain'
 import { Tasks } from './pages/Tasks'
 import { Settings } from './pages/Settings'
 import { Channels } from './pages/Channels'
+import { Automations } from './pages/Automations'
+import { Analytics } from './pages/Analytics'
 
 /* HashRouter: SPA живёт под /admin/ui/ внутри FastAPI StaticFiles — hash-роуты
    не требуют server-side fallback на index.html для глубоких ссылок. */
@@ -29,6 +31,8 @@ export function App() {
           <Route path="/funnel" element={<Funnel />} />
           <Route path="/brain" element={<Brain />} />
           <Route path="/tasks" element={<Tasks />} />
+          <Route path="/automations" element={<Automations />} />
+          <Route path="/analytics" element={<Analytics />} />
           <Route path="/channels" element={<Channels />} />
           <Route path="/settings" element={<Settings />} />
         </Route>

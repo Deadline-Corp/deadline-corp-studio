@@ -13,6 +13,8 @@ const NAV = [
   { to: '/funnel', icon: '📊', label: 'Воронка' },
   { to: '/inbox', icon: '💬', label: 'Переписки' },
   { to: '/tasks', icon: '⏰', label: 'Задачи' },
+  { to: '/automations', icon: '⚡', label: 'Автоматизации' },
+  { to: '/analytics', icon: '📈', label: 'Аналитика' },
   { to: '/brain', icon: '🧠', label: 'Мозг' },
   { to: '/channels', icon: '🔌', label: 'Каналы' },
   { to: '/settings', icon: '⚙️', label: 'Настройки' },

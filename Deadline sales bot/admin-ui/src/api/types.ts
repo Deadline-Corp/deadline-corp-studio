@@ -90,7 +90,50 @@ export interface ConvSummary {
   preview: string | null
 }
 
+export interface CustomFieldValue {
+  key: string
+  label: string
+  field_type: 'text' | 'number' | 'select'
+  options: string[] | null
+  value: any
+}
+
+export interface AutomationRuleItem {
+  id: string
+  name: string
+  enabled: boolean
+  trigger: { type: string; hours?: number }
+  conditions: { channels?: string[]; stages?: string[]; temperatures?: string[]; min_score?: number } | null
+  actions: Array<{ type: string; text?: string; stage?: string; lost_reason?: string; due_in_hours?: number }>
+  cooldown_hours: number
+  fired_count: number
+  created_at: string | null
+}
+
+export interface AnalyticsView {
+  days: number
+  totals: { new_leads: number; handoffs: number; booked_calls: number; automation_fires: number }
+  leads_by_channel: Record<string, number>
+  leads_by_day: Array<{ day: string; count: number }>
+  funnel: Array<{ stage: string; label: string; count: number }>
+  lost_reasons: Record<string, number>
+  temperatures: Record<string, number>
+  messages_by_role: Record<string, number>
+  stage_moves: Record<string, number>
+}
+
+export interface PresetInfo {
+  key: string
+  title: string
+  emoji: string
+  desc: string
+  stages_count: number
+  fields_count: number
+  automations_count: number
+}
+
 export interface ConvDetail extends ConvSummary {
+  fields: CustomFieldValue[]
   summary: string | null
   forum_topic_id: number | null
   crm_deal_id: string | null

@@ -22,6 +22,8 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
   const [taskText, setTaskText] = useState('')
   const [taskDue, setTaskDue] = useState('')
   const [taskExec, setTaskExec] = useState<'human' | 'bot'>('human')
+  const [fieldEdits, setFieldEdits] = useState<Record<string, any>>({})
+  const [fieldsOpen, setFieldsOpen] = useState(false)
   const msgsRef = useRef<HTMLDivElement>(null)
   const lastTsRef = useRef<string | null>(null)
 
@@ -144,6 +146,18 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
     finally { setBusy(false) }
   }
 
+  const saveFields = async () => {
+    if (!Object.keys(fieldEdits).length || busy) return
+    setBusy(true)
+    try {
+      await api.post(`/conversations/${convId}/fields`, { values: fieldEdits })
+      setFieldEdits({})
+      showToast('✅ Поля сохранены')
+      await loadDetail()
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
   const createTask = async () => {
     if (!taskText.trim() || !taskDue || busy) return
     setBusy(true)
@@ -234,6 +248,46 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                   </div>
                   {taskExec === 'bot' && detail.channel !== 'telegram' && (
                     <span className="faint" style={{ fontSize: 11.5 }}>⚠️ Бот-автоотправка пока только для Telegram-лидов</span>
+                  )}
+                </div>
+              )}
+              {detail.fields && detail.fields.length > 0 && (
+                <div style={{ background: 'var(--panel)', borderRadius: 8, padding: '8px 10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: 12.5 }}
+                       onClick={() => setFieldsOpen(v => !v)}>
+                    <b>📇 Поля</b>
+                    <span className="faint" style={{ marginLeft: 8 }}>
+                      {detail.fields.filter(f => f.value != null && f.value !== '').length}/{detail.fields.length} заполнено
+                    </span>
+                    <div style={{ flex: 1 }} />
+                    <span>{fieldsOpen ? '▾' : '▸'}</span>
+                  </div>
+                  {fieldsOpen && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+                      {detail.fields.map(f => {
+                        const cur = fieldEdits[f.key] !== undefined ? fieldEdits[f.key] : (f.value ?? '')
+                        return (
+                          <div key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span className="muted" style={{ width: 130, fontSize: 12 }}>{f.label}</span>
+                            {f.field_type === 'select' ? (
+                              <select value={cur} style={{ flex: 1, fontSize: 12, padding: '4px 8px' }}
+                                      onChange={e => setFieldEdits({ ...fieldEdits, [f.key]: e.target.value })}>
+                                <option value="">—</option>
+                                {(f.options ?? []).map(o => <option key={o} value={o}>{o}</option>)}
+                              </select>
+                            ) : (
+                              <input value={cur} type={f.field_type === 'number' ? 'number' : 'text'}
+                                     style={{ flex: 1, fontSize: 12, padding: '4px 8px' }}
+                                     onChange={e => setFieldEdits({ ...fieldEdits, [f.key]: e.target.value })} />
+                            )}
+                          </div>
+                        )
+                      })}
+                      {Object.keys(fieldEdits).length > 0 && (
+                        <button className="btn sm primary" style={{ alignSelf: 'flex-end' }}
+                                onClick={saveFields} disabled={busy}>💾 Сохранить поля</button>
+                      )}
+                    </div>
                   )}
                 </div>
               )}

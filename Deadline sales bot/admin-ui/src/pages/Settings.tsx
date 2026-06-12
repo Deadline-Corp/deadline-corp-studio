@@ -28,7 +28,11 @@ export function Settings() {
     <div className="page">
       <div className="page-head"><h1>Настройки</h1></div>
 
+      <PresetsCard />
+      <div style={{ height: 14 }} />
       <BehaviorCard />
+      <div style={{ height: 14 }} />
+      <FieldsCard />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 14, marginTop: 14 }}>
         <div className="card">
@@ -90,6 +94,145 @@ export function Settings() {
         Серые карточки читаются из env/конфига на сервере — секреты живут в Railway.
         Тон и правила бота — во вкладке «Мозг»; стадии воронки — в «Воронке» (⚙ Настроить стадии).
       </p>
+    </div>
+  )
+}
+
+/* ---------- Пресеты ниш (паттерн GHL Snapshots) ---------- */
+
+function PresetsCard() {
+  const [items, setItems] = useState<any[]>([])
+  const [busy, setBusy] = useState(false)
+  const [confirmKey, setConfirmKey] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ text: string; err?: boolean } | null>(null)
+
+  const showToast = (text: string, err = false) => {
+    setToast({ text, err })
+    setTimeout(() => setToast(null), 5000)
+  }
+
+  useEffect(() => {
+    void api.get<{ items: any[] }>('/presets').then(r => setItems(r.items)).catch(() => { /* ignore */ })
+  }, [])
+
+  const apply = async (key: string) => {
+    setBusy(true)
+    try {
+      const r = await api.post<{ applied: any; preset: string }>('/presets/apply', { key })
+      showToast(`✅ «${r.preset}»: стадии ${r.applied.stages}, поля ${r.applied.fields}, правила ${r.applied.automations}. Обнови вкладки Воронка/Автоматизации.`)
+      setConfirmKey(null)
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className="card">
+      <b>📦 Пресеты ниш — настроить систему под бизнес в 1 клик</b>
+      <p className="muted" style={{ margin: '4px 0 10px', fontSize: 12.5 }}>
+        Пресет заменит стадии воронки, поля лида и пресет-правила автоматизаций (📦) под выбранную нишу.
+        Ваши ручные правила и данные лидов не трогаются. Тон бота настраивается отдельно во вкладке «Мозг».
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 10 }}>
+        {items.map(p => (
+          <div key={p.key} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <b style={{ fontSize: 13.5 }}>{p.emoji} {p.title}</b>
+            <span className="muted" style={{ fontSize: 12, flex: 1 }}>{p.desc}</span>
+            <span className="faint" style={{ fontSize: 11 }}>
+              {p.stages_count} стадий · {p.fields_count} полей · {p.automations_count} правил
+            </span>
+            {confirmKey === p.key ? (
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button className="btn sm primary" onClick={() => apply(p.key)} disabled={busy}>
+                  {busy ? <span className="spin" /> : 'Точно применить'}
+                </button>
+                <button className="btn sm" onClick={() => setConfirmKey(null)}>Отмена</button>
+              </div>
+            ) : (
+              <button className="btn sm" onClick={() => setConfirmKey(p.key)}>Применить</button>
+            )}
+          </div>
+        ))}
+      </div>
+      {toast && <div className={`toast ${toast.err ? 'err' : ''}`}>{toast.text}</div>}
+    </div>
+  )
+}
+
+/* ---------- Поля лида (редактор определений) ---------- */
+
+function FieldsCard() {
+  const [items, setItems] = useState<any[] | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [dirty, setDirty] = useState(false)
+  const [toast, setToast] = useState<{ text: string; err?: boolean } | null>(null)
+
+  const showToast = (text: string, err = false) => {
+    setToast({ text, err })
+    setTimeout(() => setToast(null), 4000)
+  }
+
+  const load = () => api.get<{ items: any[] }>('/custom-fields').then(r => setItems(r.items)).catch(() => { /* ignore */ })
+  useEffect(() => { void load() }, [])
+
+  if (!items) return null
+
+  const upd = (i: number, patch: any) => {
+    setItems(items.map((it, k) => (k === i ? { ...it, ...patch } : it)))
+    setDirty(true)
+  }
+  const remove = (i: number) => { setItems(items.filter((_, k) => k !== i)); setDirty(true) }
+  const add = () => { setItems([...items, { key: '', label: 'Новое поле', field_type: 'text', options: null, active: true }]); setDirty(true) }
+
+  const save = async () => {
+    setBusy(true)
+    try {
+      await api.post('/custom-fields', {
+        items: items.map(it => ({
+          key: it.key || undefined, label: it.label, field_type: it.field_type,
+          options: it.field_type === 'select'
+            ? (typeof it.options === 'string' ? it.options.split(',').map((s: string) => s.trim()).filter(Boolean) : it.options)
+            : null,
+          active: it.active,
+        })),
+      })
+      setDirty(false)
+      showToast('✅ Поля сохранены — появятся в карточках лидов')
+      await load()
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className="card">
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+        <b>📇 Поля лида (под вашу нишу)</b>
+        {dirty && <span className="chip warn" style={{ marginLeft: 10 }}>не сохранено</span>}
+        <div style={{ flex: 1 }} />
+        <button className="btn sm" onClick={add}>+ Поле</button>
+        <button className="btn sm primary" style={{ marginLeft: 8 }} onClick={save} disabled={busy || !dirty}>
+          {busy ? <span className="spin" /> : '💾 Сохранить'}
+        </button>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+        {items.length === 0 && <span className="faint" style={{ fontSize: 12.5 }}>Полей нет — добавьте («Бюджет», «Тип проекта»…) или примените пресет ниши выше</span>}
+        {items.map((it, i) => (
+          <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input value={it.label} onChange={e => upd(i, { label: e.target.value })} style={{ width: 220 }} />
+            <select value={it.field_type} onChange={e => upd(i, { field_type: e.target.value })} style={{ fontSize: 12.5 }}>
+              <option value="text">текст</option>
+              <option value="number">число</option>
+              <option value="select">список</option>
+            </select>
+            {it.field_type === 'select' && (
+              <input placeholder="варианты через запятую"
+                     value={Array.isArray(it.options) ? it.options.join(', ') : (it.options ?? '')}
+                     onChange={e => upd(i, { options: e.target.value })} style={{ flex: 1 }} />
+            )}
+            <button className="btn sm ghost" style={{ marginLeft: 'auto' }} onClick={() => remove(i)}>✕</button>
+          </div>
+        ))}
+      </div>
+      {toast && <div className={`toast ${toast.err ? 'err' : ''}`}>{toast.text}</div>}
     </div>
   )
 }
