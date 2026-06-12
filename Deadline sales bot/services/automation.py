@@ -31,9 +31,10 @@ logger = logging.getLogger(__name__)
 MAX_FIRES = 5          # потолок повторов одного правила на один диалог
 MAX_FIRES_PER_SWEEP = 30  # потолок срабатываний за один проход (анти-взрыв)
 
-TRIGGER_TYPES = ("lead_silent", "new_lead")
+TRIGGER_TYPES = ("lead_silent", "new_lead", "sequence")
 NEW_LEAD_WINDOW_H = 48  # new_lead срабатывает только для диалогов моложе 48ч (анти-ретро)
 ACTION_TYPES = ("bot_message", "create_task", "set_stage", "notify_admin")
+MAX_SEQUENCE_STEPS = 5
 
 
 def validate_rule(trigger: dict, conditions: Optional[dict], actions: list) -> list[str]:
@@ -51,6 +52,22 @@ def validate_rule(trigger: dict, conditions: Optional[dict], actions: list) -> l
             problems.append("hours: число часов")
     # new_lead: без параметров — срабатывает на следующем проходе крона
     # (≤10 мин) после появления диалога, один раз.
+    if t == "sequence":
+        steps = trigger.get("steps") or []
+        if not (1 <= len(steps) <= MAX_SEQUENCE_STEPS):
+            problems.append(f"Цепочка: от 1 до {MAX_SEQUENCE_STEPS} касаний")
+        prev_h = 0.0
+        for i, st in enumerate(steps):
+            try:
+                h = float(st.get("hours", 0))
+            except (TypeError, ValueError):
+                h = -1
+            if h <= prev_h:
+                problems.append(f"Касание #{i + 1}: часы должны расти (касание позже предыдущего)")
+            prev_h = max(prev_h, h)
+            if not (st.get("text") or "").strip():
+                problems.append(f"Касание #{i + 1}: пустой текст")
+        return problems  # actions у цепочки не используются
     if not actions:
         problems.append("Нужно хотя бы одно действие")
     for i, a in enumerate(actions or []):
@@ -117,6 +134,10 @@ async def run_automations() -> dict:
             try:
                 trig = rule.trigger or {}
                 ttype = trig.get("type")
+                if ttype == "sequence":
+                    fired_total += await _run_sequence_rule(s, rule, now, stats,
+                                                            MAX_FIRES_PER_SWEEP - fired_total)
+                    continue
                 if ttype == "lead_silent":
                     hours = float(trig.get("hours", 24))
                     cutoff = now - timedelta(hours=hours)
@@ -181,6 +202,114 @@ async def run_automations() -> dict:
                 logger.warning("[automation] rule=%r error: %s", getattr(rule, "name", "?"), e)
 
     return stats
+
+
+async def _run_sequence_rule(s, rule, now, stats, budget: int) -> int:
+    """Цепочка касаний (день 1→3→7). Семантика:
+    - шаг 0: прошло steps[0].hours тишины ЛИДА (от его последнего сообщения;
+      если лид ещё не писал — от создания диалога);
+    - шаг k: прошло (steps[k].hours − steps[k-1].hours) от касания k−1
+      И лид НЕ ответил после касания k−1 (ответил → цепочка завершена);
+    - касание: Telegram-лиду пишет бот; прочим каналам — задача человеку
+      с готовым текстом (website-лида ботом не достать).
+    Дедуп: номер шага = количество прошлых runs этого правила на диалог."""
+    from db.models import AutomationRun, Conversation, Customer, Message
+    from sqlalchemy import func as _f
+
+    steps = (rule.trigger or {}).get("steps") or []
+    if not steps or budget <= 0:
+        return 0
+
+    fired = 0
+    candidates = (
+        s.query(Conversation, Customer)
+        .join(Customer, Conversation.customer_id == Customer.id)
+        .filter(Conversation.status == "open")
+        .filter(Conversation.last_message_at.isnot(None))
+        .limit(200)
+        .all()
+    )
+    for conv, cust in candidates:
+        if fired >= budget:
+            break
+        if not _passes_conditions(rule.conditions, conv, cust):
+            continue
+        runs = (
+            s.query(AutomationRun)
+            .filter(AutomationRun.rule_id == rule.id,
+                    AutomationRun.conversation_id == conv.id)
+            .order_by(AutomationRun.fired_at.asc())
+            .all()
+        )
+        k = len(runs)
+        if k >= len(steps):
+            continue
+
+        last_user = (
+            s.query(_f.max(Message.created_at))
+            .filter(Message.conversation_id == conv.id, Message.role == "user")
+            .scalar()
+        )
+        if last_user is not None and last_user.tzinfo is None:
+            last_user = last_user.replace(tzinfo=timezone.utc)
+
+        if k == 0:
+            base = last_user or conv.created_at
+            if base is not None and base.tzinfo is None:
+                base = base.replace(tzinfo=timezone.utc)
+            if base is None or (now - base) < timedelta(hours=float(steps[0].get("hours", 24))):
+                continue
+        else:
+            prev = runs[-1].fired_at
+            if prev is not None and prev.tzinfo is None:
+                prev = prev.replace(tzinfo=timezone.utc)
+            if last_user is not None and prev is not None and last_user > prev:
+                continue  # лид отозвался после касания — цепочка сделала своё
+            delta_h = max(1.0, float(steps[k].get("hours", 0)) - float(steps[k - 1].get("hours", 0)))
+            if prev is None or (now - prev) < timedelta(hours=delta_h):
+                continue
+
+        text = (steps[k].get("text") or "").strip()
+        detail: dict[str, Any] = {"step": k + 1}
+        try:
+            if (conv.channel or "").lower() == "telegram" and conv.channel_conversation_id:
+                from services.scheduled_actions import write_scheduled_action
+                action_id, _ = write_scheduled_action(
+                    customer_id=str(conv.customer_id),
+                    conversation_id=str(conv.id),
+                    channel=conv.channel,
+                    chat_id=conv.channel_conversation_id,
+                    due_at=datetime.now(timezone.utc),
+                    text=text,
+                )
+                detail["bot_message"] = f"queued {action_id}"
+            else:
+                from db.models import ScheduledAction
+                row = ScheduledAction(
+                    customer_id=conv.customer_id,
+                    conversation_id=conv.id,
+                    channel=conv.channel,
+                    chat_id=conv.channel_conversation_id,
+                    action_type="operator_callback",
+                    executor="human",
+                    due_at=datetime.now(timezone.utc),
+                    status="pending",
+                    payload={"text": f"Касание {k + 1} цепочки «{rule.name}» — написать лиду: {text}",
+                             "by": f"sequence:{rule.name}"},
+                )
+                s.add(row)
+                s.flush()
+                detail["create_task"] = str(row.id)
+        except Exception as e:  # noqa: BLE001
+            detail["error"] = str(e)
+            logger.warning("[automation] sequence step failed: %s", e)
+
+        s.add(AutomationRun(rule_id=rule.id, conversation_id=conv.id, detail=detail))
+        s.flush()
+        fired += 1
+        stats["fired"] += 1
+        logger.info("[automation] sequence %r step %d → conv=%s", rule.name, k + 1, str(conv.id)[:8])
+    return fired
 
 
 async def _execute_actions(s, rule, conv, cust) -> dict:

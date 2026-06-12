@@ -102,7 +102,7 @@ export interface AutomationRuleItem {
   id: string
   name: string
   enabled: boolean
-  trigger: { type: string; hours?: number }
+  trigger: { type: string; hours?: number; steps?: Array<{ hours: number; text: string }> }
   conditions: { channels?: string[]; stages?: string[]; temperatures?: string[]; min_score?: number } | null
   actions: Array<{ type: string; text?: string; stage?: string; lost_reason?: string; due_in_hours?: number }>
   cooldown_hours: number

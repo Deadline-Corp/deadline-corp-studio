@@ -58,6 +58,7 @@ export function Automations() {
     const parts: string[] = []
     if (r.trigger.type === 'lead_silent') parts.push(`лид молчит ${r.trigger.hours} ч`)
     if (r.trigger.type === 'new_lead') parts.push('появился новый лид')
+    if (r.trigger.type === 'sequence') parts.push(`цепочка из ${((r.trigger as any).steps || []).length} касаний`)
     const c = r.conditions || {}
     if (c.channels?.length) parts.push(`канал: ${c.channels.map(x => CHANNEL_META[x]?.label ?? x).join('/')}`)
     if (c.stages?.length) parts.push(`стадия: ${c.stages.map(s => stages.find(x => x.stage === s)?.label ?? s).join(', ')}`)
@@ -130,6 +131,13 @@ function RuleEditor({ rule, onClose, onSaved }: {
   const [name, setName] = useState(rule?.name ?? '')
   const [ttype, setTtype] = useState<string>(rule?.trigger.type ?? 'lead_silent')
   const [hours, setHours] = useState(String(rule?.trigger.hours ?? 24))
+  const [steps, setSteps] = useState<any[]>(
+    (rule?.trigger as any)?.steps ?? [
+      { hours: 24, text: '' },
+      { hours: 72, text: '' },
+      { hours: 168, text: '' },
+    ]
+  )
   const [channels, setChannels] = useState<string[]>(rule?.conditions?.channels ?? [])
   const [condStages, setCondStages] = useState<string[]>(rule?.conditions?.stages ?? [])
   const [minScore, setMinScore] = useState(String(rule?.conditions?.min_score ?? ''))
@@ -154,14 +162,16 @@ function RuleEditor({ rule, onClose, onSaved }: {
         enabled: rule?.enabled ?? true,
         trigger: ttype === 'new_lead'
           ? { type: 'new_lead' }
-          : { type: 'lead_silent', hours: parseFloat(hours) },
+          : ttype === 'sequence'
+            ? { type: 'sequence', steps: steps.map(s => ({ hours: parseFloat(s.hours), text: (s.text || '').trim() })) }
+            : { type: 'lead_silent', hours: parseFloat(hours) },
         conditions: {
           channels: channels.length ? channels : undefined,
           stages: condStages.length ? condStages : undefined,
           min_score: minScore ? parseInt(minScore, 10) : undefined,
         },
-        actions,
-        cooldown_hours: parseInt(cooldown, 10) || 0,
+        actions: ttype === 'sequence' ? [] : actions,
+        cooldown_hours: ttype === 'sequence' ? 0 : (parseInt(cooldown, 10) || 0),
       })
       onSaved()
     } catch (e: any) {
@@ -195,6 +205,7 @@ function RuleEditor({ rule, onClose, onSaved }: {
             <select value={ttype} onChange={e => setTtype(e.target.value)} style={{ fontSize: 13 }}>
               <option value="lead_silent">Лид молчит N часов</option>
               <option value="new_lead">Появился новый лид</option>
+              <option value="sequence">Цепочка касаний (день 1 → 3 → 7)</option>
             </select>
             {ttype === 'lead_silent' && (
               <>
@@ -207,6 +218,35 @@ function RuleEditor({ rule, onClose, onSaved }: {
               <span className="faint" style={{ fontSize: 12 }}>сработает в течение ~10 минут после появления, один раз</span>
             )}
           </div>
+          {ttype === 'sequence' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <span className="faint" style={{ fontSize: 12 }}>
+                Серия напоминаний молчащему лиду. Часы — от его последнего сообщения; ответил —
+                цепочка останавливается. Telegram-лиду пишет бот сам; остальным — задача вам с готовым текстом.
+              </span>
+              {steps.map((st, i) => (
+                <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <span className="muted" style={{ fontSize: 12, paddingTop: 8, whiteSpace: 'nowrap' }}>Касание {i + 1}: через</span>
+                  <input type="number" min={1} value={st.hours}
+                         onChange={e => setSteps(steps.map((x, k) => k === i ? { ...x, hours: e.target.value } : x))}
+                         style={{ width: 70 }} />
+                  <span className="muted" style={{ fontSize: 12, paddingTop: 8 }}>ч</span>
+                  <textarea placeholder="Текст касания…" value={st.text}
+                            onChange={e => setSteps(steps.map((x, k) => k === i ? { ...x, text: e.target.value } : x))}
+                            style={{ flex: 1, minHeight: 40, fontSize: 12.5 }} />
+                  {steps.length > 1 && (
+                    <button className="btn sm ghost" onClick={() => setSteps(steps.filter((_, k) => k !== i))}>✕</button>
+                  )}
+                </div>
+              ))}
+              {steps.length < 5 && (
+                <button className="btn sm" style={{ alignSelf: 'flex-start' }}
+                        onClick={() => setSteps([...steps, { hours: (parseFloat(steps[steps.length - 1]?.hours) || 24) * 2, text: '' }])}>
+                  + касание
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         <div style={block}>
@@ -232,6 +272,7 @@ function RuleEditor({ rule, onClose, onSaved }: {
           </div>
         </div>
 
+        {ttype !== 'sequence' && (
         <div style={block}>
           <b style={{ fontSize: 13 }}>⚡ ТО <Help title="Действия" text="Что сделать: бот напишет лиду (только Telegram) · задача вам в «Мой день» · перевести по воронке · уведомить вас в Telegram. Можно несколько действий сразу." /></b>
           {actions.map((a, i) => (
@@ -280,13 +321,16 @@ function RuleEditor({ rule, onClose, onSaved }: {
             + ещё действие
           </button>
         </div>
+        )}
 
+        {ttype !== 'sequence' && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
           <span className="muted">Повторять не чаще, чем раз в</span>
           <input type="number" min={0} value={cooldown} onChange={e => setCooldown(e.target.value)} style={{ width: 70 }} />
           <span className="muted">часов (0 = один раз на лида, максимум 5 повторов)</span>
           <Help title="Защита от спама" text="Правило не долбит одного лида: 0 — сработает один раз и всё; больше нуля — может повториться, но не чаще указанного и максимум 5 раз." />
         </div>
+        )}
 
         {err && <div style={{ color: 'var(--danger)', fontSize: 13 }}>{err}</div>}
 
