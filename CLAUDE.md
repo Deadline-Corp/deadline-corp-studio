@@ -9,6 +9,8 @@
 ```
 D:\Projects\Deadline\
 ├── index.html                              # LIVE site — root, GitHub-tracked, deployed via Pages
+├── lead-form/ · lead-form-en/              # Ad lead-form landings (RU/EN) → POST /lead-submit на Railway-бот
+├── partner-form/                           # Партнёрская лидформа (DEADLINE как техпартнёр) → тот же /lead-submit, source=partner-form
 ├── forge.html                              # Forge v3.01 PoC (centered hero PoC)
 ├── modes.css / modes.js                    # Magic-toggle: 3 visual modes (Resn / Ultranoir / Active-Theory)
 ├── README.md                               # Public README

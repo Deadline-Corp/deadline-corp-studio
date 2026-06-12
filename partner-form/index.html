@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DEADLINE — Технический партнёр для вашего проекта</title>
+<meta name="description" content="Оставьте контакты — посмотрим проект, обсудим и решим куда двигаться дальше. Если проект совпадает с нашим фокусом — вернёмся с предложением по формату партнёрства.">
+
+<!-- Meta Pixel — DEADLINE (968268822492865) -->
+<script>
+!function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+document,'script','https://connect.facebook.net/en_US/fbevents.js');
+fbq('init', '968268822492865');
+fbq('track', 'PageView');
+</script>
+<noscript><img height="1" width="1" style="display:none"
+src="https://www.facebook.com/tr?id=968268822492865&ev=PageView&noscript=1"/></noscript>
+<!-- End Meta Pixel -->
+
+<!-- Microsoft Clarity (heatmaps + session recordings) -->
+<script type="text/javascript">
+    (function(c,l,a,r,i,t,y){
+        c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+        t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+        y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+    })(window, document, "clarity", "script", "wtd9xij18d");
+</script>
+<!-- End Clarity -->
+
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #161208;
+    --surface: #1F1A0F;
+    --text: #F0E8D5;
+    --muted: #8A7E64;
+    --copper: #C76A2D;
+    --sand: #D9A057;
+    --rust: #B83227;
+    --border: rgba(245,237,216,0.12);
+  }
+
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', 'Courier New', monospace;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    padding: 32px 20px 80px;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  .top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 64px;
+    font-size: 11px;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .top-bar .brand { color: var(--copper); font-weight: 700; }
+
+  .hero {
+    margin-bottom: 56px;
+  }
+  .hero h1 {
+    font-family: 'Space Grotesk', 'JetBrains Mono', monospace;
+    font-weight: 800;
+    font-size: clamp(26px, 6.5vw, 50px);
+    line-height: 1.08;
+    letter-spacing: -0.02em;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+  }
+  .hero h1 .accent { color: var(--copper); }
+  .hero p {
+    font-size: 16px;
+    line-height: 1.6;
+    color: var(--muted);
+    max-width: 540px;
+  }
+
+  .form-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 32px 28px;
+    margin-bottom: 32px;
+  }
+
+  .field { margin-bottom: 24px; }
+  .field:last-child { margin-bottom: 0; }
+
+  label {
+    display: block;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--copper);
+    margin-bottom: 10px;
+    font-weight: 600;
+  }
+  label .req { color: var(--rust); }
+  label .opt {
+    color: var(--muted);
+    text-transform: none;
+    letter-spacing: normal;
+    font-weight: 400;
+  }
+
+  input[type=text], input[type=email], input[type=tel] {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 14px 16px;
+    font-family: inherit;
+    font-size: 15px;
+    outline: none;
+    transition: border 0.15s;
+  }
+  input:focus {
+    border-color: var(--copper);
+  }
+  input::placeholder { color: var(--muted); opacity: 0.5; }
+
+  button[type=submit] {
+    width: 100%;
+    background: var(--copper);
+    color: var(--bg);
+    border: none;
+    padding: 18px 24px;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: background 0.15s;
+    margin-top: 8px;
+  }
+  button[type=submit]:hover { background: var(--sand); }
+  button[type=submit]:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .btn-note {
+    margin-top: 16px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--muted);
+    text-align: center;
+  }
+
+  /* Contact-check warning (likely-wrong @handle) */
+  .contact-warn { margin-top: -8px; }
+  .warn-box {
+    background: rgba(184,50,39,0.08);
+    border: 1px solid var(--rust);
+    padding: 18px 18px 16px;
+  }
+  .warn-title {
+    color: var(--rust);
+    font-weight: 700;
+    font-size: 12px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .warn-text { color: var(--text); font-size: 14px; line-height: 1.55; margin-bottom: 14px; }
+  .warn-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  .warn-actions button {
+    flex: 1;
+    min-width: 140px;
+    padding: 12px 14px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    transition: all 0.15s;
+  }
+  .warn-fix { border-color: var(--copper); color: var(--copper); }
+  .warn-fix:hover { background: rgba(199,106,45,0.10); }
+  .warn-send:hover { border-color: var(--muted); }
+
+  .footer-note {
+    margin-top: 32px;
+    text-align: center;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    line-height: 1.7;
+  }
+  .footer-note a { color: var(--copper); text-decoration: none; }
+  .footer-note a:hover { text-decoration: underline; }
+
+  /* Thank-you state */
+  .thanks {
+    display: none;
+    background: var(--surface);
+    border: 1px solid var(--copper);
+    padding: 48px 32px;
+    text-align: center;
+  }
+  .thanks h2 {
+    font-family: 'Space Grotesk', monospace;
+    font-size: 26px;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+    color: var(--copper);
+  }
+  .thanks p { color: var(--text); margin-bottom: 24px; line-height: 1.6; }
+  .thanks .prep {
+    text-align: left;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    padding: 20px 22px;
+    margin-bottom: 28px;
+    font-size: 14px;
+    line-height: 1.75;
+    color: var(--text);
+  }
+  .thanks .prep-title {
+    color: var(--copper);
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-bottom: 10px;
+  }
+  .thanks a.tg-btn {
+    display: inline-block;
+    background: var(--copper);
+    color: var(--bg);
+    padding: 16px 32px;
+    text-decoration: none;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    font-size: 13px;
+  }
+
+  body.submitted .form-card { display: none; }
+  body.submitted .hero { display: none; }
+  body.submitted .thanks { display: block; }
+
+  @media (max-width: 520px) {
+    body { padding: 20px 16px 60px; }
+    .top-bar { margin-bottom: 40px; }
+    .hero { margin-bottom: 40px; }
+    .form-card { padding: 24px 20px; }
+  }
+</style>
+<!-- Yandex.Metrika counter -->
+<script type="text/javascript">
+   (function(m,e,t,r,i,k,a){
+       m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
+       m[i].l=1*new Date();
+       for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}
+       k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)
+   })(window, document, "script", "https://mc.yandex.ru/metrika/tag.js?id=109612500", "ym");
+
+   ym(109612500, "init", {ssr:true, webvisor:true, clickmap:true, ecommerce:"dataLayer", accurateTrackBounce:true, trackLinks:true});
+</script>
+<noscript><div><img src="https://mc.yandex.ru/watch/109612500" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
+<!-- /Yandex.Metrika counter -->
+</head>
+<body>
+
+<div class="top-bar">
+  <div class="brand">DEADLINE</div>
+  <div>EST. 2025</div>
+</div>
+
+<div class="hero">
+  <h1>ОСТАВЬТЕ КОНТАКТЫ —<br>ПОСМОТРИМ ПРОЕКТ,<br>ОБСУДИМ И РЕШИМ<br><span class="accent">КУДА ДВИГАТЬСЯ ДАЛЬШЕ</span></h1>
+  <p>Мы изучим ответы и поймём, может ли DEADLINE зайти в проект как технический партнёр.</p>
+</div>
+
+<form class="form-card" id="partnerForm">
+
+  <div class="field">
+    <label for="name">Имя <span class="req">*</span></label>
+    <input type="text" id="name" name="name" placeholder="Александр" required>
+  </div>
+
+  <div class="field">
+    <label for="telegram">Telegram <span class="req">*</span></label>
+    <input type="text" id="telegram" name="telegram" placeholder="@username" required>
+  </div>
+
+  <div class="field">
+    <label for="phone">Телефон <span class="req">*</span></label>
+    <input type="tel" id="phone" name="phone" placeholder="+66 или +7..." required>
+  </div>
+
+  <div class="field">
+    <label for="link">Ссылка на сайт / презентацию / прототип <span class="opt">(если есть)</span></label>
+    <input type="text" id="link" name="link" placeholder="https://...">
+  </div>
+
+  <div class="field contact-warn" id="contactWarn" style="display:none">
+    <div class="warn-box">
+      <div class="warn-title">⚠️ Проверь контакт</div>
+      <p class="warn-text" id="contactWarnText"></p>
+      <div class="warn-actions">
+        <button type="button" class="warn-fix" id="contactFix">Исправить контакт</button>
+        <button type="button" class="warn-send" id="contactSendAnyway">Всё равно отправить</button>
+      </div>
+    </div>
+  </div>
+
+  <button type="submit" id="submitBtn">Обсудить условия →</button>
+
+  <p class="btn-note">Если проект совпадает с нашим фокусом — вернёмся с предложением по формату партнёрства.</p>
+</form>
+
+<div class="thanks" id="thanks">
+  <h2>Проект отправлен на&nbsp;рассмотрение</h2>
+  <p>Мы получили ответы и описание проекта.<br>Если увидим потенциал для партнёрства — свяжемся, чтобы обсудить техчасть, запуск и формат участия DEADLINE.</p>
+  <div class="prep">
+    <div class="prep-title">Лучше сразу подготовить:</div>
+    — краткое описание идеи;<br>
+    — кто целевая аудитория;<br>
+    — как проект будет зарабатывать;<br>
+    — что уже есть: сайт, прототип, клиенты, трафик или команда.
+  </div>
+  <a href="https://t.me/deadline_corp" class="tg-btn" target="_blank">Написать в Telegram</a>
+</div>
+
+<div class="footer-note">
+  Phuket × Bangkok · 0 пропущенных дедлайнов<br>
+  <a href="https://deadlinecorp.com">deadlinecorp.com</a>
+</div>
+
+<script>
+  // Form submission
+  const API = 'https://deadline-sales-bot-production.up.railway.app';
+  const VALIDATE_ENDPOINT = API + '/lead-validate-contact';
+  const SUBMIT_ENDPOINT = API + '/lead-submit';
+
+  const form = document.getElementById('partnerForm');
+  const btn = document.getElementById('submitBtn');
+  const warnBox = document.getElementById('contactWarn');
+  const warnText = document.getElementById('contactWarnText');
+  let contactConfirmed = false;   // set when the visitor chooses "send anyway"
+
+  function resetBtn() {
+    btn.disabled = false;
+    btn.textContent = 'Обсудить условия →';
+  }
+
+  // "Исправить контакт" → hide warning, focus the field, let them edit.
+  document.getElementById('contactFix').addEventListener('click', () => {
+    warnBox.style.display = 'none';
+    const c = document.getElementById('telegram');
+    c.focus();
+    c.select();
+    resetBtn();
+  });
+  // "Всё равно отправить" → accept the contact as-is and resubmit.
+  document.getElementById('contactSendAnyway').addEventListener('click', () => {
+    contactConfirmed = true;
+    warnBox.style.display = 'none';
+    form.requestSubmit();
+  });
+  // Editing the contact clears a prior confirmation (re-check the new value).
+  document.getElementById('telegram').addEventListener('input', () => {
+    contactConfirmed = false;
+    warnBox.style.display = 'none';
+  });
+
+  async function doSubmit() {
+    const formData = new FormData(form);
+    const phone = (formData.get('phone') || '').trim();
+    const link = (formData.get('link') || '').trim();
+    const data = {
+      name: formData.get('name'),
+      contact: (formData.get('telegram') || '').trim(),
+      need: 'Партнёрство — DEADLINE как технический партнёр',
+      business: '',
+      task: 'Телефон: ' + phone + (link ? '\nСайт / презентация / прототип: ' + link : ''),
+      when: '',
+      lang: 'ru',
+      timestamp: new Date().toISOString(),
+      source: new URLSearchParams(window.location.search).get('utm_source') || 'partner-form',
+      campaign: new URLSearchParams(window.location.search).get('utm_campaign') || '',
+    };
+    try {
+      await fetch(SUBMIT_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+    } catch (err) {
+      console.error('Submit failed:', err);
+    }
+    if (typeof fbq !== 'undefined') {
+      fbq('track', 'Lead', { content_name: 'partner-form-submit' });
+    }
+    document.body.classList.add('submitted');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    btn.disabled = true;
+    btn.textContent = 'Отправляем...';
+
+    const contact = (document.getElementById('telegram').value || '').trim();
+
+    // Contact existence check (Telegram). Non-blocking: only warns
+    // when the account is definitively NOT found, and never blocks on errors.
+    if (!contactConfirmed && contact) {
+      btn.textContent = 'Проверяем контакт...';
+      try {
+        const resp = await fetch(VALIDATE_ENDPOINT, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contact }),
+        });
+        if (resp.ok) {
+          const v = await resp.json();
+          if (v && v.exists === false) {
+            const label = v.label || 'Telegram';
+            warnText.textContent =
+              'Не нашли аккаунт «' + (v.normalized || contact) + '» в ' + label +
+              '. Если контакт указан неверно — мы не сможем ответить. Поправь его или отправь как есть.';
+            warnBox.style.display = 'block';
+            warnBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            resetBtn();
+            return; // wait for the visitor's choice
+          }
+        }
+      } catch (err) {
+        console.warn('contact check skipped:', err);
+      }
+    }
+
+    btn.textContent = 'Отправляем...';
+    await doSubmit();
+  });
+</script>
+
+</body>
+</html>
