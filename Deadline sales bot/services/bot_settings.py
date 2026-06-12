@@ -27,6 +27,10 @@ KNOWN_KEYS: dict[str, type] = {
     "nudge_max_hours": float,
     "nudge_text": str,
     "silence_lost_days": int,
+    # Онбординг/брендинг рабочего пространства (Admin UI, 2026-06-12)
+    "onboarding_done": bool,
+    "business_name": str,
+    "niche_key": str,
 }
 
 _TTL = 60.0

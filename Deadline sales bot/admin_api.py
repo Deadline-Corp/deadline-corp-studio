@@ -73,7 +73,14 @@ def _verify_admin_token(request: Request) -> None:
 @router.get("/me")
 async def me(_: None = Depends(_verify_admin_token)):
     import main as _main
-    return {"ok": True, "tenant": _main.tenant.slug, "display_name": _main.tenant.display_name}
+    from services import bot_settings
+    ws = bot_settings.get_all()
+    return {
+        "ok": True,
+        "tenant": _main.tenant.slug,
+        "display_name": ws.get("business_name") or _main.tenant.display_name,
+        "onboarding_done": bool(ws.get("onboarding_done", False)),
+    }
 
 
 # ============================================================================
@@ -1742,6 +1749,81 @@ async def preset_apply(
             pass
 
     return {"ok": True, "applied": applied, "preset": preset["title"]}
+
+
+# ============================================================================
+# WORKSPACE + DEMO — онбординг, брендинг, песочница
+# ============================================================================
+
+class WorkspaceSaveRequest(BaseModel):
+    business_name: Optional[str] = Field(None, max_length=80)
+    onboarding_done: Optional[bool] = None
+    niche_key: Optional[str] = None
+
+
+@router.get("/workspace")
+async def workspace_get(
+    _: None = Depends(_verify_admin_token),
+    db: Session = Depends(get_db),
+):
+    import main as _main
+    from services import bot_settings
+    from services.demo_seed import demo_count
+    ws = bot_settings.get_all()
+    return {
+        "business_name": ws.get("business_name") or _main.tenant.display_name,
+        "onboarding_done": bool(ws.get("onboarding_done", False)),
+        "niche_key": ws.get("niche_key"),
+        "demo_leads": demo_count(db),
+    }
+
+
+@router.post("/workspace")
+async def workspace_save(
+    req: WorkspaceSaveRequest,
+    _: None = Depends(_verify_admin_token),
+):
+    from services import bot_settings
+    values: dict = {}
+    if req.business_name is not None:
+        values["business_name"] = req.business_name.strip() or None
+    if req.onboarding_done is not None:
+        values["onboarding_done"] = req.onboarding_done
+    if req.niche_key is not None:
+        values["niche_key"] = req.niche_key or None
+    if not values:
+        raise HTTPException(status_code=422, detail="Нечего сохранять")
+    try:
+        bot_settings.set_many(values)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"ok": True}
+
+
+@router.post("/demo/seed")
+async def demo_seed_ep(
+    _: None = Depends(_verify_admin_token),
+    db: Session = Depends(get_db),
+):
+    """Наполнить песочницу демо-лидами (7 шт, разные стадии/каналы + задачи).
+    Идемпотентно. Никаких внешних отправок: channel_conversation_id=None."""
+    from services.demo_seed import seed_demo
+    result = seed_demo(db)
+    db.commit()
+    return {"ok": True, **result}
+
+
+@router.post("/demo/clear")
+async def demo_clear_ep(
+    _: None = Depends(_verify_admin_token),
+    db: Session = Depends(get_db),
+):
+    """Удалить ТОЛЬКО демо-данные (метка profile_data.demo) — явная кнопка
+    пользователя в UI. Реальные лиды не затрагиваются."""
+    from services.demo_seed import clear_demo
+    result = clear_demo(db)
+    db.commit()
+    return {"ok": True, **result}
 
 
 # ============================================================================
