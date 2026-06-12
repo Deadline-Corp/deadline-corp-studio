@@ -2092,6 +2092,66 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
     return ChatResponse(answer=resp.answer, handoff=resp.handoff, session_id=req.session_id)
 
 
+@app.get("/chat/updates")
+async def chat_updates(
+    session_id: str,
+    after: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Website-push (поллинг виджета): отдать НОВЫЕ сообщения, которые лид не
+    получил синхронно через /chat — ответы оператора (role=operator) и ручные
+    «пинки» из панели (assistant с kind=manual_nudge). Обычные ответы бота
+    исключены — они всегда доставляются в ответе /chat, иначе были бы дубли.
+
+    Авторизация — знание session_id (секрет конкретного браузера, как и в
+    /chat). Отдаём только исходящие к лиду роли — чужие user-сообщения
+    недоступны даже при утечке id.
+    """
+    from datetime import datetime as _dt, timezone as _tz
+    from sqlalchemy import or_ as _or, and_ as _and, select as _select
+
+    if not session_id or not session_id.startswith("sess_"):
+        raise HTTPException(status_code=422, detail="bad session_id")
+    after_dt = None
+    if after:
+        try:
+            after_dt = _dt.fromisoformat(after.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=422, detail="bad 'after' timestamp")
+
+    conv = db.execute(
+        _select(ConvRow)
+        .where(ConvRow.channel == "website",
+               ConvRow.channel_conversation_id == session_id)
+        .order_by(ConvRow.created_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    now_iso = _dt.now(_tz.utc).isoformat()
+    if conv is None:
+        return {"items": [], "server_time": now_iso}
+
+    q = (
+        db.query(MessageRow)
+        .filter(MessageRow.conversation_id == conv.id)
+        .filter(_or(
+            MessageRow.role == "operator",
+            _and(MessageRow.role == "assistant",
+                 MessageRow.extra_meta["kind"].astext == "manual_nudge"),
+        ))
+    )
+    if after_dt is not None:
+        q = q.filter(MessageRow.created_at > after_dt)
+    rows = q.order_by(MessageRow.created_at.asc()).limit(30).all()
+    return {
+        "items": [
+            {"role": m.role, "content": m.content,
+             "created_at": m.created_at.isoformat() if m.created_at else None}
+            for m in rows
+        ],
+        "server_time": now_iso,
+    }
+
+
 async def _handle_operator_callback(callback: dict, db: Session) -> None:
     """Inline-button taps from operators. The `callback_data` payload encodes
     an action and a conversation id, separated by `:`. Supported actions:
