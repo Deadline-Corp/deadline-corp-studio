@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { ConvDetail, Msg } from '../api/types'
 import { usePolling } from '../hooks/usePolling'
-import { useStages, useStageLabel } from '../overviewContext'
+import { useStages, useStageLabel, useMe } from '../overviewContext'
 import { CHANNEL_META, LOST_REASONS, TEMP_META, fmtTime, initials } from '../lib'
 import { Help } from './Help'
 
@@ -30,6 +30,19 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
 
   const stages = useStages()
   const stageLabel = useStageLabel()
+  const me = useMe()
+  const [learned, setLearned] = useState<Set<string>>(new Set())
+
+  const learnFrom = async (messageId: string) => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await api.post('/training-rules/from-message', { conversation_id: convId, message_id: messageId })
+      setLearned(prev => new Set(prev).add(messageId))
+      showToast('🎓 Бот выучил этот ответ — применит в похожих ситуациях')
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
 
   const showToast = (text: string, err = false) => {
     setToast({ text, err })
@@ -318,6 +331,17 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                 {m.role === 'operator' && '👤 оператор · '}
                 {m.role === 'assistant' && m.extra_meta?.kind === 'manual_nudge' && '⚡ ручной пинок · '}
                 {fmtTime(m.created_at)}
+                {m.role === 'operator' && (!me || me.role === 'owner') && (
+                  learned.has(m.id)
+                    ? <span style={{ marginLeft: 8 }}>🎓 выучено</span>
+                    : (
+                      <a style={{ marginLeft: 8, color: 'var(--accent)', cursor: 'pointer' }}
+                         title="Бот запомнит этот ответ и будет отвечать похоже в подобных ситуациях"
+                         onClick={() => learnFrom(m.id)}>
+                        🎓 научить бота
+                      </a>
+                    )
+                )}
               </div>
             </div>
           ))}

@@ -887,6 +887,68 @@ async def training_rule_quick(
     return {"ok": True, "id": str(row.id)}
 
 
+class LearnFromMessageRequest(BaseModel):
+    conversation_id: str
+    message_id: str
+
+
+@router.post("/training-rules/from-message")
+async def training_rule_from_message(
+    req: LearnFromMessageRequest,
+    _: dict = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    """«Бот, учись у меня»: оператор перехватил и ответил по-своему → один клик
+    превращает его ответ в правило. trigger_context = последние реплики диалога
+    ДО ответа (по ним retrieval найдёт похожую ситуацию), suggested_response =
+    ответ оператора. Без LLM — мгновенно и предсказуемо."""
+    import asyncio
+    from services.training import _get_embedder
+
+    conv, _cust = _get_conv_or_404(db, req.conversation_id)
+    msg = db.get(Message, _uuid_or_422(req.message_id))
+    if msg is None or msg.conversation_id != conv.id:
+        raise HTTPException(status_code=404, detail="Message not found in this conversation")
+    if msg.role != "operator":
+        raise HTTPException(status_code=422, detail="Учимся только на ответах оператора")
+
+    # Контекст: до 6 реплик user/assistant ПЕРЕД ответом оператора.
+    prior = (
+        db.query(Message)
+        .filter(Message.conversation_id == conv.id,
+                Message.created_at < msg.created_at,
+                Message.role.in_(("user", "assistant")))
+        .order_by(Message.created_at.desc())
+        .limit(6)
+        .all()
+    )
+    dialog = "\n".join(
+        f"{'user' if m.role == 'user' else 'assistant'}: {m.content[:400]}"
+        for m in reversed(prior)
+    ) or f"user: {msg.content[:200]}"
+
+    try:
+        embedder = _get_embedder()
+        embedding = await asyncio.to_thread(embedder.embed_query, dialog[:8000])
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Embedding failed: {e}")
+
+    row = TrainingCorrection(
+        trigger_context=dialog[:8000],
+        correct_guidance=("В похожей ситуации отвечай в духе ответа оператора "
+                          "(тон и суть, не дословно)."),
+        suggested_response=msg.content[:2000],
+        channel=conv.channel,
+        embedding=embedding,
+        created_by="learn-from-operator",
+        source_conversation_id=conv.id,
+        is_active=True,
+    )
+    db.add(row)
+    db.commit()
+    return {"ok": True, "id": str(row.id)}
+
+
 @router.post("/training-rules/{rule_id}/deactivate")
 async def training_rule_deactivate(
     rule_id: str,
