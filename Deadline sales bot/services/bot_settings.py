@@ -31,6 +31,14 @@ KNOWN_KEYS: dict[str, type] = {
     "onboarding_done": bool,
     "business_name": str,
     "niche_key": str,
+    # Цель бота: call (созвон, дефолт) | collect_lead | consult | sale —
+    # overlay-блок в системный промпт (prompts.GOAL_OVERLAYS)
+    "bot_goal": str,
+    # Утренний AI-дайджест владельцу в Telegram
+    "digest_enabled": bool,
+    "digest_hour": int,        # час отправки по локальному времени (см. offset)
+    "digest_tz_offset": int,   # смещение от UTC, дефолт +7 (Бангкок)
+    "digest_last_date": str,   # служебное: дата последней отправки YYYY-MM-DD
 }
 
 _TTL = 60.0

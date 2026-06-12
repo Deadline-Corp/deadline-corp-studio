@@ -830,6 +830,10 @@ async def behavior_get(_: None = Depends(_verify_admin_token)):
             "nudge_max_hours": 36,
             "nudge_text": None,
             "silence_lost_days": 7,
+            "bot_goal": "call",
+            "digest_enabled": True,
+            "digest_hour": 8,
+            "digest_tz_offset": 7,
         },
         "known_keys": sorted(bot_settings.KNOWN_KEYS.keys()),
     }
@@ -1457,6 +1461,14 @@ async def analytics(
         .where(StageTransition.created_at >= since)
         .group_by(StageTransition.to_stage)
     ).fetchall()
+    # Конверсия: потоки from→to (история копится с 2026-06-11).
+    flows = db.execute(
+        sql_select(StageTransition.from_stage, StageTransition.to_stage,
+                   StageTransition.by, sql_func.count())
+        .where(StageTransition.created_at >= since)
+        .group_by(StageTransition.from_stage, StageTransition.to_stage, StageTransition.by)
+        .order_by(sql_func.count().desc())
+    ).fetchall()
     automation_fires = db.execute(
         sql_select(sql_func.count()).select_from(AutomationRun)
         .where(AutomationRun.fired_at >= since)
@@ -1485,6 +1497,9 @@ async def analytics(
         "temperatures": {k: int(v) for k, v in temp_dist.items()},
         "messages_by_role": {str(r[0]).lower(): int(r[1]) for r in msgs_period},
         "stage_moves": {k: int(v) for k, v in transitions},
+        "stage_flows": [
+            {"from": r[0], "to": r[1], "by": r[2], "count": int(r[3])} for r in flows
+        ],
     }
 
 
@@ -1798,6 +1813,55 @@ async def workspace_save(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return {"ok": True}
+
+
+@router.get("/export/leads.csv")
+async def export_leads_csv(
+    _: None = Depends(_verify_admin_token),
+    db: Session = Depends(get_db),
+):
+    """Вся база лидов в CSV (Excel-совместимый, UTF-8 BOM)."""
+    import csv
+    import io
+    from fastapi.responses import Response
+
+    field_defs = db.query(CustomFieldDef).order_by(CustomFieldDef.position.asc()).all()
+    rows = (
+        db.query(Conversation, Customer)
+        .join(Customer, Conversation.customer_id == Customer.id)
+        .order_by(Conversation.last_message_at.desc().nullslast())
+        .limit(5000)
+        .all()
+    )
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";")  # ; — чтобы Excel с русской локалью открыл колонками
+    w.writerow(
+        ["Имя", "Email", "Телефон", "Канал", "Стадия", "Причина проигрыша",
+         "Скор", "Температура", "Создан", "Последнее сообщение"]
+        + [f.label for f in field_defs]
+    )
+    for conv, cust in rows:
+        fields = ((cust.profile_data or {}).get("fields") or {})
+        w.writerow([
+            cust.name or "", cust.email or "", cust.phone or "",
+            conv.channel, conv.lead_stage, conv.lost_reason or "",
+            cust.lead_score, cust.lead_temperature,
+            conv.created_at.strftime("%Y-%m-%d %H:%M") if conv.created_at else "",
+            conv.last_message_at.strftime("%Y-%m-%d %H:%M") if conv.last_message_at else "",
+        ] + [fields.get(f.key, "") for f in field_defs])
+    csv_bytes = ("﻿" + buf.getvalue()).encode("utf-8")  # BOM для Excel
+    return Response(
+        content=csv_bytes,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=leads.csv"},
+    )
+
+
+@router.post("/digest/test")
+async def digest_test(_: None = Depends(_verify_admin_token)):
+    """Отправить дайджест прямо сейчас (проверка/демо)."""
+    from services.digest import send_digest
+    return await send_digest()
 
 
 @router.post("/demo/seed")

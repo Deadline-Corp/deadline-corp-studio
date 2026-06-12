@@ -373,6 +373,15 @@ async def sweep_once(*, tenant_config: dict) -> dict:
         logger.warning("[cron] automations skipped: %s", _ae)
         stats["automations"] = {"error": str(_ae)}
 
+    # Утренний AI-дайджест владельцу (раз в день в свой час, дедуп внутри).
+    try:
+        from services.digest import run_digest_if_due
+        _dg = await run_digest_if_due()
+        if _dg.get("sent"):
+            stats["digest"] = _dg
+    except Exception as _de:  # noqa: BLE001
+        logger.warning("[cron] digest skipped: %s", _de)
+
     if any(v for k, v in stats.items() if k != "examined") or stats["examined"] > 0:
         logger.info(
             "[cron] sweep complete — examined=%d temp_changes=%d score_changes=%d "

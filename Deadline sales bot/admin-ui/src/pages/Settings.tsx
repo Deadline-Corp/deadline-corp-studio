@@ -381,6 +381,9 @@ function BehaviorCard() {
         if (values[k] != null) values[k] = parseFloat(values[k])
       }
       if (values.silence_lost_days != null) values.silence_lost_days = parseInt(values.silence_lost_days, 10)
+      for (const k of ['digest_hour', 'digest_tz_offset']) {
+        if (values[k] != null) values[k] = parseInt(values[k], 10)
+      }
       await api.post('/behavior', { values })
       setDirty(false)
       showToast('✅ Сохранено — бот подхватит в течение минуты (следующий крон-проход)')
@@ -401,6 +404,17 @@ function BehaviorCard() {
         </button>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+        <div style={{ ...row, paddingBottom: 10, borderBottom: '1px solid var(--border)' }}>
+          <span className="muted" style={{ width: 280 }}>🎯 Цель бота (к чему ведёт диалог):
+            <Help title="Цель бота" text="Главная настройка поведения. «Созвон» — текущий стиль: квалифицирует и зовёт на звонок. «Сбор заявок» — без созвонов, берёт контакты и бриф. «Консультация» — помогает, не давит. «Продажа» — называет цены и ведёт к предоплате. Применяется к новым ответам сразу." />
+          </span>
+          <select value={overrides.bot_goal ?? 'call'} onChange={e => upd('bot_goal', e.target.value)}>
+            <option value="call">📞 Вести на созвон (по умолчанию)</option>
+            <option value="collect_lead">📥 Собирать заявки (контакт + бриф)</option>
+            <option value="consult">💬 Консультировать, мягко передавать</option>
+            <option value="sale">💰 Вести к оплате/предоплате</option>
+          </select>
+        </div>
         <label style={row}>
           <input type="checkbox" checked={!!overrides.nudge_enabled}
                  onChange={e => upd('nudge_enabled', e.target.checked)} />
@@ -426,6 +440,24 @@ function BehaviorCard() {
           <span className="muted" style={{ width: 280 }}>Считать лида потерянным после (дней тишины):</span>
           <input type="number" min={1} step={1} value={overrides.silence_lost_days}
                  onChange={e => upd('silence_lost_days', e.target.value)} style={{ width: 90 }} />
+        </div>
+        <div style={{ ...row, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+            <input type="checkbox" checked={!!overrides.digest_enabled}
+                   onChange={e => upd('digest_enabled', e.target.checked)} />
+            ☀️ Утренний дайджест в Telegram
+            <Help title="Дайджест" text="Каждое утро система сама присылает сводку: новые лиды, кого дожать сегодня, просроченные задачи + совет. Идёт в тот же Telegram-чат, куда падают уведомления о лидах." />
+          </label>
+          <span className="muted">в</span>
+          <input type="number" min={0} max={23} value={overrides.digest_hour}
+                 onChange={e => upd('digest_hour', e.target.value)} style={{ width: 64 }} />
+          <span className="muted">ч (UTC+{overrides.digest_tz_offset})</span>
+          <button className="btn sm" onClick={async () => {
+            try {
+              const r = await api.post<any>('/digest/test')
+              showToast(r.sent ? '📨 Дайджест отправлен в Telegram' : `Не отправлен: ${r.error}`, !r.sent)
+            } catch (e: any) { showToast(`Ошибка: ${e.message}`, true) }
+          }}>📨 Прислать сейчас</button>
         </div>
       </div>
       {toast && <div className={`toast ${toast.err ? 'err' : ''}`}>{toast.text}</div>}

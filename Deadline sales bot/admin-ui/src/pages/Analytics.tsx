@@ -4,6 +4,23 @@ import { AnalyticsView } from '../api/types'
 import { usePolling } from '../hooks/usePolling'
 import { CHANNEL_META, TEMP_META } from '../lib'
 import { HintBar } from '../components/HintBar'
+import { getToken } from '../api/client'
+import { useStageLabel } from '../overviewContext'
+
+/* Скачивание CSV: fetch с Bearer-токеном → blob → клик по невидимой ссылке. */
+async function downloadCsv() {
+  const res = await fetch('/admin/api/export/leads.csv', {
+    headers: { Authorization: `Bearer ${getToken()}` },
+  })
+  if (!res.ok) { alert('Не удалось выгрузить: ' + res.status); return }
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'leads.csv'
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
 /* Аналитика: цифры воронки/каналов на CSS-барах, без чарт-библиотек. */
 
@@ -28,6 +45,7 @@ function Bar({ label, value, max, color }: { label: string; value: number; max: 
 export function Analytics() {
   const [days, setDays] = useState(30)
   const [data, setData] = useState<AnalyticsView | null>(null)
+  const stageLabel = useStageLabel()
 
   usePolling(async () => {
     try { setData(await api.get<AnalyticsView>(`/analytics?days=${days}`)) } catch { /* ignore */ }
@@ -53,6 +71,7 @@ export function Analytics() {
           <option value={30}>30 дней</option>
           <option value={90}>90 дней</option>
         </select>
+        <button className="btn" onClick={downloadCsv}>⬇ Лиды в Excel (CSV)</button>
       </div>
 
       <HintBar id="analytics" icon="📈">
@@ -133,6 +152,26 @@ export function Analytics() {
             {Object.entries(data.lost_reasons).length === 0 && <div className="empty" style={{ padding: '14px 0' }}>Проигранных нет 🎉</div>}
             {Object.entries(data.lost_reasons).map(([r, n]) => (
               <Bar key={r} label={LOST_LABELS[r] ?? r} value={n} max={lostMax} color="var(--danger)" />
+            ))}
+          </div>
+        </div>
+
+        <div className="card">
+          <b>🔀 Движение по воронке</b>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12, fontSize: 12.5 }}>
+            {(data.stage_flows ?? []).length === 0 && (
+              <div className="empty" style={{ padding: '14px 0' }}>
+                Переходов за период не было — история копится с каждого перемещения по воронке
+              </div>
+            )}
+            {(data.stage_flows ?? []).slice(0, 10).map((f, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span className="muted" style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {f.from ? stageLabel(f.from) : '∅'} → {stageLabel(f.to)}
+                </span>
+                <span className="chip">{f.by === 'bot' ? '🤖' : f.by === 'automation' ? '⚡' : '👤'}</span>
+                <b style={{ width: 30, textAlign: 'right' }}>{f.count}</b>
+              </div>
             ))}
           </div>
         </div>

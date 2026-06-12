@@ -120,6 +120,7 @@ export interface AnalyticsView {
   temperatures: Record<string, number>
   messages_by_role: Record<string, number>
   stage_moves: Record<string, number>
+  stage_flows: Array<{ from: string | null; to: string; by: string; count: number }>
 }
 
 export interface PresetInfo {
