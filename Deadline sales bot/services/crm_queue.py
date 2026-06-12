@@ -57,6 +57,7 @@ EventType = Literal[
     "update_lead_temperature",
     "log_message",
     "create_task",
+    "complete_task",       # Task Engine B2 — закрыть зеркальную задачу после само-отправки
     "schedule_followup",   # Task Engine B2 — записать отложенное действие бота
 ]
 
@@ -300,6 +301,13 @@ async def _dispatch(ev: CRMEvent, adapter: CRMAdapter) -> None:
             await asyncio.to_thread(cb, task_id)
         return
 
+    if ev.type == "complete_task":
+        # Task Engine B2 — бот сам отправил followup, закрываем зеркальную
+        # HubSpot-задачу (NOT_STARTED → COMPLETED). adapter.complete_task сам
+        # глотает 404/ошибки и возвращает bool, поэтому здесь без доп. обвязки.
+        await adapter.complete_task(p["task_id"])
+        return
+
     if ev.type == "schedule_followup":
         # Task Engine B2 — записать строку отложенного действия бота (off event
         # loop, через to_thread). Само-отправку делает крон run_due_followups.
@@ -430,6 +438,19 @@ def make_create_task_event(
             "description": description,
             "on_task_id": on_task_id,
         },
+    )
+
+
+def make_complete_task_event(customer_id: str, task_id: str) -> CRMEvent:
+    """Task Engine B2 — пометить зеркальную HubSpot-задачу COMPLETED.
+
+    Ставится в очередь из крона run_due_followups после успешной само-отправки
+    followup'а лиду — чтобы менеджер видел в CRM, что бот уже отработал.
+    """
+    return CRMEvent(
+        type="complete_task",
+        customer_id=customer_id,
+        payload={"task_id": task_id},
     )
 
 
