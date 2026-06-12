@@ -44,6 +44,32 @@ logger = logging.getLogger(__name__)
 
 
 # =============================================================================
+# Observability — swallowed-failure counter (Phase C reliability)
+# =============================================================================
+# dispatch_on_message_turn keeps a blanket try/except (a CRM hiccup must NEVER
+# break the lead-facing flow). But a silently-swallowed error means a lead may
+# miss a deal/task — exactly what «никто не забыт» forbids. We count + log LOUD
+# (ERROR + exc_info) so a non-zero count surfaced via /metrics is an alert
+# signal. Plain int: a lost increment under thread races is fine for a gauge.
+_DISPATCH_FAILURES = 0
+
+
+def get_dispatch_failure_count() -> int:
+    """Total swallowed dispatch_on_message_turn failures since process start."""
+    return _DISPATCH_FAILURES
+
+
+def _record_dispatch_failure(exc: Exception) -> None:
+    global _DISPATCH_FAILURES
+    _DISPATCH_FAILURES += 1
+    logger.error(
+        "[crm_dispatch] dispatch_on_message_turn FAILED (#%d) — lead may miss "
+        "deal/task: %s",
+        _DISPATCH_FAILURES, exc, exc_info=True,
+    )
+
+
+# =============================================================================
 # Test-lead filter (Phase B Step 7, 2026-05-27)
 # =============================================================================
 # Тестовые лиды для dogfood-прогонов под разными легендами идут с email
@@ -589,7 +615,7 @@ def dispatch_on_message_turn(
                 logger.debug("[crm_dispatch] followup detect skipped: %s", _fe)
 
     except Exception as exc:  # noqa: BLE001
-        logger.warning("[crm_dispatch] dispatch_on_message_turn failed: %s", exc)
+        _record_dispatch_failure(exc)
 
 
 def _build_lead_from_customer(customer: Any, channel: str) -> Lead:

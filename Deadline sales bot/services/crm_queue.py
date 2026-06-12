@@ -93,6 +93,26 @@ _queue: Optional[asyncio.Queue[CRMEvent]] = None
 _worker_task: Optional[asyncio.Task] = None
 _max_size: int = DEFAULT_MAX_QUEUE_SIZE
 
+# Observability (Phase C reliability): count events dropped (queue full or
+# retries exhausted). A dropped event = a CRM update that silently never
+# happened — surfaced via /metrics so a non-zero value is an alert signal.
+_dropped_events: int = 0
+
+
+def _record_drop() -> None:
+    global _dropped_events
+    _dropped_events += 1
+
+
+def get_dropped_count() -> int:
+    """Total CRM events dropped (queue-full or retry-exhausted) since start."""
+    return _dropped_events
+
+
+def get_queue_depth() -> int:
+    """Current number of pending events in the queue (0 if not yet created)."""
+    return _queue.qsize() if _queue is not None else 0
+
 
 def get_queue() -> asyncio.Queue[CRMEvent]:
     """Lazy singleton — created on first call inside an event loop."""
@@ -151,9 +171,11 @@ def enqueue(event: CRMEvent) -> bool:
         queue.put_nowait(event)
         return True
     except asyncio.QueueFull:
-        logger.warning(
-            "[crm_queue] queue full (size=%d), DROPPING event type=%s customer=%s",
-            queue.qsize(), event.type, event.customer_id,
+        _record_drop()
+        logger.error(
+            "[crm_queue] queue full (size=%d), DROPPING event type=%s customer=%s "
+            "(total dropped=%d)",
+            queue.qsize(), event.type, event.customer_id, _dropped_events,
         )
         return False
 
@@ -334,14 +356,18 @@ async def _handle_failure(
         try:
             queue.put_nowait(ev)
         except asyncio.QueueFull:
+            _record_drop()
             logger.error(
-                "[crm_queue] queue full during retry, DROPPING event %s customer=%s",
-                ev.type, ev.customer_id,
+                "[crm_queue] queue full during retry, DROPPING event %s customer=%s "
+                "(total dropped=%d)",
+                ev.type, ev.customer_id, _dropped_events,
             )
     else:
+        _record_drop()
         logger.error(
-            "[crm_queue] event %s customer=%s DROPPED after %d attempts: %s",
-            ev.type, ev.customer_id, ev.attempt + 1, exc,
+            "[crm_queue] event %s customer=%s DROPPED after %d attempts: %s "
+            "(total dropped=%d)",
+            ev.type, ev.customer_id, ev.attempt + 1, exc, _dropped_events,
         )
 
 

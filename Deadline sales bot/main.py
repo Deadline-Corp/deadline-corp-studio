@@ -2312,6 +2312,11 @@ async def metrics(
         sql_select(ConvRow.status, sql_func.count()).group_by(ConvRow.status)
     ).fetchall()
 
+    # CRM pipeline health (Phase C reliability). Non-zero dropped_events or
+    # dispatch_failures means leads silently missed a CRM update — alert signal.
+    from services import crm_queue as _crm_queue
+    from services.crm_dispatch import get_dispatch_failure_count
+
     return {
         "totals": {
             "customers": total_customers,
@@ -2321,6 +2326,13 @@ async def metrics(
         },
         "by_channel": {row[0]: row[1] for row in by_channel},
         "by_status": {row[0]: row[1] for row in by_status},
+        "crm": {
+            "enabled": settings.crm_enabled,
+            "queue_worker_running": _crm_queue.is_running(),
+            "queue_depth": _crm_queue.get_queue_depth(),
+            "dropped_events": _crm_queue.get_dropped_count(),
+            "dispatch_failures": get_dispatch_failure_count(),
+        },
     }
 
 
