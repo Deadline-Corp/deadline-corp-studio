@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '../api/client'
 import { AnalyticsView } from '../api/types'
 import { usePolling } from '../hooks/usePolling'
@@ -38,6 +38,57 @@ function Bar({ label, value, max, color }: { label: string; value: number; max: 
         <div style={{ width: `${w}%`, height: '100%', background: color ?? 'var(--accent)', borderRadius: 5, transition: 'width 0.4s ease' }} />
       </div>
       <b style={{ width: 36, textAlign: 'right' }}>{value}</b>
+    </div>
+  )
+}
+
+const OBJ_LABELS: Record<string, string> = {
+  price: '💰 Дорого', timing: '⏳ Не сейчас', trust: '🤝 Недоверие',
+  no_need: '🚫 Не нужно', competitor: '🏃 Конкурент', other: '❓ Другое',
+}
+
+function ObjectionsCard() {
+  const [data, setData] = useState<any>(null)
+  const [busy, setBusy] = useState(false)
+
+  const load = async (refresh: boolean) => {
+    setBusy(true)
+    try { setData(await api.get(`/analytics/objections?refresh=${refresh}`)) }
+    catch { /* ignore */ }
+    finally { setBusy(false) }
+  }
+  useEffect(() => { void load(false) }, [])
+
+  const counts: Record<string, number> = data?.counts ?? {}
+  const max = Math.max(1, ...Object.values(counts).map(Number))
+
+  return (
+    <div className="card">
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+        <b>🧱 Возражения — почему не покупают</b>
+        <div style={{ flex: 1 }} />
+        {(data?.unanalyzed ?? 0) > 0 && (
+          <button className="btn sm" onClick={() => load(true)} disabled={busy}>
+            {busy ? <span className="spin" /> : `🔍 Разобрать ${data.unanalyzed} новых`}
+          </button>
+        )}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 12 }}>
+        {!data && <div className="empty" style={{ padding: '14px 0' }}><span className="spin" /></div>}
+        {data && Object.keys(counts).length === 0 && (
+          <div className="empty" style={{ padding: '14px 0' }}>
+            {data.total_lost === 0 ? 'Проигранных диалогов нет 🎉' : 'Нажмите «Разобрать» — AI разметит причины'}
+          </div>
+        )}
+        {Object.entries(counts).map(([t, n]) => (
+          <Bar key={t} label={OBJ_LABELS[t] ?? t} value={Number(n)} max={max} color="var(--warn)" />
+        ))}
+        {(data?.items ?? []).filter((i: any) => i.quote).slice(0, 4).map((i: any, k: number) => (
+          <div key={k} className="faint" style={{ fontSize: 11.5 }}>
+            «{i.quote}» — {i.name} ({OBJ_LABELS[i.tag] ?? i.tag})
+          </div>
+        ))}
+      </div>
     </div>
   )
 }
@@ -155,6 +206,8 @@ export function Analytics() {
             ))}
           </div>
         </div>
+
+        <ObjectionsCard />
 
         <div className="card">
           <b>🔀 Движение по воронке</b>

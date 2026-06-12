@@ -1972,6 +1972,91 @@ async def workspace_save(
     return {"ok": True}
 
 
+OBJECTION_TAGS = ("price", "timing", "trust", "no_need", "competitor", "other")
+
+
+@router.get("/analytics/objections")
+async def analytics_objections(
+    refresh: bool = False,
+    _: dict = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    """«Почему не покупают»: LLM-теги проигранных диалогов (price/timing/trust/
+    no_need/competitor/other) + цитата лида. Тег кэшируется в
+    customer.profile_data['objection'] — LLM зовём один раз на диалог
+    (refresh=true размечает ещё не размеченные, до 12 за вызов)."""
+    rows = (
+        db.query(Conversation, Customer)
+        .join(Customer, Conversation.customer_id == Customer.id)
+        .filter(Conversation.lead_stage == "lost")
+        .order_by(Conversation.last_message_at.desc().nullslast())
+        .limit(30)
+        .all()
+    )
+    items, pending = [], []
+    for conv, cust in rows:
+        cached = ((cust.profile_data or {}).get("objection") or None)
+        if cached and cached.get("tag") in OBJECTION_TAGS:
+            items.append({"name": cust.name or cust.email or "лид",
+                          "tag": cached["tag"], "quote": cached.get("quote", ""),
+                          "lost_reason": conv.lost_reason})
+        else:
+            pending.append((conv, cust))
+
+    analyzed_now = 0
+    if refresh and pending:
+        import main as _main
+        blocks = []
+        by_key = {}
+        for conv, cust in pending[:12]:
+            msgs = (
+                db.query(Message)
+                .filter(Message.conversation_id == conv.id, Message.role == "user")
+                .order_by(Message.created_at.desc())
+                .limit(3)
+                .all()
+            )
+            text = " / ".join(m.content[:200] for m in reversed(msgs)) or "(лид не писал)"
+            key = str(conv.id)[:8]
+            by_key[key] = (conv, cust)
+            blocks.append(f"{key}: {text}")
+        prompt = (
+            "Классифицируй причину отказа каждого лида ровно одной категорией из: "
+            "price, timing, trust, no_need, competitor, other.\n"
+            "Формат ответа — СТРОГО по строке на лида, без пояснений:\n"
+            "<id>|<категория>|<короткая цитата из слов лида (до 10 слов)>\n\n"
+            + "\n".join(blocks)
+        )
+        try:
+            resp = await _main.primary_llm.ainvoke(prompt)
+            for line in (resp.content or "").splitlines():
+                parts = [p.strip() for p in line.split("|")]
+                if len(parts) >= 2 and parts[0] in by_key:
+                    tag = parts[1] if parts[1] in OBJECTION_TAGS else "other"
+                    quote = parts[2][:200] if len(parts) > 2 else ""
+                    conv, cust = by_key[parts[0]]
+                    pd = dict(cust.profile_data or {})
+                    pd["objection"] = {"tag": tag, "quote": quote}
+                    cust.profile_data = pd
+                    items.append({"name": cust.name or cust.email or "лид",
+                                  "tag": tag, "quote": quote,
+                                  "lost_reason": conv.lost_reason})
+                    analyzed_now += 1
+            db.commit()
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=f"LLM analysis failed: {e}")
+
+    counts: dict = {}
+    for it in items:
+        counts[it["tag"]] = counts.get(it["tag"], 0) + 1
+    return {
+        "counts": counts,
+        "items": items[:20],
+        "unanalyzed": max(0, len(pending) - analyzed_now),
+        "total_lost": len(rows),
+    }
+
+
 @router.get("/export/leads.csv")
 async def export_leads_csv(
     _: None = Depends(_verify_member),
