@@ -817,18 +817,15 @@ def build_chat_prompt(
     )
 
     # Цель бота (Admin UI → Настройки → Поведение): overlay-блок ПЕРЕКРЫВАЕТ
-    # дефолтную цель «вести на созвон». call/пусто = дефолт (ничего не вставляем).
+    # дефолтную цель «вести на созвон». ВАЖНО: применяется В САМОМ КОНЦЕ
+    # (после few-shot), иначе примеры с созвонами перевешивают (llama слушает
+    # последние инструкции) — пойман на проде 2026-06-12.
     try:
         from services import bot_settings as _bot_settings
         _goal = (_bot_settings.get_all() or {}).get("bot_goal") or "call"
     except Exception:  # noqa: BLE001
         _goal = "call"
     _goal_block = GOAL_OVERLAYS.get(_goal, "")
-    if _goal_block:
-        base = base.replace(
-            "# ТЕКУЩИЙ ВОПРОС ЛИДА",
-            _goal_block + "\n# ТЕКУЩИЙ ВОПРОС ЛИДА",
-        )
     if use_few_shots:
         # Вставляем примеры ПЕРЕД итоговым вопросом — так модель видит их как «образец».
         # FEW_SHOT тоже содержит {calendar_url} — формат-резолвим его на calendar_url
@@ -841,9 +838,15 @@ def build_chat_prompt(
         # хотя лид УЖЕ в мессенджере (баг: «опять зовёт в telegram»).
         if _is_messenger:
             few_shots_resolved = _filter_fewshots_for_messenger(few_shots_resolved)
-        return base.replace(
+        base = base.replace(
             "# ТЕКУЩИЙ ВОПРОС ЛИДА",
             few_shots_resolved + "\n# ТЕКУЩИЙ ВОПРОС ЛИДА"
+        )
+    # Цель — ПОСЛЕДНЕЙ, прямо перед вопросом: перевешивает few-shot-примеры.
+    if _goal_block:
+        base = base.replace(
+            "# ТЕКУЩИЙ ВОПРОС ЛИДА",
+            _goal_block + "\n# ТЕКУЩИЙ ВОПРОС ЛИДА",
         )
     return base
 
