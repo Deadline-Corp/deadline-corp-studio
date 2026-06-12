@@ -195,7 +195,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
           {detail && (
             <>
               <div className="d-chips">
-                <span className="chip">{ch?.icon} {ch?.label}</span>
+                <span className={`chip ${ch?.cls ?? ''}`}>{ch?.icon} {ch?.label ?? detail.channel}</span>
                 <span className="chip accent">{stageLabel(detail.lead_stage)}</span>
                 {temp && <span className={`chip ${temp.cls}`}>{temp.label}</span>}
                 <span className="chip">скор {detail.customer.lead_score}</span>

@@ -4,6 +4,7 @@ import { ScheduledActionItem, TodayView, TodayItem } from '../api/types'
 import { usePolling } from '../hooks/usePolling'
 import { useDrawer } from '../components/DrawerContext'
 import { CHANNEL_META, fmtTime, fmtAgo } from '../lib'
+import { HintBar } from '../components/HintBar'
 
 /* Задачи: вкладка «Мой день» (просрочено → сегодня → ближайшее + созвоны —
    паттерн HubSpot/Kommo) и «Все задачи» (полный список). */
@@ -29,6 +30,11 @@ export function Tasks() {
           <button className={`btn sm ${tab === 'all' ? 'primary' : 'ghost'}`} onClick={() => setTab('all')}>Все задачи</button>
         </div>
       </div>
+      <HintBar id="tasks" icon="⏰">
+        «Мой день» — что требует внимания: 🔴 просрочено, 🟡 сегодня, 📅 на неделе.
+        🤖-задачи бот выполнит сам по расписанию; 👤-задачи закрываете вы кнопкой «Сделано».
+        Поставить задачу — из карточки лида (кнопка «📋 Задача»).
+      </HintBar>
       {tab === 'day' ? <MyDay showToast={showToast} /> : <AllTasks showToast={showToast} />}
       {toast && <div className="toast">{toast}</div>}
     </div>

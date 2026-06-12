@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api/client'
+import { HintBar, hintsEnabled, setHintsEnabled } from '../components/HintBar'
 
 /* Настройки: редактируемое поведение бота (прогрев/нудж — применяется без
    деплоя за ~минуту) + статус каналов/CRM/LLM (read-only) + состав KB. */
@@ -28,6 +29,11 @@ export function Settings() {
     <div className="page">
       <div className="page-head"><h1>Настройки</h1></div>
 
+      <HintBar id="settings" icon="⚙️">
+        Всё «под себя»: пресет ниши (перестроит систему в 1 клик), поля лида, поведение бота
+        (когда напоминать молчунам), демо-данные для тренировки. Подсказки и обучение
+        включаются/выключаются здесь же.
+      </HintBar>
       <WorkspaceCard />
       <div style={{ height: 14 }} />
       <PresetsCard />
@@ -162,7 +168,7 @@ function WorkspaceCard() {
             <input value={name} onChange={e => { setName(e.target.value); setDirty(true) }} style={{ flex: 1 }} />
             <button className="btn sm primary" onClick={saveName} disabled={busy || !dirty}>💾</button>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button className="btn sm" onClick={() => { import('../components/Tour').then(m => m.startTour()) }}>
               🎓 Показать обучение
             </button>
@@ -170,6 +176,11 @@ function WorkspaceCard() {
               ↻ Мастер настройки заново
             </button>
           </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, cursor: 'pointer' }}>
+            <input type="checkbox" defaultChecked={hintsEnabled()}
+                   onChange={e => setHintsEnabled(e.target.checked)} />
+            💡 Подсказки на страницах (что это за окно и как с ним работать)
+          </label>
         </div>
         <div style={{ flex: 1, minWidth: 280, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <span className="muted" style={{ fontSize: 12.5 }}>

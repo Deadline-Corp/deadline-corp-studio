@@ -3,6 +3,7 @@ import { api } from '../api/client'
 import { AnalyticsView } from '../api/types'
 import { usePolling } from '../hooks/usePolling'
 import { CHANNEL_META, TEMP_META } from '../lib'
+import { HintBar } from '../components/HintBar'
 
 /* Аналитика: цифры воронки/каналов на CSS-барах, без чарт-библиотек. */
 
@@ -53,6 +54,11 @@ export function Analytics() {
           <option value={90}>90 дней</option>
         </select>
       </div>
+
+      <HintBar id="analytics" icon="📈">
+        Цифры ваших продаж: сколько лидов пришло и откуда, где они застревают в воронке,
+        почему теряются. Заглядывайте раз в день — сразу видно, где затык.
+      </HintBar>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 14 }}>
         <div className="card" style={kpi}>

@@ -31,7 +31,8 @@ logger = logging.getLogger(__name__)
 MAX_FIRES = 5          # потолок повторов одного правила на один диалог
 MAX_FIRES_PER_SWEEP = 30  # потолок срабатываний за один проход (анти-взрыв)
 
-TRIGGER_TYPES = ("lead_silent",)
+TRIGGER_TYPES = ("lead_silent", "new_lead")
+NEW_LEAD_WINDOW_H = 48  # new_lead срабатывает только для диалогов моложе 48ч (анти-ретро)
 ACTION_TYPES = ("bot_message", "create_task", "set_stage", "notify_admin")
 
 
@@ -48,6 +49,8 @@ def validate_rule(trigger: dict, conditions: Optional[dict], actions: list) -> l
                 problems.append("hours: от 0.25 до 2160 (90 дней)")
         except (TypeError, ValueError):
             problems.append("hours: число часов")
+    # new_lead: без параметров — срабатывает на следующем проходе крона
+    # (≤10 мин) после появления диалога, один раз.
     if not actions:
         problems.append("Нужно хотя бы одно действие")
     for i, a in enumerate(actions or []):
@@ -113,21 +116,34 @@ async def run_automations() -> dict:
                 break
             try:
                 trig = rule.trigger or {}
-                if trig.get("type") != "lead_silent":
+                ttype = trig.get("type")
+                if ttype == "lead_silent":
+                    hours = float(trig.get("hours", 24))
+                    cutoff = now - timedelta(hours=hours)
+                    # Кандидаты: открытые диалоги, молчат дольше порога.
+                    candidates = (
+                        s.query(Conversation, Customer)
+                        .join(Customer, Conversation.customer_id == Customer.id)
+                        .filter(Conversation.status == "open")
+                        .filter(Conversation.last_message_at.isnot(None))
+                        .filter(Conversation.last_message_at <= cutoff)
+                        .limit(200)
+                        .all()
+                    )
+                elif ttype == "new_lead":
+                    # Свежесозданные диалоги (окно 48ч — чтобы включённое сегодня
+                    # правило не ретро-стреляло по всей старой базе). Дедуп через
+                    # automation_runs гарантирует «один раз на диалог».
+                    candidates = (
+                        s.query(Conversation, Customer)
+                        .join(Customer, Conversation.customer_id == Customer.id)
+                        .filter(Conversation.status == "open")
+                        .filter(Conversation.created_at >= now - timedelta(hours=NEW_LEAD_WINDOW_H))
+                        .limit(200)
+                        .all()
+                    )
+                else:
                     continue
-                hours = float(trig.get("hours", 24))
-                cutoff = now - timedelta(hours=hours)
-
-                # Кандидаты: открытые диалоги, молчат дольше порога.
-                candidates = (
-                    s.query(Conversation, Customer)
-                    .join(Customer, Conversation.customer_id == Customer.id)
-                    .filter(Conversation.status == "open")
-                    .filter(Conversation.last_message_at.isnot(None))
-                    .filter(Conversation.last_message_at <= cutoff)
-                    .limit(200)
-                    .all()
-                )
                 for conv, cust in candidates:
                     if fired_total >= MAX_FIRES_PER_SWEEP:
                         break

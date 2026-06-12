@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../api/client'
 import { PromptVersionItem } from '../api/types'
 import { fmtTime } from '../lib'
+import { HintBar } from '../components/HintBar'
 
 /* «Мозг»: лёгкий режим — правила одной строкой («когда X — отвечай Y»),
    бот применяет их через retrieval как уроки. Продвинутое (полный системный
@@ -62,6 +63,12 @@ export function Brain() {
         <h1>Мозг бота</h1>
         <span className="sub">правила применяются без деплоя</span>
       </div>
+
+      <HintBar id="brain" icon="🧠">
+        Здесь настраивается, <b>как бот разговаривает</b>. Пишите правила по-человечески:
+        «Когда спрашивают про цену — называй вилку и зови на созвон» — бот начнёт применять
+        сразу, без программиста. Полный «характер» бота — в «Продвинутом» (трогайте осторожно).
+      </HintBar>
 
       {/* ---- Лёгкий режим: быстрые правила ---- */}
       <div className="card" style={{ marginBottom: 14 }}>

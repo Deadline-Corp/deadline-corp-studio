@@ -4,6 +4,7 @@ import { AutomationRuleItem } from '../api/types'
 import { usePolling } from '../hooks/usePolling'
 import { useStages } from '../overviewContext'
 import { CHANNEL_META, LOST_REASONS, TEMP_META } from '../lib'
+import { HintBar } from '../components/HintBar'
 
 /* Автоматизации: конструктор «Когда → Если → То» без кода (паттерн
    GoHighLevel/Chatwoot). Исполняет крон раз в ~10 минут. */
@@ -55,6 +56,7 @@ export function Automations() {
   const describe = (r: AutomationRuleItem): string => {
     const parts: string[] = []
     if (r.trigger.type === 'lead_silent') parts.push(`лид молчит ${r.trigger.hours} ч`)
+    if (r.trigger.type === 'new_lead') parts.push('появился новый лид')
     const c = r.conditions || {}
     if (c.channels?.length) parts.push(`канал: ${c.channels.map(x => CHANNEL_META[x]?.label ?? x).join('/')}`)
     if (c.stages?.length) parts.push(`стадия: ${c.stages.map(s => stages.find(x => x.stage === s)?.label ?? s).join(', ')}`)
@@ -70,6 +72,12 @@ export function Automations() {
         <div className="spacer" />
         <button className="btn primary" onClick={() => setEditing('new')}>+ Новое правило</button>
       </div>
+
+      <HintBar id="automations" icon="⚡">
+        Глобальные правила для бота: <b>«Когда → Если → То»</b>. Например: «появился новый лид →
+        поставить мне задачу позвонить» или «лид молчит сутки → бот мягко напомнит о себе».
+        Собирается кнопками, без программиста. Проверка каждые ~10 минут, у каждого правила — счётчик срабатываний.
+      </HintBar>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {loaded && items.length === 0 && (
@@ -119,6 +127,7 @@ function RuleEditor({ rule, onClose, onSaved }: {
 }) {
   const stages = useStages()
   const [name, setName] = useState(rule?.name ?? '')
+  const [ttype, setTtype] = useState<string>(rule?.trigger.type ?? 'lead_silent')
   const [hours, setHours] = useState(String(rule?.trigger.hours ?? 24))
   const [channels, setChannels] = useState<string[]>(rule?.conditions?.channels ?? [])
   const [condStages, setCondStages] = useState<string[]>(rule?.conditions?.stages ?? [])
@@ -142,7 +151,9 @@ function RuleEditor({ rule, onClose, onSaved }: {
         id: rule?.id,
         name: name.trim() || 'Без названия',
         enabled: rule?.enabled ?? true,
-        trigger: { type: 'lead_silent', hours: parseFloat(hours) },
+        trigger: ttype === 'new_lead'
+          ? { type: 'new_lead' }
+          : { type: 'lead_silent', hours: parseFloat(hours) },
         conditions: {
           channels: channels.length ? channels : undefined,
           stages: condStages.length ? condStages : undefined,
@@ -179,11 +190,21 @@ function RuleEditor({ rule, onClose, onSaved }: {
 
         <div style={block}>
           <b style={{ fontSize: 13 }}>⏰ КОГДА</b>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-            Лид молчит
-            <input type="number" min={0.5} step={0.5} value={hours}
-                   onChange={e => setHours(e.target.value)} style={{ width: 80 }} />
-            часов
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, flexWrap: 'wrap' }}>
+            <select value={ttype} onChange={e => setTtype(e.target.value)} style={{ fontSize: 13 }}>
+              <option value="lead_silent">Лид молчит N часов</option>
+              <option value="new_lead">Появился новый лид</option>
+            </select>
+            {ttype === 'lead_silent' && (
+              <>
+                <input type="number" min={0.5} step={0.5} value={hours}
+                       onChange={e => setHours(e.target.value)} style={{ width: 80 }} />
+                часов
+              </>
+            )}
+            {ttype === 'new_lead' && (
+              <span className="faint" style={{ fontSize: 12 }}>сработает в течение ~10 минут после появления, один раз</span>
+            )}
           </div>
         </div>
 

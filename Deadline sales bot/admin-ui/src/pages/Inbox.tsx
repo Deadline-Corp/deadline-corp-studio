@@ -5,6 +5,7 @@ import { ConvSummary } from '../api/types'
 import { usePolling } from '../hooks/usePolling'
 import { useDrawer } from '../components/DrawerContext'
 import { useStages, useStageLabel } from '../overviewContext'
+import { HintBar } from '../components/HintBar'
 import { CHANNEL_META, TEMP_META, fmtAgo, initials } from '../lib'
 
 /* Единый inbox: все переписки всех каналов, фильтры, клик → drawer. */
@@ -53,6 +54,12 @@ export function Inbox() {
         <span className="sub">{loaded ? `${total} диалогов` : '…'}</span>
       </div>
 
+      <HintBar id="inbox" icon="💬">
+        Все переписки со всех каналов — в одном месте (цветной бейдж показывает, откуда лид).
+        Кликните на диалог: можно <b>ответить самому</b> («Взять на себя» — бот замолчит и не будет мешать),
+        сменить стадию, заполнить поля или пнуть молчуна.
+      </HintBar>
+
       <div className="filters">
         <select value={channel} onChange={e => setFilter('channel', e.target.value)}>
           <option value="">Все каналы</option>
@@ -87,8 +94,10 @@ export function Inbox() {
               <div className="c-main">
                 <div className="c-name">
                   {c.customer.name || 'Без имени'}
-                  <span className="faint" style={{ fontWeight: 400, fontSize: 12 }}>{ch?.icon}</span>
-                  {c.operator_takeover && <span className="chip ok">👤</span>}
+                  <span className={`chip ${ch?.cls ?? ''}`} style={{ fontWeight: 500 }}>
+                    {ch?.icon} {ch?.label ?? c.channel}
+                  </span>
+                  {c.operator_takeover && <span className="chip ok">👤 оператор</span>}
                 </div>
                 <div className="c-preview">{c.preview || '—'}</div>
               </div>

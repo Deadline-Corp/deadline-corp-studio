@@ -5,6 +5,7 @@ import { usePolling } from '../hooks/usePolling'
 import { useDrawer } from '../components/DrawerContext'
 import { useStages } from '../overviewContext'
 import { CHANNEL_META, LOST_REASONS, TEMP_META, fmtAgo, initials } from '../lib'
+import { HintBar } from '../components/HintBar'
 
 /* Канбан-воронка: стадии динамические (своя CRM — настраиваются тут же),
    drag → подтверждение → stage override (встроенные стадии зеркалятся в
@@ -97,6 +98,12 @@ export function Funnel() {
         <div className="spacer" />
         <button className="btn" onClick={() => setEditorOpen(true)}>⚙ Настроить стадии</button>
       </div>
+
+      <HintBar id="funnel" icon="📊">
+        Ваши сделки по этапам. <b>Перетащите карточку мышкой</b> в другую колонку — стадия сменится
+        (и уйдёт в CRM). Клик по карточке — откроется переписка. «⚙ Настроить стадии» — переименуйте
+        этапы под свой бизнес, бот продолжит работать.
+      </HintBar>
 
       <div className="kanban">
         {stages.map(s => {

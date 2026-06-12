@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useOverview } from '../overviewContext'
 import { CHANNEL_META, fmtAgo } from '../lib'
+import { HintBar } from '../components/HintBar'
 
 /* Каналы: карточки подключения в стиле «подключи за N шагов» (паттерн
    Kommo/Chatwoot). Статус из overview; инструкции — пошаговые раскрывашки.
@@ -69,6 +70,11 @@ export function Channels() {
         <h1>Каналы</h1>
         <span className="sub">откуда бот принимает лидов и как подключить новые</span>
       </div>
+
+      <HintBar id="channels" icon="🔌">
+        Каналы — откуда бот принимает клиентов. Зелёный бейдж = работает. Чтобы подключить
+        новый — раскройте «Как подключить» на карточке, там пошаговая инструкция без айтишных сложностей.
+      </HintBar>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: 14 }}>
 

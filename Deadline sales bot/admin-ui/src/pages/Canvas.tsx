@@ -1,8 +1,20 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { ReactFlow, Background, Controls, Node, Edge, Handle, Position } from '@xyflow/react'
+import { api } from '../api/client'
+import { AnalyticsView } from '../api/types'
 import { useOverview } from '../overviewContext'
 import { CHANNEL_META, fmtAgo } from '../lib'
+import { HintBar } from '../components/HintBar'
+
+/* Раскладка канваса настраивается: тащите ноды куда удобно — позиции
+   запоминаются (localStorage) и переживают перезагрузку. «↺ Раскладка»
+   возвращает стандарт. */
+const LAYOUT_KEY = 'deadline_canvas_layout_v2'
+
+function loadLayout(): Record<string, { x: number; y: number }> {
+  try { return JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}') } catch { return {} }
+}
 
 /* Канвас в духе eva.bz: бот в центре, слева каналы, справа подсистемы.
    Клик по ноде → соответствующий раздел (сквозная навигация). */
@@ -52,16 +64,38 @@ const nodeTypes = { card: CardNode }
 export function Canvas() {
   const ov = useOverview()
   const navigate = useNavigate()
+  const [kpi, setKpi] = useState<AnalyticsView | null>(null)
+  const [layoutV, setLayoutV] = useState(0)
+
+  useEffect(() => {
+    void api.get<AnalyticsView>('/analytics?days=7').then(setKpi).catch(() => { /* */ })
+  }, [])
 
   const { nodes, edges } = useMemo(() => {
     if (!ov) return { nodes: [] as Node[], edges: [] as Edge[] }
 
+    const saved = loadLayout()
     const nodes: Node[] = []
     const edges: Edge[] = []
 
+    // KPI-дашборд за 7 дней — сверху по центру.
+    if (kpi) {
+      nodes.push({
+        id: 'kpi', type: 'card', position: saved['kpi'] ?? { x: 430, y: 30 },
+        data: {
+          icon: '📈', title: 'Дашборд · 7 дней', to: '/analytics',
+          rows: [
+            { k: 'Новых лидов', v: kpi.totals.new_leads },
+            { k: 'Созвонов назначено', v: kpi.totals.booked_calls },
+            { k: 'Автоматизаций сработало', v: kpi.totals.automation_fires },
+          ],
+        } satisfies NodeData,
+      })
+    }
+
     // Центр — бот.
     nodes.push({
-      id: 'bot', type: 'card', position: { x: 430, y: 230 },
+      id: 'bot', type: 'card', position: saved['bot'] ?? { x: 430, y: 230 },
       data: {
         icon: '🤖', title: 'Дедлайн · AI-агент', center: true,
         sub: ov.bot.model.split('/').pop(),
@@ -78,7 +112,7 @@ export function Canvas() {
     ov.channels.forEach((ch, i) => {
       const meta = CHANNEL_META[ch.id]
       nodes.push({
-        id: `ch-${ch.id}`, type: 'card', position: { x: 60, y: 40 + i * 150 },
+        id: `ch-${ch.id}`, type: 'card', position: saved[`ch-${ch.id}`] ?? { x: 60, y: 40 + i * 150 },
         data: {
           icon: meta.icon, title: meta.label,
           dim: !ch.configured,
@@ -150,7 +184,7 @@ export function Canvas() {
       },
     ]
     right.forEach(r => {
-      nodes.push({ id: r.id, type: 'card', position: { x: 850, y: r.y }, data: r.data })
+      nodes.push({ id: r.id, type: 'card', position: saved[r.id] ?? { x: 850, y: r.y }, data: r.data })
       edges.push({
         id: `e-${r.id}`, source: 'bot', target: r.id,
         animated: true, style: { strokeWidth: 1.5 },
@@ -158,7 +192,8 @@ export function Canvas() {
     })
 
     return { nodes, edges }
-  }, [ov])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ov, kpi, layoutV])
 
   if (!ov) {
     return <div className="page"><div className="empty"><span className="spin" /> Загрузка…</div></div>
@@ -166,7 +201,18 @@ export function Canvas() {
 
   return (
     <div className="page canvas-page">
-      <div className="canvas-wrap">
+      <div style={{ padding: '14px 18px 0' }}>
+        <HintBar id="canvas" icon="🕸">
+          Пульт системы: слева каналы, в центре бот, справа подсистемы. Кликните по карточке —
+          провалитесь внутрь. <b>Карточки можно перетаскивать</b> — раскладка запомнится.
+        </HintBar>
+      </div>
+      <div className="canvas-wrap" style={{ position: 'relative' }}>
+        <button className="btn sm ghost" style={{ position: 'absolute', top: 8, right: 14, zIndex: 5 }}
+                title="Вернуть стандартную раскладку"
+                onClick={() => { localStorage.removeItem(LAYOUT_KEY); setLayoutV(v => v + 1) }}>
+          ↺ Раскладка
+        </button>
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -179,6 +225,11 @@ export function Canvas() {
           onNodeClick={(_, node) => {
             const to = (node.data as NodeData).to
             if (to) navigate(to)
+          }}
+          onNodeDragStop={(_, node) => {
+            const saved = loadLayout()
+            saved[node.id] = { x: node.position.x, y: node.position.y }
+            localStorage.setItem(LAYOUT_KEY, JSON.stringify(saved))
           }}
         >
           <Background gap={26} size={1.4} color="rgba(148,156,210,0.10)" />

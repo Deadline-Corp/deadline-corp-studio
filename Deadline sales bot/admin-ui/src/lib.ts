@@ -1,10 +1,20 @@
 /* Общие словари и форматтеры — единый язык всех вью. */
 
-export const CHANNEL_META: Record<string, { icon: string; label: string }> = {
-  website: { icon: '🌐', label: 'Сайт' },
-  telegram: { icon: '✈️', label: 'Telegram' },
-  instagram: { icon: '📸', label: 'Instagram' },
-  messenger: { icon: '💬', label: 'Messenger' },
+export const CHANNEL_META: Record<string, { icon: string; label: string; cls: string }> = {
+  website: { icon: '🌐', label: 'Сайт', cls: 'info' },
+  telegram: { icon: '✈️', label: 'Telegram', cls: 'accent' },
+  instagram: { icon: '📸', label: 'Instagram', cls: 'danger' },
+  messenger: { icon: '💬', label: 'Messenger', cls: 'ok' },
+  whatsapp: { icon: '🟢', label: 'WhatsApp', cls: 'ok' },
+}
+
+/** Откуда именно реплика/диалог: DM или коммент (по extra_meta.kind). */
+export function sourceLabel(channel: string, extraMeta?: any): string {
+  const m = CHANNEL_META[channel]
+  const base = m ? `${m.icon} ${m.label}` : channel
+  const kind = extraMeta?.kind
+  if (kind === 'comment' || kind === 'ig_comment' || kind === 'fb_comment') return `${base} · коммент`
+  return base
 }
 
 export const STAGES: Array<{ stage: string; label: string }> = [
