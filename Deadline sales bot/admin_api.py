@@ -1508,6 +1508,88 @@ async def onboarding_generate(req: OnboardingGenerateRequest, _: None = Depends(
     return {"ok": True, "draft": draft}
 
 
+class OnboardingApplyRequest(BaseModel):
+    system_prompt: Optional[str] = Field(None, max_length=20_000)
+    kb_md: Optional[str] = Field(None, max_length=200_000)
+    preset_key: Optional[str] = None
+    bot_goal: Optional[str] = None
+
+
+@router.post("/onboarding/apply")
+async def onboarding_apply(
+    req: OnboardingApplyRequest,
+    _: None = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    """Применить (отревьюенный) черновик конфиг-агента: мозг + KB + пресет + цель.
+    Каждое поле опционально — применяется только заданное."""
+    import asyncio
+    from services import bot_settings, funnel_store, prompt_store
+    applied: dict = {}
+
+    # 1. Мозг — оборачиваем сгенерённый тон в валидный шаблон с плейсхолдерами.
+    if req.system_prompt and req.system_prompt.strip():
+        wrapped = (
+            req.system_prompt.strip()
+            + "\n\n# УРОКИ ИЗ ИСПРАВЛЕНИЙ (приоритет над KB)\n{corrections}"
+            + "\n\n# КОНТЕКСТ ИЗ KNOWLEDGE BASE\n{context}"
+            + "\n\n{handoff_block}"
+            + "\n\n# ИСТОРИЯ ДИАЛОГА\n{history}"
+            + "\n\n# ТЕКУЩИЙ ВОПРОС КЛИЕНТА\n{question}"
+            + "\n\nОтвет (на «вы», кратко, на языке клиента):"
+        )
+        try:
+            prompt_store.set_active_system_prompt(wrapped, created_by="onboarding")
+            applied["system_prompt"] = True
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=f"Промпт: {e}")
+
+    # 2. База знаний
+    if req.kb_md and req.kb_md.strip():
+        from services.kb_ingest import ingest_text
+        applied["kb_chunks"] = await asyncio.to_thread(ingest_text, "company_knowledge.md", req.kb_md)
+
+    # 3. Пресет ниши (стадии + поля + 📦-автоматизации + текст пинка)
+    if req.preset_key:
+        preset = NICHE_PRESETS.get(req.preset_key)
+        if preset is None:
+            raise HTTPException(status_code=404, detail=f"Нет пресета {req.preset_key!r}")
+        try:
+            if preset["stages"] is None:
+                funnel_store.reset_to_builtin(db)
+            else:
+                funnel_store.save_stages(db, preset["stages"])
+        except ValueError as e:
+            db.rollback()
+            raise HTTPException(status_code=422, detail=f"Стадии пресета: {e}")
+        db.query(CustomFieldDef).delete()
+        for pos, f in enumerate(preset["fields"]):
+            db.add(CustomFieldDef(position=pos, key=f["key"], label=f["label"],
+                                  field_type=f["field_type"], options=f.get("options"), active=True))
+        db.query(AutomationRule).filter(AutomationRule.name.like("📦%")).delete(synchronize_session=False)
+        base_pos = db.query(AutomationRule).count()
+        for i, r in enumerate(preset["automations"]):
+            db.add(AutomationRule(
+                name=r["name"], enabled=True, trigger=r["trigger"],
+                conditions=r.get("conditions"), actions=r["actions"],
+                cooldown_hours=int(r.get("cooldown_hours", 0)), position=base_pos + i,
+            ))
+        db.commit()
+        applied["preset"] = req.preset_key
+        if preset.get("nudge_text"):
+            try:
+                bot_settings.set_many({"nudge_text": preset["nudge_text"]})
+            except Exception:  # noqa: BLE001
+                pass
+
+    # 4. Цель бота
+    if req.bot_goal in ("call", "collect_lead", "consult", "sale"):
+        bot_settings.set_many({"bot_goal": req.bot_goal})
+        applied["bot_goal"] = req.bot_goal
+
+    return {"ok": True, "applied": applied}
+
+
 # ============================================================================
 # AUTOMATIONS — конструктор «Когда → Если → То»
 # ============================================================================
