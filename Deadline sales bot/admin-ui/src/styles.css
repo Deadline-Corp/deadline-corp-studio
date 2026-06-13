@@ -43,6 +43,25 @@
   --mono: 'JetBrains Mono', Consolas, monospace;
 }
 
+/* ---------- Светлая тема (в стиле DEADLINE: тёплая бумага, чернила) ---------- */
+:root[data-theme="light"] {
+  --bg: #f6f4ee;
+  --bg-soft: #efece3;
+  --panel: #ffffff;
+  --panel-2: #f1eee6;
+  --border: rgba(60, 52, 30, 0.13);
+  --border-strong: rgba(60, 52, 30, 0.25);
+  --text: #221d12;
+  --text-dim: #5c553f;
+  --text-faint: #8d8569;
+  --accent-soft: rgba(124, 108, 255, 0.10);
+}
+:root[data-theme="light"] .flow-node { box-shadow: 0 6px 20px rgba(60,52,30,0.10); }
+:root[data-theme="light"] .react-flow__background { background: var(--bg); }
+:root[data-theme="light"] .login-wrap {
+  background: radial-gradient(900px 500px at 70% -10%, rgba(124,108,255,0.08), transparent 60%), var(--bg);
+}
+
 * { box-sizing: border-box; }
 
 html, body, #root {

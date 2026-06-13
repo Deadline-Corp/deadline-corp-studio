@@ -15,6 +15,7 @@ const NAV = [
   { to: '/funnel', icon: '📊', label: 'Воронка' },
   { to: '/inbox', icon: '💬', label: 'Переписки' },
   { to: '/tasks', icon: '⏰', label: 'Задачи' },
+  { to: '/calendar', icon: '📅', label: 'Календарь' },
   { to: '/automations', icon: '⚡', label: 'Автоматизации', owner: true },
   { to: '/analytics', icon: '📈', label: 'Аналитика' },
   { to: '/brain', icon: '🧠', label: 'Мозг', owner: true },
@@ -52,6 +53,12 @@ export function Layout() {
     try { setOverview(await api.get<Overview>('/overview')) } catch { /* ignore */ }
   }, 30000)
 
+  const [theme, setTheme] = useState(localStorage.getItem('deadline_theme') || 'dark')
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    localStorage.setItem('deadline_theme', theme)
+  }, [theme])
+
   const logout = () => {
     clearToken()
     navigate('/login')
@@ -82,7 +89,7 @@ export function Layout() {
                 </span>
               </div>
               {visibleNav.map(n => (
-                <NavLink key={n.to} to={n.to} end={n.end as any}
+                <NavLink key={n.to} to={n.to} end={n.end as any} data-tour={`nav-${n.to}`}
                   className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
                   <span className="nav-ico">{n.icon}</span>
                   {n.label}
@@ -96,7 +103,13 @@ export function Layout() {
                 <div className="mono" style={{ fontSize: 10.5, margin: '3px 0' }}>
                   {overview?.bot.model.split('/').pop()}
                 </div>
-                <button onClick={logout}>Выйти</button>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <button onClick={logout}>Выйти</button>
+                  <button title="Светлая/тёмная тема"
+                          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>
+                    {theme === 'dark' ? '☀️' : '🌙'}
+                  </button>
+                </div>
               </div>
             </aside>
             <main className="main">
