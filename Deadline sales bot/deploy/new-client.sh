@@ -41,7 +41,8 @@ PY
 fi
 
 echo "==> 1/6 Новый проект Railway: $PROJECT"
-railway init --name "$PROJECT"
+# RAILWAY_WORKSPACE задан → неинтерактивно (нужно при запуске не из терминала).
+railway init --name "$PROJECT" ${RAILWAY_WORKSPACE:+--workspace "$RAILWAY_WORKSPACE"}
 
 echo "==> 2/6 Postgres"
 railway add --database postgres
