@@ -26,6 +26,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
   const [fieldEdits, setFieldEdits] = useState<Record<string, any>>({})
   const [fieldsOpen, setFieldsOpen] = useState(false)
   const [advice, setAdvice] = useState('')
+  const [team, setTeam] = useState<any[]>([])
   const msgsRef = useRef<HTMLDivElement>(null)
   const lastTsRef = useRef<string | null>(null)
 
@@ -85,6 +86,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
     setDetail(null)
     void loadDetail()
     void loadMessages(true)
+    void api.get<{ items: any[] }>('/team').then(r => setTeam(r.items || [])).catch(() => { /* менеджеру /team закрыт — дропдаун скрыт */ })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [convId])
 
@@ -266,6 +268,26 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                   finally { setBusy(false) }
                 }}>🔁 Регулярный</button>
                 <Help title="Регулярный клиент" text="Постоянный клининг / ТО: бот сам шлёт плановое напоминание каждые N дней («подтвердите время — команда приедет»). Снять — введите 0." />
+                {team.filter((m: any) => m.active).length > 0 && (
+                  <select value="" disabled={busy} style={{ fontSize: 12 }}
+                          onChange={async e => {
+                            const v = e.target.value
+                            if (!v) return
+                            const mid = v === '__unassign__' ? null : v
+                            setBusy(true)
+                            try {
+                              const r = await api.post<{ assigned: any }>(`/conversations/${convId}/assign`, { member_id: mid })
+                              showToast(r.assigned ? `📋 Назначено: ${r.assigned.name}` : 'Назначение снято')
+                            } catch (er: any) { showToast(`Ошибка: ${er.detail ?? er.message}`, true) }
+                            finally { setBusy(false) }
+                          }}>
+                    <option value="">📋 Назначить на…</option>
+                    {team.filter((m: any) => m.active).map((m: any) => (
+                      <option key={m.id} value={m.id}>{m.name}{m.department ? ` · ${m.department}` : ''}</option>
+                    ))}
+                    <option value="__unassign__">— снять назначение —</option>
+                  </select>
+                )}
                 {detail.hubspot.contact_url && (
                   <a className="btn sm ghost" href={detail.hubspot.contact_url} target="_blank" rel="noreferrer">HubSpot ↗</a>
                 )}

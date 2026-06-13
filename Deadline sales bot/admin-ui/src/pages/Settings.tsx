@@ -237,6 +237,8 @@ function WorkspaceCard() {
 function TeamCard() {
   const [items, setItems] = useState<any[]>([])
   const [newName, setNewName] = useState('')
+  const [newDept, setNewDept] = useState('')
+  const [newTg, setNewTg] = useState('')
   const [freshToken, setFreshToken] = useState<{ name: string; token: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState<{ text: string; err?: boolean } | null>(null)
@@ -254,9 +256,11 @@ function TeamCard() {
     if (!name || busy) return
     setBusy(true)
     try {
-      const r = await api.post<{ token: string }>('/team', { name })
+      const r = await api.post<{ token: string }>('/team', {
+        name, department: newDept.trim() || undefined, telegram_chat_id: newTg.trim() || undefined,
+      })
       setFreshToken({ name, token: r.token })
-      setNewName('')
+      setNewName(''); setNewDept(''); setNewTg('')
       await load()
     } catch (e: any) { showToast(`Ошибка: ${e.message}`, true) }
     finally { setBusy(false) }
@@ -274,10 +278,14 @@ function TeamCard() {
       <b>👥 Команда
         <Help title="Менеджеры" text="Каждому менеджеру — свой токен входа. Он видит лидов, воронку, задачи и аналитику, но не может менять Мозг, Автоматизации и Настройки. Токен показывается один раз — передайте его лично." />
       </b>
-      <div style={{ display: 'flex', gap: 8, marginTop: 12, maxWidth: 460 }}>
-        <input placeholder="Имя менеджера (напр. «Николай»)"
+      <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', maxWidth: 640 }}>
+        <input placeholder="Имя (напр. «Николай»)"
                value={newName} onChange={e => setNewName(e.target.value)}
-               onKeyDown={e => { if (e.key === 'Enter') create() }} style={{ flex: 1 }} />
+               onKeyDown={e => { if (e.key === 'Enter') create() }} style={{ flex: '1 1 150px' }} />
+        <input placeholder="Отдел (клининг / ремонт)"
+               value={newDept} onChange={e => setNewDept(e.target.value)} style={{ flex: '1 1 130px' }} />
+        <input placeholder="Telegram chat_id (уведомления)"
+               value={newTg} onChange={e => setNewTg(e.target.value)} style={{ flex: '1 1 160px' }} />
         <button className="btn sm primary" onClick={create} disabled={busy || !newName.trim()}>
           {busy ? <span className="spin" /> : '+ Выдать доступ'}
         </button>
@@ -305,6 +313,8 @@ function TeamCard() {
           <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
             <span style={{ opacity: m.active ? 1 : 0.5 }}>👤 {m.name}</span>
             <span className="chip">{m.role}</span>
+            {m.department && <span className="chip">{m.department}</span>}
+            {m.telegram_chat_id && <span className="chip" title="уведомления в Telegram">🔔</span>}
             {m.last_seen_at && <span className="faint" style={{ fontSize: 11 }}>был: {fmtTimeShort(m.last_seen_at)}</span>}
             <div style={{ flex: 1 }} />
             <button className={`btn sm ${m.active ? 'danger' : ''}`} onClick={() => toggle(m.id)} disabled={busy}>
