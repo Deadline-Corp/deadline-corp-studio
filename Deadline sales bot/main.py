@@ -2420,13 +2420,109 @@ async def send_lead_to_telegram(lead: LeadFormRequest) -> bool:
         return False
 
 
+def _extract_form_phone(lead: LeadFormRequest) -> Optional[str]:
+    """The website forms pack the phone into the free-text `task` field as
+    'Телефон: +66...'. Pull it back out so we can dedup/store it on the CRM
+    contact. Returns None if no phone-looking value is present."""
+    import re
+    # 1) explicit "Телефон: ..." line written by /partner-form/ + /lead-form/
+    if lead.task:
+        m = re.search(r"[Тт]елефон[:\s]+([+\d][\d\s()\-]{4,})", lead.task)
+        if m:
+            return m.group(1).strip()
+    # 2) the contact field itself might be a bare phone number
+    c = (lead.contact or "").strip()
+    if c and re.fullmatch(r"[+\d][\d\s()\-]{4,}", c):
+        return c
+    return None
+
+
+async def _create_crm_lead_from_form(lead: LeadFormRequest) -> bool:
+    """Land a website form/quiz submission in the CRM as a real lead.
+
+    Mirrors the chat-handoff path: resolve_or_create_customer (+identity merge
+    by phone / @username) → open conversation → dispatch_on_first_touch enqueues
+    upsert_contact + create_deal on the CRM queue. Same Deal mapping the bot
+    already uses in production, so a form lead lands exactly like a conversation
+    lead does (HubSpot contact + deal in the configured pipeline + owner).
+
+    Gated by crm_enabled and fully guarded: any failure is logged and swallowed
+    so it can NEVER affect the form response or the Telegram notification.
+    """
+    if not settings.crm_enabled:
+        return False
+    try:
+        import uuid as _uuid
+        from services.identity import resolve_or_create_customer
+        from services.conversations import get_or_create_conversation
+        from services.crm_dispatch import dispatch_on_first_touch
+
+        tg = (lead.contact or "").strip() or None
+        phone = _extract_form_phone(lead)
+        # Stable external id for identity dedup: phone is the most reliable
+        # cross-channel key, then @username, else a synthetic one-off id.
+        external_id = phone or (tg if tg else f"form-{_uuid.uuid4()}")
+        username = tg if (tg and tg.startswith("@")) else None
+
+        # Persist Customer + Conversation FIRST and commit — the CRM worker runs
+        # in its own session and must be able to resolve these rows by id.
+        with session_scope() as db:
+            customer = resolve_or_create_customer(
+                db, channel="website", external_id=external_id,
+                email=None, username=username,
+            )
+            if lead.name and not customer.name:
+                customer.name = lead.name
+            if phone and not customer.phone:
+                customer.phone = phone
+            if lead.source and not customer.utm_source:
+                customer.utm_source = lead.source
+            if lead.campaign and not customer.utm_campaign:
+                customer.utm_campaign = lead.campaign
+            db.flush()
+            conv = get_or_create_conversation(
+                db, customer_id=customer.id, channel="website",
+                channel_conversation_id=None,
+            )
+            customer_id, conversation_id = str(customer.id), str(conv.id)
+            db.commit()
+
+        # first_message_text carries the phone/link/анкета block → lands in the
+        # HubSpot deal brief, so the операторы see the full quiz answers in CRM.
+        dispatch_on_first_touch(
+            customer_id=customer_id,
+            customer_name=lead.name,
+            customer_email=None,
+            customer_phone=phone,
+            customer_tg_handle=tg,
+            conversation_id=conversation_id,
+            channel="website",
+            channel_user_id=external_id,
+            first_message_text=(lead.task or lead.need or None),
+            interaction_type="P2",
+            temperature="warm",   # filled a full form/quiz → warmer than a passive visitor
+            score=0,
+            initial_stage="new_lead",
+            project_type=(lead.need or None),
+            source_url=(lead.campaign or lead.source or None),
+        )
+        log.info(f"CRM lead created from form: {lead.name!r} (customer {customer_id[:8]})")
+        return True
+    except Exception as e:
+        log.error(f"CRM lead-from-form failed (non-fatal): {e}", exc_info=True)
+        return False
+
+
 @app.post("/lead-submit")
 async def lead_submit(lead: LeadFormRequest):
-    """Accepts form data from deadlinecorp.com/lead-form/.
-    Always returns 200 (we don't want to leak errors to the form UI)."""
+    """Accepts form data from deadlinecorp.com/lead-form/ + /partner-form/.
+    Always returns 200 (we don't want to leak errors to the form UI).
+    Lead is forwarded to Telegram AND (when crm_enabled) landed in the CRM
+    as a contact + deal, the same way a chat handoff is."""
     success = await send_lead_to_telegram(lead)
-    log.info(f"Lead received: {lead.name} | {lead.contact} | need={lead.need!r}")
-    return {"ok": True, "delivered": success}
+    crm_ok = await _create_crm_lead_from_form(lead)
+    log.info(f"Lead received: {lead.name} | {lead.contact} | need={lead.need!r} | crm={crm_ok}")
+    return {"ok": True, "delivered": success, "crm": crm_ok}
 
 
 # ============================================================================
