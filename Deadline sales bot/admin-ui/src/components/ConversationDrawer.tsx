@@ -254,6 +254,18 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                 <Help title="Задача" text="Напоминалка по этому лиду: «👤 сам» — появится в вашем «Моём дне»; «🤖 бот» — бот сам напишет лиду в указанное время (пока только Telegram)." />
                 <button className="btn sm" onClick={advise} disabled={busy}>🧭 Что делать</button>
                 <Help title="Что делать (AI-копилот)" text="Агент смотрит стадию, score и переписку → советует лучшее следующее действие и кладёт готовый черновик ответа в поле. Ничего не отправляет — решаете вы." />
+                <button className="btn sm" disabled={busy} onClick={async () => {
+                  const d = window.prompt('Регулярный клиент: визит каждые N дней (пусто или 0 — снять):', '')
+                  if (d === null) return
+                  const n = parseInt(d, 10) || 0
+                  setBusy(true)
+                  try {
+                    await api.post(`/conversations/${convId}/recurrence`, { every_days: n > 0 ? n : null, active: n > 0 })
+                    showToast(n > 0 ? `🔁 Регулярно каждые ${n} дн. — бот сам напомнит` : 'Регулярность снята')
+                  } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+                  finally { setBusy(false) }
+                }}>🔁 Регулярный</button>
+                <Help title="Регулярный клиент" text="Постоянный клининг / ТО: бот сам шлёт плановое напоминание каждые N дней («подтвердите время — команда приедет»). Снять — введите 0." />
                 {detail.hubspot.contact_url && (
                   <a className="btn sm ghost" href={detail.hubspot.contact_url} target="_blank" rel="noreferrer">HubSpot ↗</a>
                 )}
