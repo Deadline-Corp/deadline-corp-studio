@@ -411,3 +411,75 @@ async def run_due_call_reminders(*, tenant_config: Optional[dict] = None) -> dic
         stats["due"], stats["sent"], stats["failed"], stats["skipped_no_chat"],
     )
     return stats
+
+
+async def run_due_recurring() -> dict:
+    """P6 — постоянные клиенты. Для каждого клиента с активной recurrence и
+    наступившим next_at ставит бот-followup (run_due_followups доставит) и сдвигает
+    next_at += every_days. Хранение: customers.profile_data['recurrence'] =
+    {active, every_days, note?, next_at}. Изолировано, ошибки не валят крон."""
+    import json
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import text as _sql
+    from db.connection import session_scope
+    from db.models import Conversation
+
+    stats = {"due": 0, "queued": 0, "errors": 0}
+    now = datetime.now(timezone.utc)
+    DEFAULT_TXT = ("Здравствуйте! Напоминаем про плановый визит — подтвердите удобное "
+                   "время, и команда приедет 🙂")
+    due: list[dict] = []
+    try:
+        with session_scope() as s:
+            rows = s.execute(_sql(
+                "SELECT id, profile_data FROM customers "
+                "WHERE profile_data->'recurrence'->>'active' = 'true' "
+                "AND (profile_data->'recurrence'->>'next_at') IS NOT NULL "
+                "AND (profile_data->'recurrence'->>'next_at')::timestamptz <= :now "
+                "LIMIT 100"
+            ), {"now": now}).fetchall()
+            for cid, prof in rows:
+                rec = (prof or {}).get("recurrence") or {}
+                every = int(rec.get("every_days") or 0)
+                if every < 1:
+                    continue
+                conv = (
+                    s.query(Conversation)
+                    .filter(Conversation.customer_id == cid)
+                    .order_by(Conversation.last_message_at.desc().nullslast())
+                    .first()
+                )
+                if conv is None:
+                    continue
+                due.append({
+                    "cid": str(cid), "conv_id": str(conv.id), "channel": conv.channel,
+                    "chat": getattr(conv, "channel_conversation_id", None),
+                    "text": (rec.get("note") or "").strip() or DEFAULT_TXT,
+                    "prof": dict(prof or {}), "rec": dict(rec), "every": every,
+                })
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[scheduled_actions] run_due_recurring query failed: %s", e)
+        return stats
+
+    stats["due"] = len(due)
+    for d in due:
+        try:
+            write_scheduled_action(
+                customer_id=d["cid"], conversation_id=d["conv_id"], channel=d["channel"],
+                chat_id=str(d["chat"]) if d["chat"] else None, due_at=now, text=d["text"],
+            )
+            d["rec"]["next_at"] = (now + timedelta(days=d["every"])).isoformat()
+            d["prof"]["recurrence"] = d["rec"]
+            with session_scope() as s2:
+                s2.execute(
+                    _sql("UPDATE customers SET profile_data = CAST(:p AS JSONB) WHERE id = :i"),
+                    {"p": json.dumps(d["prof"], ensure_ascii=False), "i": d["cid"]},
+                )
+            stats["queued"] += 1
+        except Exception as e:  # noqa: BLE001
+            stats["errors"] += 1
+            logger.warning("[scheduled_actions] recurring %s failed: %s", d["cid"][:8], e)
+
+    logger.info("[scheduled_actions] run_due_recurring: due=%d queued=%d errors=%d",
+                stats["due"], stats["queued"], stats["errors"])
+    return stats

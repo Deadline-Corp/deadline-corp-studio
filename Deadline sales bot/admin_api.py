@@ -1068,6 +1068,41 @@ async def conversation_advise(
     return {"ok": True, "action": action, "draft": draft}
 
 
+class RecurrenceRequest(BaseModel):
+    every_days: Optional[int] = None
+    note: Optional[str] = Field(None, max_length=2000)
+    active: bool = True
+
+
+@router.post("/conversations/{conv_id}/recurrence")
+async def set_recurrence(
+    conv_id: str,
+    req: RecurrenceRequest,
+    _: None = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """P6 — пометить клиента регулярным (постоянный клининг / ТО). Хранится в
+    profile_data['recurrence']; крон (run_due_recurring) шлёт плановое напоминание
+    каждые every_days. active=False или пустой every_days → снять регулярность."""
+    from datetime import datetime, timezone, timedelta
+    conv, cust = _get_conv_or_404(db, conv_id)
+    prof = dict(cust.profile_data or {})
+    rec = None
+    if req.active and req.every_days and int(req.every_days) >= 1:
+        rec = {
+            "active": True,
+            "every_days": int(req.every_days),
+            "note": (req.note or "").strip() or None,
+            "next_at": (datetime.now(timezone.utc) + timedelta(days=int(req.every_days))).isoformat(),
+        }
+        prof["recurrence"] = rec
+    else:
+        prof.pop("recurrence", None)
+    cust.profile_data = prof
+    db.commit()
+    return {"ok": True, "recurrence": rec}
+
+
 class NudgeRequest(BaseModel):
     mode: str = Field(..., pattern="^(now|schedule|draft)$")
     text: Optional[str] = Field(None, max_length=4000)

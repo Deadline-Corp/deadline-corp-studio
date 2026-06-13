@@ -108,7 +108,12 @@ async def _worker_loop(*, tenant_config: dict, interval_sec: int) -> None:
         # Task Engine B2 — само-исполнение отложенных действий бота. Отдельный
         # try/except: баг здесь НЕ должен ломать прогрев/основной sweep.
         try:
-            from services.scheduled_actions import run_due_followups, run_due_call_reminders
+            from services.scheduled_actions import (
+                run_due_followups, run_due_call_reminders, run_due_recurring,
+            )
+            # P6 — постоянные клиенты: ставим плановые напоминания ДО доставки
+            # followup'ов, чтобы они ушли в этот же проход.
+            await run_due_recurring()
             await run_due_followups(tenant_config=tenant_config)
             # Созвоны — напоминания лиду и админу (за день / 3ч / 1ч до созвона).
             await run_due_call_reminders(tenant_config=tenant_config)
