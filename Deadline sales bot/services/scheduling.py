@@ -433,14 +433,35 @@ def reminder_schedule(call_at_utc: datetime, now_utc: datetime) -> list[tuple[da
     return out
 
 
-def lead_reminder_text(call_at_utc: datetime, label: str, medium: Optional[str] = None) -> str:
-    """Текст напоминания ЛИДУ."""
+def detect_lang(text: str) -> str:
+    """Грубый детект языка по скрипту: тайский / бирманский / кириллица → ru,
+    иначе en. Для выбора языка ЗАПЛАНИРОВАННЫХ сообщений (живой диалог LLM
+    отвечает на языке клиента независимо)."""
+    t = text or ""
+    if any("฀" <= c <= "๿" for c in t):
+        return "th"
+    if any("က" <= c <= "႟" for c in t):
+        return "my"
+    if any("Ѐ" <= c <= "ӿ" for c in t):
+        return "ru"
+    return "en"
+
+
+# Локализованные шаблоны напоминания лиду (бренд-нейтральные — подходят любому тенанту).
+_LEAD_REMINDER_TMPL = {
+    "ru": "Напоминаю про визит {label} — {when}{via}. Команда на связи 🙂 Если планы поменялись — просто напишите.",
+    "en": "Reminder about your appointment {label} — {when}{via}. We're here 🙂 If plans changed, just message us.",
+    "th": "แจ้งเตือนนัดหมายของคุณ {label} — {when}{via} ทีมงานพร้อมแล้ว 🙂 หากมีการเปลี่ยนแปลง โปรดแจ้งเรา",
+}
+
+
+def lead_reminder_text(call_at_utc: datetime, label: str, medium: Optional[str] = None,
+                       lang: str = "ru") -> str:
+    """Текст напоминания ЛИДУ на его языке (ru/en/th; иначе ru)."""
     when = format_slot_human(call_at_utc)
     via = f" ({medium})" if medium else ""
-    return (
-        f"Напоминаю про наш созвон {label} — {when}{via}. "
-        f"Команда DEADLINE на связи 🙂 Если планы поменялись — просто напишите."
-    )
+    tmpl = _LEAD_REMINDER_TMPL.get((lang or "ru").lower(), _LEAD_REMINDER_TMPL["ru"])
+    return tmpl.format(label=label, when=when, via=via)
 
 
 def admin_reminder_text(

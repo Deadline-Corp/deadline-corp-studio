@@ -1553,6 +1553,11 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                         call_at=_chosen,
                         medium=_medium,
                     )
+                    # P5b — язык лида для локализованных напоминаний (хранится в
+                    # профиле, чтобы регулярные/будущие сообщения тоже были на нём).
+                    _lead_lang = (_profile.get("lang") or _sched.detect_lang(req.content or "") or "ru")
+                    _profile["lang"] = _lead_lang
+                    customer.profile_data = _profile
                     for _fire, _label in _sched.reminder_schedule(_chosen, _now):
                         # Лиду — только если есть канал, куда писать (мессенджер).
                         if _chat and _is_msgr:
@@ -1563,7 +1568,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                                 channel=req.channel,
                                 chat_id=str(_chat),
                                 due_at=_fire,
-                                text=_sched.lead_reminder_text(_chosen, _label, _medium),
+                                text=_sched.lead_reminder_text(_chosen, _label, _medium, lang=_lead_lang),
                                 audience="lead",
                             )
                         # Админу — в опер-группу.

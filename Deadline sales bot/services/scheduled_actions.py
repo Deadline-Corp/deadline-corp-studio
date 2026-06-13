@@ -426,8 +426,11 @@ async def run_due_recurring() -> dict:
 
     stats = {"due": 0, "queued": 0, "errors": 0}
     now = datetime.now(timezone.utc)
-    DEFAULT_TXT = ("Здравствуйте! Напоминаем про плановый визит — подтвердите удобное "
-                   "время, и команда приедет 🙂")
+    RECUR_TMPL = {
+        "ru": "Здравствуйте! Напоминаем про плановый визит — подтвердите удобное время, и команда приедет 🙂",
+        "en": "Hello! A reminder about your scheduled visit — please confirm a convenient time and our team will come 🙂",
+        "th": "สวัสดีค่ะ! แจ้งเตือนนัดหมายตามกำหนด — โปรดยืนยันเวลาที่สะดวก แล้วทีมงานจะไปให้บริการ 🙂",
+    }
     due: list[dict] = []
     try:
         with session_scope() as s:
@@ -454,7 +457,8 @@ async def run_due_recurring() -> dict:
                 due.append({
                     "cid": str(cid), "conv_id": str(conv.id), "channel": conv.channel,
                     "chat": getattr(conv, "channel_conversation_id", None),
-                    "text": (rec.get("note") or "").strip() or DEFAULT_TXT,
+                    "text": (rec.get("note") or "").strip()
+                            or RECUR_TMPL.get((prof or {}).get("lang") or "ru", RECUR_TMPL["ru"]),
                     "prof": dict(prof or {}), "rec": dict(rec), "every": every,
                 })
     except Exception as e:  # noqa: BLE001
