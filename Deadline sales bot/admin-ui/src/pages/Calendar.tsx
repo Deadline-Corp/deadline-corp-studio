@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { api } from '../api/client'
+import { api, getToken } from '../api/client'
 import { TodayView } from '../api/types'
 import { usePolling } from '../hooks/usePolling'
 import { useDrawer } from '../components/DrawerContext'
@@ -12,7 +12,15 @@ import { HintBar } from '../components/HintBar'
 
 export function Calendar() {
   const [view, setView] = useState<TodayView | null>(null)
+  const [copied, setCopied] = useState(false)
   const { openConversation } = useDrawer()
+
+  const subscribeUrl = `${location.origin}/calendar.ics?token=${encodeURIComponent(getToken() || '')}`
+  const copySubscribe = () => {
+    navigator.clipboard?.writeText(subscribeUrl)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 3000)
+  }
 
   usePolling(async () => {
     try { setView(await api.get<TodayView>('/today')) } catch { /* */ }
@@ -55,6 +63,15 @@ export function Calendar() {
         откроется переписка. Бот предлагает лиду 2-3 свободных слота (не вываливая весь день),
         бронирует и шлёт напоминания обоим. Перенос — лид пишет боту, тот перебронирует.
       </HintBar>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+        <button className="btn sm primary" onClick={copySubscribe}>
+          {copied ? '✅ Ссылка скопирована' : '📲 Подписаться в телефоне'}
+        </button>
+        <span className="faint" style={{ fontSize: 12 }}>
+          вставьте ссылку в Google Календарь / iPhone «Подписка на календарь» — созвоны и
+          дедлайны появятся в телефоне и будут обновляться сами
+        </span>
+      </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8 }}>
         {days.map((d, i) => {
           const isToday = i === 0

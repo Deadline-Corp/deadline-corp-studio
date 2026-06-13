@@ -2954,6 +2954,81 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
+@app.get("/calendar.ics")
+async def calendar_ics(token: str = "", db: Session = Depends(get_db)):
+    """ICS-фид календаря (созвоны + задачи) для подписки в телефоне/Google.
+
+    Авторизация query-параметром token (= TRAINING_AUTH_TOKEN), т.к. ICS-клиенты
+    не умеют слать Bearer-заголовок. Только чтение. Окно: −1д … +90д.
+    Подписка: добавить URL …/calendar.ics?token=<токен> в календарь телефона —
+    события (наш календарь = источник правды) сами появятся и будут обновляться."""
+    from fastapi import Response as _Resp
+    expected = settings.training_auth_token
+    if not expected:
+        raise HTTPException(503, "calendar feed not configured (TRAINING_AUTH_TOKEN unset)")
+    if not hmac.compare_digest((token or "").encode("utf-8"), expected.encode("utf-8")):
+        raise HTTPException(403, "invalid token")
+
+    from db.models import ScheduledAction, Customer
+    now = datetime.now(timezone.utc)
+    rows = (
+        db.query(ScheduledAction, Customer)
+        .join(Customer, ScheduledAction.customer_id == Customer.id)
+        .filter(ScheduledAction.due_at.isnot(None))
+        .filter(ScheduledAction.due_at >= now - timedelta(days=1))
+        .filter(ScheduledAction.due_at <= now + timedelta(days=90))
+        .order_by(ScheduledAction.due_at.asc())
+        .limit(500)
+        .all()
+    )
+
+    def esc(s: str) -> str:
+        return (str(s or "")
+                .replace("\\", "\\\\").replace(";", "\\;")
+                .replace(",", "\\,").replace("\n", "\\n"))
+
+    def fmt(dt: datetime) -> str:
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+    stamp = fmt(now)
+    lines = [
+        "BEGIN:VCALENDAR", "VERSION:2.0",
+        "PRODID:-//DEADLINE Sales OS//Calendar//RU",
+        "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+        "X-WR-CALNAME:DEADLINE — созвоны и задачи",
+    ]
+    for a, c in rows:
+        due = a.due_at
+        if due is None:
+            continue
+        is_call = "call" in (a.action_type or "")
+        name = c.name or c.email or "лид"
+        title = (a.payload or {}).get("title") or (a.payload or {}).get("text") or ""
+        summary = (f"📞 Созвон: {name}" if is_call
+                   else f"☎️ {title or 'Задача'} — {name}")
+        desc_parts = [title] if title else []
+        if a.channel:
+            desc_parts.append(f"канал: {a.channel}")
+        if c.email:
+            desc_parts.append(c.email)
+        lines += [
+            "BEGIN:VEVENT",
+            f"UID:{a.id}@deadline-sales-bot",
+            f"DTSTAMP:{stamp}",
+            f"DTSTART:{fmt(due)}",
+            f"DTEND:{fmt(due + timedelta(minutes=30))}",
+            f"SUMMARY:{esc(summary)}",
+            f"DESCRIPTION:{esc(' · '.join(desc_parts))}",
+            "END:VEVENT",
+        ]
+    lines.append("END:VCALENDAR")
+    ics = "\r\n".join(lines) + "\r\n"
+    return _Resp(content=ics, media_type="text/calendar; charset=utf-8",
+                 headers={"Content-Disposition": 'inline; filename="deadline.ics"'})
+
+
 # ============================================================================
 # /metrics — read-only ops view, optional bearer-token gate
 # ============================================================================
