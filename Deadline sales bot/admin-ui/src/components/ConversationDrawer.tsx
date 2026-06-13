@@ -25,6 +25,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
   const [taskExec, setTaskExec] = useState<'human' | 'bot'>('human')
   const [fieldEdits, setFieldEdits] = useState<Record<string, any>>({})
   const [fieldsOpen, setFieldsOpen] = useState(false)
+  const [advice, setAdvice] = useState('')
   const msgsRef = useRef<HTMLDivElement>(null)
   const lastTsRef = useRef<string | null>(null)
 
@@ -146,6 +147,18 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
     finally { setBusy(false) }
   }
 
+  const advise = async () => {
+    setBusy(true)
+    setAdvice('')
+    try {
+      const r = await api.post<{ action: string; draft: string }>(`/conversations/${convId}/advise`, {})
+      setAdvice(r.action || 'нет рекомендации')
+      if (r.draft) setText(r.draft)
+      showToast('🧭 Совет готов — черновик в поле ответа')
+    } catch (e: any) { showToast(`Ошибка совета: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
   const nudgeNow = async () => {
     const t = text.trim()
     if (!t) { showToast('Сначала напишите текст пинка (или возьмите черновик)', true); return }
@@ -239,10 +252,18 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                 <Help title="Пинок" text="Лид замолчал? Отправьте напоминание от имени бота — диалог продолжится естественно. Кнопка «Черновик от LLM» сама сочинит текст по контексту переписки." />
                 <button className="btn sm" onClick={() => { setTaskOpen(v => !v); setNudgeOpen(false) }}>📋 Задача</button>
                 <Help title="Задача" text="Напоминалка по этому лиду: «👤 сам» — появится в вашем «Моём дне»; «🤖 бот» — бот сам напишет лиду в указанное время (пока только Telegram)." />
+                <button className="btn sm" onClick={advise} disabled={busy}>🧭 Что делать</button>
+                <Help title="Что делать (AI-копилот)" text="Агент смотрит стадию, score и переписку → советует лучшее следующее действие и кладёт готовый черновик ответа в поле. Ничего не отправляет — решаете вы." />
                 {detail.hubspot.contact_url && (
                   <a className="btn sm ghost" href={detail.hubspot.contact_url} target="_blank" rel="noreferrer">HubSpot ↗</a>
                 )}
               </div>
+              {advice && (
+                <div className="d-actions" style={{ background: 'var(--accent-soft)', borderRadius: 8, padding: '8px 10px', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: 12.5, flex: 1 }}><b>🧭 Совет:</b> {advice}</span>
+                  <button className="btn sm ghost" onClick={() => setAdvice('')}>✕</button>
+                </div>
+              )}
               {nudgeOpen && (
                 <div className="d-actions" style={{ background: 'var(--panel)', borderRadius: 8, padding: '8px 10px' }}>
                   <span className="muted" style={{ fontSize: 12 }}>Пинок зависшему лиду (уйдёт от имени бота):</span>

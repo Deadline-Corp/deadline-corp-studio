@@ -1015,6 +1015,59 @@ async def behavior_save(
 # NUDGE — пинок зависшему лиду (сейчас / по расписанию / LLM-черновик)
 # ============================================================================
 
+@router.post("/conversations/{conv_id}/advise")
+async def conversation_advise(
+    conv_id: str,
+    _: None = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """AI-копилот оператора (агент-слой): по состоянию лида (стадия / score /
+    температура / канал) + переписке рекомендует ЛУЧШЕЕ следующее действие и даёт
+    готовый черновик ответа. Только подсказка — ничего не отправляет и не меняет."""
+    import main as _main
+    conv, cust = _get_conv_or_404(db, conv_id)
+    recent = (
+        db.query(Message)
+        .filter(Message.conversation_id == conv.id)
+        .order_by(Message.created_at.desc())
+        .limit(12)
+        .all()
+    )
+    dialog = "\n".join(
+        f"{'Лид' if m.role == 'user' else 'Бот'}: {m.content[:300]}"
+        for m in reversed(recent) if m.role in ("user", "assistant")
+    )
+    name = cust.name or "клиент"
+    state = (
+        f"Имя: {name}; стадия воронки: {conv.lead_stage}; "
+        f"score: {getattr(cust, 'lead_score', 0)}; "
+        f"температура: {getattr(cust, 'lead_temperature', 'cold')}; "
+        f"канал: {conv.channel}"
+    )
+    prompt = (
+        "Ты — старший менеджер по продажам веб-студии Deadline и наставник оператора. "
+        "По состоянию лида и переписке дай КОРОТКО и по делу:\n"
+        "1) РЕКОМЕНДАЦИЯ — одно лучшее следующее действие (1-2 предложения: напр. "
+        "«предложить 2 слота на созвон», «назвать цену от $X и звать на звонок», "
+        "«лид холодный — мягкий прогрев», «передать менеджеру»).\n"
+        "2) ЧЕРНОВИК — готовое сообщение лиду на «вы» (2-4 предложения), реализующее "
+        "рекомендацию.\n"
+        "Ответь СТРОГО в формате:\nРЕКОМЕНДАЦИЯ: <...>\nЧЕРНОВИК: <...>\n\n"
+        f"СОСТОЯНИЕ ЛИДА: {state}\nПЕРЕПИСКА:\n{dialog}"
+    )
+    try:
+        result = await _main.primary_llm.ainvoke(prompt)
+        raw = (result.content or "").strip()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"LLM advise failed: {e}")
+    action, draft = raw, ""
+    if "ЧЕРНОВИК" in raw:
+        parts = raw.split("ЧЕРНОВИК", 1)
+        action = parts[0].replace("РЕКОМЕНДАЦИЯ:", "").replace("РЕКОМЕНДАЦИЯ", "").strip(" :\n")
+        draft = parts[1].lstrip(" :\n").strip()
+    return {"ok": True, "action": action, "draft": draft}
+
+
 class NudgeRequest(BaseModel):
     mode: str = Field(..., pattern="^(now|schedule|draft)$")
     text: Optional[str] = Field(None, max_length=4000)
