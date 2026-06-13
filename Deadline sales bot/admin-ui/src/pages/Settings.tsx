@@ -41,6 +41,8 @@ export function Settings() {
       <div style={{ height: 14 }} />
       <PresetsCard />
       <div style={{ height: 14 }} />
+      <ConfigAgentCard />
+      <div style={{ height: 14 }} />
       <BehaviorCard />
       <div style={{ height: 14 }} />
       <FieldsCard />
@@ -577,6 +579,101 @@ function BehaviorCard() {
           }}>📨 Прислать сейчас</button>
         </div>
       </div>
+      {toast && <div className={`toast ${toast.err ? 'err' : ''}`}>{toast.text}</div>}
+    </div>
+  )
+}
+
+/* ---------- Авто-настройка из дампа (конфиг-агент, P4) ---------- */
+
+const NICHE_OPTIONS: Array<[string, string]> = [
+  ['cleaning_repair', 'Клининг + Ремонт'],
+  ['dentistry', 'Стоматология'],
+  ['fitness', 'Фитнес'],
+  ['realty', 'Недвижимость'],
+  ['online_school', 'Онлайн-школа'],
+  ['beauty', 'Салон красоты'],
+  ['web_studio', 'Веб-студия'],
+]
+
+function ConfigAgentCard() {
+  const [dump, setDump] = useState('')
+  const [url, setUrl] = useState('')
+  const [draft, setDraft] = useState<any>(null)
+  const [busy, setBusy] = useState(false)
+  const [toast, setToast] = useState<{ text: string; err?: boolean } | null>(null)
+  const show = (text: string, err = false) => { setToast({ text, err }); setTimeout(() => setToast(null), 6000) }
+
+  const generate = async () => {
+    if (!dump.trim() && !url.trim()) { show('Вставьте текст о компании или ссылку на сайт', true); return }
+    setBusy(true)
+    try {
+      const r = await api.post<{ draft: any }>('/onboarding/generate', { dump, url: url || undefined })
+      setDraft(r.draft || {})
+      show('✅ Черновик готов — проверьте и поправьте, затем «Применить»')
+    } catch (e: any) { show(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+  const apply = async () => {
+    if (!draft) return
+    setBusy(true)
+    try {
+      const r = await api.post<{ applied: any }>('/onboarding/apply', {
+        system_prompt: draft.system_prompt, kb_md: draft.kb_md,
+        preset_key: draft.preset_key || undefined, bot_goal: draft.bot_goal || undefined,
+      })
+      show(`✅ Применено: ${Object.keys(r.applied || {}).join(', ') || '—'}. Обновите вкладки «Мозг»/«Воронка».`)
+    } catch (e: any) { show(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+  const upd = (k: string, v: any) => setDraft({ ...draft, [k]: v })
+  const ta: React.CSSProperties = { width: '100%', minHeight: 90, fontSize: 13 }
+
+  return (
+    <div className="card">
+      <b>🪄 Авто-настройка из информации о компании
+        <Help title="Конфиг-агент" text="Вставьте всё о компании (текст с сайта, регламенты, прайс — или просто опишите) и/или ссылку. AI соберёт черновик: тон бота, базу знаний (услуги/цены/FAQ), подходящую воронку и цель. Проверьте, поправьте — и «Применить»." />
+      </b>
+      <p className="muted" style={{ margin: '4px 0 10px', fontSize: 12.5 }}>
+        «Вывалите» всё о компании — агент разложит по мозгам, знаниям и воронке. Потом поправите.
+      </p>
+      <textarea value={dump} onChange={e => setDump(e.target.value)} style={ta}
+                placeholder="Услуги, цены, как работаете, частые вопросы, регламенты… (можно копипастом с сайта)" />
+      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+        <input value={url} onChange={e => setUrl(e.target.value)} style={{ flex: 1 }}
+               placeholder="Ссылка на сайт (опционально) — агент скачает" />
+        <button className="btn sm primary" onClick={generate} disabled={busy}>
+          {busy ? <span className="spin" /> : '🪄 Сгенерировать'}
+        </button>
+      </div>
+
+      {draft && (
+        <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {draft.summary && <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>🧩 {draft.summary}</p>}
+          {draft._parse_failed && <span className="chip warn">агент вернул текст не в формате — поправьте вручную ниже</span>}
+          <span className="muted" style={{ fontSize: 12 }}>Тон / мозг бота:</span>
+          <textarea value={draft.system_prompt || ''} onChange={e => upd('system_prompt', e.target.value)} style={ta} />
+          <span className="muted" style={{ fontSize: 12 }}>База знаний (услуги / цены / FAQ):</span>
+          <textarea value={draft.kb_md || ''} onChange={e => upd('kb_md', e.target.value)} style={{ ...ta, minHeight: 120 }} />
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span className="muted" style={{ fontSize: 12 }}>Ниша:</span>
+            <select value={draft.preset_key || ''} onChange={e => upd('preset_key', e.target.value)}>
+              <option value="">— не менять —</option>
+              {NICHE_OPTIONS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
+            <span className="muted" style={{ fontSize: 12 }}>Цель:</span>
+            <select value={draft.bot_goal || ''} onChange={e => upd('bot_goal', e.target.value)}>
+              <option value="">— не менять —</option>
+              <option value="call">Созвон / визит</option>
+              <option value="collect_lead">Собрать заявку</option>
+              <option value="consult">Консультировать</option>
+              <option value="sale">Продажа</option>
+            </select>
+            <div style={{ flex: 1 }} />
+            <button className="btn sm primary" onClick={apply} disabled={busy}>✅ Применить</button>
+          </div>
+        </div>
+      )}
       {toast && <div className={`toast ${toast.err ? 'err' : ''}`}>{toast.text}</div>}
     </div>
   )
