@@ -1504,6 +1504,24 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 _call_medium = _medium
                 _call_booked_at = _chosen  # сделку создаст/двинет dispatch_on_message_turn (после create_deal)
                 conversation.lead_stage = "on_call"
+                # P3 — уведомить бригаду/отдел о новом визите (настраиваемый чат).
+                try:
+                    from services import bot_settings as _bsc
+                    _crew = (_bsc.get("crew_chat_id") or "").strip()
+                    if _crew and settings.telegram_bot_token:
+                        from urllib.parse import quote as _q
+                        _addr = (_profile or {}).get("address")
+                        _svc = (_profile or {}).get("service") or ""
+                        _crew_nm = customer.name or customer.email or "клиент"
+                        _crew_msg = (
+                            f"🧹 Новый визит: {_just_booked_human}\n"
+                            f"Клиент: {_crew_nm}" + (f" · {_svc}" if _svc else "") + "\n"
+                            + (f"Адрес: {_addr}\nhttps://maps.google.com/?q=" + _q(str(_addr))
+                               if _addr else "Адрес: уточнить у клиента")
+                        )
+                        await send_telegram_reply(settings.telegram_bot_token, _crew, _crew_msg)
+                except Exception as _ce2:  # noqa: BLE001
+                    log.warning(f"[{str(conversation.id)[:8]}] crew notify failed: {_ce2}")
                 try:
                     from services.scheduled_actions import write_call_booking, write_call_reminder
                     _chat = getattr(conversation, "channel_conversation_id", None)
@@ -1898,6 +1916,23 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                             conversation.forum_topic_id,
                             format_alert_text(t),
                         )
+                # P3 — «сигнал руководителю»: при эскалации (крупный/ремонт/«хочу
+                # человека»/юр.вопрос) дополнительно пингуем чат руководителя или
+                # главы отдела. Задаётся в Настройках (manager_chat_id); пусто =
+                # только операторская группа (как было).
+                try:
+                    from services import bot_settings as _bsm
+                    _mgr = (_bsm.get("manager_chat_id") or "").strip()
+                    if _mgr and settings.telegram_bot_token:
+                        _lead_nm = customer.name or customer.email or "лид"
+                        _alert = (
+                            f"⚠️ Нужно внимание ({trigger_summary})\n"
+                            f"Клиент: {_lead_nm} · канал: {conversation.channel}\n"
+                            f"Сообщение: {(req.content or '')[:300]}"
+                        )
+                        await send_telegram_reply(settings.telegram_bot_token, _mgr, _alert)
+                except Exception as _me:  # noqa: BLE001
+                    log.warning(f"[{str(conversation.id)[:8]}] manager escalation ping failed: {_me}")
         except Exception as exc:  # noqa: BLE001
             log.warning(
                 f"[{str(conversation.id)[:8]}] escalation checks failed (non-fatal): {exc}"
