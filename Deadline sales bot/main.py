@@ -84,6 +84,7 @@ from channels.instagram import (
     send_instagram_comment_reply,
 )
 from channels.utils import verify_meta_signature
+from channels.whatsapp import parse_whatsapp_webhook, send_whatsapp_reply
 
 
 # ============================================================================
@@ -167,6 +168,18 @@ class Settings(BaseSettings):
     meta_verify_token: Optional[str] = None
     meta_app_secret: Optional[str] = None
     meta_page_access_token: Optional[str] = None
+    # ---- WhatsApp Cloud API (Meta) — self-service per-tenant ----
+    # Owner connects their own WhatsApp number: pastes these 4 in Settings →
+    # Каналы. Dormant until set — does NOT affect site/Telegram/IG flows.
+    # - WHATSAPP_TOKEN: permanent System User access token (WA messaging perm)
+    # - WHATSAPP_PHONE_NUMBER_ID: from App → WhatsApp → API Setup
+    # - WHATSAPP_VERIFY_TOKEN: any random string set in App webhook config
+    #   (falls back to META_VERIFY_TOKEN if same Meta app as IG/Messenger)
+    # - WHATSAPP_APP_SECRET: App Settings → Basic (falls back to META_APP_SECRET)
+    whatsapp_token: Optional[str] = None
+    whatsapp_phone_number_id: Optional[str] = None
+    whatsapp_verify_token: Optional[str] = None
+    whatsapp_app_secret: Optional[str] = None
     allowed_origins: str = "https://deadlinecorp.com,https://www.deadlinecorp.com,https://deadline-corp.github.io,http://localhost:3000,http://localhost:5500,http://127.0.0.1:5500"
     log_level: str = "INFO"
     # Optional bearer-token gate for /metrics. If unset, /metrics is open
@@ -2840,6 +2853,80 @@ async def instagram_webhook(request: Request, db: Session = Depends(get_db)):
             normalized.channel_conversation_id,
             resp.answer,
         )
+    return {"ok": True}
+
+
+@app.get("/webhooks/whatsapp")
+async def whatsapp_webhook_verify(request: Request):
+    """One-time webhook verification when adding the URL in Meta App dashboard.
+    Uses WHATSAPP_VERIFY_TOKEN, falling back to META_VERIFY_TOKEN (same app)."""
+    params = request.query_params
+    expected = settings.whatsapp_verify_token or settings.meta_verify_token
+    if (
+        params.get("hub.mode") == "subscribe"
+        and expected
+        and params.get("hub.verify_token") == expected
+    ):
+        return PlainTextResponse(params.get("hub.challenge", ""))
+    log.warning("whatsapp verify failed: bad mode or token")
+    raise HTTPException(403, "verification failed")
+
+
+@app.post("/webhooks/whatsapp")
+async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
+    """Receive a WhatsApp Cloud API update, route the text DM through
+    _handle_message, and reply via the Graph API. Mirrors the Messenger/IG
+    handlers. Always returns 200 (Meta retries on non-200 → avoid loops).
+
+    Dormant unless WHATSAPP_TOKEN is configured; signature is verified with
+    WHATSAPP_APP_SECRET (falls back to META_APP_SECRET)."""
+    body = await request.body()
+
+    if not verify_meta_signature(
+        settings.whatsapp_app_secret or settings.meta_app_secret,
+        request.headers.get("x-hub-signature-256"),
+        body,
+    ):
+        return {"ok": True}
+
+    try:
+        payload = json.loads(body)
+    except Exception as e:
+        log.warning(f"whatsapp_webhook: invalid JSON — {e}")
+        return {"ok": True}
+
+    normalized = parse_whatsapp_webhook(payload)
+    if normalized is None:
+        return {"ok": True}
+
+    msg_req = MessageRequest(
+        channel=normalized.channel,
+        external_id=normalized.external_id,
+        content=normalized.content,
+        username=normalized.username,
+        channel_conversation_id=normalized.channel_conversation_id,
+        message_type=normalized.message_type,
+        extra_meta=normalized.extra_meta,
+    )
+
+    try:
+        resp = await _handle_message(msg_req, db)
+    except Exception as e:
+        log.error(f"whatsapp_webhook: _handle_message failed — {e}")
+        return {"ok": True}
+
+    # phone_number_id from the inbound metadata (multi-number safe), else config.
+    phone_number_id = (
+        (normalized.extra_meta or {}).get("phone_number_id")
+        or settings.whatsapp_phone_number_id
+        or ""
+    )
+    await send_whatsapp_reply(
+        settings.whatsapp_token,
+        phone_number_id,
+        normalized.channel_conversation_id,
+        resp.answer,
+    )
     return {"ok": True}
 
 
