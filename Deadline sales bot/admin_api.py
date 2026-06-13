@@ -112,6 +112,8 @@ async def me(member: dict = Depends(_verify_member)):
         "tenant": _main.tenant.slug,
         "display_name": ws.get("business_name") or _main.tenant.display_name,
         "onboarding_done": bool(ws.get("onboarding_done", False)),
+        "logo_url": ws.get("logo_url"),
+        "accent_color": ws.get("accent_color"),
         "role": member["role"],
         "member_name": member["name"],
     }
@@ -1929,6 +1931,8 @@ async def preset_apply(
 
 class WorkspaceSaveRequest(BaseModel):
     business_name: Optional[str] = Field(None, max_length=80)
+    logo_url: Optional[str] = Field(None, max_length=500)
+    accent_color: Optional[str] = Field(None, max_length=20)
     onboarding_done: Optional[bool] = None
     niche_key: Optional[str] = None
 
@@ -1946,6 +1950,8 @@ async def workspace_get(
         "business_name": ws.get("business_name") or _main.tenant.display_name,
         "onboarding_done": bool(ws.get("onboarding_done", False)),
         "niche_key": ws.get("niche_key"),
+        "logo_url": ws.get("logo_url"),
+        "accent_color": ws.get("accent_color"),
         "demo_leads": demo_count(db),
     }
 
@@ -1963,6 +1969,14 @@ async def workspace_save(
         values["onboarding_done"] = req.onboarding_done
     if req.niche_key is not None:
         values["niche_key"] = req.niche_key or None
+    if req.logo_url is not None:
+        values["logo_url"] = req.logo_url.strip() or None
+    if req.accent_color is not None:
+        import re as _re
+        c = req.accent_color.strip()
+        if c and not _re.fullmatch(r"#[0-9a-fA-F]{6}", c):
+            raise HTTPException(status_code=422, detail="accent_color: формат #rrggbb")
+        values["accent_color"] = c or None
     if not values:
         raise HTTPException(status_code=422, detail="Нечего сохранять")
     try:

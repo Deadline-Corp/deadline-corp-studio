@@ -31,6 +31,8 @@ KNOWN_KEYS: dict[str, type] = {
     "onboarding_done": bool,
     "business_name": str,
     "niche_key": str,
+    "logo_url": str,
+    "accent_color": str,
     # Цель бота: call (созвон, дефолт) | collect_lead | consult | sale —
     # overlay-блок в системный промпт (prompts.GOAL_OVERLAYS)
     "bot_goal": str,

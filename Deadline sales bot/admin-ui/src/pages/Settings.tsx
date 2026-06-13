@@ -113,6 +113,8 @@ export function Settings() {
 
 function WorkspaceCard() {
   const [name, setName] = useState('')
+  const [logoUrl, setLogoUrl] = useState('')
+  const [accent, setAccent] = useState('')
   const [demoLeads, setDemoLeads] = useState(0)
   const [busy, setBusy] = useState(false)
   const [dirty, setDirty] = useState(false)
@@ -125,6 +127,8 @@ function WorkspaceCard() {
 
   const load = () => api.get<any>('/workspace').then(w => {
     setName(w.business_name || '')
+    setLogoUrl(w.logo_url || '')
+    setAccent(w.accent_color || '')
     setDemoLeads(w.demo_leads || 0)
   }).catch(() => { /* */ })
 
@@ -133,7 +137,7 @@ function WorkspaceCard() {
   const saveName = async () => {
     setBusy(true)
     try {
-      await api.post('/workspace', { business_name: name })
+      await api.post('/workspace', { business_name: name, logo_url: logoUrl, accent_color: accent })
       setDirty(false)
       showToast('✅ Сохранено — имя обновится в шапке после перезагрузки страницы')
     } catch (e: any) { showToast(`Ошибка: ${e.message}`, true) }
@@ -170,6 +174,15 @@ function WorkspaceCard() {
           <div style={{ display: 'flex', gap: 8 }}>
             <input value={name} onChange={e => { setName(e.target.value); setDirty(true) }} style={{ flex: 1 }} />
             <button className="btn sm primary" onClick={saveName} disabled={busy || !dirty}>💾</button>
+          </div>
+          <span className="muted" style={{ fontSize: 12.5 }}>White-label: логотип (URL картинки) и фирменный цвет:</span>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input placeholder="https://…/logo.png" value={logoUrl}
+                   onChange={e => { setLogoUrl(e.target.value); setDirty(true) }} style={{ flex: 1 }} />
+            <input type="color" value={accent || '#7c6cff'} title="Акцентный цвет"
+                   onChange={e => { setAccent(e.target.value); setDirty(true) }}
+                   style={{ width: 42, height: 34, padding: 2 }} />
+            {accent && <button className="btn sm ghost" onClick={() => { setAccent(''); setDirty(true) }}>↺</button>}
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button className="btn sm" onClick={() => { import('../components/Tour').then(m => m.startTour()) }}>

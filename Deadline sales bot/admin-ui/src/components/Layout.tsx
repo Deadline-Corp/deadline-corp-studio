@@ -30,7 +30,15 @@ export function Layout() {
   const location = useLocation()
 
   useEffect(() => {
-    void api.get<Me>('/me').then(setMe).catch(() => { /* 401 редиректит сам */ })
+    void api.get<Me>('/me').then(m => {
+      setMe(m)
+      // White-label: акцентный цвет клиента поверх дефолтного фиолетового.
+      if (m.accent_color) {
+        document.documentElement.style.setProperty('--accent', m.accent_color)
+        document.documentElement.style.setProperty('--accent-border', m.accent_color + '99')
+        document.documentElement.style.setProperty('--accent-soft', m.accent_color + '24')
+      }
+    }).catch(() => { /* 401 редиректит сам */ })
   }, [])
 
   // Менеджер на owner-странице (прямой URL) → мягко на канвас.
@@ -66,7 +74,9 @@ export function Layout() {
           <div className="layout">
             <aside className="sidebar">
               <div className="brand">
-                <div className="logo">{(brand || 'D')[0].toUpperCase()}</div>
+                {me?.logo_url
+                  ? <img src={me.logo_url} alt="" style={{ width: 30, height: 30, borderRadius: 8, objectFit: 'cover' }} />
+                  : <div className="logo">{(brand || 'D')[0].toUpperCase()}</div>}
                 <span style={{ fontSize: brand && brand.length > 12 ? 12.5 : 15 }}>
                   {(brand || 'DEADLINE').toUpperCase()}
                 </span>

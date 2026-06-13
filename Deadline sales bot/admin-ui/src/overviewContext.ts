@@ -17,6 +17,8 @@ export interface Me {
   display_name: string
   member_name: string
   onboarding_done: boolean
+  logo_url?: string | null
+  accent_color?: string | null
 }
 
 export const MeCtx = createContext<Me | null>(null)
