@@ -223,6 +223,15 @@ class Settings(BaseSettings):
     # bitrix24 = Bitrix24Adapter (Phase 3, deferred per Nikolay 2026-05-26).
     crm_provider: str = "noop"
 
+    # ---- Умная карточка: ленивый контакт (smart-card, 2026-06-13) ----
+    # False (дефолт) = прежнее поведение: HubSpot-контакт создаётся на первом
+    # касании. True = контакт создаётся ТОЛЬКО когда лид «реальный» (дал контакт,
+    # ≥ crm_contact_min_messages сообщений, высокий score, handoff или бронь) —
+    # анонимы, написавшие раз и пропавшие, не плодят пустые карточки. Сделки уже
+    # ленивые (Phase 12). Postgres всегда источник правды; гейтим только HubSpot.
+    crm_lazy_contact: bool = False
+    crm_contact_min_messages: int = 2
+
     # ---- HubSpot credentials (Phase 0c done 2026-05-26) ----
     # Service Key (Beta), Bearer-format pat-na2-xxxx. Created in Settings →
     # Integrations → Service Keys. Scopes: crm.objects.contacts/companies/

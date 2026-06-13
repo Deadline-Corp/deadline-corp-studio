@@ -437,6 +437,10 @@ def _build_deal_title(
 # (lead_messages_count >= 3) OR handoff. Casual visitors no longer pollute pipeline.
 DEAL_CREATION_SCORE_THRESHOLD = 80
 DEAL_CREATION_LEAD_MESSAGES_THRESHOLD = 3
+# Smart-card: порог сообщений лида для ленивого создания КОНТАКТА (см.
+# crm_lazy_contact во flag'е). Дефолт 2 — аноним, написавший раз и пропавший,
+# не плодит пустой HubSpot-контакт.
+CONTACT_CREATION_LEAD_MESSAGES_THRESHOLD = 2
 
 
 def dispatch_on_message_turn(
@@ -498,6 +502,36 @@ def dispatch_on_message_turn(
         #    create eagerly on every new lead (so we have someone to attach
         #    log_messages to even before deal-signal threshold is crossed).
         if not contact_id:
+            # Ленивый контакт (smart-card): не плодить пустые HubSpot-контакты на
+            # анонимов, написавших раз и пропавших. За флагом crm_lazy_contact
+            # (дефолт False → прежнее жадное поведение, прод не меняется).
+            # Postgres хранит всё независимо — гейтим только зеркало в HubSpot.
+            try:
+                import main as _m
+                _lazy = bool(getattr(_m.settings, "crm_lazy_contact", False))
+                _min_msgs = int(getattr(_m.settings, "crm_contact_min_messages",
+                                        CONTACT_CREATION_LEAD_MESSAGES_THRESHOLD))
+            except Exception:  # noqa: BLE001
+                _lazy, _min_msgs = False, CONTACT_CREATION_LEAD_MESSAGES_THRESHOLD
+            _has_detail = bool(
+                (getattr(customer, "email", None) or "").strip()
+                or (getattr(customer, "phone", None) or "").strip()
+                or (getattr(customer, "name", None) or "").strip()
+            )
+            _promoted = (
+                (not _lazy)
+                or handoff_just_fired
+                or score >= DEAL_CREATION_SCORE_THRESHOLD
+                or lead_messages_count >= _min_msgs
+                or _has_detail
+                or call_booked_at is not None
+            )
+            if not _promoted:
+                logger.debug(
+                    "[crm_dispatch] lazy-contact: defer anon visitor conv=%s (msgs=%s)",
+                    str(conversation.id)[:8], lead_messages_count,
+                )
+                return  # пока нечего зеркалить — остаётся только в Postgres
             _enqueue_upsert_contact(
                 customer=customer,
                 channel=channel,
