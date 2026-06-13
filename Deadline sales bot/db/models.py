@@ -243,6 +243,10 @@ class Conversation(Base):
     # ---- CRM integration + Notion §20 funnel (Phase 1, 2026-05-26) ----
     # ID of this conversation's deal in the external CRM. NULL until first sync.
     crm_deal_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    # P3b — на какого сотрудника назначен лид (id workspace_member). NULL = не назначен.
+    assigned_member_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
     # Notion §20 active funnel stage. Default new_lead so existing rows are valid post-migration.
     # Values: new_lead / in_dialog / qualified / nda / on_call / tz_approved /
     #         proposal / prepayment / in_work / completed_won / post_sale / lost
@@ -710,6 +714,9 @@ class WorkspaceMember(Base):
     active: Mapped[bool] = mapped_column(default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # P3b — отдел (cleaning / repair / …) и личный Telegram chat для уведомлений о назначении.
+    department: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    telegram_chat_id: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
 
     def __repr__(self) -> str:
         return f"<WorkspaceMember {self.name} role={self.role} active={self.active}>"

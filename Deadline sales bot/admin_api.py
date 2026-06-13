@@ -125,6 +125,8 @@ async def me(member: dict = Depends(_verify_member)):
 
 class TeamCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=80)
+    department: Optional[str] = Field(None, max_length=40)
+    telegram_chat_id: Optional[str] = Field(None, max_length=40)
 
 
 @router.get("/team")
@@ -137,6 +139,7 @@ async def team_list(
         "items": [
             {
                 "id": str(r.id), "name": r.name, "role": r.role, "active": r.active,
+                "department": r.department, "telegram_chat_id": r.telegram_chat_id,
                 "created_at": r.created_at.isoformat() if r.created_at else None,
                 "last_seen_at": r.last_seen_at.isoformat() if r.last_seen_at else None,
             }
@@ -159,6 +162,8 @@ async def team_create(
         name=req.name.strip(), role="manager",
         token_hash=hashlib.sha256(token.encode("utf-8")).hexdigest(),
         active=True,
+        department=(req.department or "").strip() or None,
+        telegram_chat_id=(req.telegram_chat_id or "").strip() or None,
     )
     db.add(row)
     db.commit()
@@ -178,6 +183,30 @@ async def team_toggle(
     row.active = not row.active
     db.commit()
     return {"ok": True, "active": row.active}
+
+
+class TeamUpdateRequest(BaseModel):
+    department: Optional[str] = Field(None, max_length=40)
+    telegram_chat_id: Optional[str] = Field(None, max_length=40)
+
+
+@router.post("/team/{member_id}/update")
+async def team_update(
+    member_id: str,
+    req: TeamUpdateRequest,
+    _: dict = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    """Задать отдел и/или личный Telegram chat сотрудника (для назначений/уведомлений)."""
+    row = db.get(WorkspaceMember, _uuid_or_422(member_id))
+    if row is None:
+        raise HTTPException(status_code=404, detail="Member not found")
+    if req.department is not None:
+        row.department = req.department.strip() or None
+    if req.telegram_chat_id is not None:
+        row.telegram_chat_id = req.telegram_chat_id.strip() or None
+    db.commit()
+    return {"ok": True}
 
 
 # ============================================================================
@@ -1066,6 +1095,44 @@ async def conversation_advise(
         action = parts[0].replace("РЕКОМЕНДАЦИЯ:", "").replace("РЕКОМЕНДАЦИЯ", "").strip(" :\n")
         draft = parts[1].lstrip(" :\n").strip()
     return {"ok": True, "action": action, "draft": draft}
+
+
+class AssignRequest(BaseModel):
+    member_id: Optional[str] = None  # None / пусто = снять назначение
+
+
+@router.post("/conversations/{conv_id}/assign")
+async def assign_conversation(
+    conv_id: str,
+    req: AssignRequest,
+    _: None = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """P3b — назначить лид на сотрудника (или снять). Уведомляет сотрудника лично
+    в Telegram, если у него задан telegram_chat_id."""
+    import logging as _lg
+    conv, cust = _get_conv_or_404(db, conv_id)
+    if not req.member_id:
+        conv.assigned_member_id = None
+        db.commit()
+        return {"ok": True, "assigned": None}
+    member = db.get(WorkspaceMember, _uuid_or_422(req.member_id))
+    if member is None:
+        raise HTTPException(status_code=404, detail="Сотрудник не найден")
+    conv.assigned_member_id = member.id
+    db.commit()
+    try:
+        if member.telegram_chat_id:
+            import main as _main
+            from channels.telegram import send_telegram_reply
+            if _main.settings.telegram_bot_token:
+                nm = cust.name or cust.email or "лид"
+                txt = (f"📋 Вам назначен лид: {nm}\n"
+                       f"Стадия: {conv.lead_stage} · канал: {conv.channel}")
+                await send_telegram_reply(_main.settings.telegram_bot_token, member.telegram_chat_id, txt)
+    except Exception as e:  # noqa: BLE001
+        _lg.getLogger("admin").warning("assign notify failed: %s", e)
+    return {"ok": True, "assigned": {"id": str(member.id), "name": member.name}}
 
 
 class RecurrenceRequest(BaseModel):
