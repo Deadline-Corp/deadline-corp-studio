@@ -43,6 +43,8 @@ export function Settings() {
       <div style={{ height: 14 }} />
       <ConfigAgentCard />
       <div style={{ height: 14 }} />
+      <LanguagesCard />
+      <div style={{ height: 14 }} />
       <BehaviorCard />
       <div style={{ height: 14 }} />
       <FieldsCard />
@@ -674,6 +676,63 @@ function ConfigAgentCard() {
           </div>
         </div>
       )}
+      {toast && <div className={`toast ${toast.err ? 'err' : ''}`}>{toast.text}</div>}
+    </div>
+  )
+}
+
+/* ---------- Языки (P5) ---------- */
+
+const LANG_LABELS: Record<string, string> = {
+  ru: 'Русский', en: 'English', th: 'ไทย', my: 'မြန်မာ', uk: 'Українська', kk: 'Қазақша',
+}
+const LANG_ADDABLE: Array<[string, string]> = [
+  ['ru', 'Русский'], ['en', 'English'], ['th', 'ไทย (тайский)'], ['my', 'မြန်မာ (бирманский)'],
+]
+
+function LanguagesCard() {
+  const [langs, setLangs] = useState<string[]>([])
+  const [busy, setBusy] = useState(false)
+  const [toast, setToast] = useState<{ text: string; err?: boolean } | null>(null)
+  const show = (text: string, err = false) => { setToast({ text, err }); setTimeout(() => setToast(null), 4000) }
+
+  useEffect(() => {
+    void api.get<{ languages: string[] }>('/languages').then(r => setLangs(r.languages || [])).catch(() => { /* */ })
+  }, [])
+
+  const save = async (next: string[]) => {
+    setBusy(true)
+    try {
+      const r = await api.post<{ languages: string[] }>('/languages', { languages: next })
+      setLangs(r.languages || next)
+      show('✅ Сохранено')
+    } catch (e: any) { show(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+  const add = (c: string) => { if (c && !langs.includes(c)) save([...langs, c]) }
+  const remove = (c: string) => { if (langs.length > 1) save(langs.filter(x => x !== c)) }
+
+  return (
+    <div className="card">
+      <b>🌐 Языки
+        <Help title="Языки" text="Языки, которые поддерживает система. Первый — основной (язык приветствия). В живом диалоге бот и так отвечает на языке клиента; список задаёт основной язык и набор для шаблонов напоминаний." />
+      </b>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
+        {langs.map((l, i) => (
+          <span key={l} className={`chip ${i === 0 ? 'ok' : ''}`}>
+            {LANG_LABELS[l] || l}{i === 0 ? ' · основной' : ''}
+            {langs.length > 1 && (
+              <button className="btn sm ghost" style={{ marginLeft: 6, padding: '0 5px' }}
+                      onClick={() => remove(l)} disabled={busy}>×</button>
+            )}
+          </span>
+        ))}
+        <select value="" disabled={busy} style={{ fontSize: 12.5 }}
+                onChange={e => { const v = e.target.value; if (v) { add(v); e.currentTarget.value = '' } }}>
+          <option value="">+ добавить язык…</option>
+          {LANG_ADDABLE.filter(([k]) => !langs.includes(k)).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+        </select>
+      </div>
       {toast && <div className={`toast ${toast.err ? 'err' : ''}`}>{toast.text}</div>}
     </div>
   )

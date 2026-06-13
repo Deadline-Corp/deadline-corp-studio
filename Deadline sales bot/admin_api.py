@@ -2195,6 +2195,36 @@ class WorkspaceSaveRequest(BaseModel):
     niche_key: Optional[str] = None
 
 
+class LanguagesSaveRequest(BaseModel):
+    languages: list[str] = Field(default_factory=list)
+
+
+@router.get("/languages")
+async def languages_get(_: None = Depends(_verify_member)):
+    """Текущий список поддерживаемых языков (рантайм-оверрайд или config.yaml)."""
+    import main as _main
+    from services import bot_settings
+    ov = (bot_settings.get("languages") or "").strip()
+    langs = [x.strip() for x in ov.split(",") if x.strip()] if ov else list(_main.tenant.languages or ["ru"])
+    return {"languages": langs}
+
+
+@router.post("/languages")
+async def languages_save(req: LanguagesSaveRequest, _: None = Depends(_verify_owner)):
+    """Сохранить список языков (добавить/удалить). Первый = основной (приветствие).
+    Живой диалог LLM отвечает на языке клиента независимо."""
+    from services import bot_settings
+    seen: set = set()
+    out: list = []
+    for x in (req.languages or []):
+        c = (x or "").strip().lower()
+        if c and c not in seen:
+            seen.add(c)
+            out.append(c)
+    bot_settings.set_many({"languages": ",".join(out)})
+    return {"ok": True, "languages": out}
+
+
 @router.get("/workspace")
 async def workspace_get(
     _: None = Depends(_verify_member),

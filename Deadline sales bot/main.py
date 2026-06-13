@@ -300,6 +300,22 @@ CHROMA_DIR = ROOT / "chroma_db"
 EMBEDDING_MODEL = "BAAI/bge-m3"
 
 
+def _active_languages() -> list[str]:
+    """Языки тенанта с рантайм-оверрайдом из настроек (bot_settings 'languages',
+    через запятую). Пусто → языки из config.yaml. Первый = основной (язык
+    recall-приветствия). Живой диалог LLM отвечает на языке клиента независимо."""
+    try:
+        from services import bot_settings as _bs
+        ov = (_bs.get("languages") or "").strip()
+        if ov:
+            lst = [x.strip() for x in ov.split(",") if x.strip()]
+            if lst:
+                return lst
+    except Exception:  # noqa: BLE001
+        pass
+    return list(tenant.languages or ["ru"])
+
+
 # ============================================================================
 # APP + MIDDLEWARE
 # ============================================================================
@@ -959,7 +975,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                             _prior_ts = _prior_ts.replace(tzinfo=_tz.utc)
                         days_ago = (datetime.now(_tz.utc) - _prior_ts).days
 
-                    _recall_lang = (tenant.languages[0] if tenant.languages else "ru")
+                    _recall_lang = _active_languages()[0]
                     greeting_prompt = render_recall_greeting(
                         language=_recall_lang,
                         summary=summary,
@@ -1137,7 +1153,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
 
                 else:
                     # UNCLEAR or low confidence — ask for explicit clarification.
-                    _recall_lang_b = (tenant.languages[0] if tenant.languages else "ru")
+                    _recall_lang_b = _active_languages()[0]
                     if _recall_lang_b == "en":
                         clarify_text = "Could you clarify — continue the prior project or start a new one?"
                     else:
