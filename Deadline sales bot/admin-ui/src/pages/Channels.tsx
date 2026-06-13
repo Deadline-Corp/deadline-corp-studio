@@ -121,40 +121,19 @@ export function Channels() {
           ]} />
         </Card>
 
-        <Card icon="🟢" title="WhatsApp" status="🔜 в планах" statusCls="warn">
+        <Card icon="🟢" title="WhatsApp (Cloud API)" {...{ status: statusOf('whatsapp').s, statusCls: statusOf('whatsapp').cls }} footer={counts('whatsapp')}>
           <p className="muted" style={{ margin: 0, fontSize: 13 }}>
-            Бот пока не умеет WhatsApp — это следующий канал. Подключается через провайдера, варианты (ресёрч июнь-2026):
+            ✅ Коннектор готов в боте — приём и ответы тем же мозгом, что в Telegram. Подключаем
+            официальным <b>WhatsApp Cloud API</b> от Meta: платформа бесплатна, без риска бана
+            (в отличие от «серых» QR-сервисов). Шаги:
           </p>
-          <table className="tbl" style={{ marginTop: 8 }}>
-            <thead><tr><th>Путь</th><th>Цена</th><th>Риск</th></tr></thead>
-            <tbody>
-              <tr>
-                <td><b>Wazzup24 + WABA</b> (рекомендуем)</td>
-                <td>~2 000 ₽/мес + ~8.5 ₽/шаблонное сообщение</td>
-                <td><span className="chip ok">официально</span></td>
-              </tr>
-              <tr>
-                <td>360dialog (междунар. BSP)</td>
-                <td>€49/номер/мес, без наценки Meta</td>
-                <td><span className="chip ok">официально</span></td>
-              </tr>
-              <tr>
-                <td>Wappi.pro (неофиц.)</td>
-                <td>700–1 690 ₽/мес</td>
-                <td><span className="chip danger">бан 2–8 недель, ~68% ловят</span></td>
-              </tr>
-              <tr>
-                <td>WAHA / Evolution API (self-host)</td>
-                <td>бесплатно (свой сервер)</td>
-                <td><span className="chip danger">нарушение ToS Meta</span></td>
-              </tr>
-            </tbody>
-          </table>
-          <p className="muted" style={{ fontSize: 12.5, marginBottom: 0 }}>
-            Входящие (ответы в 24ч-окне) у официального API бесплатны — для лид-квалификации
-            расходы копеечные. Когда решите подключать — скажите Claude «подключаем WhatsApp через
-            Wazzup» и адаптер будет добавлен в бота (канал whatsapp в коде уже предусмотрен).
-          </p>
+          <Steps items={[
+            <span>На <a href="https://developers.facebook.com" target="_blank" rel="noreferrer" style={{ color: 'var(--accent)' }}>developers.facebook.com</a> создайте приложение типа Business → добавьте продукт WhatsApp</span>,
+            <span>Привяжите номер (которого нет в обычном WhatsApp) и пройдите <b>Business Verification</b> — 1–7 дней, начните первым</span>,
+            <span>Webhook → URL <span style={mono}>…/webhooks/whatsapp</span>, Verify Token — любая строка; подпишитесь на поле <span style={mono}>messages</span></span>,
+            <span>В Railway → Variables: <span style={mono}>WHATSAPP_TOKEN</span> (permanent System User), <span style={mono}>WHATSAPP_PHONE_NUMBER_ID</span>, <span style={mono}>WHATSAPP_VERIFY_TOKEN</span>, <span style={mono}>WHATSAPP_APP_SECRET</span> (или общий <span style={mono}>META_APP_SECRET</span>)</span>,
+            'Редеплой — входящие появятся в «Переписках» 🟢. Исходящие/реактивация вне 24ч-окна — только через одобренный шаблон + согласие клиента (иначе бан).',
+          ]} />
         </Card>
 
         <Card icon="🗂" title="HubSpot CRM (зеркало)" status={ov?.crm.enabled ? '✅ включена' : 'выключена'} statusCls={ov?.crm.enabled ? 'ok' : ''}>

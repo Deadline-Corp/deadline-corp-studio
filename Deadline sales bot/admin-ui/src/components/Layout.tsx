@@ -19,8 +19,9 @@ const NAV = [
   { to: '/automations', icon: '⚡', label: 'Автоматизации', owner: true },
   { to: '/analytics', icon: '📈', label: 'Аналитика' },
   { to: '/brain', icon: '🧠', label: 'Мозг', owner: true },
-  { to: '/channels', icon: '🔌', label: 'Каналы', owner: true },
   { to: '/settings', icon: '⚙️', label: 'Настройки', owner: true },
+  // «Каналы» переехали внутрь Настроек (разгрузка интерфейса, 2026-06-13) —
+  // роут /channels остаётся, вход из карточки «Каналы и интеграции» в Настройках.
 ]
 const OWNER_PATHS = NAV.filter(n => (n as any).owner).map(n => n.to)
 

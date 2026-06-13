@@ -55,10 +55,16 @@ export function Settings() {
               <tr><td className="muted">Fallback</td><td className="mono" style={{ fontSize: 12 }}>{s.llm.fallback_model}</td></tr>
             </tbody>
           </table>
+          <p className="faint" style={{ fontSize: 11.5, margin: '8px 0 0' }}>
+            «Подключи свои мозги»: в Railway → Variables задайте <span className="mono">LLM_PROVIDER</span>
+            = <span className="mono">gemini</span> | <span className="mono">openrouter</span> | <span className="mono">ollama</span> +
+            ключ провайдера (<span className="mono">GOOGLE_API_KEY</span> / <span className="mono">OPENROUTER_API_KEY</span>).
+            Пусто = текущий провайдер. Gemini = <span className="mono">gemini-2.5-flash</span>.
+          </p>
         </div>
 
         <div className="card">
-          <b>📡 Каналы</b>
+          <b>📡 Каналы и интеграции</b>
           <table className="tbl" style={{ marginTop: 8 }}>
             <tbody>
               <tr><td className="muted">Telegram</td><td><Bool v={s.channels.telegram_configured} /></td></tr>
@@ -67,6 +73,10 @@ export function Settings() {
               <tr><td className="muted">Распознавание голоса</td><td><Bool v={s.channels.voice_transcription} /></td></tr>
             </tbody>
           </table>
+          <button className="btn sm primary" style={{ marginTop: 10 }}
+                  onClick={() => { location.hash = '#/channels' }}>
+            🔌 Подключить / настроить каналы →
+          </button>
         </div>
 
         <div className="card">
