@@ -84,10 +84,19 @@ def _hour_key(dt_utc: datetime) -> datetime:
     return dt_utc.astimezone(timezone.utc).replace(minute=0, second=0, microsecond=0)
 
 
-def _in_window(dt_utc: datetime) -> bool:
-    """Слот попадает в рабочее окно: будни (Пн–Пт), 11:00–19:00 локального старта."""
+_DEFAULT_WORK_DAYS = frozenset({0, 1, 2, 3, 4})  # Пн–Пт (weekday(): Пн=0 … Вс=6)
+
+
+def _in_window(
+    dt_utc: datetime,
+    work_start: int = WORK_START_HOUR,
+    work_end: int = WORK_LAST_START_HOUR,
+    work_days=_DEFAULT_WORK_DAYS,
+) -> bool:
+    """Слот попадает в рабочее окно: день недели в work_days И час старта в
+    [work_start, work_end] локального (Бангкок) времени. Дефолт — Пн–Пт 11:00–19:00."""
     loc = _to_local(dt_utc)
-    return loc.weekday() < 5 and WORK_START_HOUR <= loc.hour <= WORK_LAST_START_HOUR
+    return loc.weekday() in work_days and work_start <= loc.hour <= work_end
 
 
 def _start_of_local_day(now_utc: datetime, days_ahead: int = 0) -> datetime:
@@ -105,6 +114,9 @@ def _search_slots(
     start_from: datetime,
     hour_min: Optional[int],
     hour_max: Optional[int],
+    work_start: int = WORK_START_HOUR,
+    work_end: int = WORK_LAST_START_HOUR,
+    work_days=_DEFAULT_WORK_DAYS,
 ) -> list[datetime]:
     cur = start_from.replace(minute=0, second=0, microsecond=0)
     if cur < start_from:
@@ -112,7 +124,7 @@ def _search_slots(
     horizon = now_utc + timedelta(days=SEARCH_HORIZON_DAYS)
     out: list[datetime] = []
     while cur <= horizon and len(out) < n:
-        if _in_window(cur):
+        if _in_window(cur, work_start, work_end, work_days):
             loc = _to_local(cur)
             if (hour_min is None or loc.hour >= hour_min) and (hour_max is None or loc.hour <= hour_max):
                 k = _hour_key(cur)
@@ -132,18 +144,24 @@ def compute_free_slots(
     hour_min: Optional[int] = None,
     hour_max: Optional[int] = None,
     capacity: int = 1,
+    work_start: Optional[int] = None,
+    work_end: Optional[int] = None,
+    work_days: Optional[Iterable[int]] = None,
 ) -> list[datetime]:
     """Вернуть n ближайших свободных слотов (часовые границы, UTC-aware).
 
-    Будни в окне 11:00–19:00 (локально), не раньше now + LEAD_TIME_HOURS. `capacity`
-    = сколько заявок может идти ПАРАЛЛЕЛЬНО в один слот (N бригад; дефолт 1 =
-    прежнее поведение «один созвон в час»). Слот считается занятым, только когда
-    число броней на него достигло capacity. Если заданы предпочтения лида
-    (not_before / hour_min / hour_max), сначала ищем под них, потом мягко ослабляем.
+    Рабочее окно настраивается: work_start/work_end (часы локального старта) +
+    work_days (дни недели, Пн=0…Вс=6). Дефолт — Пн–Пт 11:00–19:00. `capacity` =
+    сколько заявок идёт ПАРАЛЛЕЛЬНО в слот (N бригад; дефолт 1). Слот занят, когда
+    число броней достигло capacity. Предпочтения лида (not_before / hour_min /
+    hour_max) — сначала под них, потом мягко ослабляем, чтобы ВСЕГДА предложить.
     """
     if now_utc.tzinfo is None:
         now_utc = now_utc.replace(tzinfo=timezone.utc)
     capacity = max(1, int(capacity or 1))
+    ws = WORK_START_HOUR if work_start is None else int(work_start)
+    we = WORK_LAST_START_HOUR if work_end is None else int(work_end)
+    wd = _DEFAULT_WORK_DAYS if work_days is None else frozenset(int(d) for d in work_days)
     taken_counts: Counter = Counter(_hour_key(t) for t in (taken or []))
     base_start = now_utc + timedelta(hours=LEAD_TIME_HOURS)
     start = max(base_start, not_before) if not_before else base_start
@@ -154,11 +172,11 @@ def compute_free_slots(
             tc[k] = capacity  # уже предложенные не предлагать повторно
         return tc
 
-    out = _search_slots(now_utc, taken_counts, capacity, n, start, hour_min, hour_max)
+    out = _search_slots(now_utc, taken_counts, capacity, n, start, hour_min, hour_max, ws, we, wd)
     if len(out) < n and (hour_min is not None or hour_max is not None):
-        out += _search_slots(now_utc, _with_picked(out), capacity, n - len(out), start, None, None)
+        out += _search_slots(now_utc, _with_picked(out), capacity, n - len(out), start, None, None, ws, we, wd)
     if len(out) < n:
-        out += _search_slots(now_utc, _with_picked(out), capacity, n - len(out), base_start, None, None)
+        out += _search_slots(now_utc, _with_picked(out), capacity, n - len(out), base_start, None, None, ws, we, wd)
     return out[:n]
 
 

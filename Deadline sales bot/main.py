@@ -1434,6 +1434,21 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                     await asyncio.to_thread(cancel_call_actions, str(conversation.id))
                 except Exception as _ce:  # noqa: BLE001
                     log.warning(f"[{str(conversation.id)[:8]}] cancel_call_actions failed: {_ce}")
+                # P2b: перенос/отмена визита → ВСЕГДА уведомить человека (задача оператору).
+                try:
+                    from services.crm_dispatch import dispatch_operator_task
+                    dispatch_operator_task(
+                        customer_id=str(customer.id),
+                        crm_contact_id=getattr(customer, "crm_contact_id", None),
+                        crm_deal_id=getattr(conversation, "crm_deal_id", None),
+                        conversation_id=str(conversation.id) if getattr(conversation, "crm_deal_id", None) else None,
+                        title="Лид перенёс/отменил визит — согласовать новое время",
+                        category="callback",
+                        due_in_minutes=30,
+                        description=(req.content or "")[:500],
+                    )
+                except Exception as _nt:  # noqa: BLE001
+                    log.warning(f"[{str(conversation.id)[:8]}] reschedule notify failed: {_nt}")
                 try:
                     from services.crm_dispatch import dispatch_stage_change
                     dispatch_stage_change(
@@ -1568,12 +1583,16 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                     try:
                         from services import bot_settings as _bs2
                         _sched_cap = int(_bs2.get("sched_capacity_per_slot", 1) or 1)
+                        _ws = _bs2.get("sched_work_start")
+                        _we = _bs2.get("sched_work_end")
+                        _wd_raw = _bs2.get("sched_work_days")
+                        _wd = [int(x) for x in str(_wd_raw).split(",") if x.strip().isdigit()] if _wd_raw else None
                     except Exception:  # noqa: BLE001
-                        _sched_cap = 1
+                        _sched_cap, _ws, _we, _wd = 1, None, None, None
                     _slots = _sched.compute_free_slots(
                         _now, taken=_taken, n=2,
                         not_before=_pref_nb, hour_min=_pref_hmin, hour_max=_pref_hmax,
-                        capacity=_sched_cap,
+                        capacity=_sched_cap, work_start=_ws, work_end=_we, work_days=_wd,
                     )
                     if _slots:
                         _profile["offered_call_slots"] = [s.isoformat() for s in _slots]
