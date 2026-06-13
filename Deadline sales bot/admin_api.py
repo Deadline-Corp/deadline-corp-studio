@@ -1430,6 +1430,84 @@ async def kb_view(
     return {"sources": [{"source": r[0], "chunks": int(r[1])} for r in rows]}
 
 
+class KbUploadRequest(BaseModel):
+    source: str = Field(..., max_length=120)
+    content: str = Field(..., max_length=200_000)
+
+
+@router.post("/kb/upload")
+async def kb_upload(req: KbUploadRequest, _: None = Depends(_verify_owner)):
+    """Рантайм-загрузка одного документа в базу знаний (аддитивно, без переингеста
+    всей базы и без деплоя). Заменяет прежние чанки этого source."""
+    import asyncio
+    from services.kb_ingest import ingest_text
+    src = (req.source or "").strip() or "upload"
+    if not src.endswith(".md"):
+        src += ".md"
+    try:
+        n = await asyncio.to_thread(ingest_text, src, req.content)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"KB ingest failed: {e}")
+    return {"ok": True, "source": src, "chunks": n}
+
+
+class OnboardingGenerateRequest(BaseModel):
+    dump: str = Field("", max_length=200_000)
+    url: Optional[str] = Field(None, max_length=500)
+
+
+@router.post("/onboarding/generate")
+async def onboarding_generate(req: OnboardingGenerateRequest, _: None = Depends(_verify_owner)):
+    """Конфиг-агент (P4): по «дампу» о компании (текст / опц. ссылка на сайт) LLM
+    собирает ЧЕРНОВИК конфигурации — тон (Мозг), факты (KB), ближайший пресет ниши,
+    цель бота, языки. Ничего не применяет (только возвращает на ревью)."""
+    import json
+    import logging as _lg
+    import main as _main
+    dump = (req.dump or "").strip()
+    if req.url:
+        try:
+            import httpx
+            async with httpx.AsyncClient(timeout=15, follow_redirects=True) as cli:
+                r = await cli.get(req.url)
+            if r.status_code == 200:
+                dump += f"\n\n[Сайт {req.url}]\n{r.text[:8000]}"
+        except Exception as e:  # noqa: BLE001
+            _lg.getLogger("admin").warning("onboarding fetch url failed: %s", e)
+    if not dump:
+        raise HTTPException(status_code=422, detail="Пустой дамп — вставьте текст о компании или ссылку.")
+
+    preset_keys = list(NICHE_PRESETS.keys())
+    prompt = (
+        "Ты — конфигуратор AI-системы продаж под нишу. По «дампу» о компании (текст сайта, "
+        "регламенты, прайс, рассказ) собери конфигурацию бота-ассистента. Верни СТРОГО JSON "
+        "без пояснений и без markdown-ограждения, поля:\n"
+        '{"summary": "что за бизнес, 1-2 предложения",\n'
+        ' "system_prompt": "тон + позиционирование + что боту можно/нельзя, обращение на «вы», кратко",\n'
+        ' "kb_md": "ФАКТЫ для бота (markdown): услуги, цены «от ...», FAQ, политики, график",\n'
+        f' "preset_key": "ближайший из {preset_keys}",\n'
+        ' "bot_goal": "одно из: call | collect_lead | consult | sale",\n'
+        ' "languages": ["ru" и др. если применимо]}\n\n'
+        "ДАМП:\n" + dump[:30000]
+    )
+    try:
+        res = await _main.primary_llm.ainvoke(prompt)
+        raw = (res.content or "").strip()
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"LLM generate failed: {e}")
+
+    draft: dict = {}
+    try:
+        i, j = raw.find("{"), raw.rfind("}")
+        if i != -1 and j != -1:
+            draft = json.loads(raw[i:j + 1])
+    except Exception:  # noqa: BLE001
+        draft = {}
+    if not draft:
+        draft = {"raw": raw[:4000], "_parse_failed": True}
+    return {"ok": True, "draft": draft}
+
+
 # ============================================================================
 # AUTOMATIONS — конструктор «Когда → Если → То»
 # ============================================================================
