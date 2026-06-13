@@ -118,6 +118,22 @@ class Settings(BaseSettings):
     ollama_base_url: str = "https://ollama.com/v1"
     llm_model: str = "qwen3.5:397b-cloud"
     llm_fallback_model: str = "glm-4.6:cloud"
+
+    # ---- Google Gemini (OpenAI-compatible endpoint) ----
+    # Gemini exposes an OpenAI-compatible surface, so the same ChatOpenAI client
+    # works — only base_url + key + model differ. SAFETY: presence of the key
+    # alone does NOT switch the live bot; Gemini activates ONLY when
+    # llm_provider="gemini" (explicit). Lets each tenant plug their own brain.
+    google_api_key: Optional[str] = None
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_fallback_model: str = "gemini-2.5-flash-lite"
+
+    # Explicit brain-provider override. Empty = auto (current prod behavior:
+    # OpenRouter if its key is set, else Ollama). Set LLM_PROVIDER to
+    # "gemini" | "openrouter" | "ollama" to force one. This is the per-tenant
+    # "подключи свои мозги" switch — each client picks a provider + own key.
+    llm_provider: str = ""
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
     # Telegram operator supergroup (forum-mode). Created by team in TG, bot
@@ -303,6 +319,40 @@ def _resolve_llm_config() -> tuple[str, str, str, str, str]:
     has weekly limits that hit production traffic). Fallback path keeps the
     legacy Ollama config working if OPENROUTER_API_KEY is unset.
     """
+    # Explicit override wins (per-tenant brain selection / local testing).
+    provider = (settings.llm_provider or "").strip().lower()
+    if provider == "gemini":
+        if not settings.google_api_key:
+            raise RuntimeError("LLM_PROVIDER=gemini but GOOGLE_API_KEY is unset.")
+        return (
+            "gemini",
+            settings.google_api_key,
+            settings.gemini_base_url,
+            settings.gemini_model,
+            settings.gemini_fallback_model,
+        )
+    if provider == "openrouter":
+        if not settings.openrouter_api_key:
+            raise RuntimeError("LLM_PROVIDER=openrouter but OPENROUTER_API_KEY is unset.")
+        return (
+            "openrouter",
+            settings.openrouter_api_key,
+            settings.openrouter_base_url,
+            settings.openrouter_model,
+            settings.openrouter_fallback_model,
+        )
+    if provider == "ollama":
+        if not settings.ollama_api_key:
+            raise RuntimeError("LLM_PROVIDER=ollama but OLLAMA_API_KEY is unset.")
+        return (
+            "ollama",
+            settings.ollama_api_key,
+            settings.ollama_base_url,
+            settings.llm_model,
+            settings.llm_fallback_model,
+        )
+
+    # ---- Auto-selection (UNCHANGED prod behavior when LLM_PROVIDER unset) ----
     if settings.openrouter_api_key:
         return (
             "openrouter",
@@ -319,11 +369,11 @@ def _resolve_llm_config() -> tuple[str, str, str, str, str]:
             settings.llm_model,
             settings.llm_fallback_model,
         )
-    # Neither configured — fail loudly at import time so deployment doesn't
+    # Nothing configured — fail loudly at import time so deployment doesn't
     # silently start with no working LLM.
     raise RuntimeError(
-        "No LLM provider configured. Set OPENROUTER_API_KEY (preferred) "
-        "or OLLAMA_API_KEY in env."
+        "No LLM provider configured. Set OPENROUTER_API_KEY (preferred), "
+        "GOOGLE_API_KEY+LLM_PROVIDER=gemini, or OLLAMA_API_KEY in env."
     )
 
 
