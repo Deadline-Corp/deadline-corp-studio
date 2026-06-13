@@ -2963,6 +2963,7 @@ async def calendar_ics(token: str = "", db: Session = Depends(get_db)):
     Подписка: добавить URL …/calendar.ics?token=<токен> в календарь телефона —
     события (наш календарь = источник правды) сами появятся и будут обновляться."""
     from fastapi import Response as _Resp
+    from datetime import datetime, timedelta, timezone
     expected = settings.training_auth_token
     if not expected:
         raise HTTPException(503, "calendar feed not configured (TRAINING_AUTH_TOKEN unset)")
