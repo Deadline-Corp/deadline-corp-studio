@@ -1394,7 +1394,14 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                     except Exception:  # noqa: BLE001
                         _taken_x = []
                     _ek = _sched._hour_key(_explicit)
-                    if not any(_sched._hour_key(t) == _ek for t in _taken_x):
+                    try:
+                        from services import bot_settings as _bs
+                        _cap_x = int(_bs.get("sched_capacity_per_slot", 1) or 1)
+                    except Exception:  # noqa: BLE001
+                        _cap_x = 1
+                    # Слот свободен, пока броней на него < ёмкости (N бригад параллельно).
+                    _cnt_x = sum(1 for t in _taken_x if _sched._hour_key(t) == _ek)
+                    if _cnt_x < _cap_x:
                         _chosen = _explicit
             _lead_msg_n = sum(
                 1 for m in recent
@@ -1558,9 +1565,15 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                         _taken = await asyncio.to_thread(get_taken_call_slots, _now)
                     except Exception:  # noqa: BLE001
                         _taken = []
+                    try:
+                        from services import bot_settings as _bs2
+                        _sched_cap = int(_bs2.get("sched_capacity_per_slot", 1) or 1)
+                    except Exception:  # noqa: BLE001
+                        _sched_cap = 1
                     _slots = _sched.compute_free_slots(
                         _now, taken=_taken, n=2,
                         not_before=_pref_nb, hour_min=_pref_hmin, hour_max=_pref_hmax,
+                        capacity=_sched_cap,
                     )
                     if _slots:
                         _profile["offered_call_slots"] = [s.isoformat() for s in _slots]
@@ -3014,6 +3027,14 @@ async def calendar_ics(token: str = "", db: Session = Depends(get_db)):
             desc_parts.append(f"канал: {a.channel}")
         if c.email:
             desc_parts.append(c.email)
+        # Адрес визита (выездные услуги, P2): LOCATION + ссылка на Google Maps.
+        from urllib.parse import quote as _q
+        addr = (getattr(c, "profile_data", None) or {}).get("address")
+        loc_lines = []
+        if addr:
+            desc_parts.append(f"адрес: {addr}")
+            desc_parts.append("https://maps.google.com/?q=" + _q(str(addr)))
+            loc_lines = [f"LOCATION:{esc(addr)}"]
         lines += [
             "BEGIN:VEVENT",
             f"UID:{a.id}@deadline-sales-bot",
@@ -3021,6 +3042,7 @@ async def calendar_ics(token: str = "", db: Session = Depends(get_db)):
             f"DTSTART:{fmt(due)}",
             f"DTEND:{fmt(due + timedelta(minutes=30))}",
             f"SUMMARY:{esc(summary)}",
+            *loc_lines,
             f"DESCRIPTION:{esc(' · '.join(desc_parts))}",
             "END:VEVENT",
         ]

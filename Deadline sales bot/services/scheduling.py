@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Iterable, Optional
 
@@ -98,7 +99,8 @@ def _start_of_local_day(now_utc: datetime, days_ahead: int = 0) -> datetime:
 
 def _search_slots(
     now_utc: datetime,
-    taken_keys: set,
+    taken_counts: "Counter",
+    capacity: int,
     n: int,
     start_from: datetime,
     hour_min: Optional[int],
@@ -114,7 +116,8 @@ def _search_slots(
             loc = _to_local(cur)
             if (hour_min is None or loc.hour >= hour_min) and (hour_max is None or loc.hour <= hour_max):
                 k = _hour_key(cur)
-                if k not in taken_keys and k not in out:
+                # Слот свободен, пока занятость < ёмкости (N параллельных бригад).
+                if taken_counts.get(k, 0) < capacity and k not in out:
                     out.append(k)
         cur += timedelta(hours=1)
     return out
@@ -128,28 +131,34 @@ def compute_free_slots(
     not_before: Optional[datetime] = None,
     hour_min: Optional[int] = None,
     hour_max: Optional[int] = None,
+    capacity: int = 1,
 ) -> list[datetime]:
     """Вернуть n ближайших свободных слотов (часовые границы, UTC-aware).
 
-    Будни в окне 11:00–19:00 (локально), не раньше now + LEAD_TIME_HOURS, занятые
-    пропускаем. Если заданы предпочтения лида (not_before — «завтра»/день недели;
-    hour_min/hour_max — «утром/днём/вечером»), сначала ищем под них; если столько
-    не набралось — мягко ослабляем (сначала окно времени, потом дату), чтобы
-    ВСЕГДА предложить варианты.
+    Будни в окне 11:00–19:00 (локально), не раньше now + LEAD_TIME_HOURS. `capacity`
+    = сколько заявок может идти ПАРАЛЛЕЛЬНО в один слот (N бригад; дефолт 1 =
+    прежнее поведение «один созвон в час»). Слот считается занятым, только когда
+    число броней на него достигло capacity. Если заданы предпочтения лида
+    (not_before / hour_min / hour_max), сначала ищем под них, потом мягко ослабляем.
     """
     if now_utc.tzinfo is None:
         now_utc = now_utc.replace(tzinfo=timezone.utc)
-    taken_keys = {_hour_key(t) for t in (taken or [])}
+    capacity = max(1, int(capacity or 1))
+    taken_counts: Counter = Counter(_hour_key(t) for t in (taken or []))
     base_start = now_utc + timedelta(hours=LEAD_TIME_HOURS)
     start = max(base_start, not_before) if not_before else base_start
 
-    out = _search_slots(now_utc, taken_keys, n, start, hour_min, hour_max)
+    def _with_picked(extra: list[datetime]) -> Counter:
+        tc = Counter(taken_counts)
+        for k in extra:
+            tc[k] = capacity  # уже предложенные не предлагать повторно
+        return tc
+
+    out = _search_slots(now_utc, taken_counts, capacity, n, start, hour_min, hour_max)
     if len(out) < n and (hour_min is not None or hour_max is not None):
-        # ослабляем окно времени, дату-предпочтение оставляем
-        out += _search_slots(now_utc, taken_keys | set(out), n - len(out), start, None, None)
+        out += _search_slots(now_utc, _with_picked(out), capacity, n - len(out), start, None, None)
     if len(out) < n:
-        # ослабляем и дату — ближайшие вообще
-        out += _search_slots(now_utc, taken_keys | set(out), n - len(out), base_start, None, None)
+        out += _search_slots(now_utc, _with_picked(out), capacity, n - len(out), base_start, None, None)
     return out[:n]
 
 
