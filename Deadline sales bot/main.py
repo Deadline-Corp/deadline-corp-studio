@@ -2019,6 +2019,21 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                     lost_reason=decision.lost_reason,
                     conversation_id=str(conversation.id),
                 )
+                # №13 — мгновенный триггер «стадия изменилась»: фоном прогнать
+                # stage_changed-автоматизации. Между этой строкой и db.commit()
+                # ниже нет await → задача исполнится уже после коммита (раса
+                # исключена). Изолировано: ошибка не ломает hot-path; no-op пока
+                # нет правила с таким триггером.
+                try:
+                    import asyncio as _aio
+                    from services.automation import run_automations_for_stage_change
+                    _aio.create_task(
+                        run_automations_for_stage_change(str(conversation.id), new_stage)
+                    )
+                except Exception as _se:  # noqa: BLE001
+                    log.warning(
+                        f"[{str(conversation.id)[:8]}] stage_changed schedule failed: {_se}"
+                    )
         except Exception as exc:  # noqa: BLE001
             log.warning(
                 f"[{str(conversation.id)[:8]}] funnel transition failed (non-fatal): {exc}"

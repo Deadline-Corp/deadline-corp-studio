@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 MAX_FIRES = 5          # потолок повторов одного правила на один диалог
 MAX_FIRES_PER_SWEEP = 30  # потолок срабатываний за один проход (анти-взрыв)
 
-TRIGGER_TYPES = ("lead_silent", "new_lead", "sequence")
+TRIGGER_TYPES = ("lead_silent", "new_lead", "sequence", "stage_changed")
 NEW_LEAD_WINDOW_H = 48  # new_lead срабатывает только для диалогов моложе 48ч (анти-ретро)
 ACTION_TYPES = ("bot_message", "create_task", "set_stage", "notify_admin")
 MAX_SEQUENCE_STEPS = 5
@@ -68,6 +68,12 @@ def validate_rule(trigger: dict, conditions: Optional[dict], actions: list) -> l
             if not (st.get("text") or "").strip():
                 problems.append(f"Касание #{i + 1}: пустой текст")
         return problems  # actions у цепочки не используются
+    if t == "stage_changed":
+        # to_stage опционален: задан → правило срабатывает только при переходе
+        # именно на эту стадию; пусто → на любую смену стадии.
+        ws = trigger.get("to_stage")
+        if ws is not None and not isinstance(ws, str):
+            problems.append("to_stage: ключ стадии (строка) или пусто = на любую смену")
     if not actions:
         problems.append("Нужно хотя бы одно действие")
     for i, a in enumerate(actions or []):
@@ -201,6 +207,82 @@ async def run_automations() -> dict:
                 stats["errors"] += 1
                 logger.warning("[automation] rule=%r error: %s", getattr(rule, "name", "?"), e)
 
+    return stats
+
+
+async def run_automations_for_stage_change(conversation_id: str, new_stage: str) -> dict:
+    """№13 — мгновенный триггер «стадия изменилась».
+
+    Прогоняет ТОЛЬКО правила с триггером 'stage_changed' для одного диалога,
+    не дожидаясь крон-прохода. Вызывается в фоне (asyncio.create_task) из
+    main._handle_message ПОСЛЕ commit, со своей DB-сессией.
+
+    Безопасность для hot-path: вся функция в try/except, ошибка лишь логируется
+    (ответ лиду уже отправлен). До создания правила с триггером 'stage_changed'
+    — полный no-op. trigger.to_stage (если задан) фильтрует по целевой стадии;
+    пусто = на любую смену. Дедуп/cooldown — как в run_automations."""
+    from db.connection import session_scope
+    from db.models import AutomationRule, AutomationRun, Conversation, Customer
+
+    stats: dict[str, Any] = {"fired": 0, "skipped": 0, "errors": 0}
+    now = datetime.now(timezone.utc)
+    try:
+        with session_scope() as s:
+            row = (
+                s.query(Conversation, Customer)
+                .join(Customer, Conversation.customer_id == Customer.id)
+                .filter(Conversation.id == conversation_id)
+                .first()
+            )
+            if not row:
+                return stats
+            conv, cust = row
+
+            rules = (
+                s.query(AutomationRule)
+                .filter(AutomationRule.enabled == True)  # noqa: E712
+                .order_by(AutomationRule.position.asc())
+                .all()
+            )
+            for rule in rules:
+                trig = rule.trigger or {}
+                if trig.get("type") != "stage_changed":
+                    continue
+                want_stage = trig.get("to_stage")
+                if want_stage and want_stage != new_stage:
+                    continue
+                if not _passes_conditions(rule.conditions, conv, cust):
+                    continue
+                # Дедуп / cooldown (идентично run_automations).
+                runs = (
+                    s.query(AutomationRun)
+                    .filter(AutomationRun.rule_id == rule.id,
+                            AutomationRun.conversation_id == conv.id)
+                    .order_by(AutomationRun.fired_at.desc())
+                    .all()
+                )
+                if runs:
+                    if rule.cooldown_hours <= 0 or len(runs) >= MAX_FIRES:
+                        continue
+                    last = runs[0].fired_at
+                    if last and last.tzinfo is None:
+                        last = last.replace(tzinfo=timezone.utc)
+                    if last and (now - last) < timedelta(hours=rule.cooldown_hours):
+                        continue
+                try:
+                    detail = await _execute_actions(s, rule, conv, cust)
+                    s.add(AutomationRun(rule_id=rule.id, conversation_id=conv.id, detail=detail))
+                    s.flush()
+                    stats["fired"] += 1
+                    logger.info("[automation] stage_changed rule=%r fired conv=%s → %s detail=%s",
+                                rule.name, str(conv.id)[:8], new_stage, detail)
+                except Exception as e:  # noqa: BLE001
+                    stats["errors"] += 1
+                    logger.warning("[automation] stage_changed rule=%r error: %s",
+                                   getattr(rule, "name", "?"), e)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[automation] run_for_stage_change(%s) error: %s",
+                       str(conversation_id)[:8], e)
     return stats
 
 

@@ -59,6 +59,10 @@ export function Automations() {
     if (r.trigger.type === 'lead_silent') parts.push(`лид молчит ${r.trigger.hours} ч`)
     if (r.trigger.type === 'new_lead') parts.push('появился новый лид')
     if (r.trigger.type === 'sequence') parts.push(`цепочка из ${((r.trigger as any).steps || []).length} касаний`)
+    if (r.trigger.type === 'stage_changed') {
+      const ts = (r.trigger as any).to_stage
+      parts.push(ts ? `стадия → «${stages.find(x => x.stage === ts)?.label ?? ts}»` : 'стадия изменилась')
+    }
     const c = r.conditions || {}
     if (c.channels?.length) parts.push(`канал: ${c.channels.map(x => CHANNEL_META[x]?.label ?? x).join('/')}`)
     if (c.stages?.length) parts.push(`стадия: ${c.stages.map(s => stages.find(x => x.stage === s)?.label ?? s).join(', ')}`)
@@ -131,6 +135,7 @@ function RuleEditor({ rule, onClose, onSaved }: {
   const [name, setName] = useState(rule?.name ?? '')
   const [ttype, setTtype] = useState<string>(rule?.trigger.type ?? 'lead_silent')
   const [hours, setHours] = useState(String(rule?.trigger.hours ?? 24))
+  const [toStage, setToStage] = useState<string>((rule?.trigger as any)?.to_stage ?? '')
   const [steps, setSteps] = useState<any[]>(
     (rule?.trigger as any)?.steps ?? [
       { hours: 24, text: '' },
@@ -164,7 +169,9 @@ function RuleEditor({ rule, onClose, onSaved }: {
           ? { type: 'new_lead' }
           : ttype === 'sequence'
             ? { type: 'sequence', steps: steps.map(s => ({ hours: parseFloat(s.hours), text: (s.text || '').trim() })) }
-            : { type: 'lead_silent', hours: parseFloat(hours) },
+            : ttype === 'stage_changed'
+              ? { type: 'stage_changed', to_stage: toStage || undefined }
+              : { type: 'lead_silent', hours: parseFloat(hours) },
         conditions: {
           channels: channels.length ? channels : undefined,
           stages: condStages.length ? condStages : undefined,
@@ -206,6 +213,7 @@ function RuleEditor({ rule, onClose, onSaved }: {
               <option value="lead_silent">Лид молчит N часов</option>
               <option value="new_lead">Появился новый лид</option>
               <option value="sequence">Цепочка касаний (день 1 → 3 → 7)</option>
+              <option value="stage_changed">Стадия изменилась</option>
             </select>
             {ttype === 'lead_silent' && (
               <>
@@ -216,6 +224,15 @@ function RuleEditor({ rule, onClose, onSaved }: {
             )}
             {ttype === 'new_lead' && (
               <span className="faint" style={{ fontSize: 12 }}>сработает в течение ~10 минут после появления, один раз</span>
+            )}
+            {ttype === 'stage_changed' && (
+              <>
+                <select value={toStage} onChange={e => setToStage(e.target.value)} style={{ fontSize: 13 }}>
+                  <option value="">на любую стадию</option>
+                  {stages.map(s => <option key={s.stage} value={s.stage}>{s.label}</option>)}
+                </select>
+                <span className="faint" style={{ fontSize: 12 }}>сработает сразу при переходе</span>
+              </>
             )}
           </div>
           {ttype === 'sequence' && (
