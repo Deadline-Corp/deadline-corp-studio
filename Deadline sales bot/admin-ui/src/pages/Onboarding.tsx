@@ -4,8 +4,9 @@ import { api } from '../api/client'
 import { PresetInfo } from '../api/types'
 import { startTour } from '../components/Tour'
 
-/* Онбординг при первом входе: 4 шага без айтишных слов.
-   Название бизнеса → ниша (пресет) → каналы → демо-данные → обучение. */
+/* Онбординг при первом входе: 5 шагов без айтишных слов.
+   Название бизнеса → ниша (пресет) → 🪄 авто-настройка из инфо о компании →
+   каналы → демо-данные → обучение (spotlight-тур). */
 
 export function Onboarding() {
   const [step, setStep] = useState(0)
@@ -17,7 +18,14 @@ export function Onboarding() {
   const [demoDone, setDemoDone] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  // Шаг авто-настройки (конфиг-агент P4)
+  const [dump, setDump] = useState('')
+  const [url, setUrl] = useState('')
+  const [draft, setDraft] = useState<any>(null)
+  const [cfgApplied, setCfgApplied] = useState(false)
   const navigate = useNavigate()
+
+  const STEPS = 5
 
   useEffect(() => {
     void api.get<{ items: PresetInfo[] }>('/presets').then(r => setPresets(r.items)).catch(() => { /* */ })
@@ -52,6 +60,33 @@ export function Onboarding() {
     finally { setBusy(false) }
   }
 
+  // Авто-настройка: дамп инфо (+опц. сайт) → AI собирает черновик мозга/KB/ниши.
+  const cfgGenerate = async () => {
+    if (!dump.trim() && !url.trim()) { setErr('Вставьте текст о компании или ссылку на сайт'); return }
+    setBusy(true)
+    setErr('')
+    try {
+      const r = await api.post<{ draft: any }>('/onboarding/generate', { dump, url: url || undefined })
+      setDraft(r.draft || {})
+    } catch (e: any) { setErr(`Не получилось собрать: ${e.detail ?? e.message}`) }
+    finally { setBusy(false) }
+  }
+  const cfgApplyAndNext = async () => {
+    if (!draft) { setStep(3); return }
+    setBusy(true)
+    setErr('')
+    try {
+      await api.post('/onboarding/apply', {
+        system_prompt: draft.system_prompt, kb_md: draft.kb_md,
+        preset_key: draft.preset_key || undefined, bot_goal: draft.bot_goal || undefined,
+      })
+      setCfgApplied(true)
+      setStep(3)
+    } catch (e: any) { setErr(`Не получилось применить: ${e.detail ?? e.message}`) }
+    finally { setBusy(false) }
+  }
+  const updDraft = (k: string, v: any) => setDraft({ ...draft, [k]: v })
+
   const seedDemo = async () => {
     setBusy(true)
     setErr('')
@@ -74,20 +109,22 @@ export function Onboarding() {
 
   const Dot = ({ i }: { i: number }) => (
     <div style={{
-      width: 26, height: 4, borderRadius: 2,
+      width: 22, height: 4, borderRadius: 2,
       background: i <= step ? 'var(--accent)' : 'var(--panel-2)',
       transition: 'background 0.3s',
     }} />
   )
 
+  const ta: React.CSSProperties = { width: '100%', minHeight: 96, fontSize: 13 }
+
   return (
     <div className="login-wrap">
-      <div className="card" style={{ width: 620, maxHeight: '90vh', overflowY: 'auto', padding: 28, display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div className="card" style={{ width: 640, maxHeight: '90vh', overflowY: 'auto', padding: 28, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 34, height: 34, borderRadius: 9, background: 'linear-gradient(135deg, var(--accent), #4938d8)', display: 'grid', placeItems: 'center', fontWeight: 800, color: '#fff' }}>D</div>
-          <b style={{ fontSize: 16 }}>Настройка за 3 минуты</b>
+          <b style={{ fontSize: 16 }}>Настройка за 5 минут</b>
           <div style={{ flex: 1 }} />
-          <div style={{ display: 'flex', gap: 5 }}>{[0, 1, 2, 3].map(i => <Dot key={i} i={i} />)}</div>
+          <div style={{ display: 'flex', gap: 5 }}>{Array.from({ length: STEPS }, (_, i) => <Dot key={i} i={i} />)}</div>
         </div>
 
         {step === 0 && (
@@ -96,7 +133,7 @@ export function Onboarding() {
             <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>
               Это имя будет в шапке панели — система настраивается под вас.
             </p>
-            <input autoFocus placeholder="Например: Студия Deadline / Стоматология «Улыбка»"
+            <input autoFocus placeholder="Например: Студия Deadline / Клининг «Чистый дом»"
                    value={name} onChange={e => setName(e.target.value)}
                    onKeyDown={e => { if (e.key === 'Enter' && name.trim()) saveName() }} />
             <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -139,8 +176,50 @@ export function Onboarding() {
 
         {step === 2 && (
           <>
-            <h2 style={{ margin: 0, fontSize: 18 }}>Откуда приходят клиенты?</h2>
+            <h2 style={{ margin: 0, fontSize: 18 }}>Расскажите боту о вашем бизнесе</h2>
             {applied && <span className="chip ok" style={{ alignSelf: 'flex-start' }}>✅ Ниша применена</span>}
+            <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>
+              «Вывалите» всё, что есть: услуги, цены, как работаете, частые вопросы, регламенты —
+              можно копипастом с сайта. И/или ссылку на сайт. AI сам соберёт «мозг» бота
+              и базу знаний, проверите и поправите. Это и есть главная настройка — займёт минуту.
+            </p>
+            <textarea value={dump} onChange={e => setDump(e.target.value)} style={ta}
+                      placeholder="Например: убираем квартиры и офисы, генеральная от 4000₽, регулярная от 2500₽, выезд по городу бесплатно, работаем 8:00–20:00, частый вопрос «а свои моющие?» — да, всё своё…" />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input value={url} onChange={e => setUrl(e.target.value)} style={{ flex: 1 }}
+                     placeholder="Ссылка на сайт (необязательно) — агент скачает" />
+              <button className="btn primary" onClick={cfgGenerate} disabled={busy}>
+                {busy && !draft ? <span className="spin" /> : (draft ? '↻ Пересобрать' : '🪄 Собрать настройку')}
+              </button>
+            </div>
+
+            {draft && (
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {draft.summary && <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>🧩 {draft.summary}</p>}
+                {draft._parse_failed && <span className="chip warn">агент вернул текст не в формате — поправьте вручную ниже</span>}
+                <span className="muted" style={{ fontSize: 12 }}>Тон / мозг бота (как он говорит и что знает о вас):</span>
+                <textarea value={draft.system_prompt || ''} onChange={e => updDraft('system_prompt', e.target.value)} style={ta} />
+                <span className="muted" style={{ fontSize: 12 }}>База знаний (услуги / цены / частые вопросы):</span>
+                <textarea value={draft.kb_md || ''} onChange={e => updDraft('kb_md', e.target.value)} style={{ ...ta, minHeight: 120 }} />
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <button className="btn ghost" onClick={() => setStep(1)}>← Назад</button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn ghost" onClick={() => setStep(3)}>Пропустить</button>
+                <button className="btn primary" onClick={cfgApplyAndNext} disabled={busy}>
+                  {busy && draft ? <span className="spin" /> : (draft ? '✅ Применить и дальше →' : 'Дальше →')}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {step === 3 && (
+          <>
+            <h2 style={{ margin: 0, fontSize: 18 }}>Откуда приходят клиенты?</h2>
+            {cfgApplied && <span className="chip ok" style={{ alignSelf: 'flex-start' }}>✅ Бот настроен под вашу компанию</span>}
             <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>
               Сейчас подключено вот что. Новые каналы (Telegram, Instagram, WhatsApp)
               подключаются во вкладке «Каналы» — там пошаговые инструкции для каждого.
@@ -161,13 +240,13 @@ export function Onboarding() {
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <button className="btn ghost" onClick={() => setStep(1)}>← Назад</button>
-              <button className="btn primary" onClick={() => setStep(3)}>Дальше →</button>
+              <button className="btn ghost" onClick={() => setStep(2)}>← Назад</button>
+              <button className="btn primary" onClick={() => setStep(4)}>Дальше →</button>
             </div>
           </>
         )}
 
-        {step === 3 && (
+        {step === 4 && (
           <>
             <h2 style={{ margin: 0, fontSize: 18 }}>Потренируйтесь на демо-данных</h2>
             <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>
