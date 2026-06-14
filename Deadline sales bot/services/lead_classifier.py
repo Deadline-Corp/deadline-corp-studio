@@ -53,22 +53,32 @@ def _heuristic(transcript: str, contact_name: str = "") -> dict:
     t = (transcript or "").lower()
     biz = sum(1 for k in _BUSINESS_KEYWORDS if k in t)
     non = sum(1 for k in _NONLEAD_KEYWORDS if k in t)
+    has_call = any(k in t for k in ("созвон", "позвон", "звонок", "созвонимся", "call", "встрет", "понедельник", "zoom", "meet"))
     if biz == 0 and non == 0:
         # Нет сигналов — мягкий «возможно лид» с низкой уверенностью,
         # чтобы оператор глянул сам, а не потерял.
         return {
             "is_lead": True, "confidence": 0.3, "category": "unknown",
             "reason": "Нет явных деловых или личных маркеров (эвристика).",
-            "temperature": "cold", "by": "heuristic",
+            "temperature": "cold", "stage": "new_lead", "by": "heuristic",
         }
     is_lead = biz >= non
     conf = min(0.85, 0.5 + 0.1 * abs(biz - non))
+    if not is_lead:
+        stage = "new_lead"
+    elif has_call:
+        stage = "on_call"
+    elif biz >= 2:
+        stage = "in_dialog"
+    else:
+        stage = "new_lead"
     return {
         "is_lead": is_lead,
         "confidence": round(conf, 2),
         "category": "service_inquiry" if is_lead else "personal_or_other",
         "reason": f"Эвристика: деловых маркеров {biz}, личных {non}.",
         "temperature": "warm" if (is_lead and biz >= 2) else "cold",
+        "stage": stage,
         "by": "heuristic",
     }
 
@@ -84,6 +94,10 @@ def _coerce(result: dict, fallback: dict) -> dict:
         out["reason"] = str(result.get("reason") or fallback["reason"])[:500]
         temp = str(result.get("temperature") or fallback["temperature"]).lower()
         out["temperature"] = temp if temp in ("cold", "warm", "hot", "frozen") else "cold"
+        stage = str(result.get("stage") or fallback.get("stage") or "new_lead").lower()
+        _allowed = ("new_lead", "in_dialog", "qualified", "on_call",
+                    "proposal", "prepayment", "completed_won", "lost")
+        out["stage"] = stage if stage in _allowed else "new_lead"
         out["by"] = "llm"
     except (TypeError, ValueError) as e:  # noqa: BLE001
         log.warning(f"lead_classifier coerce failed: {e} — using heuristic")
@@ -147,10 +161,21 @@ def classify_whatsapp_conversation(
         f"Контекст бизнеса: {ctx}\n"
         f"Имя/контакт: {contact_name or '—'}{label_hint}\n\n"
         f"ПЕРЕПИСКА (последние сообщения):\n{transcript[:4000]}\n\n"
+        "Также определи СТАДИЮ воронки продаж по содержанию (stage):\n"
+        "- new_lead: только написал, диалога ещё нет;\n"
+        "- in_dialog: идёт переписка, уточняем/отвечаем, но без явной квалификации;\n"
+        "- qualified: чётко описал задачу/проект и заинтересован;\n"
+        "- on_call: договорились о созвоне/встрече/звонке (в т.ч. «давайте созвонимся», «в понедельник»);\n"
+        "- proposal: отправлено КП/смета/цена;\n"
+        "- prepayment: договорились об оплате/внесён аванс;\n"
+        "- completed_won: сделка закрыта успешно;\n"
+        "- lost: явный отказ/не интересно/спам/не наш профиль.\n"
+        "Если НЕ лид — stage всегда new_lead.\n\n"
         "Верни СТРОГО один JSON-объект без пояснений:\n"
         '{"is_lead": true|false, "confidence": 0.0-1.0, '
         '"category": "service_inquiry|existing_client|partner|personal|service_msg|spam|unknown", '
-        '"reason": "1 фраза почему", "temperature": "cold|warm|hot"}'
+        '"reason": "1 фраза почему", "temperature": "cold|warm|hot", '
+        '"stage": "new_lead|in_dialog|qualified|on_call|proposal|prepayment|completed_won|lost"}'
     )
     try:
         from langchain_core.messages import HumanMessage

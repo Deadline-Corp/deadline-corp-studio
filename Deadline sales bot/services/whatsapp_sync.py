@@ -254,6 +254,17 @@ async def sync_waha_history(
                     order = {"frozen": 0, "cold": 1, "warm": 2, "hot": 3}
                     if order.get(temp, 1) > order.get(customer.lead_temperature or "cold", 1):
                         customer.lead_temperature = temp
+                    # Стадия воронки из содержания — ТОЛЬКО заполняем дефолтный
+                    # new_lead, не перетираем курированные/ручные стадии (импорт,
+                    # оператор). Так 44 синхронизированных лида распределятся по
+                    # воронке по смыслу, а 8 импортных сохранят свои стадии.
+                    stg = result.get("stage")
+                    _active = {"in_dialog", "qualified", "on_call", "proposal",
+                               "prepayment", "completed_won"}
+                    if stg in _active and (conversation.lead_stage or "new_lead") == "new_lead":
+                        conversation.lead_stage = stg
+                        stats.setdefault("stages_assigned", 0)
+                        stats["stages_assigned"] += 1
                 else:
                     stats["non_leads"] += 1
                 db.flush()
