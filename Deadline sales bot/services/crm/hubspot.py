@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 import httpx
@@ -73,18 +73,23 @@ DEFAULT_API_BASE = "https://api.hubapi.com"
 # region na2) was already updated via API to match these exact labels;
 # `_reconcile_stages` will find every stage on first start without
 # adding duplicates.
+# 2026-06-03: воронка упрощена 12 → 8 стадий (запрос: «слишком много столбцов,
+# оставить те что реально используются»). Бот авто-двигает только до on_call/lost;
+# остальное — ручные сейл-вехи. Вырезаны нишевые: 📜 NDA, 🎯 ТЗ согласовано,
+# 🤝 В работе (слита в «Аванс»), 🔁 Постпродажа. Их _our_stage-ключи ОСТАЮТСЯ в
+# base.LeadStage и funnel.py (внутренняя стейт-машина + крон/тесты их импортят),
+# но в HubSpot они больше не материализуются: _reconcile_stages только ДОБАВЛЯЕТ
+# недостающие из этого списка, никогда не удаляет — старые 4 стадии удалены в
+# HubSpot вручную. Если внутренний код вдруг попросит несуществующую стадию,
+# update_deal_stage логирует «unknown stage» и мягко пропускает (deal не двигается).
 STAGE_DEFS: list[dict[str, Any]] = [
     {"label": "🆕 Новый лид",        "metadata": {"probability": "0.05", "isClosed": "false"}, "_our_stage": "new_lead"},
     {"label": "💬 В диалоге",         "metadata": {"probability": "0.10", "isClosed": "false"}, "_our_stage": "in_dialog"},
     {"label": "✅ Квалифицирован",    "metadata": {"probability": "0.20", "isClosed": "false"}, "_our_stage": "qualified"},
-    {"label": "📜 NDA подписан",      "metadata": {"probability": "0.30", "isClosed": "false"}, "_our_stage": "nda"},
     {"label": "📞 Созвон назначен",   "metadata": {"probability": "0.40", "isClosed": "false"}, "_our_stage": "on_call"},
-    {"label": "🎯 ТЗ согласовано",    "metadata": {"probability": "0.55", "isClosed": "false"}, "_our_stage": "tz_approved"},
     {"label": "📄 КП отправлено",     "metadata": {"probability": "0.65", "isClosed": "false"}, "_our_stage": "proposal"},
     {"label": "💰 Аванс получен",     "metadata": {"probability": "0.80", "isClosed": "false"}, "_our_stage": "prepayment"},
-    {"label": "🤝 В работе",          "metadata": {"probability": "0.90", "isClosed": "false"}, "_our_stage": "in_work"},
     {"label": "✅ Сдано",             "metadata": {"probability": "1.00", "isClosed": "true"},  "_our_stage": "completed_won"},
-    {"label": "🔁 Постпродажа",       "metadata": {"probability": "1.00", "isClosed": "true"},  "_our_stage": "post_sale"},
     {"label": "❌ Проигран",          "metadata": {"probability": "0.00", "isClosed": "true"},  "_our_stage": "lost"},
 ]
 
@@ -440,14 +445,25 @@ class HubSpotAdapter(CRMAdapter):
             logger.warning("[hubspot] health_check failed: %s", exc)
             return False
 
-    async def upsert_contact(self, lead: Lead) -> str:
+    async def upsert_contact(self, lead: Lead, known_id: Optional[str] = None) -> str:
         await self._ensure_setup()
 
         # Build properties payload. Email/phone come from lead.identity_keys
         # or contact_handle (depends on channel).
-        email = lead.identity_keys.get("email") or (
-            lead.contact_handle if lead.contact_handle and "@" in (lead.contact_handle or "") else None
-        )
+        # ВАЖНО: contact_handle у Telegram-лида = "@username" (содержит '@', но это
+        # НЕ email!). Раньше проверка была просто `'@' in handle` → telegram-ник
+        # уходил в поле email → HubSpot 400 «invalid email» → НЕТ контакта/карточки
+        # для всех ТГ-лидов без почты. Теперь требуем настоящий формат email
+        # (символ перед '@', точка в домене после '@').
+        def _looks_like_email(s: Optional[str]) -> bool:
+            if not s or "@" not in s:
+                return False
+            local, _, domain = s.partition("@")
+            return bool(local) and "." in domain and not domain.endswith(".")
+
+        email = lead.identity_keys.get("email")
+        if not email and _looks_like_email(lead.contact_handle):
+            email = lead.contact_handle
         phone = lead.identity_keys.get("phone")
         tg_handle = lead.identity_keys.get("tg_handle") or (
             lead.contact_handle if lead.channel == "telegram" and lead.contact_handle else None
@@ -472,14 +488,29 @@ class HubSpotAdapter(CRMAdapter):
         if tg_handle:
             props["telegram_handle"] = tg_handle.lstrip("@")
 
-        # Search by email first (most reliable dedup key), then by phone
-        existing_id = await self._search_contact(email=email, phone=phone)
+        # known_id: обновляем КОНКРЕТНЫЙ контакт по id (минуя поиск). Нужно когда
+        # контакт уже создан «пустым» на 1-м ходе, а имя/email лид дал позже —
+        # поиск по новому email НЕ нашёл бы пустой контакт → создал бы дубль.
+        if known_id:
+            existing_id = known_id
+        else:
+            # Search by email/phone/telegram-ник (дедуп #1: телеграм-лиды без почты).
+            existing_id = await self._search_contact(email=email, phone=phone, tg_handle=tg_handle)
 
         if existing_id:
+            # first_touch_channel и interaction_type — «set once at first touch»
+            # (см. описания пропертей). На АПДЕЙТЕ их не перезаписываем: иначе
+            # ре-апсерт с другого канала (deep-link сайт→телега, или возврат лида
+            # из другого мессенджера) затёр бы первый канал касания и тип лида.
+            # Имя/почта/телефон/tg-ник/температура/скор обновляются нормально.
+            update_props = {
+                k: v for k, v in props.items()
+                if k not in ("first_touch_channel", "interaction_type")
+            }
             await self._req(
                 "PATCH",
                 f"/crm/v3/objects/contacts/{existing_id}",
-                json={"properties": props},
+                json={"properties": update_props},
             )
             logger.info("[hubspot] updated contact %s (lead=%s)", existing_id, lead.id)
             return existing_id
@@ -495,8 +526,14 @@ class HubSpotAdapter(CRMAdapter):
 
     async def _search_contact(
         self, email: Optional[str], phone: Optional[str],
+        tg_handle: Optional[str] = None,
     ) -> Optional[str]:
-        """Find existing contact by email or phone. Returns id or None."""
+        """Find existing contact by email, phone OR telegram-ник. Returns id or None.
+
+        tg_handle добавлен (дедуп #1): телеграм-лиды БЕЗ почты раньше не находились
+        (искали только email/phone) → один и тот же человек из телеги плодил
+        новые контакты. Теперь ищем и по telegram_handle.
+        """
         filters: list[dict] = []
         if email:
             filters.append({
@@ -509,6 +546,12 @@ class HubSpotAdapter(CRMAdapter):
                 "propertyName": "phone",
                 "operator": "EQ",
                 "value": phone,
+            })
+        if tg_handle:
+            filters.append({
+                "propertyName": "telegram_handle",
+                "operator": "EQ",
+                "value": tg_handle.lstrip("@"),
             })
         if not filters:
             return None
@@ -573,6 +616,46 @@ class HubSpotAdapter(CRMAdapter):
         )
         return deal_id
 
+    async def find_open_deal_for_contact(self, contact_id: Optional[str]) -> Optional[str]:
+        """Дедуп #2: вернуть id открытой (не closed-won/lost) сделки контакта в НАШЕМ
+        пайплайне, иначе None. Чтобы один клиент не плодил несколько карточек."""
+        if not contact_id or contact_id == "pending":
+            return None
+        await self._ensure_setup()
+        try:
+            resp = await self._req(
+                "GET", f"/crm/v3/objects/contacts/{contact_id}/associations/deals",
+            )
+            if resp.status_code != 200:
+                return None
+            ids = [r.get("toObjectId") or r.get("id") for r in resp.json().get("results", [])]
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[hubspot] list deals for contact %s failed: %s", contact_id, exc)
+            return None
+        if not ids:
+            return None
+        # Закрытые стадии нашего пайплайна — их НЕ переиспользуем (лид вернулся
+        # после закрытой сделки → можно завести новую).
+        closed = {self._stage_map.get("lost"), self._stage_map.get("completed_won")}
+        closed.discard(None)
+        for did in ids:
+            try:
+                dr = await self._req(
+                    "GET", f"/crm/v3/objects/deals/{did}",
+                    params={"properties": "dealstage,pipeline"},
+                )
+                if dr.status_code != 200:
+                    continue
+                pr = dr.json().get("properties", {})
+                # Чужой пайплайн не трогаем (вдруг у портала есть и другие воронки).
+                if pr.get("pipeline") and self._pipeline_id and pr.get("pipeline") != self._pipeline_id:
+                    continue
+                if pr.get("dealstage") not in closed:
+                    return str(did)
+            except Exception:  # noqa: BLE001
+                continue
+        return None
+
     async def update_deal_stage(
         self,
         deal_id: str,
@@ -582,6 +665,7 @@ class HubSpotAdapter(CRMAdapter):
         title: Optional[str] = None,
         description: Optional[str] = None,
         project_type: Optional[str] = None,
+        next_meeting_at: Optional[datetime] = None,
     ) -> None:
         await self._ensure_setup()
 
@@ -591,6 +675,13 @@ class HubSpotAdapter(CRMAdapter):
             return
 
         props: dict[str, Any] = {"dealstage": stage_id}
+        # Созвон назначен — пишем дату/время в карточку (HubSpot datetime-проперти
+        # принимает unix-миллисекунды). Видно в HubSpot UI без календарной интеграции.
+        if next_meeting_at is not None:
+            _dt = next_meeting_at
+            if _dt.tzinfo is None:
+                _dt = _dt.replace(tzinfo=timezone.utc)
+            props["next_meeting_at"] = int(_dt.timestamp() * 1000)
         if stage == "lost" and lost_reason:
             props["lost_reason_internal"] = lost_reason
         # Phase C1 (2026-05-29): write a readable deal name + structured brief
@@ -742,6 +833,54 @@ class HubSpotAdapter(CRMAdapter):
         )
         return task_id
 
+    async def merge_contacts(self, primary_id: str, secondary_id: str) -> bool:
+        """Слить secondary-контакт в primary через HubSpot Merge API.
+        primary выживает (его id сохраняется), secondary исчезает, его
+        свойства/история/ассоциации вливаются в primary. Идемпотентно по
+        смыслу: повторный вызов с уже слитым id вернёт ошибку — глушим в False,
+        не роняя воркер (склейка уже произошла)."""
+        if not primary_id or not secondary_id or str(primary_id) == str(secondary_id):
+            return False
+        await self._ensure_setup()
+        resp = await self._req(
+            "POST", "/crm/v3/objects/contacts/merge",
+            json={"primaryObjectId": str(primary_id), "objectIdToMerge": str(secondary_id)},
+        )
+        if resp.status_code in (200, 201):
+            logger.info("[hubspot] merged contact %s INTO %s", secondary_id, primary_id)
+            return True
+        # 4xx — например secondary уже слит/удалён. Не критично, не ретраим вечно.
+        logger.warning(
+            "[hubspot] merge_contacts %s<-%s -> %d: %s",
+            primary_id, secondary_id, resp.status_code, resp.text[:200],
+        )
+        return False
+
+    async def list_tasks_for_deal(self, deal_id: str) -> list[dict]:
+        """Задачи, привязанные к сделке: [{id, subject}]. Для дозаписи канала в
+        задачи созвона, найденные ПО СДЕЛКЕ (не по гоночному profile_data)."""
+        if not deal_id:
+            return []
+        await self._ensure_setup()
+        try:
+            resp = await self._req("GET", f"/crm/v3/objects/deals/{deal_id}/associations/tasks")
+            if resp.status_code != 200:
+                return []
+            ids = [r.get("toObjectId") or r.get("id") for r in resp.json().get("results", [])]
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[hubspot] list tasks for deal %s failed: %s", deal_id, exc)
+            return []
+        out: list[dict] = []
+        for tid in ids:
+            if not tid:
+                continue
+            tr = await self._req("GET", f"/crm/v3/objects/tasks/{tid}",
+                                 params={"properties": "hs_task_subject"})
+            if tr.status_code == 200:
+                out.append({"id": str(tid),
+                            "subject": tr.json().get("properties", {}).get("hs_task_subject", "")})
+        return out
+
     async def complete_task(self, task_id: str) -> bool:
         """Пометить задачу COMPLETED (после самоисполнения ботом)."""
         if not task_id:
@@ -753,6 +892,27 @@ class HubSpotAdapter(CRMAdapter):
         )
         resp.raise_for_status()
         logger.info("[hubspot] task %s → COMPLETED", task_id)
+        return True
+
+    async def update_task(
+        self, task_id: str, subject: Optional[str] = None, body: Optional[str] = None,
+    ) -> bool:
+        """Дополнить задачу (тема/тело) — напр. добавить канал созвона."""
+        if not task_id:
+            return False
+        await self._ensure_setup()
+        props: dict[str, Any] = {}
+        if subject:
+            props["hs_task_subject"] = subject[:255]
+        if body:
+            props["hs_task_body"] = body[:65000]
+        if not props:
+            return False
+        resp = await self._req(
+            "PATCH", f"/crm/v3/objects/tasks/{task_id}", json={"properties": props},
+        )
+        resp.raise_for_status()
+        logger.info("[hubspot] task %s updated (subject=%s)", task_id, bool(subject))
         return True
 
 

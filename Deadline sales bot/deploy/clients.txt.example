@@ -1,0 +1,4 @@
+# По строке на клиентскую копию: <railway_project_id> <slug>
+# Project ID: railway status в папке проекта или из URL дашборда Railway.
+# Скопируйте в deploy/clients.txt (он в .gitignore — список клиентов не публикуем).
+# 0a9a93a3-xxxx-xxxx-xxxx-xxxxxxxxxxxx barbershop

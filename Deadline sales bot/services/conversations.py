@@ -17,7 +17,7 @@ This module is dormant until Day 4 — main.py still uses `SESSIONS` dict.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -48,30 +48,46 @@ def get_or_create_conversation(
          logical conversation per customer-channel.
       3. If nothing found → create a new OPEN conversation.
     """
+    # Продолжаем ТОТ ЖЕ тред. Раньше искали только OPEN → после handoff диалог
+    # становился HANDED_OFF, и СЛЕДУЮЩЕЕ сообщение того же чата плодило НОВЫЙ
+    # conversation (+ новый forum-топик «[ПОВТОРНЫЙ]») с ПУСТОЙ историей — бот
+    # «терял память», переспрашивал, дублировал. Теперь продолжаем недавний
+    # не-терминальный диалог и реоткрываем его. ARCHIVED/ABANDONED не трогаем —
+    # их архивирует recall намеренно (возврат после долгой паузы → новый тред +
+    # приветствие). RESUME_WINDOW — насколько «недавним» считаем продолжение.
+    RESUME_WINDOW = timedelta(days=3)
+    resumable = (
+        ConversationStatusEnum.OPEN.value,
+        ConversationStatusEnum.HANDED_OFF.value,
+        ConversationStatusEnum.RESOLVED.value,
+    )
+    base = select(Conversation).where(
+        Conversation.customer_id == customer_id,
+        Conversation.channel == channel,
+        Conversation.status.in_(resumable),
+    )
     if channel_conversation_id:
-        existing = db.execute(
-            select(Conversation).where(
-                Conversation.customer_id == customer_id,
-                Conversation.channel == channel,
-                Conversation.channel_conversation_id == channel_conversation_id,
-                Conversation.status == ConversationStatusEnum.OPEN.value,
-            )
-        ).scalar_one_or_none()
-        if existing is not None:
+        base = base.where(Conversation.channel_conversation_id == channel_conversation_id)
+    existing = db.execute(
+        base.order_by(desc(Conversation.created_at)).limit(1)
+    ).scalar_one_or_none()
+
+    if existing is not None:
+        if existing.status == ConversationStatusEnum.OPEN.value:
             return existing
-    else:
-        existing = db.execute(
-            select(Conversation)
-            .where(
-                Conversation.customer_id == customer_id,
-                Conversation.channel == channel,
-                Conversation.status == ConversationStatusEnum.OPEN.value,
+        # Закрыт handoff'ом/resolved: продолжаем тем же тредом, если недавно.
+        last = existing.last_message_at
+        if last is not None and last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        if last is None or last >= datetime.now(timezone.utc) - RESUME_WINDOW:
+            existing.status = ConversationStatusEnum.OPEN.value
+            db.flush()
+            log.info(
+                "resumed conversation %s (reopened) for (%s, chat=%s)",
+                existing.id, channel, channel_conversation_id,
             )
-            .order_by(desc(Conversation.created_at))
-            .limit(1)
-        ).scalar_one_or_none()
-        if existing is not None:
             return existing
+        # Старый закрытый диалог — это новое обращение, создаём новый ниже.
 
     conversation = Conversation(
         customer_id=customer_id,

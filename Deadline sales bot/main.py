@@ -55,6 +55,7 @@ from services.conversations import (
 )
 # Tenant + CRM (Phase 1+7, 2026-05-26 — see ADR v1.3 in Obsidian Vault)
 from services.tenant import load_tenant, Tenant
+from services.operator_actions import deliver_operator_reply
 from services.crm import build_adapter, CRMAdapter
 from services import crm_queue as crm_queue
 from channels.telegram import (
@@ -83,6 +84,7 @@ from channels.instagram import (
     send_instagram_comment_reply,
 )
 from channels.utils import verify_meta_signature
+from channels.whatsapp import parse_whatsapp_webhook, send_whatsapp_reply
 
 
 # ============================================================================
@@ -117,6 +119,22 @@ class Settings(BaseSettings):
     ollama_base_url: str = "https://ollama.com/v1"
     llm_model: str = "qwen3.5:397b-cloud"
     llm_fallback_model: str = "glm-4.6:cloud"
+
+    # ---- Google Gemini (OpenAI-compatible endpoint) ----
+    # Gemini exposes an OpenAI-compatible surface, so the same ChatOpenAI client
+    # works — only base_url + key + model differ. SAFETY: presence of the key
+    # alone does NOT switch the live bot; Gemini activates ONLY when
+    # llm_provider="gemini" (explicit). Lets each tenant plug their own brain.
+    google_api_key: Optional[str] = None
+    gemini_base_url: str = "https://generativelanguage.googleapis.com/v1beta/openai/"
+    gemini_model: str = "gemini-2.5-flash"
+    gemini_fallback_model: str = "gemini-2.5-flash-lite"
+
+    # Explicit brain-provider override. Empty = auto (current prod behavior:
+    # OpenRouter if its key is set, else Ollama). Set LLM_PROVIDER to
+    # "gemini" | "openrouter" | "ollama" to force one. This is the per-tenant
+    # "подключи свои мозги" switch — each client picks a provider + own key.
+    llm_provider: str = ""
     telegram_bot_token: Optional[str] = None
     telegram_chat_id: Optional[str] = None
     # Telegram operator supergroup (forum-mode). Created by team in TG, bot
@@ -150,6 +168,31 @@ class Settings(BaseSettings):
     meta_verify_token: Optional[str] = None
     meta_app_secret: Optional[str] = None
     meta_page_access_token: Optional[str] = None
+    # ---- WhatsApp Cloud API (Meta) — self-service per-tenant ----
+    # Owner connects their own WhatsApp number: pastes these 4 in Settings →
+    # Каналы. Dormant until set — does NOT affect site/Telegram/IG flows.
+    # - WHATSAPP_TOKEN: permanent System User access token (WA messaging perm)
+    # - WHATSAPP_PHONE_NUMBER_ID: from App → WhatsApp → API Setup
+    # - WHATSAPP_VERIFY_TOKEN: any random string set in App webhook config
+    #   (falls back to META_VERIFY_TOKEN if same Meta app as IG/Messenger)
+    # - WHATSAPP_APP_SECRET: App Settings → Basic (falls back to META_APP_SECRET)
+    whatsapp_token: Optional[str] = None
+    whatsapp_phone_number_id: Optional[str] = None
+    whatsapp_verify_token: Optional[str] = None
+    whatsapp_app_secret: Optional[str] = None
+    # ---- Green-API (неофициальный WhatsApp через linked-device, без верификации) ----
+    # Альтернатива Cloud API: подключение реального номера по QR (номер остаётся в
+    # телефоне). Если заданы — WhatsApp идёт через Green-API (приём /webhooks/greenapi,
+    # отправка REST). Dormant пока не заданы.
+    greenapi_id_instance: Optional[str] = None
+    greenapi_api_token: Optional[str] = None
+    greenapi_api_url: Optional[str] = None
+    # ---- WAHA (self-hosted неофиц. WhatsApp на нашем VPS, devlikeapro/waha) ----
+    # Безлимит чатов, $0 за софт. Если заданы — WhatsApp идёт через WAHA
+    # (приём /webhooks/waha, отправка REST /api/sendText). Высший приоритет.
+    waha_base_url: Optional[str] = None
+    waha_api_key: Optional[str] = None
+    waha_session: str = "default"
     allowed_origins: str = "https://deadlinecorp.com,https://www.deadlinecorp.com,https://deadline-corp.github.io,http://localhost:3000,http://localhost:5500,http://127.0.0.1:5500"
     log_level: str = "INFO"
     # Optional bearer-token gate for /metrics. If unset, /metrics is open
@@ -192,6 +235,15 @@ class Settings(BaseSettings):
     # hubspot = HubSpotAdapter (Phase 2).
     # bitrix24 = Bitrix24Adapter (Phase 3, deferred per Nikolay 2026-05-26).
     crm_provider: str = "noop"
+
+    # ---- Умная карточка: ленивый контакт (smart-card, 2026-06-13) ----
+    # False (дефолт) = прежнее поведение: HubSpot-контакт создаётся на первом
+    # касании. True = контакт создаётся ТОЛЬКО когда лид «реальный» (дал контакт,
+    # ≥ crm_contact_min_messages сообщений, высокий score, handoff или бронь) —
+    # анонимы, написавшие раз и пропавшие, не плодят пустые карточки. Сделки уже
+    # ленивые (Phase 12). Postgres всегда источник правды; гейтим только HubSpot.
+    crm_lazy_contact: bool = False
+    crm_contact_min_messages: int = 2
 
     # ---- HubSpot credentials (Phase 0c done 2026-05-26) ----
     # Service Key (Beta), Bearer-format pat-na2-xxxx. Created in Settings →
@@ -261,6 +313,22 @@ CHROMA_DIR = ROOT / "chroma_db"
 EMBEDDING_MODEL = "BAAI/bge-m3"
 
 
+def _active_languages() -> list[str]:
+    """Языки тенанта с рантайм-оверрайдом из настроек (bot_settings 'languages',
+    через запятую). Пусто → языки из config.yaml. Первый = основной (язык
+    recall-приветствия). Живой диалог LLM отвечает на языке клиента независимо."""
+    try:
+        from services import bot_settings as _bs
+        ov = (_bs.get("languages") or "").strip()
+        if ov:
+            lst = [x.strip() for x in ov.split(",") if x.strip()]
+            if lst:
+                return lst
+    except Exception:  # noqa: BLE001
+        pass
+    return list(tenant.languages or ["ru"])
+
+
 # ============================================================================
 # APP + MIDDLEWARE
 # ============================================================================
@@ -272,6 +340,21 @@ app.add_middleware(
     allow_origins=[o.strip() for o in settings.allowed_origins.split(",") if o.strip()],
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
+)
+
+# ---- Admin UI (визуальная панель управления, 2026-06-11) ----
+# API-слой в admin_api.py (Bearer ADMIN_UI_TOKEN / TRAINING_AUTH_TOKEN),
+# SPA (React, admin-ui/dist) монтируется same-origin → CORS не участвует.
+# check_dir=False: отсутствие dist (локальный запуск без npm build) не валит бота.
+import admin_api as _admin_api  # noqa: E402 — после app, безопасно (lazy main внутри)
+app.include_router(_admin_api.router)
+
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+app.mount(
+    "/admin/ui",
+    StaticFiles(directory=str(Path(__file__).parent / "admin-ui" / "dist"),
+                html=True, check_dir=False),
+    name="admin-ui",
 )
 
 
@@ -287,6 +370,40 @@ def _resolve_llm_config() -> tuple[str, str, str, str, str]:
     has weekly limits that hit production traffic). Fallback path keeps the
     legacy Ollama config working if OPENROUTER_API_KEY is unset.
     """
+    # Explicit override wins (per-tenant brain selection / local testing).
+    provider = (settings.llm_provider or "").strip().lower()
+    if provider == "gemini":
+        if not settings.google_api_key:
+            raise RuntimeError("LLM_PROVIDER=gemini but GOOGLE_API_KEY is unset.")
+        return (
+            "gemini",
+            settings.google_api_key,
+            settings.gemini_base_url,
+            settings.gemini_model,
+            settings.gemini_fallback_model,
+        )
+    if provider == "openrouter":
+        if not settings.openrouter_api_key:
+            raise RuntimeError("LLM_PROVIDER=openrouter but OPENROUTER_API_KEY is unset.")
+        return (
+            "openrouter",
+            settings.openrouter_api_key,
+            settings.openrouter_base_url,
+            settings.openrouter_model,
+            settings.openrouter_fallback_model,
+        )
+    if provider == "ollama":
+        if not settings.ollama_api_key:
+            raise RuntimeError("LLM_PROVIDER=ollama but OLLAMA_API_KEY is unset.")
+        return (
+            "ollama",
+            settings.ollama_api_key,
+            settings.ollama_base_url,
+            settings.llm_model,
+            settings.llm_fallback_model,
+        )
+
+    # ---- Auto-selection (UNCHANGED prod behavior when LLM_PROVIDER unset) ----
     if settings.openrouter_api_key:
         return (
             "openrouter",
@@ -303,11 +420,11 @@ def _resolve_llm_config() -> tuple[str, str, str, str, str]:
             settings.llm_model,
             settings.llm_fallback_model,
         )
-    # Neither configured — fail loudly at import time so deployment doesn't
+    # Nothing configured — fail loudly at import time so deployment doesn't
     # silently start with no working LLM.
     raise RuntimeError(
-        "No LLM provider configured. Set OPENROUTER_API_KEY (preferred) "
-        "or OLLAMA_API_KEY in env."
+        "No LLM provider configured. Set OPENROUTER_API_KEY (preferred), "
+        "GOOGLE_API_KEY+LLM_PROVIDER=gemini, or OLLAMA_API_KEY in env."
     )
 
 
@@ -388,6 +505,9 @@ class MessageResponse(BaseModel):
     handoff: bool = False
     customer_id: str
     conversation_id: str
+    # WhatsApp наблюдение/черновик: ответ «удержан» как черновик на одобрение —
+    # вебхук НЕ должен слать его клиенту. False = обычная доставка.
+    suppress_send: bool = False
 
 
 # Legacy /chat shape (kept for the website widget — widget.js sends this)
@@ -636,6 +756,15 @@ def _normalize_bot_reply(text: str) -> str:
     t = _LEGACY_PREFIX_RE.sub('', text)
     if t and t[0].islower():
         t = t[0].upper() + t[1:]
+    # Капитализация первой буквы КАЖДОГО предложения (llama часто пишет «…задача.
+    # наши ребята…» с маленькой). Поднимаем букву после . ! ? … + пробел.
+    # Точки в числах/URL (без пробела после) не задеваются.
+    import re as _re_norm
+    t = _re_norm.sub(
+        r"([.!?…]\s+)([a-zа-яё])",
+        lambda m: m.group(1) + m.group(2).upper(),
+        t,
+    )
     return t
 
 
@@ -700,6 +829,27 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
       8. Handoff check + (if real contact) fire brief + mark conversation HANDED_OFF
       9. Commit transaction once at the end
     """
+    # Deep-link мост: «/start <session_id>» из телеги (лид нажал на сайте кнопку
+    # «Написать в Telegram» → ссылка t.me/bot?start=<session_id>). Склеиваем
+    # телеграм-чат с website-кастомером → ОДНА карточка + телеграм-ник в контакт.
+    # Делаем ДО resolve: bridge вешает телеграм-идентичность на website-кастомера,
+    # и resolve ниже естественно вернёт его (Step 1 по telegram external_id).
+    if (req.channel or "").lower() == "telegram" and (req.content or "").lstrip().lower().startswith("/start"):
+        import re as _re_dl
+        _mdl = _re_dl.match(r"^\s*/start\s+(sess_[A-Za-z0-9_-]{3,})\s*$", req.content or "")
+        if _mdl:
+            _tok = _mdl.group(1)
+            try:
+                from services.identity import bridge_telegram_to_website_session
+                _wcust = bridge_telegram_to_website_session(db, req.external_id, req.username, _tok)
+                if _wcust is not None:
+                    # Тёплое узнавание (LEAD_MENTIONS_PRIOR сработает, без холодного
+                    # представления). Карточка уже склеена — оператор видит всё.
+                    req.content = "Здравствуйте! Я писал вам на сайте — продолжим здесь 🙂"
+                    log.info(f"[deep-link] telegram {req.external_id} bridged → website session {_tok}")
+            except Exception as _dle:  # noqa: BLE001
+                log.warning(f"[deep-link] bridge skipped: {_dle}")
+
     customer, was_returning_match = resolve_or_create_customer_with_meta(
         db,
         channel=req.channel,
@@ -717,6 +867,33 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         channel=req.channel,
         channel_conversation_id=conv_thread_id,
     )
+
+    # Имя лида — детерминированно из «меня зовут X» (llama кладёт его в handoff_data
+    # ненадёжно → имя в карточке/задаче часто пустое). Ставим сразу, если ещё нет.
+    if not (getattr(customer, "name", None) or "").strip():
+        try:
+            from services.reply_polish import extract_lead_name
+            _nm = extract_lead_name(req.content)
+            if _nm:
+                customer.name = _nm[:200]
+                db.flush()
+        except Exception:  # noqa: BLE001
+            pass
+
+    # WhatsApp: подтянуть номер и имя ИЗ САМОГО мессенджера, иначе живые входящие
+    # висят без номера/имени и «не совпадают» с тем, что видно в WhatsApp. Имя —
+    # из notifyName (req.username). Телефон — из peer, НО только если это реальный
+    # номер (@c.us), а не скрытый @lid (тогда peer — не телефон; ставить нельзя,
+    # иначе будет ложный «+<lid>»). Тип кладёт парсер в extra_meta.wa_peer_type.
+    if (req.channel or "").lower() == "whatsapp":
+        _peer = (req.channel_conversation_id or req.external_id or "").strip()
+        _peer_type = (req.extra_meta or {}).get("wa_peer_type", "phone")
+        if req.username and not (customer.name or "").strip():
+            customer.name = req.username[:200]
+            db.flush()
+        if _peer and _peer_type != "lid" and not (customer.phone or "").strip():
+            customer.phone = ("+" + _peer)[:50]
+            db.flush()
 
     # Lazy-create a forum topic in the operator supergroup on first message
     # of this conversation. Topic name = "<channel>: <username or short id>".
@@ -829,7 +1006,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                             _prior_ts = _prior_ts.replace(tzinfo=_tz.utc)
                         days_ago = (datetime.now(_tz.utc) - _prior_ts).days
 
-                    _recall_lang = (tenant.languages[0] if tenant.languages else "ru")
+                    _recall_lang = _active_languages()[0]
                     greeting_prompt = render_recall_greeting(
                         language=_recall_lang,
                         summary=summary,
@@ -1007,7 +1184,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
 
                 else:
                     # UNCLEAR or low confidence — ask for explicit clarification.
-                    _recall_lang_b = (tenant.languages[0] if tenant.languages else "ru")
+                    _recall_lang_b = _active_languages()[0]
                     if _recall_lang_b == "en":
                         clarify_text = "Could you clarify — continue the prior project or start a new one?"
                     else:
@@ -1120,10 +1297,30 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     if recall_continue:
         from services.conversations import get_recent_messages_with_recall
         recent = get_recent_messages_with_recall(
-            db, customer_id=customer.id, active_conv_id=conversation.id, limit=13
+            db, customer_id=customer.id, active_conv_id=conversation.id, limit=30
         )
     else:
-        recent = get_recent_messages(db, conversation.id, limit=13)
+        recent = get_recent_messages(db, conversation.id, limit=30)
+
+    # Имя голым ответом: бот СПРОСИЛ «как вас зовут?» прошлым ходом, лид ответил
+    # просто «Иван». «меня зовут X» ловится раньше (после resolve); тут — кейс
+    # «вопрос бота → короткий ответ-имя». Без контекста (бот спросил) не ловим,
+    # чтобы не принять «Картошка»/«Сайт» за имя.
+    if not (getattr(customer, "name", None) or "").strip():
+        try:
+            from services.reply_polish import looks_like_bare_name, mentions_name_ask
+            _last_bot = next(
+                (m.content for m in reversed(recent)
+                 if (m.role.value if hasattr(m.role, "value") else str(m.role)).lower() in ("assistant", "bot")),
+                "",
+            )
+            if mentions_name_ask(_last_bot):
+                _bn = looks_like_bare_name(req.content)
+                if _bn:
+                    customer.name = _bn[:200]
+                    db.flush()
+        except Exception:  # noqa: BLE001
+            pass
 
     # 5b. Per-turn lead signals (Phase 9, 2026-05-27) — update interaction_type
     # (set once on first touch), lead_score (incremental + content keywords),
@@ -1169,14 +1366,355 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         [_line_for_prompt(m) for m in history_for_prompt[-12:]]
     ) or "(новый диалог)"
 
-    # First-turn detection for AI Act Art. 50 disclosure. If after appending
-    # the user message we have exactly 1 message in the conversation, this
-    # is the lead's first ever message → bot must identify as AI in its reply.
-    is_first_turn = len(recent) == 1
+    # First-turn detection for AI Act Art. 50 disclosure. «Первый ход» = бот ещё
+    # НЕ отвечал в ЭТОМ диалоге. Считаем ответы бота прямо в БД (authoritative),
+    # а НЕ len(recent)==1 — иначе при подмешанной истории (recall) или после
+    # резюма диалога бот повторно «здоровается» как на первом ходе (реальный баг
+    # из живого ТГ-теста: на 2-м сообщении снова «Здравствуйте! Я AI-агент…»).
+    try:
+        from sqlalchemy import select as _sel_ft, func as _fn_ft
+        _asst_count_ft = db.execute(
+            _sel_ft(_fn_ft.count()).select_from(MessageRow).where(
+                MessageRow.conversation_id == conversation.id,
+                MessageRow.role == "assistant",
+            )
+        ).scalar() or 0
+        is_first_turn = _asst_count_ft == 0
+    except Exception:  # noqa: BLE001
+        is_first_turn = len(recent) == 1  # фолбэк на прежнюю эвристику
 
     # Comment mode (public IG/FB comment, not private DM). Triggers short
     # reply + redirect-to-DM; no email ask; no handoff brief.
     is_comment_mode = req.message_type == "comment"
+
+    # ---- Созвон (call booking, 2026-06-01) ----
+    # Сервер считает свободные слоты (будни 11–20, UTC+7) и кладёт их в промпт —
+    # бот предлагает РОВНО эти времена. Когда лид выбирает слот, сервер бронирует:
+    # стадия «📞 Созвон назначен» + next_meeting_at в CRM + напоминания лиду (в его
+    # чат) и админу (опер-группа) за день / 3ч / 1ч. Логика — в services/scheduling.
+    #
+    # ТОЛЬКО в мессенджере (ТГ/WA/IG): созвон — конверсия именно там. На САЙТЕ цель
+    # другая — ответить + взять email + увести в Telegram (созвон предложат уже в ТГ),
+    # поэтому слоты на сайте НЕ предлагаем (см. # КАНАЛ в SYSTEM_PROMPT).
+    _call_slots_human = None
+    _just_booked_human = None
+    _call_medium = None
+    _call_booked_at = None       # → dispatch_on_message_turn: создаст сделку + стадию on_call
+    _booked_info_human = None    # созвон уже назначен ранее → бот не зацикливается
+    _call_cancelled = False      # лид отказался/переносит → не настаивать
+    _call_ask_time = False       # уже предлагали, лид не выбрал → спросить его время
+    _is_postpone = False         # лид просит «напишите позже» → не давить слотами
+    _booking_channel_ok = (req.channel or "website").lower() != "website"
+    if settings.crm_enabled and not is_comment_mode and _booking_channel_ok:
+        try:
+            from services import scheduling as _sched
+            from datetime import datetime as _dtm, timezone as _tzu
+            _profile = dict(customer.profile_data or {})
+            _now = _dtm.now(_tzu.utc)
+            _booked = _profile.get("booked_call_at")
+            _offered = []
+            for _x in (_profile.get("offered_call_slots") or []):
+                try:
+                    _offered.append(_dtm.fromisoformat(_x))
+                except Exception:  # noqa: BLE001
+                    pass
+            # Анти-стале: если лид назвал ДЕНЬ, которого нет среди предложенных
+            # слотов (предлагали «завтра», а он просит «в пятницу») — старые слоты
+            # протухли, НЕ бронируем по ним. Сбрасываем → ниже пересчитаем под день.
+            _pref_nb_early, _, _ = _sched.parse_time_preference(req.content, _now)
+            if _pref_nb_early is not None and _offered:
+                _pday = _sched._to_local(_pref_nb_early).date()
+                if not any(_sched._to_local(s).date() == _pday for s in _offered):
+                    _offered = []
+                    _profile.pop("offered_call_slots", None)
+                    customer.profile_data = _profile
+            _chosen = _sched.parse_slot_choice(req.content, _offered, _now) if _offered else None
+            _wants_cancel = _sched.detect_cancel_intent(req.content)
+            # Лид сам назвал конкретное валидное время с согласием («давайте в четверг
+            # в 14») → бронируем напрямую, даже если его не было среди предложенных.
+            if _chosen is None and not _booked and not _wants_cancel:
+                _explicit = _sched.parse_explicit_datetime(req.content, _now)
+                if _explicit is not None:
+                    try:
+                        from services.scheduled_actions import get_taken_call_slots
+                        _taken_x = await asyncio.to_thread(get_taken_call_slots, _now)
+                    except Exception:  # noqa: BLE001
+                        _taken_x = []
+                    _ek = _sched._hour_key(_explicit)
+                    try:
+                        from services import bot_settings as _bs
+                        _cap_x = int(_bs.get("sched_capacity_per_slot", 1) or 1)
+                    except Exception:  # noqa: BLE001
+                        _cap_x = 1
+                    # Слот свободен, пока броней на него < ёмкости (N бригад параллельно).
+                    _cnt_x = sum(1 for t in _taken_x if _sched._hour_key(t) == _ek)
+                    if _cnt_x < _cap_x:
+                        _chosen = _explicit
+            _lead_msg_n = sum(
+                1 for m in recent
+                if (m.role.value if hasattr(m.role, "value") else str(m.role)) == "user"
+            )
+            # ПЕРЕНОС/«напишите позже»: лид просит связаться потом, а НЕ бронирует
+            # сейчас. Такое сообщение часто содержит слово-время («завтра утром»),
+            # из-за чего parse_time_preference считало его выбором слота и бот лез
+            # с «Давайте завтра в 11:00?». Отдельный followup на эту просьбу уже
+            # ставит dispatch_on_message_turn (parse_followup_when) — здесь слоты
+            # НЕ предлагаем, чтобы не давить.
+            import re as _re_pp
+            _is_postpone = bool(_re_pp.search(
+                r"напиш\w+\s+(мне|мне\s+)?(позже|потом|завтра|после|как)|"
+                r"\bпозже\b|\bпотом\b|\bпойм\w+\b|не\s+получ\w+|форс[\s-]?мажор|"
+                r"не\s+могу\s+(сейчас|пока)|сейчас\s+(занят|на\s+встрече|неудобно)|"
+                r"свяж\w+\s+(со\s+мной\s+)?(позже|потом)|перезвон\w+\s+(позже|потом)",
+                (req.content or "").lower(),
+            ))
+            if _booked and _wants_cancel:
+                # --- ОТМЕНА / ПЕРЕНОС --- лид отказался: снимаем бронь, гасим напоминания,
+                # откатываем стадию CRM. НЕ настаиваем (фикс «уже записан» по кругу).
+                _profile.pop("booked_call_at", None)
+                _profile.pop("offered_call_slots", None)
+                _profile.pop("call_medium_asked", None)
+                customer.profile_data = _profile
+                conversation.lead_stage = "qualified"
+                try:
+                    from services.scheduled_actions import cancel_call_actions
+                    await asyncio.to_thread(cancel_call_actions, str(conversation.id))
+                except Exception as _ce:  # noqa: BLE001
+                    log.warning(f"[{str(conversation.id)[:8]}] cancel_call_actions failed: {_ce}")
+                # P2b: перенос/отмена визита → ВСЕГДА уведомить человека (задача оператору).
+                try:
+                    from services.crm_dispatch import dispatch_operator_task
+                    dispatch_operator_task(
+                        customer_id=str(customer.id),
+                        crm_contact_id=getattr(customer, "crm_contact_id", None),
+                        crm_deal_id=getattr(conversation, "crm_deal_id", None),
+                        conversation_id=str(conversation.id) if getattr(conversation, "crm_deal_id", None) else None,
+                        title="Лид перенёс/отменил визит — согласовать новое время",
+                        category="callback",
+                        due_in_minutes=30,
+                        description=(req.content or "")[:500],
+                    )
+                except Exception as _nt:  # noqa: BLE001
+                    log.warning(f"[{str(conversation.id)[:8]}] reschedule notify failed: {_nt}")
+                try:
+                    from services.crm_dispatch import dispatch_stage_change
+                    dispatch_stage_change(
+                        customer_id=str(customer.id),
+                        crm_deal_id=getattr(conversation, "crm_deal_id", None),
+                        new_stage="qualified",
+                        conversation_id=str(conversation.id),
+                    )
+                except Exception as _ce:  # noqa: BLE001
+                    log.warning(f"[{str(conversation.id)[:8]}] cancel stage revert failed: {_ce}")
+                _call_cancelled = True
+                log.info(f"[{str(conversation.id)[:8]}] call booking cancelled by lead")
+            elif _booked:
+                # --- УЖЕ ЗАБРОНИРОВАНО --- не переспрашивать время/канал, не зацикливаться.
+                # Если лид только сейчас назвал канал — дозаписываем (без повторного вопроса).
+                _new_medium = _sched.detect_call_medium(req.content)
+                if _new_medium and _profile.get("call_medium") != _new_medium:
+                    _profile["call_medium"] = _new_medium
+                    customer.profile_data = _profile
+                    # Канал назван СЛЕДУЮЩИМ сообщением после брони → дозаписываем
+                    # его в обе задачи-подтверждения. Воркер найдёт задачи ПО СДЕЛКЕ
+                    # в HubSpot (не через гоночный profile_data). FIFO-очередь: задачи
+                    # из хода брони уже созданы к моменту этого события.
+                    try:
+                        from services.crm_dispatch import dispatch_sync_call_medium
+                        _lead_nm = (customer.name or customer.email
+                                    or (customer.identity_keys or {}).get("tg_handle") or "лид")
+                        dispatch_sync_call_medium(
+                            customer_id=str(customer.id),
+                            conversation_id=str(conversation.id),
+                            deal_id=getattr(conversation, "crm_deal_id", None),
+                            lead_name=_lead_nm,
+                            call_at=_dtm.fromisoformat(_booked),
+                            medium=_new_medium,
+                        )
+                    except Exception as _ute:  # noqa: BLE001
+                        log.warning(f"[{str(conversation.id)[:8]}] sync call medium failed: {_ute}")
+                try:
+                    _when = _sched.format_slot_human(_dtm.fromisoformat(_booked), _now)
+                except Exception:  # noqa: BLE001
+                    _when = "назначенное время"
+                _m = _profile.get("call_medium")
+                _booked_info_human = _when + (f", {_m}" if _m else "")
+            elif _chosen is not None:
+                # --- БРОНЬ ---
+                _medium = _sched.detect_call_medium(req.content) or _profile.get("call_medium")
+                _profile["booked_call_at"] = _chosen.isoformat()
+                if _medium:
+                    _profile["call_medium"] = _medium
+                _profile.pop("offered_call_slots", None)
+                customer.profile_data = _profile
+                _just_booked_human = _sched.format_slot_human(_chosen, _now)
+                _call_medium = _medium
+                _call_booked_at = _chosen  # сделку создаст/двинет dispatch_on_message_turn (после create_deal)
+                conversation.lead_stage = "on_call"
+                # P3 — уведомить бригаду/отдел о новом визите (настраиваемый чат).
+                try:
+                    from services import bot_settings as _bsc
+                    _crew = (_bsc.get("crew_chat_id") or "").strip()
+                    if _crew and settings.telegram_bot_token:
+                        from urllib.parse import quote as _q
+                        _addr = (_profile or {}).get("address")
+                        _svc = (_profile or {}).get("service") or ""
+                        _crew_nm = customer.name or customer.email or "клиент"
+                        _crew_msg = (
+                            f"🧹 Новый визит: {_just_booked_human}\n"
+                            f"Клиент: {_crew_nm}" + (f" · {_svc}" if _svc else "") + "\n"
+                            + (f"Адрес: {_addr}\nhttps://maps.google.com/?q=" + _q(str(_addr))
+                               if _addr else "Адрес: уточнить у клиента")
+                        )
+                        await send_telegram_reply(settings.telegram_bot_token, _crew, _crew_msg)
+                except Exception as _ce2:  # noqa: BLE001
+                    log.warning(f"[{str(conversation.id)[:8]}] crew notify failed: {_ce2}")
+                try:
+                    from services.scheduled_actions import write_call_booking, write_call_reminder
+                    _chat = getattr(conversation, "channel_conversation_id", None)
+                    _is_msgr = (req.channel or "website").lower() != "website"
+                    _lead_name = (customer.name or customer.email or "лид")
+                    _contact = customer.email or (customer.identity_keys or {}).get("tg_handle") or ""
+                    await asyncio.to_thread(
+                        write_call_booking,
+                        customer_id=str(customer.id),
+                        conversation_id=str(conversation.id),
+                        channel=req.channel,
+                        chat_id=str(_chat) if _chat else None,
+                        call_at=_chosen,
+                        medium=_medium,
+                    )
+                    # P5b — язык лида для локализованных напоминаний (хранится в
+                    # профиле, чтобы регулярные/будущие сообщения тоже были на нём).
+                    _lead_lang = (_profile.get("lang") or _sched.detect_lang(req.content or "") or "ru")
+                    _profile["lang"] = _lead_lang
+                    customer.profile_data = _profile
+                    for _fire, _label in _sched.reminder_schedule(_chosen, _now):
+                        # Лиду — только если есть канал, куда писать (мессенджер).
+                        if _chat and _is_msgr:
+                            await asyncio.to_thread(
+                                write_call_reminder,
+                                customer_id=str(customer.id),
+                                conversation_id=str(conversation.id),
+                                channel=req.channel,
+                                chat_id=str(_chat),
+                                due_at=_fire,
+                                text=_sched.lead_reminder_text(_chosen, _label, _medium, lang=_lead_lang),
+                                audience="lead",
+                            )
+                        # Админу — в опер-группу.
+                        if settings.telegram_operator_group_id:
+                            await asyncio.to_thread(
+                                write_call_reminder,
+                                customer_id=str(customer.id),
+                                conversation_id=str(conversation.id),
+                                channel=req.channel,
+                                chat_id=str(settings.telegram_operator_group_id),
+                                due_at=_fire,
+                                text=_sched.admin_reminder_text(_chosen, _lead_name, _label, _medium, _contact),
+                                audience="admin",
+                            )
+                except Exception as _re:  # noqa: BLE001
+                    log.warning(f"[{str(conversation.id)[:8]}] call reminders write failed: {_re}")
+                log.info(f"[{str(conversation.id)[:8]}] call booked at {_chosen.isoformat()} medium={_medium}")
+            elif _wants_cancel:
+                # Лид отказался ещё до брони — не навязываем созвон, чистим слоты.
+                if _offered or _profile.get("offered_call_slots"):
+                    _profile.pop("offered_call_slots", None)
+                    customer.profile_data = _profile
+                _call_cancelled = True
+            elif (_sched.detect_call_request(req.content) or _offered) and not _is_postpone:
+                # --- ПРЕДЛОЖИТЬ СЛОТЫ --- ТОЛЬКО когда лид реально проявил интерес к
+                # созвону (detect_call_request), ЛИБО мы уже в процессе планирования
+                # (_offered — слоты предлагались ранее, продолжаем диалог о времени).
+                # Раньше предлагали на ЛЮБОМ 2-м сообщении (_lead_msg_n>=2) → бот
+                # навязывал созвон без запроса (напр. на «я писал на сайте»). Убрали:
+                # упоминание прошлого контакта / обычный вопрос ≠ «хочу созвон».
+                # Бот всё равно может мягко предложить созвон в тексте ответа.
+                # Если лид в ЭТОМ сообщении выразил пожелание («завтра утром»,
+                # «в среду») — пересчитываем под него; иначе переиспользуем ранее
+                # предложенные (стабильность между ходами), либо считаем ближайшие.
+                _pref_nb, _pref_hmin, _pref_hmax = _sched.parse_time_preference(req.content, _now)
+                _has_pref = _pref_nb is not None or _pref_hmin is not None
+                _valid = [s for s in _offered if s > _now]
+                _slots = None  # инициализация: в ветке ask_time слоты не считаем
+                if _valid and not _has_pref:
+                    # Уже предлагали времена, лид НЕ выбрал и НЕ назвал своё → НЕ долбим
+                    # тем же списком (фикс зацикливания «где удобно?» по кругу).
+                    # Просим назвать удобное ЕМУ время — его учтём (явный час парсится).
+                    _call_ask_time = True
+                else:
+                    # Первое предложение ИЛИ лид назвал пожелание → (пере)считать слоты.
+                    try:
+                        from services.scheduled_actions import get_taken_call_slots
+                        _taken = await asyncio.to_thread(get_taken_call_slots, _now)
+                    except Exception:  # noqa: BLE001
+                        _taken = []
+                    try:
+                        from services import bot_settings as _bs2
+                        _sched_cap = int(_bs2.get("sched_capacity_per_slot", 1) or 1)
+                        _ws = _bs2.get("sched_work_start")
+                        _we = _bs2.get("sched_work_end")
+                        _wd_raw = _bs2.get("sched_work_days")
+                        _wd = [int(x) for x in str(_wd_raw).split(",") if x.strip().isdigit()] if _wd_raw else None
+                    except Exception:  # noqa: BLE001
+                        _sched_cap, _ws, _we, _wd = 1, None, None, None
+                    _slots = _sched.compute_free_slots(
+                        _now, taken=_taken, n=2,
+                        not_before=_pref_nb, hour_min=_pref_hmin, hour_max=_pref_hmax,
+                        capacity=_sched_cap, work_start=_ws, work_end=_we, work_days=_wd,
+                    )
+                    if _slots:
+                        _profile["offered_call_slots"] = [s.isoformat() for s in _slots]
+                        customer.profile_data = _profile
+                if _slots:
+                    _call_slots_human = [_sched.format_slot_human(s, _now) for s in _slots]
+        except Exception as _se:  # noqa: BLE001
+            log.warning(f"[{str(conversation.id)[:8]}] call-booking flow skipped: {_se}")
+
+    # Лид ссылается на прошлый контакт («писал вам на сайте», «обращался раньше»)?
+    # Тогда НЕ представляться заново как при первом контакте — тепло продолжить.
+    import re as _re_prior
+    _mentions_prior = bool(_re_prior.search(
+        r"(писал|писала|обраща\w+|обрати\w+)\s+(вам|к вам|вас|на сайт|сюда)|"
+        r"был[аи]?\s+на\s+(вашем\s+)?сайт|уже\s+(обща\w+|писал\w*|говорил\w*|свя\w+)|"
+        r"вы\s+мне\s+(писал|отвеч)",
+        (req.content or "").lower(),
+    ))
+
+    # Лид просит ДРУГОЙ канал связи (WhatsApp/телефон/Viber) — НЕ упираться в
+    # Telegram, согласиться + пообещать что человек свяжется там + взять контакт.
+    # НЕ во время выбора слота/брони: там «в whatsapp» = канал созвона
+    # (scheduling.detect_call_medium), а не просьба сменить канал переписки.
+    _alt_channel = None
+    _alt_contact = None
+    # Созвон уже подтверждён/назначен → «в whatsapp» здесь = канал созвона, не смена.
+    if not (_just_booked_human or _booked_info_human):
+        try:
+            from services.channel_prefs import detect_alt_channel
+            _ac = detect_alt_channel(req.content)
+            if _ac:
+                _label, _contact = _ac
+                if not _contact and (getattr(customer, "phone", None) or "").strip():
+                    _contact = customer.phone
+                # Защита выбора МЕДИУМА созвона: если слоты уже предлагали раньше и
+                # лид просто назвал мессенджер БЕЗ номера/«позвоните» — это канал
+                # созвона (Zoom/TG/WA), а не просьба сменить канал переписки.
+                _offered_before = bool(
+                    (getattr(customer, "profile_data", None) or {}).get("offered_call_slots")
+                )
+                _bare_medium = (
+                    _offered_before and not _contact
+                    and _label in ("WhatsApp", "Viber", "Signal")
+                )
+                if not _bare_medium:
+                    _alt_channel, _alt_contact = _label, _contact
+                    # alt-channel перекрывает РАЗОВОЕ предложение слотов этого хода:
+                    # лид хочет связь в своём канале, а не выбор времени Zoom.
+                    _call_slots_human = None
+                    _call_ask_time = False
+        except Exception as _ace:  # noqa: BLE001
+            log.debug(f"alt-channel detect skipped: {_ace}")
 
     prompt = build_chat_prompt(
         context=context,
@@ -1186,6 +1724,15 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         is_comment_mode=is_comment_mode,
         corrections=correction_rules,
         channel=req.channel,
+        lead_mentions_prior=_mentions_prior,
+        call_slots=_call_slots_human,
+        just_booked=_just_booked_human,
+        call_medium=_call_medium,
+        booked_info=_booked_info_human,
+        call_cancelled=_call_cancelled,
+        call_ask_time=_call_ask_time,
+        alt_channel=_alt_channel,
+        alt_channel_contact=_alt_contact,
     )
 
     # Show "печатает..." indicator in the lead's Telegram chat while the LLM
@@ -1281,29 +1828,97 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     # Defense-in-depth: enforce the no-prefix + capitalize-first-letter
     # convention regardless of what the LLM returned. See _normalize_bot_reply.
     answer = _normalize_bot_reply(raw_answer)
+
+    # Пост-гард (детерминированный): модель ненадёжно следует правилам/few-shot,
+    # поэтому жёстко чистим КОДОМ — приветствие-зеркало (Здравствуйте), вырезаем
+    # вопросы-выпытывания (наценка/бюджет/частота/тех-стек) и повторный запрос уже
+    # данных имени+email. См. services/reply_polish.
+    try:
+        from services import reply_polish as _rp
+        # Лид УЖЕ согласился идти в Telegram в одном из недавних сообщений
+        # («ок в тг напишу») → не пушить туда повторно (раньше lead_going_to_tg
+        # смотрел только текущую реплику и забывал прошлый ход → бот звал в ТГ 2-3 раза).
+        _lead_agreed_tg = False
+        try:
+            for _m in recent:
+                _r = _m.role.value if hasattr(_m.role, "value") else str(_m.role)
+                if _r == "user" and _rp.lead_going_to_tg(_m.content or ""):
+                    _lead_agreed_tg = True
+                    break
+        except Exception:  # noqa: BLE001
+            pass
+        answer = _rp.polish(
+            answer,
+            lead_message=req.content,
+            is_first_turn=is_first_turn,
+            name_known=bool((getattr(customer, "name", None) or "").strip()),
+            email_known=bool((getattr(customer, "email", None) or "").strip()),
+            channel=req.channel,
+            suppress_tg_push=bool(_alt_channel) or _lead_agreed_tg,
+        )
+    except Exception as _pe:  # noqa: BLE001
+        log.debug(f"reply_polish skipped: {_pe}")
+
+    # ДЕТЕРМИНИРОВАННЫЙ показ слотов созвона. llama часто пишет «какое время вам
+    # удобно?» вместо конкретных «завтра в 11:00 или 12:00» (игнорит [CALL_SLOTS]),
+    # из-за чего лид не видит вариантов и диалог зацикливается, бронь не ставится.
+    # Если предлагаем слоты, а в ответе нет КОНКРЕТНОГО времени — дописываем сами.
+    try:
+        if _call_slots_human and not _booked and not _just_booked_human and not _is_postpone:
+            import re as _re_slot
+            if not _re_slot.search(r"\d{1,2}\s*[:.]\s*\d{2}|\bв\s+\d{1,2}\b", answer):
+                # Склеиваем без дубля дня: «завтра в 11:00» + «завтра в 12:00»
+                # → «завтра в 11:00 или 12:00».
+                _slots_txt = " или ".join(_call_slots_human)
+                if len(_call_slots_human) == 2:
+                    _a, _b = _call_slots_human
+                    _ma = _re_slot.search(r"(\d{1,2}[:.]\d{2})\s*$", _a)
+                    _mb = _re_slot.search(r"(\d{1,2}[:.]\d{2})\s*$", _b)
+                    if _ma and _mb and _a[:_ma.start()] == _b[:_mb.start()]:
+                        _slots_txt = f"{_a} или {_mb.group(1)}"
+                answer = (
+                    answer.rstrip(" \n.?!,;:")
+                    + f". Давайте {_slots_txt}? Или скажите своё удобное время — "
+                      f"подстроюсь (будни, 11:00–20:00)."
+                ).strip()
+    except Exception as _se2:  # noqa: BLE001
+        log.debug(f"slot-render guard skipped: {_se2}")
+
     log.info(f"[{str(conversation.id)[:8]}/{req.channel}/{req.message_type}] A: {answer[:200]}")
 
-    # 7. Persist assistant reply (normalized form — keeps DB clean for future reads)
-    append_message(db, conversation.id, role="assistant", content=answer)
+    # 7. Persist assistant reply (normalized form — keeps DB clean for future reads).
+    #    WhatsApp в режиме наблюдения/черновика «удерживает» ответ как черновик на
+    #    одобрение (_wa_route_answer): не публикуем его как отправленный и не
+    #    зеркалим в форум — он ждёт ✅ в карточке/Telegram. _held=True → вебхук не шлёт.
+    _held = False
+    if req.channel == "whatsapp":
+        try:
+            _held = await _wa_route_answer(db, conversation, answer, req)
+        except Exception as _wre:  # noqa: BLE001
+            log.warning(f"[{str(conversation.id)[:8]}] _wa_route_answer failed: {_wre}")
+            _held = False
 
-    # Mirror bot reply to operator topic with a takeover button.
-    # Format: "📤 BOT\n<answer>"  — same convention as the LEAD mirror so
-    # operators scan the thread by first line of each post.
-    if conversation.forum_topic_id and settings.telegram_operator_group_id and settings.telegram_bot_token:
-        button_text = "👤 Возьму на себя"
-        callback_data = f"takeover:{conversation.id}"
-        mirror_out = f"📤 BOT\n{answer[:3900]}"
-        await send_to_topic(
-            settings.telegram_bot_token,
-            settings.telegram_operator_group_id,
-            conversation.forum_topic_id,
-            mirror_out,
-            reply_markup={
-                "inline_keyboard": [[
-                    {"text": button_text, "callback_data": callback_data}
-                ]]
-            },
-        )
+    if not _held:
+        append_message(db, conversation.id, role="assistant", content=answer)
+
+        # Mirror bot reply to operator topic with a takeover button.
+        # Format: "📤 BOT\n<answer>"  — same convention as the LEAD mirror so
+        # operators scan the thread by first line of each post.
+        if conversation.forum_topic_id and settings.telegram_operator_group_id and settings.telegram_bot_token:
+            button_text = "👤 Возьму на себя"
+            callback_data = f"takeover:{conversation.id}"
+            mirror_out = f"📤 BOT\n{answer[:3900]}"
+            await send_to_topic(
+                settings.telegram_bot_token,
+                settings.telegram_operator_group_id,
+                conversation.forum_topic_id,
+                mirror_out,
+                reply_markup={
+                    "inline_keyboard": [[
+                        {"text": button_text, "callback_data": callback_data}
+                    ]]
+                },
+            )
 
     # 7b. Escalation triggers (Phase 9c+10ab, 2026-05-27) — run the 7 Notion §21
     #     checks and mirror any that fire into the operator topic. Rate-limited
@@ -1365,6 +1980,23 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                             conversation.forum_topic_id,
                             format_alert_text(t),
                         )
+                # P3 — «сигнал руководителю»: при эскалации (крупный/ремонт/«хочу
+                # человека»/юр.вопрос) дополнительно пингуем чат руководителя или
+                # главы отдела. Задаётся в Настройках (manager_chat_id); пусто =
+                # только операторская группа (как было).
+                try:
+                    from services import bot_settings as _bsm
+                    _mgr = (_bsm.get("manager_chat_id") or "").strip()
+                    if _mgr and settings.telegram_bot_token:
+                        _lead_nm = customer.name or customer.email or "лид"
+                        _alert = (
+                            f"⚠️ Нужно внимание ({trigger_summary})\n"
+                            f"Клиент: {_lead_nm} · канал: {conversation.channel}\n"
+                            f"Сообщение: {(req.content or '')[:300]}"
+                        )
+                        await send_telegram_reply(settings.telegram_bot_token, _mgr, _alert)
+                except Exception as _me:  # noqa: BLE001
+                    log.warning(f"[{str(conversation.id)[:8]}] manager escalation ping failed: {_me}")
         except Exception as exc:  # noqa: BLE001
             log.warning(
                 f"[{str(conversation.id)[:8]}] escalation checks failed (non-fatal): {exc}"
@@ -1527,6 +2159,21 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                     lost_reason=decision.lost_reason,
                     conversation_id=str(conversation.id),
                 )
+                # №13 — мгновенный триггер «стадия изменилась»: фоном прогнать
+                # stage_changed-автоматизации. Между этой строкой и db.commit()
+                # ниже нет await → задача исполнится уже после коммита (раса
+                # исключена). Изолировано: ошибка не ломает hot-path; no-op пока
+                # нет правила с таким триггером.
+                try:
+                    import asyncio as _aio
+                    from services.automation import run_automations_for_stage_change
+                    _aio.create_task(
+                        run_automations_for_stage_change(str(conversation.id), new_stage)
+                    )
+                except Exception as _se:  # noqa: BLE001
+                    log.warning(
+                        f"[{str(conversation.id)[:8]}] stage_changed schedule failed: {_se}"
+                    )
         except Exception as exc:  # noqa: BLE001
             log.warning(
                 f"[{str(conversation.id)[:8]}] funnel transition failed (non-fatal): {exc}"
@@ -1570,7 +2217,36 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 lead_messages_count=lead_msg_count_for_crm,
                 project_type=None,  # not currently extracted from the conversation
                 handoff_data=handoff_data,  # Phase C1: readable deal title + brief
+                call_booked_at=_call_booked_at,  # бронь созвона → создать сделку + on_call
             )
+            # Лид попросил другой канал (WhatsApp/телефон/Viber) → задача оператору
+            # «связаться там». Дедуп: одна задача на (диалог, канал) — флаг в profile.
+            if _alt_channel:
+                try:
+                    _p = dict(getattr(customer, "profile_data", None) or {})
+                    if _p.get("alt_channel_task") != _alt_channel:
+                        from services.crm_dispatch import dispatch_operator_task
+                        _contact_txt = _alt_contact or "уточнить контакт у лида"
+                        # conversation_id передаём только если сделка УЖЕ есть —
+                        # иначе worker зря ретраил бы pending-резолв deal_id (у
+                        # нового лида сделки может ещё не быть). Без него — задача
+                        # на контакт (тоже видно оператору).
+                        _deal = getattr(conversation, "crm_deal_id", None)
+                        dispatch_operator_task(
+                            customer_id=str(customer.id),
+                            crm_contact_id=getattr(customer, "crm_contact_id", None),
+                            crm_deal_id=_deal,
+                            conversation_id=str(conversation.id) if _deal else None,
+                            title=f"Связаться с лидом в {_alt_channel}: {_contact_txt}",
+                            category="callback",
+                            due_in_minutes=15,
+                            description=(req.content or "")[:500],
+                        )
+                        _p["alt_channel_task"] = _alt_channel
+                        customer.profile_data = _p
+                        log.info(f"[{str(conversation.id)[:8]}] alt-channel task → {_alt_channel} ({_contact_txt})")
+                except Exception as _ate:  # noqa: BLE001
+                    log.warning(f"[{str(conversation.id)[:8]}] alt-channel task failed: {_ate}")
         except Exception as exc:  # noqa: BLE001
             log.warning(f"[{str(conversation.id)[:8]}] crm dispatch failed: {exc}")
 
@@ -1579,6 +2255,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         handoff=handoff_triggered,
         customer_id=str(customer.id),
         conversation_id=str(conversation.id),
+        suppress_send=_held,
     )
 
 
@@ -1586,8 +2263,10 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
 # ROUTES
 # ============================================================================
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health():
+    # GET и HEAD: UptimeRobot/мониторы по умолчанию шлют HEAD — без него был
+    # 405 → монитор считал бота DOWN (ложные алерты). Теперь оба → 200.
     return {
         "ok": True,
         "vectorstore_loaded": vectorstore is not None,
@@ -1632,6 +2311,66 @@ async def chat(req: ChatRequest, db: Session = Depends(get_db)):
     return ChatResponse(answer=resp.answer, handoff=resp.handoff, session_id=req.session_id)
 
 
+@app.get("/chat/updates")
+async def chat_updates(
+    session_id: str,
+    after: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    """Website-push (поллинг виджета): отдать НОВЫЕ сообщения, которые лид не
+    получил синхронно через /chat — ответы оператора (role=operator) и ручные
+    «пинки» из панели (assistant с kind=manual_nudge). Обычные ответы бота
+    исключены — они всегда доставляются в ответе /chat, иначе были бы дубли.
+
+    Авторизация — знание session_id (секрет конкретного браузера, как и в
+    /chat). Отдаём только исходящие к лиду роли — чужие user-сообщения
+    недоступны даже при утечке id.
+    """
+    from datetime import datetime as _dt, timezone as _tz
+    from sqlalchemy import or_ as _or, and_ as _and, select as _select
+
+    if not session_id or not session_id.startswith("sess_"):
+        raise HTTPException(status_code=422, detail="bad session_id")
+    after_dt = None
+    if after:
+        try:
+            after_dt = _dt.fromisoformat(after.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=422, detail="bad 'after' timestamp")
+
+    conv = db.execute(
+        _select(ConvRow)
+        .where(ConvRow.channel == "website",
+               ConvRow.channel_conversation_id == session_id)
+        .order_by(ConvRow.created_at.desc())
+        .limit(1)
+    ).scalar_one_or_none()
+    now_iso = _dt.now(_tz.utc).isoformat()
+    if conv is None:
+        return {"items": [], "server_time": now_iso}
+
+    q = (
+        db.query(MessageRow)
+        .filter(MessageRow.conversation_id == conv.id)
+        .filter(_or(
+            MessageRow.role == "operator",
+            _and(MessageRow.role == "assistant",
+                 MessageRow.extra_meta["kind"].astext == "manual_nudge"),
+        ))
+    )
+    if after_dt is not None:
+        q = q.filter(MessageRow.created_at > after_dt)
+    rows = q.order_by(MessageRow.created_at.asc()).limit(30).all()
+    return {
+        "items": [
+            {"role": m.role, "content": m.content,
+             "created_at": m.created_at.isoformat() if m.created_at else None}
+            for m in rows
+        ],
+        "server_time": now_iso,
+    }
+
+
 async def _handle_operator_callback(callback: dict, db: Session) -> None:
     """Inline-button taps from operators. The `callback_data` payload encodes
     an action and a conversation id, separated by `:`. Supported actions:
@@ -1647,6 +2386,10 @@ async def _handle_operator_callback(callback: dict, db: Session) -> None:
     token = settings.telegram_bot_token
 
     action, _, conv_id_str = data.partition(":")
+    # WhatsApp draft-mode approval buttons (✅ Отправить / 🚫 Не отправлять).
+    if action in ("wad", "wadx"):
+        await _handle_wa_draft_callback(action, conv_id_str, cb_id, db)
+        return
     if action not in ("takeover", "release"):
         await answer_callback_query(token, cb_id, text="Unknown action")
         return
@@ -1763,7 +2506,9 @@ async def _handle_operator_message(msg: dict, db: Session) -> None:
         return
 
     if text and not attachment and text.startswith("/close"):
-        conv.status = ConversationStatusEnum.CLOSED.value
+        # FIX 2026-06-11: было ConversationStatusEnum.CLOSED — такого члена в
+        # enum НЕТ (есть RESOLVED) → /close падал AttributeError у оператора.
+        conv.status = ConversationStatusEnum.RESOLVED.value
         db.commit()
         await send_to_topic(token, settings.telegram_operator_group_id, topic_id,
                             "🔒 Conversation closed.")
@@ -1789,58 +2534,9 @@ async def _handle_operator_message(msg: dict, db: Session) -> None:
     # replies work even beyond Meta's standard 24-hour reply window.
     # HUMAN_AGENT extends the window to 7 days. Requires the `human_agent`
     # permission on the Meta App (Standard Access in App Review).
-    delivered = False
-    if conv.channel == "telegram" and conv.channel_conversation_id:
-        if attachment:
-            attachment_type, file_id, _ = attachment
-            delivered = await forward_attachment(
-                token, conv.channel_conversation_id,
-                attachment_type, file_id,
-                caption=text or None,
-            )
-            log.info(
-                f"[{str(conv.id)[:8]}] operator forwarded {attachment_type} "
-                f"to telegram lead (delivered={delivered})"
-            )
-        else:
-            delivered = await send_telegram_reply(token, conv.channel_conversation_id, text)
-    elif conv.channel == "instagram" and conv.channel_conversation_id:
-        if attachment:
-            log.warning(
-                f"[{str(conv.id)[:8]}] operator sent {attachment[0]} to IG lead — "
-                f"attachment forwarding not implemented for Meta channels yet "
-                f"(would need /me/message_attachments upload). Operator should send text only."
-            )
-            delivered = False
-        else:
-            delivered = await send_instagram_reply(
-                settings.meta_page_access_token,
-                conv.channel_conversation_id,
-                text,
-                messaging_type="MESSAGE_TAG",
-                tag="HUMAN_AGENT",
-            )
-    elif conv.channel == "messenger" and conv.channel_conversation_id:
-        if attachment:
-            log.warning(
-                f"[{str(conv.id)[:8]}] operator sent {attachment[0]} to Messenger lead — "
-                f"attachment forwarding not implemented for Meta channels yet "
-                f"(would need /me/message_attachments upload). Operator should send text only."
-            )
-            delivered = False
-        else:
-            delivered = await send_messenger_reply(
-                settings.meta_page_access_token,
-                conv.channel_conversation_id,
-                text,
-                messaging_type="MESSAGE_TAG",
-                tag="HUMAN_AGENT",
-            )
-    else:
-        # Website — no push. Message just lives in DB; the widget will see
-        # it on the next /chat poll (Phase 2: switch widget to long-poll or SSE).
-        log.info(f"[{str(conv.id)[:8]}] operator wrote on channel={conv.channel} (no push, stored only)")
-        delivered = True
+    # Доставка вынесена в services/operator_actions.py (общий код с Admin UI —
+    # одна логика для форум-пути и веб-панели, поведение бит-в-бит прежнее).
+    delivered = await deliver_operator_reply(conv, text, settings, attachment=attachment)
 
     append_message(
         db, conv.id, role="operator", content=text,
@@ -1901,19 +2597,38 @@ _DEDUP_MAX_AGE_SEC = 300
 _DEDUP_MAX_SIZE = 1000
 
 
+def _seen_update_db(event_key: str) -> bool:
+    """Persistent дедуп: INSERT ... ON CONFLICT DO NOTHING в processed_updates.
+    True = ключ уже был (апдейт обработан раньше, в т.ч. ДО рестарта). Переживает
+    деплой Railway → Telegram-ретраи не дают дублей ответов."""
+    from db.connection import session_scope
+    from sqlalchemy import text as _sql_text
+    with session_scope() as s:
+        res = s.execute(
+            _sql_text(
+                "INSERT INTO processed_updates (event_key) VALUES (:k) "
+                "ON CONFLICT (event_key) DO NOTHING"
+            ),
+            {"k": event_key},
+        )
+        return (res.rowcount or 0) == 0  # 0 строк вставлено = был конфликт = видели
+
+
 def _seen_update(update_id: Optional[int]) -> bool:
-    """Mark `update_id` as processed and return whether we'd seen it before.
-
-    - Fresh update_id → store with current timestamp, return False
-    - Repeat update_id → return True without re-storing
-    - update_id is None → return False, do NOT store (Telegram occasionally
-      omits the field on malformed payloads; we don't want a None-key entry
-      to swallow ALL future Nones as "duplicates")
-
-    Eviction sweeps run on every call:
-      1. TTL: drop any entries older than _DEDUP_MAX_AGE_SEC
-      2. Size cap: if still over _DEDUP_MAX_SIZE, FIFO-evict oldest
+    """Видели ли уже этот update_id. Сначала персистентный БД-дедуп (переживает
+    рестарт); при сбое БД — fallback на in-memory. update_id=None → False, не пишем.
     """
+    if update_id is None:
+        return False
+    try:
+        return _seen_update_db(f"telegram:{update_id}")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[dedup] DB dedup failed (%s) — fallback to in-memory", exc)
+        return _seen_update_mem(update_id)
+
+
+def _seen_update_mem(update_id: Optional[int]) -> bool:
+    """In-memory дедуп (fallback): TTL + size-cap FIFO. Не переживает рестарт."""
     if update_id is None:
         return False
 
@@ -2018,6 +2733,33 @@ async def _process_telegram_update(payload: dict) -> None:
         gc.collect()
 
 
+# Per-chat сериализация фоновых потоков. Без неё два сообщения одного чата,
+# пришедшие подряд (лид пишет вторую реплику, пока бот ещё обрабатывает первую —
+# особенно медленный handoff-ход), обрабатываются ПАРАЛЛЕЛЬНО на одном диалоге →
+# гонка за БД-сессию → второй ход молча теряется. Лок на chat_id ставит их в
+# очередь: обрабатываются строго последовательно, ничего не пропадает.
+_chat_locks: dict = {}
+_chat_locks_guard = threading.Lock()
+_CHAT_LOCKS_MAX = 2000  # потолок, чтобы словарь локов не тёк бесконечно
+
+
+def _get_chat_lock(key: str) -> threading.Lock:
+    with _chat_locks_guard:
+        lk = _chat_locks.get(key)
+        if lk is None:
+            lk = threading.Lock()
+            # Эвикт самых старых НЕзанятых локов при переполнении (insertion-order
+            # dict). Занятые (idет обработка) не трогаем — иначе порвём сериализацию.
+            if len(_chat_locks) >= _CHAT_LOCKS_MAX:
+                for k in list(_chat_locks.keys()):
+                    if not _chat_locks[k].locked():
+                        del _chat_locks[k]
+                        if len(_chat_locks) < _CHAT_LOCKS_MAX:
+                            break
+            _chat_locks[key] = lk
+        return lk
+
+
 def _process_in_thread(payload: dict) -> None:
     """Thread entry point — spins up its own asyncio event loop because the
     main event loop is back to serving FastAPI requests by the time we run.
@@ -2028,11 +2770,21 @@ def _process_in_thread(payload: dict) -> None:
       response can't be flushed to the socket, so Telegram (and curl)
       keeps the connection open and waits — exactly the bug we're fixing.
       A separate OS thread with its own event loop is fully decoupled.
+
+    Сообщения ОДНОГО чата обрабатываем строго по очереди (per-chat lock), чтобы
+    быстрые подряд-реплики не гонялись за БД и не терялись.
     """
+    _chat = (((payload or {}).get("message") or {}).get("chat") or {}).get("id")
+    _lock = _get_chat_lock(str(_chat)) if _chat is not None else None
+    if _lock is not None:
+        _lock.acquire()
     try:
         asyncio.run(_process_telegram_update(payload))
     except Exception as e:
         log.error(f"_process_in_thread crashed: {e}", exc_info=True)
+    finally:
+        if _lock is not None:
+            _lock.release()
 
 
 @app.post("/webhooks/telegram")
@@ -2264,6 +3016,435 @@ async def instagram_webhook(request: Request, db: Session = Depends(get_db)):
     return {"ok": True}
 
 
+@app.get("/webhooks/whatsapp")
+async def whatsapp_webhook_verify(request: Request):
+    """One-time webhook verification when adding the URL in Meta App dashboard.
+    Uses WHATSAPP_VERIFY_TOKEN, falling back to META_VERIFY_TOKEN (same app)."""
+    params = request.query_params
+    expected = settings.whatsapp_verify_token or settings.meta_verify_token
+    if (
+        params.get("hub.mode") == "subscribe"
+        and expected
+        and params.get("hub.verify_token") == expected
+    ):
+        return PlainTextResponse(params.get("hub.challenge", ""))
+    log.warning("whatsapp verify failed: bad mode or token")
+    raise HTTPException(403, "verification failed")
+
+
+# ============================================================================
+# WhatsApp draft-mode (безопасный тест на живых клиентах) — бот не отвечает
+# клиенту сам, а шлёт черновик + структурное ТЗ администратору в Telegram с
+# кнопками одобрения. Включается wa_draft_mode (bot_settings). См.
+# docs/WHATSAPP_INTEGRATION_RU.md.
+# ============================================================================
+
+_TECHSPEC_PROMPT = """Ты — ассистент отдела продаж. По переписке с клиентом составь краткое структурированное техзадание (ТЗ) для администратора. Используй ТОЛЬКО факты из диалога, ничего не выдумывай; чего нет — пиши «не указано». По-русски, сжато, по пунктам.
+
+📋 ТЗ (черновик)
+• Что нужно клиенту:
+• Детали / объём:
+• Адрес / локация:
+• Сроки / срочность:
+• Бюджет:
+• Имя / контакт:
+• Что уточнить:
+
+Переписка:
+{conversation}
+"""
+
+
+async def _compose_tech_spec(db: Session, conv) -> str:
+    """Собрать структурное ТЗ из последних реплик диалога (вкл. расшифровку
+    голоса — она уже сохранена как текст сообщения)."""
+    rows = (
+        db.query(MessageRow)
+        .filter(MessageRow.conversation_id == conv.id)
+        .order_by(MessageRow.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    rows = list(reversed(rows))
+    convo = "\n".join(
+        f"{(m.role.value if hasattr(m.role, 'value') else m.role)}: {m.content}"
+        for m in rows if m.content
+    )[:4000]
+    if not convo.strip():
+        return ""
+    return await call_llm(_TECHSPEC_PROMPT.format(conversation=convo))
+
+
+async def _tg_send_with_buttons(token: str, chat_id: str, text: str, reply_markup: dict) -> bool:
+    """sendMessage с inline-клавиатурой (send_telegram_reply кнопки не умеет)."""
+    if not token or not chat_id or not text:
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": chat_id, "text": text[:4000],
+                      "reply_markup": reply_markup, "disable_web_page_preview": True},
+            )
+        if r.status_code != 200:
+            log.warning(f"_tg_send_with_buttons {r.status_code}: {r.text[:200]}")
+            return False
+        return True
+    except Exception as e:
+        log.error(f"_tg_send_with_buttons exception: {e}")
+        return False
+
+
+async def _wa_route_answer(db: Session, conversation, answer: str, req) -> bool:
+    """Решает судьбу готового ответа бота в WhatsApp по режиму. Возвращает True,
+    если ответ «удержан» (наблюдение/черновик): _handle_message НЕ публикует его
+    как отправленный и не зеркалит в форум, а вебхук не шлёт клиенту — ответ ждёт
+    ✅ в карточке диалога (и в Telegram, если режим черновика). False = обычный
+    путь (бот отвечает клиенту сам).
+
+    Приоритет режимов: per-conv wa_autonomous (доверенный диалог) → авто; иначе
+    глобальные wa_observe_only / wa_draft_mode; иначе авто."""
+    from services import bot_settings as _bs
+
+    if bool(getattr(conversation, "wa_autonomous", False)):
+        return False  # админ доверил этот диалог боту — отвечает сам
+
+    observe = bool(_bs.get("wa_observe_only", False))
+    draft = bool(_bs.get("wa_draft_mode", False))
+    if not observe and not draft:
+        return False  # глобальный авто-режим
+
+    # Удерживаем: предложенный ответ кладём в карточку диалога на одобрение.
+    conversation.pending_wa_draft = {
+        "text": answer,
+        "phone_number_id": (req.extra_meta or {}).get("phone_number_id") or settings.whatsapp_phone_number_id or "",
+        "to_wa_id": req.channel_conversation_id,
+        "client_msg": (req.content or "")[:500],
+        "ts": _dt.now(_tz.utc).isoformat(),
+    }
+    db.commit()
+
+    # Режим черновика — дополнительно шлём администратору в Telegram (+ ТЗ) с кнопками.
+    if draft:
+        admin_chat = (_bs.get("manager_chat_id") or "").strip() or (settings.telegram_chat_id or "")
+        if admin_chat and settings.telegram_bot_token:
+            techspec = ""
+            if bool(_bs.get("wa_techspec", True)):
+                try:
+                    techspec = await _compose_tech_spec(db, conversation)
+                except Exception as e:  # noqa: BLE001
+                    log.warning(f"wa_techspec failed: {e}")
+            name = req.username or req.channel_conversation_id
+            parts = [f"🟢 WhatsApp · {name} · +{req.channel_conversation_id}", "",
+                     f"📩 Клиент: {(req.content or '')[:600]}"]
+            if techspec:
+                parts += ["", techspec.strip()]
+            parts += ["", "💬 Предложенный ответ бота:", answer[:1500]]
+            keyboard = {"inline_keyboard": [[
+                {"text": "✅ Отправить", "callback_data": f"wad:{conversation.id}"},
+                {"text": "🚫 Не отправлять", "callback_data": f"wadx:{conversation.id}"},
+            ]]}
+            await _tg_send_with_buttons(settings.telegram_bot_token, admin_chat, "\n".join(parts), keyboard)
+        else:
+            log.warning("wa_draft_mode ON, нет admin Telegram chat — черновик только в карточке")
+
+    return True
+
+
+async def _handle_wa_draft_callback(action: str, conv_id_str: str, cb_id: str, db: Session) -> None:
+    """Админ нажал ✅/🚫 под черновиком WhatsApp в Telegram."""
+    token = settings.telegram_bot_token
+    try:
+        conv_id = PyUUID(conv_id_str)
+    except (ValueError, IndexError):
+        await answer_callback_query(token, cb_id, text="Bad conversation id")
+        return
+    conv = db.get(ConvRow, conv_id)
+    if conv is None or not conv.pending_wa_draft:
+        await answer_callback_query(token, cb_id, text="Черновик не найден или уже обработан.")
+        return
+    draft = conv.pending_wa_draft
+    if action == "wad":
+        ok = await _wa_send(
+            draft.get("to_wa_id") or "",
+            draft.get("text") or "",
+            draft.get("phone_number_id") or "",
+        )
+        if ok:
+            # Одобренный ответ становится сообщением бота в истории диалога.
+            append_message(db, conv.id, role="assistant", content=draft.get("text") or "",
+                           extra_meta={"approved_via": "telegram"})
+        conv.pending_wa_draft = None
+        db.commit()
+        await answer_callback_query(
+            token, cb_id,
+            text="✅ Отправлено клиенту." if ok else "⚠️ Не отправилось — см. логи.",
+        )
+    else:  # wadx
+        conv.pending_wa_draft = None
+        db.commit()
+        await answer_callback_query(token, cb_id, text="🚫 Отклонено, клиенту не отправлено.")
+
+
+async def _wa_send(to_peer: str, text: str, phone_number_id: str = "") -> bool:
+    """Единая отправка в WhatsApp: через Green-API (неофиц., linked-device) если
+    он настроен, иначе через Meta Cloud API. `to_peer` — номер клиента (цифры) /
+    wa_id. Так все точки отправки (автоответ, одобрение черновика, ручной ответ
+    оператора) работают независимо от транспорта."""
+    if settings.waha_base_url:
+        from channels.waha import send_waha_reply
+        return await send_waha_reply(
+            settings.waha_base_url, settings.waha_api_key or "",
+            settings.waha_session or "default", to_peer, text,
+        )
+    if settings.greenapi_id_instance and settings.greenapi_api_token:
+        from channels.greenapi import send_greenapi_reply
+        return await send_greenapi_reply(
+            settings.greenapi_api_url or "https://api.green-api.com",
+            settings.greenapi_id_instance, settings.greenapi_api_token, to_peer, text,
+        )
+    return await send_whatsapp_reply(
+        settings.whatsapp_token,
+        phone_number_id or settings.whatsapp_phone_number_id or "",
+        to_peer, text,
+    )
+
+
+@app.post("/webhooks/greenapi")
+async def greenapi_webhook(request: Request, db: Session = Depends(get_db)):
+    """Приём вебхука Green-API (неофиц. WhatsApp). Входящее сообщение клиента →
+    тот же пайплайн _handle_message (channel='whatsapp'), что даёт наблюдение/
+    черновик/карточку. Исходящие (ручные ответы команды с телефона) пока не
+    запускают бота (чтобы не реагировал на свою же команду). Всегда 200."""
+    body = await request.body()
+    try:
+        payload = json.loads(body)
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"greenapi_webhook: invalid JSON — {e}")
+        return {"ok": True}
+
+    from channels.greenapi import parse_greenapi_webhook
+    normalized = await parse_greenapi_webhook(payload, groq_api_key=settings.groq_api_key)
+    if normalized is None:
+        return {"ok": True}
+
+    # Исходящее (ручной ответ команды) — не гоняем через бота. (Показ ручных
+    # ответов в панели — отдельным шагом позже.)
+    if (normalized.extra_meta or {}).get("role_hint") == "operator":
+        return {"ok": True}
+
+    msg_req = MessageRequest(
+        channel="whatsapp",
+        external_id=normalized.external_id,
+        content=normalized.content,
+        username=normalized.username,
+        channel_conversation_id=normalized.channel_conversation_id,
+        message_type="dm",
+        extra_meta=normalized.extra_meta,
+    )
+    try:
+        resp = await _handle_message(msg_req, db)
+    except Exception as e:  # noqa: BLE001
+        log.error(f"greenapi_webhook: _handle_message failed — {e}")
+        return {"ok": True}
+
+    # suppress_send → наблюдение/черновик (ответ в карточке на одобрение).
+    if resp.suppress_send or not resp.answer:
+        return {"ok": True}
+    await _wa_send(normalized.channel_conversation_id, resp.answer)
+    return {"ok": True}
+
+
+@app.post("/webhooks/waha")
+async def waha_webhook(request: Request, db: Session = Depends(get_db)):
+    """Приём вебхука WAHA (self-hosted неофиц. WhatsApp на VPS). Входящее →
+    тот же пайплайн _handle_message (channel='whatsapp') → наблюдение/черновик/
+    карточка. Исходящие (ручные ответы с телефона, fromMe) не гоняем через бота."""
+    body = await request.body()
+    try:
+        payload = json.loads(body)
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"waha_webhook: invalid JSON — {e}")
+        return {"ok": True}
+
+    from channels.waha import parse_waha_webhook
+    normalized = await parse_waha_webhook(
+        payload, groq_api_key=settings.groq_api_key, api_key=settings.waha_api_key,
+    )
+    if normalized is None:
+        return {"ok": True}
+    if (normalized.extra_meta or {}).get("role_hint") == "operator":
+        return {"ok": True}
+
+    msg_req = MessageRequest(
+        channel="whatsapp",
+        external_id=normalized.external_id,
+        content=normalized.content,
+        username=normalized.username,
+        channel_conversation_id=normalized.channel_conversation_id,
+        message_type="dm",
+        extra_meta=normalized.extra_meta,
+    )
+    try:
+        resp = await _handle_message(msg_req, db)
+    except Exception as e:  # noqa: BLE001
+        log.error(f"waha_webhook: _handle_message failed — {e}")
+        return {"ok": True}
+    if resp.suppress_send or not resp.answer:
+        return {"ok": True}
+    await _wa_send(normalized.channel_conversation_id, resp.answer)
+    return {"ok": True}
+
+
+@app.post("/webhooks/whatsapp")
+async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
+    """Receive a WhatsApp Cloud API update, route the text/voice DM through
+    _handle_message, and reply via the Graph API (or send a draft to the admin
+    when wa_draft_mode is on). Always returns 200 (Meta retries on non-200).
+
+    Dormant unless WHATSAPP_TOKEN is configured; signature is verified with
+    WHATSAPP_APP_SECRET (falls back to META_APP_SECRET)."""
+    body = await request.body()
+
+    if not verify_meta_signature(
+        settings.whatsapp_app_secret or settings.meta_app_secret,
+        request.headers.get("x-hub-signature-256"),
+        body,
+    ):
+        return {"ok": True}
+
+    try:
+        payload = json.loads(body)
+    except Exception as e:
+        log.warning(f"whatsapp_webhook: invalid JSON — {e}")
+        return {"ok": True}
+
+    # Voice messages are transcribed inside the parser (Groq Whisper) — needs
+    # the access token (media download) + groq key. Text path ignores both.
+    normalized = await parse_whatsapp_webhook(
+        payload,
+        access_token=settings.whatsapp_token,
+        groq_api_key=settings.groq_api_key,
+    )
+    if normalized is None:
+        return {"ok": True}
+
+    msg_req = MessageRequest(
+        channel=normalized.channel,
+        external_id=normalized.external_id,
+        content=normalized.content,
+        username=normalized.username,
+        channel_conversation_id=normalized.channel_conversation_id,
+        message_type=normalized.message_type,
+        extra_meta=normalized.extra_meta,
+    )
+
+    try:
+        resp = await _handle_message(msg_req, db)
+    except Exception as e:
+        log.error(f"whatsapp_webhook: _handle_message failed — {e}")
+        return {"ok": True}
+
+    # suppress_send → ответ «удержан» (наблюдение/черновик): _handle_message уже
+    # положил его в карточку на одобрение, клиенту не шлём. Пусто → takeover.
+    if resp.suppress_send or not resp.answer:
+        return {"ok": True}
+
+    # phone_number_id from the inbound metadata (multi-number safe), else config.
+    phone_number_id = (
+        (normalized.extra_meta or {}).get("phone_number_id")
+        or settings.whatsapp_phone_number_id
+        or ""
+    )
+    await _wa_send(normalized.channel_conversation_id, resp.answer, phone_number_id)
+    return {"ok": True}
+
+
+@app.get("/calendar.ics")
+async def calendar_ics(token: str = "", db: Session = Depends(get_db)):
+    """ICS-фид календаря (созвоны + задачи) для подписки в телефоне/Google.
+
+    Авторизация query-параметром token (= TRAINING_AUTH_TOKEN), т.к. ICS-клиенты
+    не умеют слать Bearer-заголовок. Только чтение. Окно: −1д … +90д.
+    Подписка: добавить URL …/calendar.ics?token=<токен> в календарь телефона —
+    события (наш календарь = источник правды) сами появятся и будут обновляться."""
+    from fastapi import Response as _Resp
+    from datetime import datetime, timedelta, timezone
+    expected = settings.training_auth_token
+    if not expected:
+        raise HTTPException(503, "calendar feed not configured (TRAINING_AUTH_TOKEN unset)")
+    if not hmac.compare_digest((token or "").encode("utf-8"), expected.encode("utf-8")):
+        raise HTTPException(403, "invalid token")
+
+    from db.models import ScheduledAction, Customer
+    now = datetime.now(timezone.utc)
+    rows = (
+        db.query(ScheduledAction, Customer)
+        .join(Customer, ScheduledAction.customer_id == Customer.id)
+        .filter(ScheduledAction.due_at.isnot(None))
+        .filter(ScheduledAction.due_at >= now - timedelta(days=1))
+        .filter(ScheduledAction.due_at <= now + timedelta(days=90))
+        .order_by(ScheduledAction.due_at.asc())
+        .limit(500)
+        .all()
+    )
+
+    def esc(s: str) -> str:
+        return (str(s or "")
+                .replace("\\", "\\\\").replace(";", "\\;")
+                .replace(",", "\\,").replace("\n", "\\n"))
+
+    def fmt(dt: datetime) -> str:
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+    stamp = fmt(now)
+    lines = [
+        "BEGIN:VCALENDAR", "VERSION:2.0",
+        "PRODID:-//DEADLINE Sales OS//Calendar//RU",
+        "CALSCALE:GREGORIAN", "METHOD:PUBLISH",
+        "X-WR-CALNAME:DEADLINE — созвоны и задачи",
+    ]
+    for a, c in rows:
+        due = a.due_at
+        if due is None:
+            continue
+        is_call = "call" in (a.action_type or "")
+        name = c.name or c.email or "лид"
+        title = (a.payload or {}).get("title") or (a.payload or {}).get("text") or ""
+        summary = (f"📞 Созвон: {name}" if is_call
+                   else f"☎️ {title or 'Задача'} — {name}")
+        desc_parts = [title] if title else []
+        if a.channel:
+            desc_parts.append(f"канал: {a.channel}")
+        if c.email:
+            desc_parts.append(c.email)
+        # Адрес визита (выездные услуги, P2): LOCATION + ссылка на Google Maps.
+        from urllib.parse import quote as _q
+        addr = (getattr(c, "profile_data", None) or {}).get("address")
+        loc_lines = []
+        if addr:
+            desc_parts.append(f"адрес: {addr}")
+            desc_parts.append("https://maps.google.com/?q=" + _q(str(addr)))
+            loc_lines = [f"LOCATION:{esc(addr)}"]
+        lines += [
+            "BEGIN:VEVENT",
+            f"UID:{a.id}@deadline-sales-bot",
+            f"DTSTAMP:{stamp}",
+            f"DTSTART:{fmt(due)}",
+            f"DTEND:{fmt(due + timedelta(minutes=30))}",
+            f"SUMMARY:{esc(summary)}",
+            *loc_lines,
+            f"DESCRIPTION:{esc(' · '.join(desc_parts))}",
+            "END:VEVENT",
+        ]
+    lines.append("END:VCALENDAR")
+    ics = "\r\n".join(lines) + "\r\n"
+    return _Resp(content=ics, media_type="text/calendar; charset=utf-8",
+                 headers={"Content-Disposition": 'inline; filename="deadline.ics"'})
+
+
 # ============================================================================
 # /metrics — read-only ops view, optional bearer-token gate
 # ============================================================================
@@ -2343,8 +3524,13 @@ class LeadFormRequest(BaseModel):
     lang: str = Field("ru", max_length=5)  # ru | en — landing page language
 
 
-async def send_lead_to_telegram(lead: LeadFormRequest) -> bool:
-    """Forward lead-form submission to Telegram. Returns True on success."""
+async def send_lead_to_telegram(lead: LeadFormRequest, contact_check: Optional[dict] = None) -> bool:
+    """Forward lead-form submission to Telegram. Returns True on success.
+
+    contact_check (optional) is the verdict from services.contact_check — when it
+    says the typed contact does NOT resolve to a real Telegram/Instagram account
+    we flag it inline so the operator sees a likely-unreachable lead at a glance.
+    """
     token = settings.telegram_bot_token
     chat_id = settings.telegram_chat_id
     if not token or not chat_id:
@@ -2389,11 +3575,29 @@ async def send_lead_to_telegram(lead: LeadFormRequest) -> bool:
     # Optional task description — only show if filled in
     task_block = f"\n📝 Описание задачи:\n{lead.task.strip()}\n" if lead.task and lead.task.strip() else ""
 
+    # Contact-check verdict — flag a likely-wrong contact right where the operator
+    # reads it. A typo'd @handle = an unreachable lead (the reason this exists).
+    contact_suffix = ""
+    contact_warn_line = ""
+    if contact_check:
+        _exists = contact_check.get("exists")
+        _label = contact_check.get("label") or "контакт"
+        if _exists is False:
+            contact_suffix = "  ⚠️"
+            _typed = contact_check.get("normalized") or lead.contact
+            contact_warn_line = (
+                f"⚠️ ВНИМАНИЕ: {_label} «{_typed}» НЕ найден — вероятно опечатка, "
+                f"ответить может быть некуда!\n"
+            )
+        elif _exists is True:
+            contact_suffix = "  ✅"
+
     text = (
         f"{header}\n"
         f"━━━━━━━━━━━━━━━━━━\n\n"
         f"👤 Имя: {lead.name}\n"
-        f"📱 Контакт: {lead.contact}\n"
+        f"📱 Контакт: {lead.contact}{contact_suffix}\n"
+        f"{contact_warn_line}"
         f"🎯 Хочет: {lead.need or '—'}\n"
         f"🏢 Бизнес: {lead.business or '—'}\n"
         f"⏰ Срок: {lead.when or '—'}"
@@ -2420,13 +3624,265 @@ async def send_lead_to_telegram(lead: LeadFormRequest) -> bool:
         return False
 
 
+class ContactCheckRequest(BaseModel):
+    contact: str = Field(..., min_length=1, max_length=200)
+
+
+@app.post("/lead-validate-contact")
+async def lead_validate_contact(req: ContactCheckRequest):
+    """Pre-submit probe for the lead form: does this typed contact resolve to a
+    real Telegram/Instagram account?
+
+    Returns {type, normalized, exists, label}. exists: True / False / None
+    (None = not checkable, e.g. phone/email, or we couldn't verify). Always 200 —
+    the form must never break because of this check; on any error exists=None.
+    """
+    from services.contact_check import check_contact_exists
+    try:
+        return await check_contact_exists(req.contact)
+    except Exception as exc:  # noqa: BLE001
+        log.warning(f"lead-validate-contact failed: {exc}")
+        return {"type": "unknown", "normalized": req.contact, "exists": None, "label": "контакт"}
+
+
+def _leadform_project_type(need: Optional[str]) -> Optional[str]:
+    """Map the form's 'need' selection → CRM deal project_type
+    (web | automation | ai_agents | other)."""
+    n = (need or "").lower()
+    if "сайт" in n or "website" in n or "лендинг" in n or "магазин" in n or "store" in n:
+        return "web"
+    if "ai" in n or "агент" in n or "agent" in n or "ассистент" in n or "assistant" in n:
+        return "ai_agents"
+    if "автоматиз" in n or "automation" in n:
+        return "automation"
+    return "other"
+
+
+def _persist_lead_submission_sync(
+    lead: "LeadFormRequest", check: dict, ip, ua, ref, delivered: bool, crm_enabled: bool,
+) -> dict:
+    """SYNC DB work for /lead-submit — run via asyncio.to_thread (off the loop,
+    per the 2026-06-02 event-loop-starvation incident).
+
+    Always writes a lead_submissions row (durable history + the contact verdict).
+    If crm_enabled, also creates a Customer + a message-less Conversation so the
+    lead becomes a proper new-lead DEAL in the CRM pipeline (stage 'new_lead').
+    The Conversation has last_message_at=None on purpose — sweep_once (warming/
+    decay cron) only picks conversations WITH messages, so nothing auto-runs on it.
+    Returns {customer_id, conversation_id, crm_lead, crm_deal}.
+    """
+    from datetime import datetime, timezone
+
+    from db.connection import session_scope
+    from db.models import (
+        ChannelEnum,
+        Conversation,
+        ConversationStatusEnum,
+        Customer,
+        LeadSubmission,
+    )
+    from services.crm.base import Deal as CRMDeal, Lead as CRMLead
+
+    ctype = check.get("type")
+    cexists = check.get("exists")
+    normalized = check.get("normalized") or lead.contact
+
+    out = {"customer_id": None, "conversation_id": None, "crm_lead": None, "crm_deal": None}
+    with session_scope() as s:
+        sub = LeadSubmission(
+            name=lead.name[:200],
+            contact=lead.contact[:200],
+            contact_type=ctype,
+            contact_exists=cexists,
+            need=(lead.need or None),
+            business=(lead.business or None),
+            task=(lead.task or None),
+            timeframe=(lead.when or None),
+            source=(lead.source or None),
+            campaign=(lead.campaign or None),
+            lang=(lead.lang or None),
+            ip=((ip or "")[:64] or None),
+            user_agent=(ua or None),
+            referer=(ref or None),
+            telegram_delivered=bool(delivered),
+            crm_enqueued=bool(crm_enabled),
+        )
+        s.add(sub)
+        s.flush()  # populate sub.id
+
+        if not crm_enabled:
+            return out
+
+        # CRM on → create a Customer (the bot's native lead record).
+        phone = normalized if ctype == "phone" else None
+        email = normalized if ctype == "email" else None
+        cust = Customer(
+            name=lead.name[:200],
+            email=email,
+            phone=phone,
+            first_channel=ChannelEnum.WEBSITE,
+            utm_source=(lead.source or None),
+            utm_campaign=(lead.campaign or None),
+            lead_score=70,
+            lead_temperature="warm",   # fresh inbound form lead — NOT cold
+            interaction_type="P1",     # direct request: they stated need + timeframe
+            profile_data={
+                "lead_form": True,
+                "lead_stage": "new_lead",
+                "need": lead.need,
+                "business": lead.business,
+                "task": lead.task,
+                "when": lead.when,
+                "contact_raw": lead.contact,
+                "contact_type": ctype,
+                "contact_exists": cexists,
+            },
+        )
+        s.add(cust)
+        s.flush()  # populate cust.id
+        sub.customer_id = cust.id
+
+        # A message-less Conversation so the lead becomes a real DEAL in the
+        # pipeline (a deal is per-conversation). last_message_at stays None →
+        # the warming/decay cron (sweep_once) never picks it up → no automation.
+        conv = Conversation(
+            customer_id=cust.id,
+            channel=ChannelEnum.WEBSITE,
+            channel_conversation_id=f"leadform:{sub.id}",
+            status=ConversationStatusEnum.OPEN,
+            lead_stage="new_lead",
+        )
+        s.add(conv)
+        s.flush()  # populate conv.id
+
+        handle = (
+            normalized if ctype in ("telegram", "instagram")
+            else (email or lead.contact[:200])
+        )
+        identity_keys: dict = {}
+        if email:
+            identity_keys["email"] = email
+        elif ctype == "phone":
+            identity_keys["phone"] = normalized
+        elif ctype == "telegram":
+            identity_keys["tg_handle"] = normalized
+
+        brief = (
+            lead.task.strip() if lead.task and lead.task.strip()
+            else (
+                f"Заявка с сайта. Хочет: {lead.need or '—'}. "
+                f"Бизнес: {lead.business or '—'}. Срок: {lead.when or '—'}."
+            )
+        )[:500]
+
+        out["customer_id"] = str(cust.id)
+        out["conversation_id"] = str(conv.id)
+        out["crm_lead"] = CRMLead(
+            id=str(cust.id),
+            contact_name=lead.name[:200],
+            contact_handle=handle,
+            channel="website",
+            channel_user_id=f"leadform:{sub.id}",
+            first_message_at=datetime.now(timezone.utc),
+            source_url=None,
+            interaction_type="P1",
+            temperature="warm",
+            score=70,
+            identity_keys=identity_keys,
+            profile={"need": lead.need, "business": lead.business},
+        )
+        out["crm_deal"] = CRMDeal(
+            lead_id=str(cust.id),
+            conversation_id=str(conv.id),
+            title=f"{lead.name[:80]} — {lead.need or 'заявка с сайта'}",
+            stage="new_lead",
+            project_type=_leadform_project_type(lead.need),
+            brief=brief,
+        )
+    return out
+
+
 @app.post("/lead-submit")
-async def lead_submit(lead: LeadFormRequest):
+async def lead_submit(lead: LeadFormRequest, request: Request):
     """Accepts form data from deadlinecorp.com/lead-form/.
-    Always returns 200 (we don't want to leak errors to the form UI)."""
-    success = await send_lead_to_telegram(lead)
-    log.info(f"Lead received: {lead.name} | {lead.contact} | need={lead.need!r}")
-    return {"ok": True, "delivered": success}
+    Always returns 200 (we don't want to leak errors to the form UI).
+
+    Each step is fail-safe — a lead is never lost to a downstream error:
+      1. Server-side contact check (authoritative — never trust the client).
+      2. Forward to Telegram, flagging a likely-wrong contact.
+      3. Persist to lead_submissions (durable history + verdict + ip/ua); if CRM
+         is enabled, create a Customer and enqueue a HubSpot upsert.
+    """
+    from services.contact_check import check_contact_exists
+
+    # 1. Authoritative contact check (never raises).
+    check = await check_contact_exists(lead.contact)
+
+    # 2. Telegram notify (with the contact-check flag).
+    delivered = await send_lead_to_telegram(lead, contact_check=check)
+
+    # 3. Request fingerprint (real client IP is in X-Forwarded-For behind
+    #    Railway's proxy; request.client.host is the proxy itself).
+    fwd = request.headers.get("x-forwarded-for", "")
+    ip = (fwd.split(",")[0].strip() if fwd else None) or (
+        request.client.host if request.client else None
+    )
+    ua = request.headers.get("user-agent")
+    ref = request.headers.get("referer")
+
+    # 4. Persist (sync DB → thread) + build CRM lead/deal. Never lose the lead.
+    customer_id = None
+    conversation_id = None
+    crm_lead = None
+    crm_deal = None
+    try:
+        res = await asyncio.to_thread(
+            _persist_lead_submission_sync, lead, check, ip, ua, ref,
+            bool(delivered), bool(settings.crm_enabled),
+        )
+        customer_id = res.get("customer_id")
+        conversation_id = res.get("conversation_id")
+        crm_lead = res.get("crm_lead")
+        crm_deal = res.get("crm_deal")
+    except Exception as exc:  # noqa: BLE001 — persistence must never lose a lead
+        log.error(f"lead-submit persist failed: {exc}")
+
+    # 5. CRM — enqueue on the event loop (asyncio.Queue is loop-bound). The lead
+    #    becomes a new-lead DEAL in the pipeline: upsert the contact (writeback
+    #    fills Customer.crm_contact_id), then create the deal at 'new_lead'. The
+    #    single-worker FIFO guarantees the upsert (and its writeback) runs before
+    #    create_deal resolves the pending contact_id; deal_id is written back to
+    #    the conversation.
+    if settings.crm_enabled and customer_id and crm_lead is not None:
+        try:
+            from services.crm_queue import (
+                enqueue,
+                make_create_deal_event,
+                make_upsert_contact_event,
+            )
+            from services.crm_dispatch import (
+                _make_contact_id_writeback,
+                _make_deal_id_writeback,
+            )
+            enqueue(make_upsert_contact_event(
+                str(customer_id), crm_lead,
+                on_contact_id=_make_contact_id_writeback(str(customer_id)),
+            ))
+            if crm_deal is not None and conversation_id:
+                enqueue(make_create_deal_event(
+                    customer_id=str(customer_id),
+                    deal=crm_deal,
+                    contact_id="pending",
+                    on_deal_id=_make_deal_id_writeback(str(conversation_id)),
+                ))
+        except Exception as exc:  # noqa: BLE001
+            log.warning(f"lead-submit CRM enqueue failed: {exc}")
+
+    log.info(
+        "Lead received: %s | %s | need=%r | contact=%s/%s",
+        lead.name, lead.contact, lead.need, check.get("type"), check.get("exists"),
+    )
+    return {"ok": True, "delivered": delivered}
 
 
 # ============================================================================
@@ -2463,13 +3919,21 @@ async def admin_cron_sweep(_: None = Depends(_verify_training_token)):
     """Force-run крон-свипа + само-исполнения отложенных действий (для теста,
     чтобы не ждать часовой интервал крона)."""
     from services.cron import sweep_once
-    from services.scheduled_actions import run_due_followups
+    from services.scheduled_actions import run_due_followups, run_due_call_reminders
+    import traceback as _tb
     try:
         sweep_stats = await sweep_once(tenant_config={})
     except Exception as e:  # noqa: BLE001
         sweep_stats = {"error": str(e)}
-    fu_stats = await run_due_followups(tenant_config=None)
-    return {"sweep": sweep_stats, "followups": fu_stats}
+    try:
+        fu_stats = await run_due_followups(tenant_config=None)
+    except Exception as e:  # noqa: BLE001
+        fu_stats = {"error": f"{type(e).__name__}: {e}", "tb": _tb.format_exc()[-800:]}
+    try:
+        call_stats = await run_due_call_reminders(tenant_config=None)
+    except Exception as e:  # noqa: BLE001
+        call_stats = {"error": f"{type(e).__name__}: {e}", "tb": _tb.format_exc()[-800:]}
+    return {"sweep": sweep_stats, "followups": fu_stats, "call_reminders": call_stats}
 
 
 @app.get("/admin/scheduled-actions")
@@ -2750,6 +4214,29 @@ async def training_list(
 # STARTUP LOG
 # ============================================================================
 
+async def _heartbeat_loop():
+    """Лёгкий пульс каждые 4 мин: DB SELECT 1 + строка в лог. Зачем:
+    (1) не давать контейнеру «застывать» в простое (был idle-freeze 2026-06-03 —
+        4 часа тишины в логах, контейнер не отвечал, помог только рестарт);
+    (2) ДИАГНОСТИКА — если строки [heartbeat] в логах ОБРЫВАЮТСЯ, видно точный
+        момент зависания. Sync-ping уведён в to_thread, event-loop не грузит."""
+    import asyncio as _a
+    from db.connection import engine as _eng
+    from sqlalchemy import text as _t
+
+    def _ping() -> None:
+        with _eng.connect() as c:
+            c.execute(_t("SELECT 1"))
+
+    while True:
+        try:
+            await _a.sleep(240)
+            await _a.to_thread(_ping)
+            log.info("[heartbeat] alive (db ok)")
+        except Exception as _e:  # noqa: BLE001
+            log.warning("[heartbeat] error: %s", _e)
+
+
 @app.on_event("startup")
 async def startup():
     log.info("=" * 60)
@@ -2782,6 +4269,9 @@ async def startup():
     else:
         log.info(f"CRM queue: not started (crm_enabled=False)")
         log.info(f"CRM cron:  not started (crm_enabled=False)")
+    # Heartbeat — всегда: пульс + анти-idle + диагностика зависаний (см. _heartbeat_loop).
+    asyncio.create_task(_heartbeat_loop())
+    log.info("Heartbeat: running (every 4 min)")
     log.info(f"Origins:  {settings.allowed_origins}")
     log.info("=" * 60)
 

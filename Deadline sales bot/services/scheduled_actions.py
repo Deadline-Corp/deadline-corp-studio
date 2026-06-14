@@ -35,16 +35,45 @@ def write_scheduled_action(
     due_at: datetime,
     text: Optional[str] = None,
     crm_task_id: Optional[str] = None,
-) -> Optional[str]:
+) -> tuple[Optional[str], bool]:
     """Записать ScheduledAction (followup_message). Sync — звать через to_thread.
 
     executor='bot' если есть chat_id (бот сам напишет), иначе 'human'.
-    Возвращает id строки или None при ошибке.
+    Возвращает (id_строки, was_new): was_new=True если у диалога НЕ было pending
+    bot-followup до этого (т.е. это первая просьба, а не повтор). По нему воркер
+    решает, создавать ли НОВУЮ зеркальную CRM-задачу или это reschedule.
+    При ошибке — (None, False).
     """
     from db.connection import session_scope
     from db.models import ScheduledAction
     try:
+        superseded = 0
+        inherited_task_id: Optional[str] = None
         with session_scope() as s:
+            # ДЕДУП (latest-wins): у одного диалога — максимум ОДИН pending
+            # bot-followup. dispatch_on_message_turn зовёт parse_followup_when на
+            # КАЖДОМ сообщении лида, поэтому «удобно завтра» + «давайте в пятницу»
+            # + «напишите завтра утром» наплодили бы 3-4 отдельных пинга на одно и
+            # то же утро → спам. Последняя просьба заменяет прежние: гасим все
+            # ещё-не-сработавшие bot-followup'ы диалога. task_id со старой строки
+            # ПЕРЕНОСИМ на новую — чтобы при исполнении закрылась та же CRM-задача
+            # (а не плодилась новая).
+            if conversation_id:
+                prev = (
+                    s.query(ScheduledAction)
+                    .filter(
+                        ScheduledAction.conversation_id == conversation_id,
+                        ScheduledAction.action_type == "followup_message",
+                        ScheduledAction.status == "pending",
+                        ScheduledAction.executor == "bot",
+                    )
+                    .all()
+                )
+                for r in prev:
+                    if r.crm_task_id and not inherited_task_id:
+                        inherited_task_id = r.crm_task_id
+                    r.status = "superseded"
+                superseded = len(prev)
             row = ScheduledAction(
                 customer_id=customer_id,
                 conversation_id=conversation_id,
@@ -55,19 +84,19 @@ def write_scheduled_action(
                 due_at=due_at,
                 status="pending",
                 payload={"text": text or DEFAULT_FOLLOWUP_TEXT},
-                crm_task_id=crm_task_id,
+                crm_task_id=crm_task_id or inherited_task_id,
             )
             s.add(row)
             s.flush()
             rid = str(row.id)
         logger.info(
-            "[scheduled_actions] queued followup row=%s chat_id=%s due=%s",
-            rid, chat_id, due_at,
+            "[scheduled_actions] queued followup row=%s chat_id=%s due=%s superseded=%d",
+            rid, chat_id, due_at, superseded,
         )
-        return rid
+        return rid, (superseded == 0)
     except Exception as exc:  # noqa: BLE001
         logger.warning("[scheduled_actions] write failed: %s", exc)
-        return None
+        return None, False
 
 
 async def run_due_followups(*, tenant_config: Optional[dict] = None) -> dict:
@@ -83,27 +112,42 @@ async def run_due_followups(*, tenant_config: Optional[dict] = None) -> dict:
     token = os.getenv("TELEGRAM_BOT_TOKEN") or (tenant_config or {}).get("telegram_bot_token")
     now = datetime.now(timezone.utc)
 
-    # 1) Забираем созревшие строки + материализуем нужные поля (чтобы не держать
-    #    ORM-объекты вне сессии).
+    # 1) КЛЕЙМ: атомарно забираем созревшие строки (FOR UPDATE SKIP LOCKED) и
+    #    переводим в 'processing' + claimed_at=now. Конкурентный свип/инстанс
+    #    пропустит залоченные → одно напоминание не уйдёт дважды. Протухший
+    #    'processing' (>15 мин — процесс упал между клеймом и отправкой) перезабираем.
+    from datetime import timedelta as _td
+    from sqlalchemy import or_ as _or, and_ as _and
+    _stale = now - _td(minutes=15)
     todo: list[dict] = []
     with session_scope() as s:
         rows = (
             s.query(ScheduledAction)
-            .filter(ScheduledAction.status == "pending")
             .filter(ScheduledAction.executor == "bot")
             .filter(ScheduledAction.action_type == "followup_message")
             .filter(ScheduledAction.due_at <= now)
+            .filter(_or(
+                ScheduledAction.status == "pending",
+                _and(ScheduledAction.status == "processing",
+                     _or(ScheduledAction.claimed_at.is_(None),
+                         ScheduledAction.claimed_at < _stale)),
+            ))
             .order_by(ScheduledAction.due_at.asc())
             .limit(MAX_PER_SWEEP)
+            .with_for_update(skip_locked=True)
             .all()
         )
         for r in rows:
+            r.status = "processing"
+            r.claimed_at = now
             stats["due"] += 1
             payload = r.payload or {}
             todo.append({
                 "id": str(r.id),
                 "chat_id": r.chat_id,
                 "text": payload.get("text") or DEFAULT_FOLLOWUP_TEXT,
+                "crm_task_id": r.crm_task_id,
+                "customer_id": str(r.customer_id) if r.customer_id else None,
             })
 
     if not todo:
@@ -125,21 +169,321 @@ async def run_due_followups(*, tenant_config: Optional[dict] = None) -> dict:
             with session_scope() as s:
                 row = s.get(ScheduledAction, item["id"])
                 if row is not None:
+                    row.claimed_at = None
                     if ok:
                         row.status = "done"
                         row.executed_at = now
                         stats["sent"] += 1
                     else:
                         row.attempts = (row.attempts or 0) + 1
-                        # после 3 неудач — фейл, чтобы не долбить вечно
-                        if row.attempts >= 3:
-                            row.status = "failed"
+                        # <3 неудач — обратно в pending (ретрай на след. свипе);
+                        # после 3 — failed, чтобы не долбить вечно.
+                        row.status = "failed" if row.attempts >= 3 else "pending"
                         stats["failed"] += 1
         except Exception as exc:  # noqa: BLE001
             logger.warning("[scheduled_actions] status update failed row=%s: %s", item["id"], exc)
+
+        # 4) Взаимосвязь с CRM: followup исполнен → закрываем зеркальную задачу в
+        #    CRM (через очередь — адаптер живёт в её воркере). Best-effort: сбой
+        #    закрытия не валит отправку (она уже состоялась).
+        if ok and item.get("crm_task_id") and item.get("customer_id"):
+            try:
+                from services.crm_queue import enqueue, make_complete_task_event
+                enqueue(make_complete_task_event(
+                    customer_id=item["customer_id"],
+                    task_id=str(item["crm_task_id"]),
+                ))
+                logger.info("[scheduled_actions] enqueued complete_task crm_task_id=%s (followup done)",
+                            item["crm_task_id"])
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[scheduled_actions] complete_task enqueue failed: %s", exc)
 
     logger.info(
         "[scheduled_actions] run_due: due=%d sent=%d failed=%d skipped=%d",
         stats["due"], stats["sent"], stats["failed"], stats["skipped_no_chat"],
     )
+    return stats
+
+
+# =============================================================================
+# СОЗВОНЫ (call booking) — записи созвонов + напоминания лиду и админу
+# =============================================================================
+# Действия:
+#   action_type="call_booked"   — сам факт созвона (due_at = время созвона),
+#                                  executor="human"; нужен для (а) анти-дабл-брони
+#                                  и (б) истории. Бот его НЕ «исполняет».
+#   action_type="call_reminder" — напоминание (бот шлёт), payload.audience =
+#                                  "lead" | "admin", chat_id = куда слать.
+
+def write_call_booking(
+    *,
+    customer_id: str,
+    conversation_id: Optional[str],
+    channel: str,
+    chat_id: Optional[str],
+    call_at: datetime,
+    medium: Optional[str] = None,
+) -> Optional[str]:
+    """Записать факт назначенного созвона (call_booked). Sync — звать через to_thread."""
+    from db.connection import session_scope
+    from db.models import ScheduledAction
+    try:
+        with session_scope() as s:
+            row = ScheduledAction(
+                customer_id=customer_id,
+                conversation_id=conversation_id,
+                channel=channel,
+                chat_id=chat_id,
+                action_type="call_booked",
+                executor="human",
+                due_at=call_at,
+                status="pending",
+                payload={"medium": medium},
+            )
+            s.add(row)
+            s.flush()
+            rid = str(row.id)
+        logger.info("[scheduled_actions] call booked row=%s at=%s medium=%s", rid, call_at, medium)
+        return rid
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[scheduled_actions] write_call_booking failed: %s", exc)
+        return None
+
+
+def write_call_reminder(
+    *,
+    customer_id: str,
+    conversation_id: Optional[str],
+    channel: str,
+    chat_id: Optional[str],
+    due_at: datetime,
+    text: str,
+    audience: str,  # "lead" | "admin"
+) -> Optional[str]:
+    """Записать одно напоминание о созвоне (бот отправит в due_at)."""
+    from db.connection import session_scope
+    from db.models import ScheduledAction
+    try:
+        with session_scope() as s:
+            row = ScheduledAction(
+                customer_id=customer_id,
+                conversation_id=conversation_id,
+                channel=channel,
+                chat_id=chat_id,
+                action_type="call_reminder",
+                executor="bot",
+                due_at=due_at,
+                status="pending",
+                payload={"text": text, "audience": audience},
+            )
+            s.add(row)
+            s.flush()
+            rid = str(row.id)
+        return rid
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[scheduled_actions] write_call_reminder failed: %s", exc)
+        return None
+
+
+def cancel_call_actions(conversation_id: str) -> int:
+    """Отменить будущий созвон и его напоминания у диалога (лид отказался/переносит).
+
+    НЕ удаляет строки — переводит pending → cancelled (обратимо, для истории).
+    Возвращает число отменённых строк. Sync — звать через to_thread.
+    """
+    from db.connection import session_scope
+    from db.models import ScheduledAction
+    n = 0
+    try:
+        with session_scope() as s:
+            rows = (
+                s.query(ScheduledAction)
+                .filter(ScheduledAction.conversation_id == conversation_id)
+                .filter(ScheduledAction.status == "pending")
+                .filter(ScheduledAction.action_type.in_(("call_booked", "call_reminder")))
+                .all()
+            )
+            for r in rows:
+                r.status = "cancelled"
+                n += 1
+        logger.info("[scheduled_actions] cancelled %d call rows for conv=%s", n, conversation_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[scheduled_actions] cancel_call_actions failed: %s", exc)
+    return n
+
+
+def get_taken_call_slots(now_utc: datetime) -> list[datetime]:
+    """Времена будущих назначенных созвонов (для анти-дабл-брони)."""
+    from db.connection import session_scope
+    from db.models import ScheduledAction
+    out: list[datetime] = []
+    try:
+        with session_scope() as s:
+            rows = (
+                s.query(ScheduledAction.due_at)
+                .filter(ScheduledAction.action_type == "call_booked")
+                .filter(ScheduledAction.status == "pending")
+                .filter(ScheduledAction.due_at >= now_utc)
+                .all()
+            )
+            out = [r[0] for r in rows if r[0] is not None]
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[scheduled_actions] get_taken_call_slots failed: %s", exc)
+    return out
+
+
+async def run_due_call_reminders(*, tenant_config: Optional[dict] = None) -> dict:
+    """Крон-шаг: разослать созревшие напоминания о созвонах (лиду и админу).
+
+    Лиду — в его chat_id; админу — в chat_id напоминания (обычно опер-группа).
+    Изолированно, ошибка одной строки не валит остальные.
+    """
+    from db.connection import session_scope
+    from db.models import ScheduledAction
+    from channels.telegram import send_telegram_reply
+
+    stats = {"due": 0, "sent": 0, "failed": 0, "skipped_no_chat": 0}
+    token = os.getenv("TELEGRAM_BOT_TOKEN") or (tenant_config or {}).get("telegram_bot_token")
+    now = datetime.now(timezone.utc)
+
+    from datetime import timedelta as _td
+    from sqlalchemy import or_ as _or, and_ as _and
+    _stale = now - _td(minutes=15)
+    todo: list[dict] = []
+    with session_scope() as s:
+        rows = (
+            s.query(ScheduledAction)
+            .filter(ScheduledAction.action_type == "call_reminder")
+            .filter(ScheduledAction.due_at <= now)
+            .filter(_or(
+                ScheduledAction.status == "pending",
+                _and(ScheduledAction.status == "processing",
+                     _or(ScheduledAction.claimed_at.is_(None),
+                         ScheduledAction.claimed_at < _stale)),
+            ))
+            .order_by(ScheduledAction.due_at.asc())
+            .limit(MAX_PER_SWEEP)
+            .with_for_update(skip_locked=True)
+            .all()
+        )
+        for r in rows:
+            r.status = "processing"
+            r.claimed_at = now
+            stats["due"] += 1
+            payload = r.payload or {}
+            todo.append({
+                "id": str(r.id),
+                "chat_id": r.chat_id,
+                "text": payload.get("text") or "Напоминаю про наш созвон 🙂",
+            })
+
+    if not todo:
+        return stats
+
+    for item in todo:
+        ok = False
+        if not item["chat_id"] or not token:
+            stats["skipped_no_chat"] += 1
+        else:
+            try:
+                ok = await send_telegram_reply(token, str(item["chat_id"]), item["text"])
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[scheduled_actions] call-reminder send failed row=%s: %s", item["id"], exc)
+                ok = False
+        try:
+            with session_scope() as s:
+                row = s.get(ScheduledAction, item["id"])
+                if row is not None:
+                    row.claimed_at = None
+                    if ok:
+                        row.status = "done"
+                        row.executed_at = now
+                        stats["sent"] += 1
+                    else:
+                        row.attempts = (row.attempts or 0) + 1
+                        row.status = "failed" if row.attempts >= 3 else "pending"
+                        stats["failed"] += 1
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[scheduled_actions] call-reminder status update failed row=%s: %s", item["id"], exc)
+
+    logger.info(
+        "[scheduled_actions] run_due_call_reminders: due=%d sent=%d failed=%d skipped=%d",
+        stats["due"], stats["sent"], stats["failed"], stats["skipped_no_chat"],
+    )
+    return stats
+
+
+async def run_due_recurring() -> dict:
+    """P6 — постоянные клиенты. Для каждого клиента с активной recurrence и
+    наступившим next_at ставит бот-followup (run_due_followups доставит) и сдвигает
+    next_at += every_days. Хранение: customers.profile_data['recurrence'] =
+    {active, every_days, note?, next_at}. Изолировано, ошибки не валят крон."""
+    import json
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import text as _sql
+    from db.connection import session_scope
+    from db.models import Conversation
+
+    stats = {"due": 0, "queued": 0, "errors": 0}
+    now = datetime.now(timezone.utc)
+    RECUR_TMPL = {
+        "ru": "Здравствуйте! Напоминаем про плановый визит — подтвердите удобное время, и команда приедет 🙂",
+        "en": "Hello! A reminder about your scheduled visit — please confirm a convenient time and our team will come 🙂",
+        "th": "สวัสดีค่ะ! แจ้งเตือนนัดหมายตามกำหนด — โปรดยืนยันเวลาที่สะดวก แล้วทีมงานจะไปให้บริการ 🙂",
+    }
+    due: list[dict] = []
+    try:
+        with session_scope() as s:
+            rows = s.execute(_sql(
+                "SELECT id, profile_data FROM customers "
+                "WHERE profile_data->'recurrence'->>'active' = 'true' "
+                "AND (profile_data->'recurrence'->>'next_at') IS NOT NULL "
+                "AND (profile_data->'recurrence'->>'next_at')::timestamptz <= :now "
+                "LIMIT 100"
+            ), {"now": now}).fetchall()
+            for cid, prof in rows:
+                rec = (prof or {}).get("recurrence") or {}
+                every = int(rec.get("every_days") or 0)
+                if every < 1:
+                    continue
+                conv = (
+                    s.query(Conversation)
+                    .filter(Conversation.customer_id == cid)
+                    .order_by(Conversation.last_message_at.desc().nullslast())
+                    .first()
+                )
+                if conv is None:
+                    continue
+                due.append({
+                    "cid": str(cid), "conv_id": str(conv.id), "channel": conv.channel,
+                    "chat": getattr(conv, "channel_conversation_id", None),
+                    "text": (rec.get("note") or "").strip()
+                            or RECUR_TMPL.get((prof or {}).get("lang") or "ru", RECUR_TMPL["ru"]),
+                    "prof": dict(prof or {}), "rec": dict(rec), "every": every,
+                })
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[scheduled_actions] run_due_recurring query failed: %s", e)
+        return stats
+
+    stats["due"] = len(due)
+    for d in due:
+        try:
+            write_scheduled_action(
+                customer_id=d["cid"], conversation_id=d["conv_id"], channel=d["channel"],
+                chat_id=str(d["chat"]) if d["chat"] else None, due_at=now, text=d["text"],
+            )
+            d["rec"]["next_at"] = (now + timedelta(days=d["every"])).isoformat()
+            d["prof"]["recurrence"] = d["rec"]
+            with session_scope() as s2:
+                s2.execute(
+                    _sql("UPDATE customers SET profile_data = CAST(:p AS JSONB) WHERE id = :i"),
+                    {"p": json.dumps(d["prof"], ensure_ascii=False), "i": d["cid"]},
+                )
+            stats["queued"] += 1
+        except Exception as e:  # noqa: BLE001
+            stats["errors"] += 1
+            logger.warning("[scheduled_actions] recurring %s failed: %s", d["cid"][:8], e)
+
+    logger.info("[scheduled_actions] run_due_recurring: due=%d queued=%d errors=%d",
+                stats["due"], stats["queued"], stats["errors"])
     return stats

@@ -1,0 +1,496 @@
+import { useEffect, useRef, useState } from 'react'
+import { api } from '../api/client'
+import { ConvDetail, Msg } from '../api/types'
+import { usePolling } from '../hooks/usePolling'
+import { useStages, useStageLabel, useMe } from '../overviewContext'
+import { CHANNEL_META, LOST_REASONS, TEMP_META, fmtTime, initials } from '../lib'
+import { Help } from './Help'
+
+/* Карточка лида: переписка + ответ + takeover + стадия + пинок + задача.
+   Один и тот же компонент из Inbox, Канбана и Канваса. Стадии — динамические
+   (кастомная воронка из overview). */
+
+export function ConversationDrawer({ convId, onClose }: { convId: string; onClose: () => void }) {
+  const [detail, setDetail] = useState<ConvDetail | null>(null)
+  const [msgs, setMsgs] = useState<Msg[]>([])
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [toast, setToast] = useState<{ text: string; err?: boolean } | null>(null)
+  const [stagePick, setStagePick] = useState('')
+  const [lostReason, setLostReason] = useState('delayed')
+  const [nudgeOpen, setNudgeOpen] = useState(false)
+  const [taskOpen, setTaskOpen] = useState(false)
+  const [taskText, setTaskText] = useState('')
+  const [taskDue, setTaskDue] = useState('')
+  const [taskExec, setTaskExec] = useState<'human' | 'bot'>('human')
+  const [fieldEdits, setFieldEdits] = useState<Record<string, any>>({})
+  const [fieldsOpen, setFieldsOpen] = useState(false)
+  const [advice, setAdvice] = useState('')
+  const [team, setTeam] = useState<any[]>([])
+  const [draftText, setDraftText] = useState('')  // редактируемый предложенный ботом ответ (WhatsApp)
+  const msgsRef = useRef<HTMLDivElement>(null)
+  const lastTsRef = useRef<string | null>(null)
+
+  const stages = useStages()
+  const stageLabel = useStageLabel()
+  const me = useMe()
+  const [learned, setLearned] = useState<Set<string>>(new Set())
+
+  const learnFrom = async (messageId: string) => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await api.post('/training-rules/from-message', { conversation_id: convId, message_id: messageId })
+      setLearned(prev => new Set(prev).add(messageId))
+      showToast('🎓 Бот выучил этот ответ — применит в похожих ситуациях')
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  const showToast = (text: string, err = false) => {
+    setToast({ text, err })
+    setTimeout(() => setToast(null), 3500)
+  }
+
+  const loadDetail = async () => {
+    try { setDetail(await api.get<ConvDetail>(`/conversations/${convId}`)) } catch { /* drawer закроют по 401 */ }
+  }
+
+  const loadMessages = async (initial = false) => {
+    try {
+      if (initial || !lastTsRef.current) {
+        const r = await api.get<{ items: Msg[] }>(`/conversations/${convId}/messages?limit=80`)
+        setMsgs(r.items)
+        lastTsRef.current = r.items.length ? r.items[r.items.length - 1].created_at : null
+        scrollDown()
+      } else {
+        const r = await api.get<{ items: Msg[] }>(
+          `/conversations/${convId}/messages?after=${encodeURIComponent(lastTsRef.current)}`)
+        if (r.items.length) {
+          setMsgs(prev => [...prev, ...r.items])
+          lastTsRef.current = r.items[r.items.length - 1].created_at
+          scrollDown()
+        }
+      }
+    } catch { /* поллинг переживёт разовый сбой */ }
+  }
+
+  const scrollDown = () => {
+    requestAnimationFrame(() => {
+      msgsRef.current?.scrollTo({ top: msgsRef.current.scrollHeight })
+    })
+  }
+
+  useEffect(() => {
+    lastTsRef.current = null
+    setMsgs([])
+    setDetail(null)
+    void loadDetail()
+    void loadMessages(true)
+    void api.get<{ items: any[] }>('/team').then(r => setTeam(r.items || [])).catch(() => { /* менеджеру /team закрыт — дропдаун скрыт */ })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [convId])
+
+  usePolling(() => loadMessages(false), 5000, [convId])
+
+  // Подставляем предложенный ботом ответ в редактируемое поле, когда он появляется/меняется.
+  useEffect(() => {
+    setDraftText(detail?.pending_wa_draft?.text || '')
+  }, [detail?.pending_wa_draft?.ts])
+
+  const sendWaDraft = async () => {
+    if (busy || !draftText.trim()) return
+    setBusy(true)
+    try {
+      const r = await api.post<{ delivered: boolean }>(`/conversations/${convId}/wa-draft`, {
+        action: 'send', text: draftText.trim(),
+      })
+      showToast(r.delivered ? '✅ Отправлено клиенту в WhatsApp' : '⚠️ Сохранено, но не доставлено (см. логи)', !r.delivered)
+      await loadDetail(); await loadMessages(false)
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+  const rejectWaDraft = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await api.post(`/conversations/${convId}/wa-draft`, { action: 'reject' })
+      showToast('🚫 Черновик отклонён — клиенту не ушёл')
+      await loadDetail()
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+  const setWaAutonomous = async (on: boolean) => {
+    if (busy) return
+    setBusy(true)
+    try {
+      const r = await api.post<{ sent: boolean }>(`/conversations/${convId}/wa-autonomous`, { on })
+      showToast(on
+        ? (r.sent ? '🤖 Бот ведёт диалог сам — предложенный ответ отправлен' : '🤖 Бот ведёт этот диалог сам')
+        : 'Возвращено на одобрение')
+      await loadDetail(); await loadMessages(false)
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  const send = async () => {
+    const t = text.trim()
+    if (!t || busy) return
+    setBusy(true)
+    try {
+      const r = await api.post<{ delivered: boolean; channel: string }>(`/conversations/${convId}/reply`, { text: t })
+      setText('')
+      if (!r.delivered) showToast('⚠️ Сохранено, но НЕ доставлено лиду (см. логи)', true)
+      else if (r.channel === 'website') showToast('Сохранено. Website-лид увидит при следующем визите.')
+      else showToast('✅ Доставлено лиду')
+      await loadMessages(false)
+    } catch (e: any) {
+      showToast(`Ошибка: ${e.message}`, true)
+    } finally { setBusy(false) }
+  }
+
+  const toggleTakeover = async () => {
+    if (!detail || busy) return
+    setBusy(true)
+    try {
+      await api.post(`/conversations/${convId}/takeover`, { on: !detail.operator_takeover })
+      showToast(detail.operator_takeover ? '🤖 Вернули боту' : '👤 Взяли на себя — бот молчит')
+      await loadDetail()
+    } catch (e: any) { showToast(`Ошибка: ${e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  const isLostStage = (key: string) =>
+    key === 'lost' || stages.find(s => s.stage === key)?.kind === 'lost'
+
+  const applyStage = async () => {
+    if (!stagePick || !detail || busy) return
+    setBusy(true)
+    try {
+      await api.post(`/conversations/${convId}/stage`, {
+        to_stage: stagePick,
+        lost_reason: isLostStage(stagePick) ? lostReason : undefined,
+      })
+      showToast(`Стадия → ${stageLabel(stagePick)}`)
+      setStagePick('')
+      await loadDetail()
+      await loadMessages(false)
+    } catch (e: any) { showToast(`Ошибка: ${e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  const nudgeDraft = async () => {
+    setBusy(true)
+    try {
+      const r = await api.post<{ draft: string }>(`/conversations/${convId}/nudge`, { mode: 'draft' })
+      setText(r.draft)
+      setNudgeOpen(false)
+      showToast('Черновик пинка готов — правьте и отправляйте')
+    } catch (e: any) { showToast(`Ошибка черновика: ${e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  const advise = async () => {
+    setBusy(true)
+    setAdvice('')
+    try {
+      const r = await api.post<{ action: string; draft: string }>(`/conversations/${convId}/advise`, {})
+      setAdvice(r.action || 'нет рекомендации')
+      if (r.draft) setText(r.draft)
+      showToast('🧭 Совет готов — черновик в поле ответа')
+    } catch (e: any) { showToast(`Ошибка совета: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  const nudgeNow = async () => {
+    const t = text.trim()
+    if (!t) { showToast('Сначала напишите текст пинка (или возьмите черновик)', true); return }
+    setBusy(true)
+    try {
+      await api.post(`/conversations/${convId}/nudge`, { mode: 'now', text: t })
+      setText('')
+      setNudgeOpen(false)
+      showToast('✅ Пинок отправлен от имени бота')
+      await loadMessages(false)
+    } catch (e: any) { showToast(`${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  const saveFields = async () => {
+    if (!Object.keys(fieldEdits).length || busy) return
+    setBusy(true)
+    try {
+      await api.post(`/conversations/${convId}/fields`, { values: fieldEdits })
+      setFieldEdits({})
+      showToast('✅ Поля сохранены')
+      await loadDetail()
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  const createTask = async () => {
+    if (!taskText.trim() || !taskDue || busy) return
+    setBusy(true)
+    try {
+      await api.post('/tasks', {
+        conversation_id: convId,
+        text: taskText.trim(),
+        due_at: new Date(taskDue).toISOString(),
+        executor: taskExec,
+      })
+      showToast(taskExec === 'bot' ? '🤖 Бот напишет лиду в срок' : '📋 Задача поставлена')
+      setTaskOpen(false)
+      setTaskText('')
+      setTaskDue('')
+      await loadDetail()
+    } catch (e: any) { showToast(`${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  const ch = detail ? CHANNEL_META[detail.channel] : null
+  const temp = detail ? TEMP_META[detail.customer.lead_temperature] : null
+
+  return (
+    <>
+      <div className="drawer-overlay" onClick={onClose} />
+      <div className="drawer">
+        <div className="d-head">
+          <div className="d-title">
+            <div className="avatar" style={{ width: 38, height: 38, borderRadius: '50%', background: 'var(--panel-2)', display: 'grid', placeItems: 'center', color: 'var(--accent)', fontWeight: 700 }}>
+              {initials(detail?.customer.name)}
+            </div>
+            <h2>{detail?.customer.name || 'Без имени'}</h2>
+            <button className="btn ghost" onClick={onClose}>✕</button>
+          </div>
+          {detail && (
+            <>
+              <div className="d-chips">
+                <span className={`chip ${ch?.cls ?? ''}`}>{ch?.icon} {ch?.label ?? detail.channel}</span>
+                <span className="chip accent">{stageLabel(detail.lead_stage)}</span>
+                {temp && <span className={`chip ${temp.cls}`}>{temp.label}</span>}
+                <span className="chip">скор {detail.customer.lead_score}</span>
+                {detail.operator_takeover && <span className="chip ok">👤 на операторе</span>}
+                {detail.customer.email && <span className="chip mono">{detail.customer.email}</span>}
+                {detail.customer.phone && <span className="chip mono">{detail.customer.phone}</span>}
+              </div>
+              <div className="d-actions">
+                <button className="btn sm" onClick={toggleTakeover} disabled={busy}>
+                  {detail.operator_takeover ? '🤖 Вернуть боту' : '👤 Взять на себя'}
+                </button>
+                <Help title="Взять на себя" text="Бот замолкает в этом диалоге — отвечаете только вы. Лид ничего не заметит. Когда закончите, верните боту — он продолжит сам с того же места." />
+                <Help title="Стадия" text="Где лид в вашей воронке. Бот двигает сделку сам по мере прогресса; вы можете перевести вручную здесь или перетащив карточку в Воронке. Изменение уходит и в CRM." />
+                <select value={stagePick} onChange={e => setStagePick(e.target.value)} style={{ padding: '4px 8px', fontSize: 12 }}>
+                  <option value="">Сменить стадию…</option>
+                  {stages.filter(s => s.stage !== detail.lead_stage).map(s => (
+                    <option key={s.stage} value={s.stage}>{s.label}</option>
+                  ))}
+                </select>
+                {stagePick && isLostStage(stagePick) && (
+                  <select value={lostReason} onChange={e => setLostReason(e.target.value)} style={{ padding: '4px 8px', fontSize: 12 }}>
+                    {LOST_REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                  </select>
+                )}
+                {stagePick && <button className="btn sm primary" onClick={applyStage} disabled={busy}>OK</button>}
+                <button className="btn sm" onClick={() => { setNudgeOpen(v => !v); setTaskOpen(false) }}>⚡ Пинок</button>
+                <Help title="Пинок" text="Лид замолчал? Отправьте напоминание от имени бота — диалог продолжится естественно. Кнопка «Черновик от LLM» сама сочинит текст по контексту переписки." />
+                <button className="btn sm" onClick={() => { setTaskOpen(v => !v); setNudgeOpen(false) }}>📋 Задача</button>
+                <Help title="Задача" text="Напоминалка по этому лиду: «👤 сам» — появится в вашем «Моём дне»; «🤖 бот» — бот сам напишет лиду в указанное время (пока только Telegram)." />
+                <button className="btn sm" onClick={advise} disabled={busy}>🧭 Что делать</button>
+                <Help title="Что делать (AI-копилот)" text="Агент смотрит стадию, score и переписку → советует лучшее следующее действие и кладёт готовый черновик ответа в поле. Ничего не отправляет — решаете вы." />
+                <button className="btn sm" disabled={busy} onClick={async () => {
+                  const d = window.prompt('Регулярный клиент: визит каждые N дней (пусто или 0 — снять):', '')
+                  if (d === null) return
+                  const n = parseInt(d, 10) || 0
+                  setBusy(true)
+                  try {
+                    await api.post(`/conversations/${convId}/recurrence`, { every_days: n > 0 ? n : null, active: n > 0 })
+                    showToast(n > 0 ? `🔁 Регулярно каждые ${n} дн. — бот сам напомнит` : 'Регулярность снята')
+                  } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+                  finally { setBusy(false) }
+                }}>🔁 Регулярный</button>
+                <Help title="Регулярный клиент" text="Постоянный клининг / ТО: бот сам шлёт плановое напоминание каждые N дней («подтвердите время — команда приедет»). Снять — введите 0." />
+                {team.filter((m: any) => m.active).length > 0 && (
+                  <select value="" disabled={busy} style={{ fontSize: 12 }}
+                          onChange={async e => {
+                            const v = e.target.value
+                            if (!v) return
+                            const mid = v === '__unassign__' ? null : v
+                            setBusy(true)
+                            try {
+                              const r = await api.post<{ assigned: any }>(`/conversations/${convId}/assign`, { member_id: mid })
+                              showToast(r.assigned ? `📋 Назначено: ${r.assigned.name}` : 'Назначение снято')
+                            } catch (er: any) { showToast(`Ошибка: ${er.detail ?? er.message}`, true) }
+                            finally { setBusy(false) }
+                          }}>
+                    <option value="">📋 Назначить на…</option>
+                    {team.filter((m: any) => m.active).map((m: any) => (
+                      <option key={m.id} value={m.id}>{m.name}{m.department ? ` · ${m.department}` : ''}</option>
+                    ))}
+                    <option value="__unassign__">— снять назначение —</option>
+                  </select>
+                )}
+                {detail.hubspot.contact_url && (
+                  <a className="btn sm ghost" href={detail.hubspot.contact_url} target="_blank" rel="noreferrer">HubSpot ↗</a>
+                )}
+              </div>
+              {advice && (
+                <div className="d-actions" style={{ background: 'var(--accent-soft)', borderRadius: 8, padding: '8px 10px', alignItems: 'flex-start' }}>
+                  <span style={{ fontSize: 12.5, flex: 1 }}><b>🧭 Совет:</b> {advice}</span>
+                  <button className="btn sm ghost" onClick={() => setAdvice('')}>✕</button>
+                </div>
+              )}
+              {nudgeOpen && (
+                <div className="d-actions" style={{ background: 'var(--panel)', borderRadius: 8, padding: '8px 10px' }}>
+                  <span className="muted" style={{ fontSize: 12 }}>Пинок зависшему лиду (уйдёт от имени бота):</span>
+                  <button className="btn sm" onClick={nudgeDraft} disabled={busy}>🪄 Черновик от LLM</button>
+                  <button className="btn sm primary" onClick={nudgeNow} disabled={busy}>Отправить сейчас</button>
+                </div>
+              )}
+              {taskOpen && (
+                <div style={{ background: 'var(--panel)', borderRadius: 8, padding: '10px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  <input placeholder="Что сделать (напр. «напомнить про КП»)"
+                         value={taskText} onChange={e => setTaskText(e.target.value)} />
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <input type="datetime-local" value={taskDue} onChange={e => setTaskDue(e.target.value)} />
+                    <select value={taskExec} onChange={e => setTaskExec(e.target.value as any)} style={{ fontSize: 12 }}>
+                      <option value="human">👤 Сделаю сам</option>
+                      <option value="bot">🤖 Бот напишет лиду</option>
+                    </select>
+                    <button className="btn sm primary" onClick={createTask} disabled={busy || !taskText.trim() || !taskDue}>
+                      Поставить
+                    </button>
+                  </div>
+                  {taskExec === 'bot' && detail.channel !== 'telegram' && (
+                    <span className="faint" style={{ fontSize: 11.5 }}>⚠️ Бот-автоотправка пока только для Telegram-лидов</span>
+                  )}
+                </div>
+              )}
+              {detail.fields && detail.fields.length > 0 && (
+                <div style={{ background: 'var(--panel)', borderRadius: 8, padding: '8px 10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: 12.5 }}
+                       onClick={() => setFieldsOpen(v => !v)}>
+                    <b>📇 Поля</b>
+                    <span className="faint" style={{ marginLeft: 8 }}>
+                      {detail.fields.filter(f => f.value != null && f.value !== '').length}/{detail.fields.length} заполнено
+                    </span>
+                    <div style={{ flex: 1 }} />
+                    <span>{fieldsOpen ? '▾' : '▸'}</span>
+                  </div>
+                  {fieldsOpen && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
+                      {detail.fields.map(f => {
+                        const cur = fieldEdits[f.key] !== undefined ? fieldEdits[f.key] : (f.value ?? '')
+                        return (
+                          <div key={f.key} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span className="muted" style={{ width: 130, fontSize: 12 }}>{f.label}</span>
+                            {f.field_type === 'select' ? (
+                              <select value={cur} style={{ flex: 1, fontSize: 12, padding: '4px 8px' }}
+                                      onChange={e => setFieldEdits({ ...fieldEdits, [f.key]: e.target.value })}>
+                                <option value="">—</option>
+                                {(f.options ?? []).map(o => <option key={o} value={o}>{o}</option>)}
+                              </select>
+                            ) : (
+                              <input value={cur} type={f.field_type === 'number' ? 'number' : 'text'}
+                                     style={{ flex: 1, fontSize: 12, padding: '4px 8px' }}
+                                     onChange={e => setFieldEdits({ ...fieldEdits, [f.key]: e.target.value })} />
+                            )}
+                          </div>
+                        )
+                      })}
+                      {Object.keys(fieldEdits).length > 0 && (
+                        <button className="btn sm primary" style={{ alignSelf: 'flex-end' }}
+                                onClick={saveFields} disabled={busy}>💾 Сохранить поля</button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              {detail.scheduled_actions.length > 0 && (
+                <div className="d-chips">
+                  {detail.scheduled_actions.map(a => (
+                    <span key={a.id} className="chip info" title={a.payload?.text ?? ''}>
+                      ⏳ {a.executor === 'bot' ? 'бот' : 'я'}: {fmtTime(a.due_at)}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className="d-msgs" ref={msgsRef}>
+          {msgs.length === 0 && <div className="empty">Сообщений пока нет</div>}
+          {msgs.map(m => (
+            <div key={m.id} className={`msg ${m.role}`}>
+              {m.content}
+              <div className="m-meta">
+                {m.role === 'operator' && '👤 оператор · '}
+                {m.role === 'assistant' && m.extra_meta?.kind === 'manual_nudge' && '⚡ ручной пинок · '}
+                {fmtTime(m.created_at)}
+                {m.role === 'operator' && (!me || me.role === 'owner') && (
+                  learned.has(m.id)
+                    ? <span style={{ marginLeft: 8 }}>🎓 выучено</span>
+                    : (
+                      <a style={{ marginLeft: 8, color: 'var(--accent)', cursor: 'pointer' }}
+                         title="Бот запомнит этот ответ и будет отвечать похоже в подобных ситуациях"
+                         onClick={() => learnFrom(m.id)}>
+                        🎓 научить бота
+                      </a>
+                    )
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {detail?.pending_wa_draft && !detail.wa_autonomous && (
+          <div style={{ borderTop: '1px solid var(--accent-border)', background: 'var(--accent-soft)', padding: '10px 14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <b style={{ fontSize: 13 }}>🤖 Бот предлагает ответить</b>
+              <span className="faint" style={{ fontSize: 11 }}>клиенту НЕ отправлено — нужно ваше «ОК»</span>
+            </div>
+            <textarea value={draftText} onChange={e => setDraftText(e.target.value)}
+                      style={{ width: '100%', minHeight: 70, fontSize: 13 }} />
+            <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <button className="btn sm primary" onClick={sendWaDraft} disabled={busy || !draftText.trim()}>✅ Отправить</button>
+              <button className="btn sm ghost" onClick={rejectWaDraft} disabled={busy}>🚫 Отклонить</button>
+              <div style={{ flex: 1 }} />
+              <button className="btn sm" onClick={() => setWaAutonomous(true)} disabled={busy}
+                      title="Бот будет отвечать в этом диалоге сам, без одобрения каждого ответа">
+                🤖 Разрешить боту вести диалог
+              </button>
+            </div>
+          </div>
+        )}
+        {detail?.wa_autonomous && (
+          <div style={{ borderTop: '1px solid var(--border)', background: 'var(--panel-2)', padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5 }}>
+            <span>🤖 Бот ведёт этот диалог сам</span>
+            <div style={{ flex: 1 }} />
+            <button className="btn sm ghost" onClick={() => setWaAutonomous(false)} disabled={busy}>Вернуть на одобрение</button>
+          </div>
+        )}
+
+        <div className="d-reply">
+          <textarea
+            placeholder="Ответить лиду как оператор… (Ctrl+Enter — отправить)"
+            value={text}
+            onChange={e => setText(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send() }}
+          />
+          <div className="r-row">
+            <span className="faint" style={{ fontSize: 11.5, flex: 1 }}>
+              {detail?.channel === 'website'
+                ? 'Website-канал: лид увидит ответ при следующем заходе в виджет'
+                : 'Уйдёт лиду в его канал + отметится в Telegram-форуме'}
+            </span>
+            <button className="btn primary" onClick={send} disabled={busy || !text.trim()}>
+              {busy ? <span className="spin" /> : 'Отправить'}
+            </button>
+          </div>
+        </div>
+
+        {toast && <div className={`toast ${toast.err ? 'err' : ''}`}>{toast.text}</div>}
+      </div>
+    </>
+  )
+}

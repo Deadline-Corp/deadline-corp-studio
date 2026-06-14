@@ -142,7 +142,17 @@
     }
     .dl-cta:hover { background: #1f96d4; }
     @media (max-width: 480px) {
-      #dl-bot { width: calc(100% - 20px); right: 10px; left: 10px; bottom: 10px; }
+      /* Мобайл: панель = bottom-sheet на 85% высоты экрана, flex-колонка —
+         поле ввода и кнопка отправки ВСЕГДА видны внизу (раньше уезжали за экран).
+         Проверено вживую (Playwright, 390x844): input+send inViewport=true. */
+      #dl-bot {
+        left: 0; right: 0; bottom: 0; width: 100%;
+        max-height: none; height: 85vh; height: 85dvh;
+        border-radius: 16px 16px 0 0;
+        display: flex; flex-direction: column;
+      }
+      #dl-bot-msg { flex: 1 1 auto; min-height: 0; max-height: none; }
+      #dl-bot-wrap { flex: 0 0 auto; }
     }
   `;
 
@@ -229,19 +239,29 @@
     $btn.disabled = true;
     showTyping();
 
+    // Первый ответ может идти дольше (бот «просыпается» — cold start Railway).
+    // Поэтому: (1) ждём до 60с, не обрываем рано (иначе ложный «сбой связи»);
+    // (2) через 9с показываем «секунду…», чтобы человек не думал что сломалось.
+    const _ctrl = new AbortController();
+    const _slow = setTimeout(() => {
+      addMsg("Секунду, обрабатываю запрос… 🙂", "sys", { persist: false });
+    }, 9000);
+    const _kill = setTimeout(() => _ctrl.abort(), 60000);
     try {
       const r = await fetch(API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ session_id: SESSION_ID, message: text, source: DL_SRC }),
+        signal: _ctrl.signal,
       });
+      clearTimeout(_slow); clearTimeout(_kill);
       hideTyping();
 
       if (!r.ok) {
         if (r.status === 503) {
-          addMsg("Сервис временно недоступен. Напишите в Telegram @deadline_corp", "b", { persist: false });
+          addMsg("Сервис временно недоступен. Напишите в Telegram @Deadline_Corp_bot", "b", { persist: false });
         } else {
-          addMsg("Ошибка связи. Напишите в Telegram @deadline_corp", "b", { persist: false });
+          addMsg("Ошибка связи. Напишите в Telegram @Deadline_Corp_bot", "b", { persist: false });
         }
         return;
       }
@@ -250,10 +270,16 @@
       addMsg(data.answer, "b");
       if (data.handoff) {
         closeWithHandoff(text);
+      } else if (/telegram|телеграм|@deadline_corp/i.test(data.answer || "")) {
+        // Бот в ПЕРВЫЙ раз зовёт в Telegram → сразу даём кнопку на бота
+        // (не дожидаясь финального handoff). Чат не закрываем — лид может писать.
+        showTgCta(false, data.answer);
       }
     } catch (e) {
+      clearTimeout(_slow); clearTimeout(_kill);
       hideTyping();
-      addMsg("Сбой связи. Напишите в Telegram @deadline_corp", "b", { persist: false });
+      addMsg("Долго не отвечает — напишите нам в Telegram, ответим там 👇", "b", { persist: false });
+      showTgCta(false, "telegram");
       console.error("[dl-bot]", e);
     } finally {
       // не реактивируем ввод, если диалог закрыт уводом в Telegram
@@ -264,11 +290,40 @@
     }
   }
 
+  // Кнопка-ссылка на НАШЕГО БОТА в Telegram (не канал, не номер) — лид жмёт и
+  // продолжает с тем же ботом в мессенджере. Показывается ОДИН раз (idempotent).
+  // DEEP-LINK: ?start=<session_id> → когда лид жмёт Start, Telegram шлёт боту
+  // «/start <session_id>», бот склеивает этот ТГ-чат с диалогом на сайте в ОДНУ
+  // карточку (см. bridge_telegram_to_website_session). Токен Telegram-старта —
+  // только [A-Za-z0-9_-], до 64 симв.; наш session_id («sess_...») подходит.
+  const TG_BOT_URL = "https://t.me/Deadline_Corp_bot";
+  const TG_START = String(SESSION_ID || "").replace(/[^A-Za-z0-9_-]/g, "").slice(0, 64);
+  const TG_DEEP_LINK = TG_START ? (TG_BOT_URL + "?start=" + TG_START) : TG_BOT_URL;
+  let _ctaShown = false;
+  function showTgCta(closing, text) {
+    const isEng = /[a-zA-Z]/.test(text || "") && !/[а-яА-Я]/.test(text || "");
+    if (!_ctaShown) {
+      const cta = document.createElement("a");
+      cta.className = "dl-cta";
+      cta.href = TG_DEEP_LINK;
+      cta.target = "_blank";
+      cta.rel = "noopener";
+      cta.textContent = isEng ? "Open Telegram →" : "Написать в Telegram →";
+      $msg.appendChild(cta);
+      $msg.scrollTop = $msg.scrollHeight;
+      _ctaShown = true;
+    }
+    if (closing) {
+      // Финальный хендофф — разговор продолжается в мессенджере, ввод на сайте гасим.
+      root.dataset.closed = "1";
+      $inp.disabled = true;
+      $btn.disabled = true;
+      $inp.placeholder = isEng ? "Continue on Telegram →" : "Продолжаем в Telegram →";
+    }
+  }
+
   // Phase C1.2: handoff → бот «передал команде» и уводит лида в Telegram.
-  // Закрывающая строка + кнопка, дальнейший ввод на сайте отключаем
-  // (разговор продолжается в мессенджере, где лид не потеряется).
   function closeWithHandoff(lastText) {
-    root.dataset.closed = "1";
     const isEng = /[a-zA-Z]/.test(lastText) && !/[а-яА-Я]/.test(lastText);
     addMsg(
       isEng
@@ -276,18 +331,55 @@
         : "Взяли в работу. Продолжим в Telegram — так удобнее и не потеряемся. 📩",
       "sys", { persist: false }
     );
-    const cta = document.createElement("a");
-    cta.className = "dl-cta";
-    cta.href = "https://t.me/deadline_corp";
-    cta.target = "_blank";
-    cta.rel = "noopener";
-    cta.textContent = isEng ? "Open Telegram →" : "Написать в Telegram →";
-    $msg.appendChild(cta);
-    $msg.scrollTop = $msg.scrollHeight;
-    $inp.disabled = true;
-    $btn.disabled = true;
-    $inp.placeholder = isEng ? "Continue on Telegram →" : "Продолжаем в Telegram →";
+    showTgCta(true, lastText);
   }
+
+  // ============================================================
+  // WEBSITE-PUSH (2026-06-12): поллинг ответов ОПЕРАТОРА и ручных «пинков»
+  // из админ-панели. Обычные ответы бота сюда не попадают (двойной показ
+  // исключён на сервере) — /chat/updates отдаёт только role=operator и
+  // assistant с kind=manual_nudge. Курсор — created_at последнего показанного.
+  // ============================================================
+  const SYNC_STORAGE_KEY = "dl-bot-sync-ts";
+  const UPDATES_URL = API_URL.replace(/\/chat\/?$/, "") + "/chat/updates";
+  let _syncTs = (function () {
+    try {
+      var v = window.localStorage.getItem(SYNC_STORAGE_KEY);
+      if (v) return v;
+    } catch (_) {}
+    // Первый запуск: окно 7 дней назад (не старше), чтобы показать ответ
+    // оператора, пришедший пока вкладка была закрыта.
+    return new Date(Date.now() - 7 * 864e5).toISOString();
+  })();
+  let _pollBusy = false;
+  async function pollUpdates() {
+    if (_pollBusy || document.hidden) return;
+    _pollBusy = true;
+    try {
+      const r = await fetch(
+        UPDATES_URL + "?session_id=" + encodeURIComponent(SESSION_ID) +
+        "&after=" + encodeURIComponent(_syncTs)
+      );
+      if (r.ok) {
+        const data = await r.json();
+        const items = data.items || [];
+        for (const m of items) {
+          addMsg(m.content, "b");
+          if (m.created_at) _syncTs = m.created_at;
+        }
+        if (items.length) {
+          try { window.localStorage.setItem(SYNC_STORAGE_KEY, _syncTs); } catch (_) {}
+          root.classList.add("open"); // менеджер написал — раскрываем чат
+        }
+      }
+    } catch (_) { /* сеть моргнула — повторим следующим тиком */ }
+    finally { _pollBusy = false; }
+  }
+  setInterval(pollUpdates, 8000);
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden) pollUpdates();
+  });
+  pollUpdates();
 
   // ============================================================
   // EVENTS

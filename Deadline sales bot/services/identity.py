@@ -116,10 +116,23 @@ def resolve_or_create_customer(
 
     if existing_identity is not None:
         customer = existing_identity.customer
-        # Backfill email if the lead just provided one
-        if email and not customer.email:
-            customer.email = email
-            db.flush()
+        # Лид назвал email на УЖЕ известной идентичности. Если этот email
+        # принадлежит ДРУГОМУ customer (писал с другого канала) — это сигнал
+        # «один человек», нужно СЛИТЬ записи, а не просто записать email.
+        # update_email() делает merge-aware апдейт (re-point identities + delete
+        # orphan). Оборачиваем в try/except: сбой склейки НЕ должен ронять
+        # обработку сообщения — в худшем случае останется как было.
+        if email and customer.email != email:
+            try:
+                customer = update_email(db, customer.id, email)
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "[identity] email-merge failed for customer %s (email=%s): %s — "
+                    "fallback: оставляю как есть", customer.id, email, exc,
+                )
+                if not customer.email:
+                    customer.email = email
+                    db.flush()
         # Backfill username on the identity if it was empty
         if username and not existing_identity.username:
             existing_identity.username = username
@@ -251,6 +264,32 @@ def link_identity(
     return identity
 
 
+def _absorb_crm_contacts(survivor: Customer, dying: Customer) -> None:
+    """При слиянии двух кастомеров согласовать crm_contact_id, чтобы в CRM не
+    осталось ДВУХ карточек на одного человека (баг «дубль контакта при merge»).
+
+      • у survivor карточки ещё нет, у dying есть → просто усыновляем id;
+      • у обоих есть и они РАЗНЫЕ → помечаем survivor.profile_data['crm_merge_absorb']
+        = dying_id. CRM-слой (dispatch_on_message_turn) на следующем ходе сольёт
+        их через HubSpot Merge API (primary=survivor, secondary=dying).
+
+    Чисто DB-операция — без импорта CRM-слоя, чтобы identity.py оставался
+    свободным от сетевых зависимостей (склейка не должна ронять обработку)."""
+    dying_cid = getattr(dying, "crm_contact_id", None)
+    if not dying_cid:
+        return
+    surv_cid = getattr(survivor, "crm_contact_id", None)
+    if not surv_cid:
+        survivor.crm_contact_id = dying_cid
+        return
+    if str(surv_cid) != str(dying_cid):
+        _p = dict(getattr(survivor, "profile_data", None) or {})
+        _p["crm_merge_absorb"] = str(dying_cid)
+        survivor.profile_data = _p
+        log.info("[identity] CRM merge intent: contact %s ← %s (survivor customer %s)",
+                 surv_cid, dying_cid, survivor.id)
+
+
 def update_email(db: Session, customer_id: UUID, email: str) -> Customer:
     """Set email on a customer. If email already belongs to another customer,
     MERGE both customers: re-point the other's identities to this one, then
@@ -326,6 +365,11 @@ def update_email(db: Session, customer_id: UUID, email: str) -> Customer:
     target.email = email
     db.flush()
 
+    # (3.5) CRM dedup: согласовать crm_contact_id, чтобы в HubSpot не осталось
+    #       двух карточек на человека. ДО удаления other — иначе потеряем его id.
+    _absorb_crm_contacts(target, other)
+    db.flush()
+
     # (4) delete the now-orphaned customer (its identities list is empty
     #     after the UPDATE in step 1, so cascade has nothing to delete)
     db.delete(other)
@@ -335,3 +379,81 @@ def update_email(db: Session, customer_id: UUID, email: str) -> Customer:
     db.expire(target, ["identities"])
 
     return target
+
+
+def bridge_telegram_to_website_session(
+    db: Session,
+    tg_external_id: str,
+    tg_username: Optional[str],
+    session_token: str,
+) -> Optional[Customer]:
+    """Deep-link мост: лид нажал на сайте кнопку «Написать в Telegram» (ссылка
+    t.me/bot?start=<session_id>) → Telegram прислал боту «/start <session_id>».
+    Склеиваем телеграм-чат с тем же кастомером, что был на сайте → ОДНА карточка,
+    телеграм-ник записывается в контакт. БЕЗ email.
+
+    Возвращает website-кастомера (выживший) или None, если сессия не найдена
+    (токен протух / невалиден — тогда обычное знакомство).
+    """
+    web_identity = db.execute(
+        select(ChannelIdentity).where(
+            ChannelIdentity.channel == "website",
+            ChannelIdentity.external_id == session_token,
+        )
+    ).scalar_one_or_none()
+    if web_identity is None:
+        log.info("[identity] deep-link: website session %s не найдена (токен протух?)", session_token)
+        return None
+    W = web_identity.customer
+
+    tg_identity = db.execute(
+        select(ChannelIdentity).where(
+            ChannelIdentity.channel == "telegram",
+            ChannelIdentity.external_id == tg_external_id,
+        )
+    ).scalar_one_or_none()
+
+    if tg_identity is None:
+        # Самый частый случай: первый заход из телеги → просто вешаем
+        # телеграм-идентичность на website-кастомера.
+        db.add(ChannelIdentity(
+            customer_id=W.id, channel="telegram",
+            external_id=str(tg_external_id), username=tg_username,
+        ))
+        db.flush()
+        log.info("[identity] deep-link bridge: TG chat %s → website customer %s (one card)",
+                 tg_external_id, W.id)
+    elif tg_identity.customer_id != W.id:
+        # У телеги уже был отдельный кастомер T → сливаем T в W (история телеги
+        # переезжает в карточку с сайта). Email освобождаем перед переносом
+        # (UNIQUE(email)). Идентичности и диалоги перенаправляем, T удаляем.
+        T = tg_identity.customer
+        _tmail = getattr(T, "email", None)
+        if _tmail and not W.email:
+            T.email = None
+            db.flush()
+            W.email = _tmail
+        if not getattr(W, "name", None) and getattr(T, "name", None):
+            W.name = T.name
+        if not getattr(W, "phone", None) and getattr(T, "phone", None):
+            W.phone = T.phone
+        db.flush()
+        from db.models import Conversation
+        db.execute(update(ChannelIdentity).where(ChannelIdentity.customer_id == T.id).values(customer_id=W.id))
+        db.execute(update(Conversation).where(Conversation.customer_id == T.id).values(customer_id=W.id))
+        # CRM dedup: у телеграм-кастомера T могла быть СВОЯ карточка в HubSpot.
+        # Согласуем crm_contact_id ДО удаления T, иначе карточка осиротеет.
+        _absorb_crm_contacts(W, T)
+        db.expire(T, ["identities"])
+        db.flush()
+        db.delete(T)
+        db.flush()
+        db.expire(W, ["identities"])
+        log.info("[identity] deep-link bridge: merged TG customer %s into website customer %s", T.id, W.id)
+    else:
+        # Уже на том же кастомере — просто добьём ник.
+        if tg_username and not tg_identity.username:
+            tg_identity.username = tg_username
+            db.flush()
+
+    return W

@@ -253,6 +253,7 @@ def dispatch_stage_change(
     title: Optional[str] = None,
     description: Optional[str] = None,
     project_type: Optional[str] = None,
+    next_meeting_at=None,
 ) -> None:
     """Push a funnel-stage transition to the CRM deal.
 
@@ -264,6 +265,9 @@ def dispatch_stage_change(
     Phase C1: optional title/description/project_type ride along so the deal
     card gets a readable name + structured brief in the SAME PATCH as the
     stage move (used on handoff→qualified).
+
+    next_meeting_at (datetime): при переходе в «📞 Созвон назначен» — дата/время
+    созвона, пишется в карточку сделки (HubSpot next_meeting_at).
     """
     deal_id = crm_deal_id if crm_deal_id else "pending"
     enqueue(make_update_stage_event(
@@ -275,6 +279,7 @@ def dispatch_stage_change(
         title=title,
         description=description,
         project_type=project_type,
+        next_meeting_at=next_meeting_at,
     ))
 
 
@@ -303,11 +308,16 @@ def dispatch_operator_task(
     due_in_minutes: int = 15,
     description: Optional[str] = None,
     conversation_id: Optional[str] = None,
+    on_task_id=None,
 ) -> None:
     """Create an operator task in the CRM. Used after handoff, dunning, etc.
 
     Both contact_id and deal_id may be 'pending' — the worker resolves
     them lazily from DB. conversation_id is needed for deal_id resolution.
+
+    on_task_id: опц. колбэк(task_id) — воркер зовёт его с реальным CRM task_id
+    после создания. Используется, чтобы привязать задачу к followup-строке
+    (тогда крон закроет её в CRM при исполнении).
     """
     contact_id = crm_contact_id if crm_contact_id else "pending"
     deal_id_for_event: Optional[str] = (
@@ -323,12 +333,55 @@ def dispatch_operator_task(
         due_at=due_at,
         category=category,  # type: ignore[arg-type]
         description=description,
+        on_task_id=on_task_id,
     ))
 
 
 # =============================================================================
 # Helpers
 # =============================================================================
+
+_RU_DAYS = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
+_RU_MON = ["", "января", "февраля", "марта", "апреля", "мая", "июня",
+           "июля", "августа", "сентября", "октября", "ноября", "декабря"]
+
+
+def _fmt_call_time(dt: datetime) -> str:
+    """Человекочитаемое время созвона в UTC+7 (Бангкок) для CRM-задачи."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    loc = dt + timedelta(hours=7)
+    return f"{_RU_DAYS[loc.weekday()]}, {loc.day} {_RU_MON[loc.month]}, {loc.hour:02d}:{loc.minute:02d} (Бангкок, UTC+7)"
+
+
+def _fmt_call_short(dt: datetime) -> str:
+    """Короткий формат для заголовка задачи: «чт 04.06 11:00»."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    loc = dt + timedelta(hours=7)
+    short = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"][loc.weekday()]
+    return f"{short} {loc.day:02d}.{loc.month:02d} {loc.hour:02d}:{loc.minute:02d}"
+
+
+def _suggest_call_dt(now: datetime) -> datetime:
+    """Предложить разумное время связи, если лид НЕ назвал точное. Возвращает UTC.
+
+    Логика (локально UTC+7): до 10:00 → сегодня 11:00; до 15:00 → сегодня 16:00;
+    позже → завтра 11:00. Выходные пропускаем на ближайший будний 11:00.
+    11:00 и 16:00 — «удобные всем» окна (идея пользователя)."""
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    loc = now + timedelta(hours=7)
+    if loc.hour < 10:
+        cand = loc.replace(hour=11, minute=0, second=0, microsecond=0)
+    elif loc.hour < 15:
+        cand = loc.replace(hour=16, minute=0, second=0, microsecond=0)
+    else:
+        cand = (loc + timedelta(days=1)).replace(hour=11, minute=0, second=0, microsecond=0)
+    while cand.weekday() >= 5:  # сб/вс → ближайший будний 11:00
+        cand = (cand + timedelta(days=1)).replace(hour=11, minute=0, second=0, microsecond=0)
+    return (cand - timedelta(hours=7)).replace(tzinfo=timezone.utc)
+
 
 def _build_deal_title(
     customer_name: Optional[str],
@@ -384,6 +437,10 @@ def _build_deal_title(
 # (lead_messages_count >= 3) OR handoff. Casual visitors no longer pollute pipeline.
 DEAL_CREATION_SCORE_THRESHOLD = 80
 DEAL_CREATION_LEAD_MESSAGES_THRESHOLD = 3
+# Smart-card: порог сообщений лида для ленивого создания КОНТАКТА (см.
+# crm_lazy_contact во flag'е). Дефолт 2 — аноним, написавший раз и пропавший,
+# не плодит пустой HubSpot-контакт.
+CONTACT_CREATION_LEAD_MESSAGES_THRESHOLD = 2
 
 
 def dispatch_on_message_turn(
@@ -397,6 +454,7 @@ def dispatch_on_message_turn(
     lead_messages_count: int = 0,
     project_type: Optional[str] = None,
     handoff_data: Optional[dict] = None,
+    call_booked_at=None,
 ) -> None:
     """Process one message turn — enqueue CRM events implied.
 
@@ -444,9 +502,95 @@ def dispatch_on_message_turn(
         #    create eagerly on every new lead (so we have someone to attach
         #    log_messages to even before deal-signal threshold is crossed).
         if not contact_id:
+            # Ленивый контакт (smart-card): не плодить пустые HubSpot-контакты на
+            # анонимов, написавших раз и пропавших. За флагом crm_lazy_contact
+            # (дефолт False → прежнее жадное поведение, прод не меняется).
+            # Postgres хранит всё независимо — гейтим только зеркало в HubSpot.
+            try:
+                import main as _m
+                _lazy = bool(getattr(_m.settings, "crm_lazy_contact", False))
+                _min_msgs = int(getattr(_m.settings, "crm_contact_min_messages",
+                                        CONTACT_CREATION_LEAD_MESSAGES_THRESHOLD))
+            except Exception:  # noqa: BLE001
+                _lazy, _min_msgs = False, CONTACT_CREATION_LEAD_MESSAGES_THRESHOLD
+            _has_detail = bool(
+                (getattr(customer, "email", None) or "").strip()
+                or (getattr(customer, "phone", None) or "").strip()
+                or (getattr(customer, "name", None) or "").strip()
+            )
+            _promoted = (
+                (not _lazy)
+                or handoff_just_fired
+                or score >= DEAL_CREATION_SCORE_THRESHOLD
+                or lead_messages_count >= _min_msgs
+                or _has_detail
+                or call_booked_at is not None
+            )
+            if not _promoted:
+                logger.debug(
+                    "[crm_dispatch] lazy-contact: defer anon visitor conv=%s (msgs=%s)",
+                    str(conversation.id)[:8], lead_messages_count,
+                )
+                return  # пока нечего зеркалить — остаётся только в Postgres
             _enqueue_upsert_contact(
                 customer=customer,
                 channel=channel,
+            )
+        else:
+            # Контакт уже есть, НО имя/email/телефон лид часто даёт ПОЗЖЕ первого
+            # хода (когда контакт уже создан «пустым»). Раньше повторного апдейта не
+            # было → в HubSpot оставались name=None/email=None. upsert_contact
+            # идемпотентен (найдёт по email/handle и обновит). Дедуп флагом
+            # synced_contact, чтобы не дёргать HubSpot каждый ход без изменений.
+            _nm = (getattr(customer, "name", None) or "").strip()
+            _em = (getattr(customer, "email", None) or "").strip()
+            _ph = (getattr(customer, "phone", None) or "").strip()
+            # tg-ник часто появляется ПОЗЖЕ — особенно через deep-link мост
+            # (сайт→телега): контакт создан с сайта, телеграм-личность повисла
+            # потом. Раньше ник в триггер НЕ входил → @username оставался только
+            # в Postgres, в HubSpot telegram_handle был пуст. channel в БД =
+            # Enum (хранится как 'TELEGRAM'), поэтому сверяем по .endswith.
+            _tg = ""
+            for _idn in (getattr(customer, "identities", None) or []):
+                if str(getattr(_idn, "channel", "")).lower().endswith("telegram") and _idn.username:
+                    _tg = _idn.username
+                    break
+            if _nm or _em or _ph or _tg:
+                _sig = f"{_nm}|{_em}|{_ph}|{_tg}"
+                _prof = getattr(customer, "profile_data", None) or {}
+                if _prof.get("synced_contact") != _sig:
+                    _enqueue_upsert_contact(customer=customer, channel=channel, known_id=contact_id)
+                    try:
+                        _np = dict(_prof); _np["synced_contact"] = _sig
+                        customer.profile_data = _np
+                    except Exception:  # noqa: BLE001
+                        pass
+                    logger.info(
+                        "[crm_dispatch] contact re-upsert (name/email/phone/tg updated) conv=%s",
+                        str(conversation.id)[:8],
+                    )
+
+        # 1b. CRM-merge карточек: два Postgres-кастомера склеились (общий email /
+        #     deep-link), а в HubSpot остались ДВЕ карточки на человека. Флаг
+        #     crm_merge_absorb проставила identity._absorb_crm_contacts при
+        #     слиянии. Сливаем secondary в выжившую (primary = текущий contact_id),
+        #     снимаем флаг. Если контакт ещё не синкнут (contact_id пуст) — флаг
+        #     останется, сольём на следующем ходе.
+        _prof_m = getattr(customer, "profile_data", None) or {}
+        _absorb = _prof_m.get("crm_merge_absorb")
+        if _absorb and contact_id and str(_absorb) != str(contact_id):
+            from services.crm_queue import enqueue as _enq, make_merge_contacts_event
+            _enq(make_merge_contacts_event(
+                customer_id=customer_id, primary_id=contact_id, secondary_id=str(_absorb),
+            ))
+            try:
+                _npm = dict(_prof_m); _npm.pop("crm_merge_absorb", None)
+                customer.profile_data = _npm
+            except Exception:  # noqa: BLE001
+                pass
+            logger.info(
+                "[crm_dispatch] enqueued contact merge primary=%s ← secondary=%s conv=%s",
+                contact_id, _absorb, str(conversation.id)[:8],
             )
 
         # 2. Lazy deal creation. Only fire when there's a real sales signal
@@ -455,6 +599,7 @@ def dispatch_on_message_turn(
             handoff_just_fired
             or score >= DEAL_CREATION_SCORE_THRESHOLD
             or lead_messages_count >= DEAL_CREATION_LEAD_MESSAGES_THRESHOLD
+            or call_booked_at is not None  # бронь созвона = точно реальный лид
         )
         if should_create_deal:
             _enqueue_create_deal(
@@ -468,6 +613,55 @@ def dispatch_on_message_turn(
                 "[crm_dispatch] deal create triggered for conv=%s "
                 "(handoff=%s score=%d msgs=%d)",
                 str(conversation.id)[:8], handoff_just_fired, score, lead_messages_count,
+            )
+
+        # 2b. Созвон назначен → двигаем сделку в «📞 Созвон назначен» + пишем время
+        #     в карточку. Enqueue ПОСЛЕ create_deal (FIFO) — worker резолвит deal_id
+        #     из writeback create_deal. Бронь форсит создание сделки (см. выше),
+        #     поэтому карточка точно появится, даже если порогов ещё не было.
+        if call_booked_at is not None:
+            dispatch_stage_change(
+                customer_id=customer_id,
+                crm_deal_id=deal_id,
+                new_stage="on_call",
+                conversation_id=str(conversation.id),
+                next_meeting_at=call_booked_at,
+            )
+            # Видимая CRM-задача со ВРЕМЕНЕМ и КАНАЛОМ созвона. next_meeting_at
+            # пишется в проперти сделки, но его часто нет на дефолтном лэйауте
+            # карточки → оператор «не видит время/канал». Задача — нагляднее всего:
+            # видна в таймлайне карточки + это и есть «напоминание по созвону» в CRM.
+            _medium = (getattr(customer, "profile_data", None) or {}).get("call_medium")
+            _when = _fmt_call_time(call_booked_at)
+            _nm = (customer.name or customer.email
+                   or (customer.identity_keys or {}).get("tg_handle") or "лид")
+            _ch_txt = f", канал: {_medium}" if _medium else ""
+            _ch_desc = _medium or "уточнить у лида"
+            _now = datetime.now(timezone.utc)
+            # ДВЕ задачи-подтверждения оператору в CRM (запрос пользователя): за
+            # ДЕНЬ — подтвердить созвон, за ЧАС — финальное напоминание. Обе со
+            # ВРЕМЕНЕМ и КАНАЛОМ. Если до созвона <суток/<часа — due клампим в now.
+            _due_day = max(1, int((call_booked_at - timedelta(hours=24) - _now).total_seconds() / 60))
+            _due_hour = max(1, int((call_booked_at - timedelta(hours=1) - _now).total_seconds() / 60))
+            _t_day_subj, _t_day_body = _call_task_subject("day", _nm, _when, _medium)
+            _t_hour_subj, _t_hour_body = _call_task_subject("hour", _nm, _when, _medium)
+            # Две задачи-подтверждения. Канал, названный ПОЗЖЕ отдельным сообщением,
+            # дозапишет dispatch_sync_call_medium (находит задачи по сделке в HubSpot,
+            # не через гоночный profile_data). FIFO-воркер: задачи уже созданы к
+            # моменту sync. Если канал назван ВМЕСТЕ с бронью — он уже в _medium тут.
+            dispatch_operator_task(
+                customer_id=customer_id, crm_contact_id=contact_id, crm_deal_id=deal_id,
+                conversation_id=str(conversation.id), title=_t_day_subj,
+                category="callback", due_in_minutes=_due_day, description=_t_day_body,
+            )
+            dispatch_operator_task(
+                customer_id=customer_id, crm_contact_id=contact_id, crm_deal_id=deal_id,
+                conversation_id=str(conversation.id), title=_t_hour_subj,
+                category="callback", due_in_minutes=_due_hour, description=_t_hour_body,
+            )
+            logger.info(
+                "[crm_dispatch] call booked → on_call + 2 confirm tasks (-1d/-1h) conv=%s at=%s medium=%s",
+                str(conversation.id)[:8], call_booked_at, _medium,
             )
 
         # 3. Log lead message
@@ -515,11 +709,24 @@ def dispatch_on_message_turn(
             # на сайте — обычное «связаться». Задача вешается на менеджера
             # (HUBSPOT_OWNER_ID, если задан в env). C1.2-смысл сохранён: на сайте
             # это CRM-задача (to-do в карточке), а не реал-тайм пинг оператору.
-            _name = customer.name or customer.email or "лид"
+            _name = (customer.name or customer.email
+                     or (customer.identity_keys or {}).get("tg_handle") or "новый лид")
+            _task_desc = (_desc or last_lead_message or "")[:1000]
             if (channel or "").lower() != "website":
+                # Мессенджер — лид УЖЕ перешёл и ждёт прямо сейчас → срочно (15 мин).
                 _task_title = f"Подхватить в Telegram — {_name} ждёт"
+                _task_due_min = 15
             else:
-                _task_title = f"Связаться с лидом — {_name}"
+                # Сайт — связи нет в реал-тайме. Лид точное время НЕ назвал →
+                # ставим задачу на разумное окно (11:00/16:00, удобно всем), чтобы у
+                # менеджера была задача С ДАТОЙ И ВРЕМЕНЕМ, а не просто «связаться».
+                _sug = _suggest_call_dt(datetime.now(timezone.utc))
+                _task_title = f"Связаться с лидом — {_name} · предв. {_fmt_call_short(_sug)}"
+                _task_due_min = max(1, int((_sug - datetime.now(timezone.utc)).total_seconds() / 60))
+                _task_desc = (
+                    f"Предлагаемое время связи: {_fmt_call_time(_sug)} (лид точное не "
+                    f"назвал — дефолтное удобное окно).\n\n" + _task_desc
+                )
             dispatch_operator_task(
                 customer_id=customer_id,
                 crm_contact_id=contact_id,
@@ -527,8 +734,8 @@ def dispatch_on_message_turn(
                 conversation_id=str(conversation.id),
                 title=_task_title,
                 category="callback",
-                due_in_minutes=15,
-                description=(_desc or last_lead_message or "")[:1000],
+                due_in_minutes=_task_due_min,
+                description=_task_desc,
             )
             logger.info(
                 "[crm_dispatch] handoff conv=%s channel=%s — deal qualified + "
@@ -537,41 +744,34 @@ def dispatch_on_message_turn(
             )
 
         # Task Engine: лид просит связаться позже («через неделю / в субботу /
-        # завтра») → задача-напоминание менеджеру на распарсенную дату. Реюзаем
-        # проверенный путь dispatch_operator_task (срок = минуты до даты, TZ UTC+7
-        # внутри парсера). Срабатывает на любой реплике с явной просьбой о времени.
-        if last_lead_message:
+        # завтра») → задача-напоминание + (в мессенджере) бот сам напишет в срок.
+        # ВЗАИМОСВЯЗЬ С CRM (Вариант 1, 2026-06-02):
+        #  • Мессенджер: единый путь — событие schedule_followup с task_*-полями.
+        #    Воркер пишет ОДНУ followup-строку (дедуп latest-wins) и создаёт
+        #    зеркальную CRM-задачу ТОЛЬКО для нового followup, привязывая её к
+        #    строке. Крон при исполнении followup закроет задачу в CRM
+        #    (complete_task). Повтор просьбы → строка переносится, задача не дублится.
+        #  • Сайт (нет chat_id): бот сам не пишет → прямая задача оператору, как было
+        #    (закрывает её человек; авто-закрытия нет).
+        # NB: если этим же сообщением лид ЗАБРОНИРОВАЛ созвон (call_booked_at не
+        # None) — НЕ заводим followup «написать позже». Иначе фраза «созвонимся
+        # завтра в 15:00» из-за слова «завтра» плодила лишний followup + задачу.
+        if last_lead_message and call_booked_at is None:
             try:
                 from services.followup_parse import parse_followup_when
                 _fu = parse_followup_when(last_lead_message)
                 if _fu is not None:
-                    _mins = max(
-                        1, int((_fu - datetime.now(timezone.utc)).total_seconds() / 60)
-                    )
-                    _nm = customer.name or customer.email or "лид"
-                    dispatch_operator_task(
-                        customer_id=customer_id,
-                        crm_contact_id=contact_id,
-                        crm_deal_id=deal_id if deal_id else None,
-                        conversation_id=str(conversation.id),
-                        title=f"Написать лиду {_nm} — просил связаться позже",
-                        category="callback",
-                        due_in_minutes=_mins,
-                        description=(last_lead_message or "")[:500],
-                    )
-                    logger.info(
-                        "[crm_dispatch] followup task conv=%s due_in_min=%d "
-                        "(lead asked to be contacted later)",
-                        str(conversation.id)[:8], _mins,
-                    )
-                    # Task Engine B2 — если лид в мессенджере (есть chat_id), бот
-                    # САМ напишет ему в срок: ставим строку в scheduled_actions
-                    # (через воркер, off event loop). На сайте chat_id нет →
-                    # только задача-напоминание выше.
+                    _nm = (customer.name or customer.email
+                           or (customer.identity_keys or {}).get("tg_handle") or "новый лид")
+                    _title = f"Написать лиду {_nm} — просил связаться позже"
+                    _desc = (last_lead_message or "")[:500]
                     _chat_id = getattr(conversation, "channel_conversation_id", None)
-                    if _chat_id and (channel or "").lower() in (
+                    _is_msgr = (channel or "").lower() in (
                         "telegram", "whatsapp", "instagram", "messenger"
-                    ):
+                    )
+                    if _chat_id and _is_msgr:
+                        # Мессенджер: followup-строка ведёт всё; задачу создаёт/дедупит
+                        # воркер по task_*-полям и линкует к строке.
                         from services.crm_queue import make_schedule_followup_event
                         enqueue(make_schedule_followup_event(
                             customer_id=customer_id,
@@ -580,10 +780,33 @@ def dispatch_on_message_turn(
                             chat_id=str(_chat_id),
                             due_at=_fu,
                             text=None,  # дефолтный тёплый текст в scheduled_actions
+                            task_title=_title,
+                            task_description=_desc,
+                            task_contact_id=contact_id,
+                            task_deal_id=deal_id if deal_id else None,
                         ))
                         logger.info(
-                            "[crm_dispatch] bot self-followup scheduled conv=%s chat=%s",
+                            "[crm_dispatch] bot self-followup scheduled conv=%s chat=%s (CRM task linked)",
                             str(conversation.id)[:8], _chat_id,
+                        )
+                    else:
+                        # Сайт / нет канала — задача оператору (человек напишет сам).
+                        _mins = max(
+                            1, int((_fu - datetime.now(timezone.utc)).total_seconds() / 60)
+                        )
+                        dispatch_operator_task(
+                            customer_id=customer_id,
+                            crm_contact_id=contact_id,
+                            crm_deal_id=deal_id if deal_id else None,
+                            conversation_id=str(conversation.id),
+                            title=_title,
+                            category="callback",
+                            due_in_minutes=_mins,
+                            description=_desc,
+                        )
+                        logger.info(
+                            "[crm_dispatch] operator callback task conv=%s due_in_min=%d (website)",
+                            str(conversation.id)[:8], _mins,
                         )
             except Exception as _fe:  # noqa: BLE001
                 logger.debug("[crm_dispatch] followup detect skipped: %s", _fe)
@@ -640,6 +863,7 @@ def _enqueue_upsert_contact(
     *,
     customer: Any,
     channel: str,
+    known_id: Optional[str] = None,
 ) -> None:
     """Phase 12 (2026-05-28): enqueue ONLY upsert_contact, not deal.
 
@@ -656,6 +880,7 @@ def _enqueue_upsert_contact(
         customer_id=customer_id,
         lead=lead,
         on_contact_id=_make_contact_id_writeback(customer_id),
+        known_id=known_id,
     ))
 
 
@@ -700,6 +925,36 @@ def _enqueue_create_deal(
 # DB writeback callbacks — worker calls these once it has the real CRM ids
 # =============================================================================
 
+def _call_task_subject(kind: str, lead_name: str, when: str, medium: Optional[str]) -> tuple[str, str]:
+    """Тема+тело задачи-подтверждения созвона. kind='day' (за день) | 'hour' (за час)."""
+    _ch = f", канал: {medium}" if medium else ""
+    _chd = medium or "уточнить у лида"
+    if kind == "day":
+        return (f"📞 Подтвердить созвон с {lead_name}: {when}{_ch}",
+                f"За день до созвона — подтвердить с лидом. Время: {when}. Канал: {_chd}.")
+    return (f"⏰ Через час созвон с {lead_name}: {when}{_ch}",
+            f"Через час созвон. Время: {when}. Канал: {_chd}.")
+
+
+def dispatch_sync_call_medium(*, customer_id: str, conversation_id: str,
+                              deal_id: Optional[str], lead_name: str,
+                              call_at: datetime, medium: str) -> None:
+    """Канал назван ПОСЛЕ брони → дозаписать его в обе задачи-подтверждения.
+    Не через гоночный profile_data, а через сделку: воркер найдёт задачи созвона
+    по сделке в HubSpot и обновит их. FIFO-очередь гарантирует, что задачи (из
+    хода брони) уже созданы к моменту этого события. deal_id='pending' резолвится
+    воркером из conversation.crm_deal_id."""
+    from services.crm_queue import enqueue, make_sync_call_medium_event
+    enqueue(make_sync_call_medium_event(
+        customer_id=str(customer_id),
+        conversation_id=str(conversation_id),
+        deal_id=deal_id or "pending",
+        lead_name=lead_name,
+        call_at=call_at,
+        medium=medium,
+    ))
+
+
 def _make_contact_id_writeback(customer_id: str):
     """Factory: returns a callback that writes contact_id to Customer.crm_contact_id."""
     def writeback(contact_id: str) -> None:
@@ -716,8 +971,12 @@ def _make_contact_id_writeback(customer_id: str):
                         customer_id, contact_id,
                     )
         except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "[crm_dispatch] contact_id writeback failed for %s: %s",
+            # ERROR (не WARNING): провал writeback = contact_id остаётся None,
+            # следующие события с 'pending' будут зря ретраиться часами. Это
+            # должно всплывать в алертах, а не тонуть в потоке предупреждений.
+            logger.error(
+                "[crm_dispatch] CONTACT_ID WRITEBACK FAILED for %s: %s — "
+                "pending-события не зарезолвятся пока не пройдёт следующий upsert_contact",
                 customer_id, exc,
             )
     return writeback
@@ -739,8 +998,37 @@ def _make_deal_id_writeback(conversation_id: str):
                         conversation_id, deal_id,
                     )
         except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "[crm_dispatch] deal_id writeback failed for %s: %s",
+            logger.error(
+                "[crm_dispatch] DEAL_ID WRITEBACK FAILED for %s: %s — "
+                "сделка создана, но conv.crm_deal_id не записан (риск дубля при ретрае)",
                 conversation_id, exc,
             )
+    return writeback
+
+
+def _make_followup_task_writeback(conversation_id: str):
+    """Factory: колбэк, привязывающий CRM task_id к pending bot-followup строке
+    диалога. После этого крон (run_due_followups) при исполнении followup закроет
+    задачу в CRM через complete_task. Дедуп гарантирует ОДНУ pending-строку, так
+    что обновляем все pending bot-followup'ы диалога (по факту — одну)."""
+    def writeback(task_id: str) -> None:
+        if not task_id:
+            return
+        try:
+            from db.connection import session_scope
+            from db.models import ScheduledAction
+            from uuid import UUID
+            with session_scope() as s:
+                (s.query(ScheduledAction)
+                 .filter(ScheduledAction.conversation_id == UUID(conversation_id),
+                         ScheduledAction.action_type == "followup_message",
+                         ScheduledAction.status == "pending",
+                         ScheduledAction.executor == "bot")
+                 .update({"crm_task_id": task_id}, synchronize_session=False))
+            logger.info("[crm_dispatch] followup(conv=%s) crm_task_id <- %s",
+                        conversation_id[:8], task_id)
+        except Exception as exc:  # noqa: BLE001
+            # Некритично: задача просто не авто-закроется (оператор закроет руками).
+            logger.warning("[crm_dispatch] followup task writeback skipped conv=%s: %s",
+                           conversation_id, exc)
     return writeback

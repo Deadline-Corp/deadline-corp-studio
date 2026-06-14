@@ -41,8 +41,8 @@ def _fake_id(prefix: str) -> str:
 class NoOpAdapter(CRMAdapter):
     provider_name = "noop"
 
-    async def upsert_contact(self, lead: Lead) -> str:
-        contact_id = _fake_id("contact")
+    async def upsert_contact(self, lead: Lead, known_id: Optional[str] = None) -> str:
+        contact_id = known_id or _fake_id("contact")
         logger.info(
             "[noop crm] upsert_contact lead_id=%s channel=%s name=%s -> %s",
             lead.id, lead.channel, lead.contact_name, contact_id,

@@ -19,6 +19,7 @@ from sqlalchemy import (
     String,
     Text,
     Integer,
+    Boolean,
     DateTime,
     ForeignKey,
     UniqueConstraint,
@@ -242,6 +243,24 @@ class Conversation(Base):
     # ---- CRM integration + Notion §20 funnel (Phase 1, 2026-05-26) ----
     # ID of this conversation's deal in the external CRM. NULL until first sync.
     crm_deal_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    # P3b — на какого сотрудника назначен лид (id workspace_member). NULL = не назначен.
+    assigned_member_id: Mapped[Optional[uuid.UUID]] = mapped_column(
+        UUID(as_uuid=True), nullable=True, index=True
+    )
+    # WhatsApp draft-mode: черновик ответа бота, ждущий одобрения администратора
+    # в Telegram (кнопки ✅/🚫). {text, phone_number_id, to_wa_id, client_msg, ts}.
+    # NULL = нет ожидающего черновика. Аддитивно; используется только когда
+    # включён wa_draft_mode (bot_settings).
+    pending_wa_draft: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    # Per-conversation: админ разрешил боту вести ЭТОТ диалог сам (override над
+    # глобальным режимом наблюдения/черновика). True → бот отвечает клиенту
+    # автономно. Деф. False. Кнопка «🤖 Разрешить боту вести диалог» в карточке.
+    wa_autonomous: Mapped[bool] = mapped_column(default=False, nullable=False, server_default="false")
+    # WhatsApp triage: результат классификации лид/не-лид при импорте истории
+    # из WAHA (services/whatsapp_sync.py + lead_classifier). NULL = ещё не
+    # классифицирован. {is_lead, confidence, category, reason, temperature,
+    # by, classified_at}. Аддитивно; ничего не ломает, если NULL.
+    wa_classification: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     # Notion §20 active funnel stage. Default new_lead so existing rows are valid post-migration.
     # Values: new_lead / in_dialog / qualified / nda / on_call / tz_approved /
     #         proposal / prepayment / in_work / completed_won / post_sale / lost
@@ -463,9 +482,335 @@ class ScheduledAction(Base):
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     executed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Когда строку «забрал» крон (status→processing). Защита от двойной отправки
+    # при конкурентных свипах; протухший claim (>15 мин) можно перезабрать.
+    claimed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
     def __repr__(self) -> str:
         return (
             f"<ScheduledAction {str(self.id)[:8]} {self.action_type} "
             f"executor={self.executor} status={self.status} due={self.due_at}>"
+        )
+
+
+class CRMEvent(Base):
+    """Durable-запись события CRM-очереди (для recovery после рестарта).
+
+    Воркер пишет строку (status=pending) когда берёт событие, помечает done после
+    успешной отправки в CRM или failed после исчерпания ретраев. На старте
+    pending-строки переигрываются (services.crm_queue.recover_pending_events).
+    payload — JSON-safe снимок (без closures-колбэков; dataclasses/datetime
+    закодированы, см. crm_queue._serialize_payload)."""
+    __tablename__ = "crm_events"
+    __table_args__ = (
+        Index("ix_crm_events_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    event_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    # Без FK намеренно — reset/удаление клиента не должно ломать recovery.
+    customer_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    conversation_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    payload: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="pending")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<CRMEvent {str(self.id)[:8]} {self.event_type} status={self.status}>"
+
+
+class PromptVersion(Base):
+    """Редактируемые версии системного промпта («мозг» бота) — Admin UI.
+
+    Боевой промпт исторически — константа prompts.SYSTEM_PROMPT. Эта таблица
+    позволяет менять его БЕЗ деплоя: build_chat_prompt берёт активную строку
+    отсюда (через services.prompt_store, TTL-кэш 60с), а если активных строк
+    нет — падает обратно на константу. Версионирование как у
+    training_corrections: новая строка is_active=True, прежняя деактивируется;
+    откат = активировать любую старую версию. Никогда не hard-delete.
+    """
+    __tablename__ = "prompt_versions"
+    __table_args__ = (
+        Index("ix_prompt_versions_active", "kind", "is_active"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    # Пока только 'system_prompt'; задел под greeting/handoff-шаблоны.
+    kind: Mapped[str] = mapped_column(String(32), nullable=False, server_default="system_prompt")
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    is_active: Mapped[bool] = mapped_column(default=False, nullable=False)
+    comment: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(100), nullable=False, server_default="admin-ui")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"<PromptVersion {str(self.id)[:8]} kind={self.kind} active={self.is_active}>"
+
+
+class PipelineStage(Base):
+    """Кастомные стадии воронки (своя CRM в Admin UI, 2026-06-11).
+
+    Пустая таблица = поведение как раньше (встроенные 8 стадий из admin_api/
+    hubspot). Оператор в UI настраивает свой набор: добавляет/переименовывает/
+    скрывает/меняет порядок. conversations.lead_stage хранит key. Бот
+    авто-двигает только по встроенным ключам (funnel.py) — кастомные стадии
+    оператор двигает руками. HubSpot-зеркало шлётся только для известных
+    HubSpot ключей (services/crm/hubspot.py STAGE_DEFS), остальные живут
+    только у нас.
+    """
+    __tablename__ = "pipeline_stages"
+    __table_args__ = (
+        Index("ix_pipeline_stages_pos", "active", "position"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    key: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
+    label: Mapped[str] = mapped_column(String(80), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    # active=False — скрыта с канбана (сделки на ней остаются, видны в «Другое»)
+    active: Mapped[bool] = mapped_column(default=True, nullable=False)
+    # kind: active | won | lost — lost требует lost_reason, won/lost терминальные
+    kind: Mapped[str] = mapped_column(String(10), nullable=False, server_default="active")
+    # builtin=True — посеяна из встроенного набора (key совпадает с funnel.py);
+    # её нельзя удалить (бот на неё ссылается), можно переименовать/скрыть.
+    builtin: Mapped[bool] = mapped_column(default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"<PipelineStage {self.key} pos={self.position} active={self.active}>"
+
+
+class BotSetting(Base):
+    """Поведенческие настройки бота, редактируемые из Admin UI (key-value).
+
+    Перекрывают значения tenant config.yaml БЕЗ деплоя: cron/логика читает
+    через services.bot_settings (TTL-кэш 60с). Пустая таблица = дефолты
+    из config.yaml, поведение 1:1 как раньше.
+    """
+    __tablename__ = "bot_settings"
+
+    key: Mapped[str] = mapped_column(String(60), primary_key=True)
+    value: Mapped[dict] = mapped_column(JSONB, nullable=False)  # {"v": <значение>}
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<BotSetting {self.key}={self.value}>"
+
+
+class AutomationRule(Base):
+    """Правило автоматизации «Когда → Если → То» (Admin UI, 2026-06-11).
+
+    Сердце мультинишевости (паттерн GoHighLevel/Chatwoot): оператор без кода
+    собирает «лид молчит 24ч → если канал telegram и стадия in_dialog →
+    бот пишет X / задача менеджеру / сменить стадию / уведомить админа».
+    Исполняет крон (services/automation.py), дедуп через automation_runs.
+
+    trigger:    {"type": "lead_silent", "hours": 24}
+    conditions: {"channels": [...], "stages": [...], "temperatures": [...], "min_score": 0}
+    actions:    [{"type": "bot_message", "text": ...},
+                 {"type": "create_task", "text": ..., "due_in_hours": 2},
+                 {"type": "set_stage", "stage": ..., "lost_reason": ...},
+                 {"type": "notify_admin", "text": ...}]
+    """
+    __tablename__ = "automation_rules"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    enabled: Mapped[bool] = mapped_column(default=True, nullable=False, index=True)
+    trigger: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    conditions: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    actions: Mapped[list] = mapped_column(JSONB, nullable=False)
+    # 0 = одно срабатывание на диалог; N>0 = можно повторно через N часов (cap 5 раз)
+    cooldown_hours: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    position: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    def __repr__(self) -> str:
+        return f"<AutomationRule {str(self.id)[:8]} {self.name!r} enabled={self.enabled}>"
+
+
+class AutomationRun(Base):
+    """Журнал срабатываний правил — дедуп (одно правило не долбит один диалог)
+    и история «что бот сделал сам» для аналитики/отладки."""
+    __tablename__ = "automation_runs"
+    __table_args__ = (
+        Index("ix_automation_runs_rule_conv", "rule_id", "conversation_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    rule_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("automation_rules.id", ondelete="CASCADE"), nullable=False
+    )
+    conversation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    fired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    detail: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<AutomationRun rule={str(self.rule_id)[:8]} conv={str(self.conversation_id)[:8]}>"
+
+
+class CustomFieldDef(Base):
+    """Определения кастомных полей лида (под нишу: «Бюджет», «Тип лечения»…).
+    Значения живут в customers.profile_data['fields'][key] — без миграций
+    на каждое новое поле."""
+    __tablename__ = "custom_field_defs"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    key: Mapped[str] = mapped_column(String(40), nullable=False, unique=True)
+    label: Mapped[str] = mapped_column(String(80), nullable=False)
+    field_type: Mapped[str] = mapped_column(String(10), nullable=False, server_default="text")  # text|number|select
+    options: Mapped[Optional[list]] = mapped_column(JSONB, nullable=True)  # для select
+    position: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    active: Mapped[bool] = mapped_column(default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"<CustomFieldDef {self.key} ({self.field_type})>"
+
+
+class StageTransition(Base):
+    """История переходов по воронке — фундамент конверсионной аналитики.
+    Пишется из admin stage-endpoint и автоматизаций; авто-переходы бота в
+    hot-path подключим следующим шагом (некритично для v1 отчётов)."""
+    __tablename__ = "stage_transitions"
+    __table_args__ = (
+        Index("ix_stage_transitions_conv", "conversation_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    conversation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    customer_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    from_stage: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    to_stage: Mapped[str] = mapped_column(String(40), nullable=False)
+    by: Mapped[str] = mapped_column(String(20), nullable=False, server_default="admin")  # admin|bot|automation
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    def __repr__(self) -> str:
+        return f"<StageTransition {self.from_stage}→{self.to_stage} by={self.by}>"
+
+
+class WorkspaceMember(Base):
+    """Члены команды (роли, 2026-06-12). Owner = главный токен из env
+    (ADMIN_UI_TOKEN/TRAINING_AUTH_TOKEN); менеджеры — строки здесь.
+    Токен показывается один раз при создании, храним только sha256-хэш.
+    Менеджер: работа с лидами (inbox/воронка/задачи/аналитика), без
+    «Мозга», Автоматизаций и Настроек. Деактивация вместо удаления."""
+    __tablename__ = "workspace_members"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    name: Mapped[str] = mapped_column(String(80), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False, server_default="manager")
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    active: Mapped[bool] = mapped_column(default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_seen_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    # P3b — отдел (cleaning / repair / …) и личный Telegram chat для уведомлений о назначении.
+    department: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+    telegram_chat_id: Mapped[Optional[str]] = mapped_column(String(40), nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<WorkspaceMember {self.name} role={self.role} active={self.active}>"
+
+
+class ProcessedUpdate(Base):
+    """Дедуп входящих апдейтов вебхуков, переживающий рестарт процесса.
+
+    event_key = '<channel>:<update_id>' (напр. 'telegram:12345'). Вставка
+    ON CONFLICT DO NOTHING: если ключ уже есть — апдейт уже обработан, пропускаем.
+    Раньше дедуп был in-memory (OrderedDict) → после деплоя Railway Telegram
+    ретраил последние апдейты, и новый процесс обрабатывал их повторно (дубли).
+    """
+    __tablename__ = "processed_updates"
+
+    event_key: Mapped[str] = mapped_column(String(120), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return f"<ProcessedUpdate {self.event_key}>"
+
+
+class LeadSubmission(Base):
+    """Каждая отправка лид-формы (deadlinecorp.com/lead-form/) — сырой
+    исторический след.
+
+    Раньше POST /lead-submit был fire-and-forget (только сообщение в Telegram):
+    опечатка в поле «контакт» = безвозвратно потерянный лид (мы напоролись на
+    «@saswee21», которого не существует — восстановить было нечем). Теперь каждая
+    заявка пишется сюда: поля формы + вердикт проверки контакта + ip/ua/referer.
+
+    contact_exists: True=проверен и существует, False=проверен и НЕ существует
+    (подозрение на опечатку), NULL=не проверяли (телефон/email) или не смогли.
+    Без FK на customers намеренно (как crm_events) — reset/удаление клиента не
+    должен ломать историю заявок.
+    """
+    __tablename__ = "lead_submissions"
+    __table_args__ = (
+        Index("ix_lead_submissions_created", "created_at"),
+        Index("ix_lead_submissions_customer", "customer_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    contact: Mapped[str] = mapped_column(String(200), nullable=False)
+    contact_type: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    contact_exists: Mapped[Optional[bool]] = mapped_column(Boolean, nullable=True)
+
+    need: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    business: Mapped[Optional[str]] = mapped_column(String(300), nullable=True)
+    task: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    # 'when' is a SQL reserved word — store under 'timeframe'.
+    timeframe: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    source: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    campaign: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    lang: Mapped[Optional[str]] = mapped_column(String(5), nullable=True)
+
+    # Контекст запроса — отпечаток лида даже при кривом контакте.
+    ip: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    user_agent: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    referer: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Customer, созданный для CRM-апсёрта (если crm_enabled). Без FK.
+    customer_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    telegram_delivered: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    crm_enqueued: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<LeadSubmission {str(self.id)[:8]} {self.name!r} "
+            f"type={self.contact_type} exists={self.contact_exists}>"
         )
