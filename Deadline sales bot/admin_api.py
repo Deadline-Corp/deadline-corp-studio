@@ -799,6 +799,123 @@ async def whatsapp_status(
 
 
 # ============================================================================
+# WHATSAPP — импорт уже разобранных лидов (из прошлой сессии-анализа переписок).
+# Каждый лид → карточка бота: стадия + бейдж лид + ПРЕДЛОЖЕННЫЙ ответ (всплывает
+# с кнопкой ✅) + сводка (что нужно / что делаем / демо). Ключ — телефон (цифры):
+# будущие живые сообщения из WAHA приклеятся к ТОЙ ЖЕ карточке (channel_conversation_id).
+# Идемпотентно: повторный импорт обновляет ту же карточку, не плодит дубли.
+# ============================================================================
+
+_WA_STAGES = {
+    "new_lead", "in_dialog", "qualified", "nda", "on_call", "tz_approved",
+    "proposal", "prepayment", "in_work", "completed_won", "post_sale", "lost",
+}
+_WA_TEMPS = {"cold", "warm", "hot", "ready", "client", "frozen"}
+
+
+class WaLeadIn(BaseModel):
+    phone: str
+    name: Optional[str] = None
+    need: Optional[str] = None            # «Нужно»
+    stage: Optional[str] = None           # lead_stage бота
+    temperature: Optional[str] = None     # cold/warm/hot/ready/...
+    category: Optional[str] = None
+    note: Optional[str] = None            # «Делаем»
+    demo_url: Optional[str] = None
+    suggested_reply: Optional[str] = None # «✍️ Ответ» — ляжет в pending_wa_draft
+
+
+class WaImportRequest(BaseModel):
+    leads: list[WaLeadIn]
+    source: str = "fable-session-2026-06-14"
+
+
+@router.post("/whatsapp/import-leads")
+async def whatsapp_import_leads(
+    req: WaImportRequest,
+    _: None = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    import re as _re
+    from datetime import datetime, timezone
+    from services.identity import resolve_or_create_customer
+    from services.conversations import get_or_create_conversation
+
+    imported, updated, skipped = 0, 0, 0
+    items = []
+    for lead in req.leads:
+        digits = _re.sub(r"\D", "", lead.phone or "")
+        if not digits:
+            skipped += 1
+            continue
+        existed = db.query(Conversation).filter(
+            Conversation.channel == "whatsapp",
+            Conversation.channel_conversation_id == digits,
+        ).first() is not None
+
+        customer = resolve_or_create_customer(
+            db, channel="whatsapp", external_id=digits, username=lead.name,
+        )
+        if lead.name and not (customer.name or "").strip():
+            customer.name = lead.name[:200]
+        if not (customer.phone or "").strip():
+            customer.phone = ("+" + digits)[:50]
+        if lead.temperature in _WA_TEMPS:
+            customer.lead_temperature = lead.temperature
+        prof = dict(customer.profile_data or {})
+        prof.update({k: v for k, v in {
+            "wa_need": lead.need, "wa_demo_url": lead.demo_url,
+            "wa_category": lead.category, "import_source": req.source,
+        }.items() if v})
+        customer.profile_data = prof
+        db.flush()
+
+        conv = get_or_create_conversation(
+            db, customer_id=customer.id, channel="whatsapp",
+            channel_conversation_id=digits,
+        )
+        if lead.stage in _WA_STAGES:
+            conv.lead_stage = lead.stage
+        # Сводка для карточки (видно в детали диалога).
+        summary_bits = []
+        if lead.need: summary_bits.append(f"Нужно: {lead.need}")
+        if lead.note: summary_bits.append(f"Делаем: {lead.note}")
+        if lead.demo_url: summary_bits.append(f"Демо: {lead.demo_url}")
+        if summary_bits:
+            conv.summary = " · ".join(summary_bits)[:2000]
+        conv.wa_classification = {
+            "is_lead": True, "confidence": 1.0,
+            "category": lead.category or "service_inquiry",
+            "reason": lead.need or "Импорт разбора переписок",
+            "temperature": lead.temperature or (customer.lead_temperature or "warm"),
+            "demo_url": lead.demo_url, "note": lead.note,
+            "by": "fable-import", "source": req.source,
+            "classified_at": datetime.now(timezone.utc).isoformat(),
+        }
+        # Предложенный ответ — всплывёт в карточке с кнопкой ✅ Отправить.
+        if lead.suggested_reply:
+            conv.pending_wa_draft = {
+                "text": lead.suggested_reply,
+                "phone_number_id": "",
+                "to_wa_id": digits,
+                "client_msg": (lead.need or "")[:500],
+                "source": req.source,
+                "ts": datetime.now(timezone.utc).isoformat(),
+            }
+        db.flush()
+        if existed:
+            updated += 1
+        else:
+            imported += 1
+        items.append({"phone": digits, "name": customer.name, "stage": conv.lead_stage,
+                      "conversation_id": str(conv.id), "had_reply": bool(lead.suggested_reply)})
+
+    db.commit()
+    return {"ok": True, "imported": imported, "updated": updated,
+            "skipped": skipped, "items": items}
+
+
+# ============================================================================
 # FUNNEL — смена стадии (operator override) + зеркало в CRM
 # ============================================================================
 
