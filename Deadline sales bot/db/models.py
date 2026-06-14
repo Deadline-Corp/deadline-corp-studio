@@ -252,6 +252,10 @@ class Conversation(Base):
     # NULL = нет ожидающего черновика. Аддитивно; используется только когда
     # включён wa_draft_mode (bot_settings).
     pending_wa_draft: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    # Per-conversation: админ разрешил боту вести ЭТОТ диалог сам (override над
+    # глобальным режимом наблюдения/черновика). True → бот отвечает клиенту
+    # автономно. Деф. False. Кнопка «🤖 Разрешить боту вести диалог» в карточке.
+    wa_autonomous: Mapped[bool] = mapped_column(default=False, nullable=False, server_default="false")
     # Notion §20 active funnel stage. Default new_lead so existing rows are valid post-migration.
     # Values: new_lead / in_dialog / qualified / nda / on_call / tz_approved /
     #         proposal / prepayment / in_work / completed_won / post_sale / lost

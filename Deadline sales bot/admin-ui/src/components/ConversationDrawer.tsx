@@ -27,6 +27,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
   const [fieldsOpen, setFieldsOpen] = useState(false)
   const [advice, setAdvice] = useState('')
   const [team, setTeam] = useState<any[]>([])
+  const [draftText, setDraftText] = useState('')  // редактируемый предложенный ботом ответ (WhatsApp)
   const msgsRef = useRef<HTMLDivElement>(null)
   const lastTsRef = useRef<string | null>(null)
 
@@ -91,6 +92,46 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
   }, [convId])
 
   usePolling(() => loadMessages(false), 5000, [convId])
+
+  // Подставляем предложенный ботом ответ в редактируемое поле, когда он появляется/меняется.
+  useEffect(() => {
+    setDraftText(detail?.pending_wa_draft?.text || '')
+  }, [detail?.pending_wa_draft?.ts])
+
+  const sendWaDraft = async () => {
+    if (busy || !draftText.trim()) return
+    setBusy(true)
+    try {
+      const r = await api.post<{ delivered: boolean }>(`/conversations/${convId}/wa-draft`, {
+        action: 'send', text: draftText.trim(),
+      })
+      showToast(r.delivered ? '✅ Отправлено клиенту в WhatsApp' : '⚠️ Сохранено, но не доставлено (см. логи)', !r.delivered)
+      await loadDetail(); await loadMessages(false)
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+  const rejectWaDraft = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await api.post(`/conversations/${convId}/wa-draft`, { action: 'reject' })
+      showToast('🚫 Черновик отклонён — клиенту не ушёл')
+      await loadDetail()
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+  const setWaAutonomous = async (on: boolean) => {
+    if (busy) return
+    setBusy(true)
+    try {
+      const r = await api.post<{ sent: boolean }>(`/conversations/${convId}/wa-autonomous`, { on })
+      showToast(on
+        ? (r.sent ? '🤖 Бот ведёт диалог сам — предложенный ответ отправлен' : '🤖 Бот ведёт этот диалог сам')
+        : 'Возвращено на одобрение')
+      await loadDetail(); await loadMessages(false)
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
 
   const send = async () => {
     const t = text.trim()
@@ -401,6 +442,33 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
             </div>
           ))}
         </div>
+
+        {detail?.pending_wa_draft && !detail.wa_autonomous && (
+          <div style={{ borderTop: '1px solid var(--accent-border)', background: 'var(--accent-soft)', padding: '10px 14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+              <b style={{ fontSize: 13 }}>🤖 Бот предлагает ответить</b>
+              <span className="faint" style={{ fontSize: 11 }}>клиенту НЕ отправлено — нужно ваше «ОК»</span>
+            </div>
+            <textarea value={draftText} onChange={e => setDraftText(e.target.value)}
+                      style={{ width: '100%', minHeight: 70, fontSize: 13 }} />
+            <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <button className="btn sm primary" onClick={sendWaDraft} disabled={busy || !draftText.trim()}>✅ Отправить</button>
+              <button className="btn sm ghost" onClick={rejectWaDraft} disabled={busy}>🚫 Отклонить</button>
+              <div style={{ flex: 1 }} />
+              <button className="btn sm" onClick={() => setWaAutonomous(true)} disabled={busy}
+                      title="Бот будет отвечать в этом диалоге сам, без одобрения каждого ответа">
+                🤖 Разрешить боту вести диалог
+              </button>
+            </div>
+          </div>
+        )}
+        {detail?.wa_autonomous && (
+          <div style={{ borderTop: '1px solid var(--border)', background: 'var(--panel-2)', padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5 }}>
+            <span>🤖 Бот ведёт этот диалог сам</span>
+            <div style={{ flex: 1 }} />
+            <button className="btn sm ghost" onClick={() => setWaAutonomous(false)} disabled={busy}>Вернуть на одобрение</button>
+          </div>
+        )}
 
         <div className="d-reply">
           <textarea

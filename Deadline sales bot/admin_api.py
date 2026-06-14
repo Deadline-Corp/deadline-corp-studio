@@ -487,6 +487,10 @@ async def conversation_detail(
         "forum_topic_id": conv.forum_topic_id,
         "crm_deal_id": conv.crm_deal_id,
         "crm_contact_id": cust.crm_contact_id,
+        # WhatsApp: предложенный ботом ответ на одобрение (режим наблюдения/черновика)
+        # + флаг «бот ведёт этот диалог сам».
+        "pending_wa_draft": conv.pending_wa_draft,
+        "wa_autonomous": bool(getattr(conv, "wa_autonomous", False)),
         "hubspot": hubspot,
         "utm": {
             "source": cust.utm_source, "campaign": cust.utm_campaign,
@@ -592,6 +596,93 @@ async def conversation_takeover(
     conv, _cust = _get_conv_or_404(db, conv_id)
     await set_takeover_with_mirror(db, conv, req.on, _main.settings, source="admin-ui")
     return {"ok": True, "operator_takeover": req.on}
+
+
+# ============================================================================
+# WhatsApp draft approval — одобрить/отклонить предложенный ботом ответ прямо в
+# карточке диалога; «разрешить боту вести диалог сам» (per-conversation auto).
+# ============================================================================
+
+class WaDraftActionRequest(BaseModel):
+    action: str = Field(..., pattern="^(send|reject)$")
+    text: Optional[str] = Field(None, max_length=4000)  # переопределённый текст при send
+
+
+@router.post("/conversations/{conv_id}/wa-draft")
+async def conversation_wa_draft(
+    conv_id: str,
+    req: WaDraftActionRequest,
+    _: None = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    import main as _main
+    from channels.whatsapp import send_whatsapp_reply
+    from services.conversations import append_message
+
+    conv, _cust = _get_conv_or_404(db, conv_id)
+    pending = conv.pending_wa_draft
+    if not pending:
+        raise HTTPException(status_code=404, detail="Нет предложенного ответа для этого диалога")
+
+    if req.action == "reject":
+        conv.pending_wa_draft = None
+        db.commit()
+        return {"ok": True, "sent": False}
+
+    text = (req.text or pending.get("text") or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Пустой текст ответа")
+    delivered = await send_whatsapp_reply(
+        _main.settings.whatsapp_token,
+        pending.get("phone_number_id") or _main.settings.whatsapp_phone_number_id or "",
+        pending.get("to_wa_id") or conv.channel_conversation_id or "",
+        text,
+    )
+    append_message(db, conv.id, role="assistant", content=text,
+                   extra_meta={"approved_via": "admin-ui", "delivered": delivered})
+    conv.pending_wa_draft = None
+    db.commit()
+    return {"ok": True, "sent": True, "delivered": delivered}
+
+
+class WaAutonomousRequest(BaseModel):
+    on: bool
+
+
+@router.post("/conversations/{conv_id}/wa-autonomous")
+async def conversation_wa_autonomous(
+    conv_id: str,
+    req: WaAutonomousRequest,
+    _: None = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """Разрешить/запретить боту вести ЭТОТ диалог сам (override над глобальным
+    режимом). При включении, если есть ожидающий черновик — сразу отправляем его
+    («бот начинает общение»)."""
+    import main as _main
+    from channels.whatsapp import send_whatsapp_reply
+    from services.conversations import append_message
+
+    conv, _cust = _get_conv_or_404(db, conv_id)
+    conv.wa_autonomous = bool(req.on)
+    sent = False
+    delivered = False
+    if req.on and conv.pending_wa_draft:
+        pending = conv.pending_wa_draft
+        text = (pending.get("text") or "").strip()
+        if text:
+            delivered = await send_whatsapp_reply(
+                _main.settings.whatsapp_token,
+                pending.get("phone_number_id") or _main.settings.whatsapp_phone_number_id or "",
+                pending.get("to_wa_id") or conv.channel_conversation_id or "",
+                text,
+            )
+            append_message(db, conv.id, role="assistant", content=text,
+                           extra_meta={"approved_via": "admin-ui-autonomous", "delivered": delivered})
+            sent = True
+        conv.pending_wa_draft = None
+    db.commit()
+    return {"ok": True, "wa_autonomous": conv.wa_autonomous, "sent": sent, "delivered": delivered}
 
 
 # ============================================================================

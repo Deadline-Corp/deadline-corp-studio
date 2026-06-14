@@ -102,6 +102,21 @@ async def deliver_operator_reply(
                 messaging_type="MESSAGE_TAG",
                 tag="HUMAN_AGENT",
             )
+    elif conv.channel == "whatsapp" and conv.channel_conversation_id:
+        if attachment:
+            log.warning(
+                f"[{str(conv.id)[:8]}] operator sent {attachment[0]} to WhatsApp lead — "
+                f"attachment forwarding not implemented for WhatsApp yet. Send text only."
+            )
+            delivered = False
+        else:
+            from channels.whatsapp import send_whatsapp_reply
+            delivered = await send_whatsapp_reply(
+                settings.whatsapp_token,
+                settings.whatsapp_phone_number_id or "",
+                conv.channel_conversation_id,
+                text,
+            )
     else:
         # Website — no push. Message just lives in DB; the widget will see
         # it on the next /chat poll (Phase 2: switch widget to long-poll or SSE).
