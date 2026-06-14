@@ -109,6 +109,13 @@ async def deliver_operator_reply(
                 f"attachment forwarding not implemented for WhatsApp yet. Send text only."
             )
             delivered = False
+        elif getattr(settings, "waha_base_url", None):
+            from channels.waha import send_waha_reply
+            delivered = await send_waha_reply(
+                settings.waha_base_url, getattr(settings, "waha_api_key", None) or "",
+                getattr(settings, "waha_session", None) or "default",
+                conv.channel_conversation_id, text,
+            )
         elif getattr(settings, "greenapi_id_instance", None) and getattr(settings, "greenapi_api_token", None):
             from channels.greenapi import send_greenapi_reply
             delivered = await send_greenapi_reply(

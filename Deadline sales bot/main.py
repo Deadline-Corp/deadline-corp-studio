@@ -187,6 +187,12 @@ class Settings(BaseSettings):
     greenapi_id_instance: Optional[str] = None
     greenapi_api_token: Optional[str] = None
     greenapi_api_url: Optional[str] = None
+    # ---- WAHA (self-hosted неофиц. WhatsApp на нашем VPS, devlikeapro/waha) ----
+    # Безлимит чатов, $0 за софт. Если заданы — WhatsApp идёт через WAHA
+    # (приём /webhooks/waha, отправка REST /api/sendText). Высший приоритет.
+    waha_base_url: Optional[str] = None
+    waha_api_key: Optional[str] = None
+    waha_session: str = "default"
     allowed_origins: str = "https://deadlinecorp.com,https://www.deadlinecorp.com,https://deadline-corp.github.io,http://localhost:3000,http://localhost:5500,http://127.0.0.1:5500"
     log_level: str = "INFO"
     # Optional bearer-token gate for /metrics. If unset, /metrics is open
@@ -3170,6 +3176,12 @@ async def _wa_send(to_peer: str, text: str, phone_number_id: str = "") -> bool:
     он настроен, иначе через Meta Cloud API. `to_peer` — номер клиента (цифры) /
     wa_id. Так все точки отправки (автоответ, одобрение черновика, ручной ответ
     оператора) работают независимо от транспорта."""
+    if settings.waha_base_url:
+        from channels.waha import send_waha_reply
+        return await send_waha_reply(
+            settings.waha_base_url, settings.waha_api_key or "",
+            settings.waha_session or "default", to_peer, text,
+        )
     if settings.greenapi_id_instance and settings.greenapi_api_token:
         from channels.greenapi import send_greenapi_reply
         return await send_greenapi_reply(
@@ -3222,6 +3234,47 @@ async def greenapi_webhook(request: Request, db: Session = Depends(get_db)):
         return {"ok": True}
 
     # suppress_send → наблюдение/черновик (ответ в карточке на одобрение).
+    if resp.suppress_send or not resp.answer:
+        return {"ok": True}
+    await _wa_send(normalized.channel_conversation_id, resp.answer)
+    return {"ok": True}
+
+
+@app.post("/webhooks/waha")
+async def waha_webhook(request: Request, db: Session = Depends(get_db)):
+    """Приём вебхука WAHA (self-hosted неофиц. WhatsApp на VPS). Входящее →
+    тот же пайплайн _handle_message (channel='whatsapp') → наблюдение/черновик/
+    карточка. Исходящие (ручные ответы с телефона, fromMe) не гоняем через бота."""
+    body = await request.body()
+    try:
+        payload = json.loads(body)
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"waha_webhook: invalid JSON — {e}")
+        return {"ok": True}
+
+    from channels.waha import parse_waha_webhook
+    normalized = await parse_waha_webhook(
+        payload, groq_api_key=settings.groq_api_key, api_key=settings.waha_api_key,
+    )
+    if normalized is None:
+        return {"ok": True}
+    if (normalized.extra_meta or {}).get("role_hint") == "operator":
+        return {"ok": True}
+
+    msg_req = MessageRequest(
+        channel="whatsapp",
+        external_id=normalized.external_id,
+        content=normalized.content,
+        username=normalized.username,
+        channel_conversation_id=normalized.channel_conversation_id,
+        message_type="dm",
+        extra_meta=normalized.extra_meta,
+    )
+    try:
+        resp = await _handle_message(msg_req, db)
+    except Exception as e:  # noqa: BLE001
+        log.error(f"waha_webhook: _handle_message failed — {e}")
+        return {"ok": True}
     if resp.suppress_send or not resp.answer:
         return {"ok": True}
     await _wa_send(normalized.channel_conversation_id, resp.answer)
