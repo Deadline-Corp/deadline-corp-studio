@@ -632,11 +632,10 @@ async def conversation_wa_draft(
     text = (req.text or pending.get("text") or "").strip()
     if not text:
         raise HTTPException(status_code=400, detail="Пустой текст ответа")
-    delivered = await send_whatsapp_reply(
-        _main.settings.whatsapp_token,
-        pending.get("phone_number_id") or _main.settings.whatsapp_phone_number_id or "",
+    delivered = await _main._wa_send(
         pending.get("to_wa_id") or conv.channel_conversation_id or "",
         text,
+        pending.get("phone_number_id") or "",
     )
     append_message(db, conv.id, role="assistant", content=text,
                    extra_meta={"approved_via": "admin-ui", "delivered": delivered})
@@ -671,11 +670,10 @@ async def conversation_wa_autonomous(
         pending = conv.pending_wa_draft
         text = (pending.get("text") or "").strip()
         if text:
-            delivered = await send_whatsapp_reply(
-                _main.settings.whatsapp_token,
-                pending.get("phone_number_id") or _main.settings.whatsapp_phone_number_id or "",
+            delivered = await _main._wa_send(
                 pending.get("to_wa_id") or conv.channel_conversation_id or "",
                 text,
+                pending.get("phone_number_id") or "",
             )
             append_message(db, conv.id, role="assistant", content=text,
                            extra_meta={"approved_via": "admin-ui-autonomous", "delivered": delivered})

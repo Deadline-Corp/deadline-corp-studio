@@ -180,6 +180,13 @@ class Settings(BaseSettings):
     whatsapp_phone_number_id: Optional[str] = None
     whatsapp_verify_token: Optional[str] = None
     whatsapp_app_secret: Optional[str] = None
+    # ---- Green-API (неофициальный WhatsApp через linked-device, без верификации) ----
+    # Альтернатива Cloud API: подключение реального номера по QR (номер остаётся в
+    # телефоне). Если заданы — WhatsApp идёт через Green-API (приём /webhooks/greenapi,
+    # отправка REST). Dormant пока не заданы.
+    greenapi_id_instance: Optional[str] = None
+    greenapi_api_token: Optional[str] = None
+    greenapi_api_url: Optional[str] = None
     allowed_origins: str = "https://deadlinecorp.com,https://www.deadlinecorp.com,https://deadline-corp.github.io,http://localhost:3000,http://localhost:5500,http://127.0.0.1:5500"
     log_level: str = "INFO"
     # Optional bearer-token gate for /metrics. If unset, /metrics is open
@@ -3137,11 +3144,10 @@ async def _handle_wa_draft_callback(action: str, conv_id_str: str, cb_id: str, d
         return
     draft = conv.pending_wa_draft
     if action == "wad":
-        ok = await send_whatsapp_reply(
-            settings.whatsapp_token,
-            draft.get("phone_number_id") or settings.whatsapp_phone_number_id or "",
+        ok = await _wa_send(
             draft.get("to_wa_id") or "",
             draft.get("text") or "",
+            draft.get("phone_number_id") or "",
         )
         if ok:
             # Одобренный ответ становится сообщением бота в истории диалога.
@@ -3157,6 +3163,69 @@ async def _handle_wa_draft_callback(action: str, conv_id_str: str, cb_id: str, d
         conv.pending_wa_draft = None
         db.commit()
         await answer_callback_query(token, cb_id, text="🚫 Отклонено, клиенту не отправлено.")
+
+
+async def _wa_send(to_peer: str, text: str, phone_number_id: str = "") -> bool:
+    """Единая отправка в WhatsApp: через Green-API (неофиц., linked-device) если
+    он настроен, иначе через Meta Cloud API. `to_peer` — номер клиента (цифры) /
+    wa_id. Так все точки отправки (автоответ, одобрение черновика, ручной ответ
+    оператора) работают независимо от транспорта."""
+    if settings.greenapi_id_instance and settings.greenapi_api_token:
+        from channels.greenapi import send_greenapi_reply
+        return await send_greenapi_reply(
+            settings.greenapi_api_url or "https://api.green-api.com",
+            settings.greenapi_id_instance, settings.greenapi_api_token, to_peer, text,
+        )
+    return await send_whatsapp_reply(
+        settings.whatsapp_token,
+        phone_number_id or settings.whatsapp_phone_number_id or "",
+        to_peer, text,
+    )
+
+
+@app.post("/webhooks/greenapi")
+async def greenapi_webhook(request: Request, db: Session = Depends(get_db)):
+    """Приём вебхука Green-API (неофиц. WhatsApp). Входящее сообщение клиента →
+    тот же пайплайн _handle_message (channel='whatsapp'), что даёт наблюдение/
+    черновик/карточку. Исходящие (ручные ответы команды с телефона) пока не
+    запускают бота (чтобы не реагировал на свою же команду). Всегда 200."""
+    body = await request.body()
+    try:
+        payload = json.loads(body)
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"greenapi_webhook: invalid JSON — {e}")
+        return {"ok": True}
+
+    from channels.greenapi import parse_greenapi_webhook
+    normalized = await parse_greenapi_webhook(payload, groq_api_key=settings.groq_api_key)
+    if normalized is None:
+        return {"ok": True}
+
+    # Исходящее (ручной ответ команды) — не гоняем через бота. (Показ ручных
+    # ответов в панели — отдельным шагом позже.)
+    if (normalized.extra_meta or {}).get("role_hint") == "operator":
+        return {"ok": True}
+
+    msg_req = MessageRequest(
+        channel="whatsapp",
+        external_id=normalized.external_id,
+        content=normalized.content,
+        username=normalized.username,
+        channel_conversation_id=normalized.channel_conversation_id,
+        message_type="dm",
+        extra_meta=normalized.extra_meta,
+    )
+    try:
+        resp = await _handle_message(msg_req, db)
+    except Exception as e:  # noqa: BLE001
+        log.error(f"greenapi_webhook: _handle_message failed — {e}")
+        return {"ok": True}
+
+    # suppress_send → наблюдение/черновик (ответ в карточке на одобрение).
+    if resp.suppress_send or not resp.answer:
+        return {"ok": True}
+    await _wa_send(normalized.channel_conversation_id, resp.answer)
+    return {"ok": True}
 
 
 @app.post("/webhooks/whatsapp")
@@ -3219,12 +3288,7 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
         or settings.whatsapp_phone_number_id
         or ""
     )
-    await send_whatsapp_reply(
-        settings.whatsapp_token,
-        phone_number_id,
-        normalized.channel_conversation_id,
-        resp.answer,
-    )
+    await _wa_send(normalized.channel_conversation_id, resp.answer, phone_number_id)
     return {"ok": True}
 
 

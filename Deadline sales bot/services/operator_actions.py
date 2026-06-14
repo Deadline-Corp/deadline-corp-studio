@@ -109,6 +109,13 @@ async def deliver_operator_reply(
                 f"attachment forwarding not implemented for WhatsApp yet. Send text only."
             )
             delivered = False
+        elif getattr(settings, "greenapi_id_instance", None) and getattr(settings, "greenapi_api_token", None):
+            from channels.greenapi import send_greenapi_reply
+            delivered = await send_greenapi_reply(
+                getattr(settings, "greenapi_api_url", None) or "https://api.green-api.com",
+                settings.greenapi_id_instance, settings.greenapi_api_token,
+                conv.channel_conversation_id, text,
+            )
         else:
             from channels.whatsapp import send_whatsapp_reply
             delivered = await send_whatsapp_reply(
