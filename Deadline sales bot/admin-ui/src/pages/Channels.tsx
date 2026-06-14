@@ -52,6 +52,72 @@ function WhatsAppModeSelector() {
   )
 }
 
+/* WhatsApp: подтянуть ВСЕ существующие переписки из WAHA в панель + показать
+   статус подключения и готовность истории. Кнопка запускает фоновый импорт,
+   статус опрашивается, пока идёт синхронизация. */
+function WhatsAppSyncPanel() {
+  const [st, setSt] = useState<any>(null)
+  const [busy, setBusy] = useState(false)
+  const load = async () => {
+    try { setSt(await api.get<any>('/whatsapp/status')) } catch { /* ignore */ }
+  }
+  useEffect(() => { void load() }, [])
+  // Пока идёт синхронизация — опрашиваем статус каждые 3 с.
+  useEffect(() => {
+    if (!st?.sync?.running) return
+    const t = setInterval(() => { void load() }, 3000)
+    return () => clearInterval(t)
+  }, [st?.sync?.running])
+
+  const start = async () => {
+    if (busy) return
+    setBusy(true)
+    try { await api.post('/whatsapp/sync', { classify: true }); await load() }
+    catch { /* ignore */ }
+    finally { setBusy(false) }
+  }
+
+  if (!st) return null
+  if (!st.configured) return null
+  const sync = st.sync || {}
+  const stats = sync.stats
+  const running = !!sync.running
+  const connected = st.session_status === 'WORKING'
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <b style={{ fontSize: 12.5 }}>Все переписки WhatsApp</b>
+        <span className={`chip ${connected ? 'ok' : ''}`}>
+          {connected ? `📱 ${st.me?.pushName || 'подключён'}` : (st.session_status || 'не подключён')}
+        </span>
+      </div>
+      <span className="muted" style={{ fontSize: 12 }}>{st.history_hint}</span>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button className="btn sm" disabled={busy || running || !connected || !st.history_ready} onClick={start}>
+          {running ? '⏳ Синхронизирую…' : '🔄 Подтянуть все переписки'}
+        </button>
+        {!st.history_ready && connected && (
+          <span className="muted" style={{ fontSize: 11.5 }}>
+            нужно включить стор истории на сервере WAHA
+          </span>
+        )}
+      </div>
+      {stats && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', fontSize: 11.5 }}>
+          <span className="chip">чатов: {stats.chats_imported}/{stats.chats_seen}</span>
+          <span className="chip">сообщений: {stats.messages_imported}</span>
+          <span className="chip ok">лиды: {stats.leads}</span>
+          <span className="chip">не-лиды: {stats.non_leads}</span>
+          {stats.errors > 0 && <span className="chip">ошибок: {stats.errors}</span>}
+          {stats.reason && <span className="muted">{stats.reason}</span>}
+        </div>
+      )}
+      {sync.error && <span className="muted" style={{ fontSize: 11.5, color: 'var(--danger, #c0392b)' }}>Ошибка: {sync.error}</span>}
+    </div>
+  )
+}
+
 /* Каналы: карточки подключения в стиле «подключи за N шагов» (паттерн
    Kommo/Chatwoot). Статус из overview; инструкции — пошаговые раскрывашки.
    Данные по WhatsApp-провайдерам — ресёрч 2026-06. */
@@ -169,7 +235,7 @@ export function Channels() {
           ]} />
         </Card>
 
-        <Card icon="🟢" title="WhatsApp (Cloud API)" {...{ status: statusOf('whatsapp').s, statusCls: statusOf('whatsapp').cls }} footer={<>{counts('whatsapp')}<WhatsAppModeSelector /></>}>
+        <Card icon="🟢" title="WhatsApp" {...{ status: statusOf('whatsapp').s, statusCls: statusOf('whatsapp').cls }} footer={<>{counts('whatsapp')}<WhatsAppSyncPanel /><WhatsAppModeSelector /></>}>
           <p className="muted" style={{ margin: 0, fontSize: 13 }}>
             ✅ Коннектор готов в боте — приём и ответы тем же мозгом, что в Telegram. Подключаем
             официальным <b>WhatsApp Cloud API</b> от Meta: платформа бесплатна, без риска бана

@@ -168,3 +168,133 @@ async def send_waha_reply(
     except Exception as e:  # noqa: BLE001
         log.error(f"waha send exception: {e}")
         return False
+
+
+# ============================================================================
+# HISTORY SYNC — тянуть существующие переписки из WAHA-стора в нашу БД.
+#
+# Вебхук message.any ловит только НОВЫЕ входящие (с момента подключения).
+# Чтобы бот увидел ВСЕ уже идущие диалоги номера, нужен NOWEB-стор WAHA
+# (env NOWEB_STORE_ENABLED=True + NOWEB_STORE_FULLSYNC=True): тогда работают
+# GET /api/{session}/chats/overview и /api/{session}/chats/{chatId}/messages.
+# Эти функции — тонкая обёртка над ними; нормализацию/импорт делает
+# services/whatsapp_sync.py.
+# ============================================================================
+
+
+class WahaHistoryUnavailable(RuntimeError):
+    """WAHA вернул 4xx на history-эндпоинты — обычно стор не включён
+    (NOWEB_STORE_ENABLED не выставлен) или сессия не WORKING. Поднимаем,
+    чтобы вызывающий показал понятную причину, а не «0 чатов»."""
+
+
+async def fetch_waha_chats(
+    base_url: str, api_key: str, session: str = "default",
+    limit: int = 500, offset: int = 0,
+) -> list[dict]:
+    """Список чатов сессии (обзор) из WAHA-стора. Возвращает сырые объекты
+    чатов: {id, name, picture, lastMessage?, ...}. Группы (@g.us) НЕ
+    фильтруются здесь — это делает импортёр."""
+    if not base_url:
+        return []
+    url = f"{base_url.rstrip('/')}/api/{session or 'default'}/chats/overview"
+    headers = {"X-Api-Key": api_key} if api_key else {}
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            r = await client.get(url, headers=headers, params={"limit": limit, "offset": offset})
+        if r.status_code >= 400:
+            raise WahaHistoryUnavailable(
+                f"chats/overview {r.status_code}: {(r.text or '')[:200]} "
+                f"(включён ли NOWEB-стор? сессия WORKING?)"
+            )
+        data = r.json()
+        return data if isinstance(data, list) else (data.get("chats") or [])
+    except WahaHistoryUnavailable:
+        raise
+    except Exception as e:  # noqa: BLE001
+        log.error(f"waha fetch_chats exception: {e}")
+        raise WahaHistoryUnavailable(str(e))
+
+
+async def fetch_waha_chat_messages(
+    base_url: str, api_key: str, session: str, chat_id: str,
+    limit: int = 100, download_media: bool = False,
+) -> list[dict]:
+    """Последние `limit` сообщений чата из WAHA-стора (новые→старые в ответе
+    WAHA; импортёр сортирует по timestamp). chat_id вида '7705...@c.us'."""
+    if not base_url or not chat_id:
+        return []
+    from urllib.parse import quote
+    cid = quote(chat_id, safe="")
+    url = f"{base_url.rstrip('/')}/api/{session or 'default'}/chats/{cid}/messages"
+    headers = {"X-Api-Key": api_key} if api_key else {}
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            r = await client.get(url, headers=headers, params={
+                "limit": limit, "downloadMedia": str(download_media).lower(),
+            })
+        if r.status_code >= 400:
+            log.warning(f"waha messages {r.status_code} for {chat_id}: {(r.text or '')[:150]}")
+            return []
+        data = r.json()
+        return data if isinstance(data, list) else (data.get("messages") or [])
+    except Exception as e:  # noqa: BLE001
+        log.error(f"waha fetch_messages exception for {chat_id}: {e}")
+        return []
+
+
+async def fetch_waha_session_status(
+    base_url: str, api_key: str, session: str = "default",
+) -> dict:
+    """Статус сессии: {name, status: WORKING|SCAN_QR_CODE|..., me:{id,pushName}}.
+    Пустой dict при ошибке."""
+    if not base_url:
+        return {}
+    url = f"{base_url.rstrip('/')}/api/sessions/{session or 'default'}"
+    headers = {"X-Api-Key": api_key} if api_key else {}
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.get(url, headers=headers)
+        if r.status_code >= 400:
+            return {}
+        d = r.json()
+        return d if isinstance(d, dict) else {}
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"waha session status exception: {e}")
+        return {}
+
+
+def normalize_waha_history_message(m: dict, self_id_digits: str = "") -> Optional[dict]:
+    """Сырое сообщение из /chats/{id}/messages → {role, content, ts, waha_id,
+    media}. role='operator' для fromMe (наш ручной ответ с телефона), иначе
+    'user'. Возвращает None для пустых/служебных без текста."""
+    if not isinstance(m, dict):
+        return None
+    waha_id = m.get("id")
+    from_me = bool(m.get("fromMe"))
+    mtype = (m.get("type") or "").lower()
+    body = (m.get("body") or m.get("text") or "").strip()
+    # timestamp в WAHA — секунды (иногда мс). Нормализуем в секунды.
+    ts = m.get("timestamp") or m.get("t") or 0
+    try:
+        ts = int(ts)
+        if ts > 10_000_000_000:  # мс → с
+            ts = ts // 1000
+    except (TypeError, ValueError):
+        ts = 0
+
+    if not body:
+        # медиа без подписи — оставляем маркер, чтобы история была связной
+        if mtype in ("image", "video", "document", "audio", "ptt", "sticker", "location"):
+            body = f"[{mtype}]"
+        else:
+            return None
+    role = "operator" if from_me else "user"
+    return {
+        "role": role,
+        "content": body[:4000],
+        "ts": ts,
+        "waha_id": str(waha_id) if waha_id else None,
+        "from_me": from_me,
+        "type": mtype,
+    }

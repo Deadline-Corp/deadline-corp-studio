@@ -256,6 +256,11 @@ class Conversation(Base):
     # глобальным режимом наблюдения/черновика). True → бот отвечает клиенту
     # автономно. Деф. False. Кнопка «🤖 Разрешить боту вести диалог» в карточке.
     wa_autonomous: Mapped[bool] = mapped_column(default=False, nullable=False, server_default="false")
+    # WhatsApp triage: результат классификации лид/не-лид при импорте истории
+    # из WAHA (services/whatsapp_sync.py + lead_classifier). NULL = ещё не
+    # классифицирован. {is_lead, confidence, category, reason, temperature,
+    # by, classified_at}. Аддитивно; ничего не ломает, если NULL.
+    wa_classification: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     # Notion §20 active funnel stage. Default new_lead so existing rows are valid post-migration.
     # Values: new_lead / in_dialog / qualified / nda / on_call / tz_approved /
     #         proposal / prepayment / in_work / completed_won / post_sale / lost

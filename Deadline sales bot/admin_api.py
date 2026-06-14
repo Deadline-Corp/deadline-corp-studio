@@ -355,6 +355,8 @@ def _conv_summary_row(conv: Conversation, cust: Customer, preview: Optional[str]
         "handoff_done": conv.handoff_done,
         "last_message_at": conv.last_message_at.isoformat() if conv.last_message_at else None,
         "created_at": conv.created_at.isoformat() if conv.created_at else None,
+        # WhatsApp-триаж: лид/не-лид + причина (NULL если не классифицирован).
+        "wa_classification": getattr(conv, "wa_classification", None),
         "customer": {
             "id": str(cust.id),
             "name": cust.name,
@@ -681,6 +683,119 @@ async def conversation_wa_autonomous(
         conv.pending_wa_draft = None
     db.commit()
     return {"ok": True, "wa_autonomous": conv.wa_autonomous, "sent": sent, "delivered": delivered}
+
+
+# ============================================================================
+# WHATSAPP HISTORY SYNC — подтянуть ВСЕ существующие переписки из WAHA-стора
+# в БД + классифицировать лид/не-лид. Фоновая задача (импорт может идти минуты),
+# прогресс отдаётся через GET /whatsapp/status.
+# ============================================================================
+
+# Состояние последней/текущей синхронизации (in-memory, на процесс).
+_WA_SYNC_STATE: dict = {
+    "running": False, "started_at": None, "finished_at": None,
+    "stats": None, "error": None,
+}
+
+
+async def _run_wa_sync_bg(max_chats: int, per_chat: int, classify: bool) -> None:
+    """Фоновый прогон: своя DB-сессия (не request-scoped), пишет прогресс в
+    _WA_SYNC_STATE. Любая ошибка ловится — состояние не зависает в running."""
+    import main as _main
+    from datetime import datetime, timezone
+    from db.connection import session_scope
+    from services.whatsapp_sync import sync_waha_history
+
+    _WA_SYNC_STATE.update({
+        "running": True, "started_at": datetime.now(timezone.utc).isoformat(),
+        "finished_at": None, "stats": None, "error": None,
+    })
+    try:
+        with session_scope() as db:
+            stats = await sync_waha_history(
+                db, _main.settings, llm=_main.handoff_llm,
+                max_chats=max_chats, per_chat_messages=per_chat, classify=classify,
+            )
+        _WA_SYNC_STATE["stats"] = stats
+    except Exception as e:  # noqa: BLE001
+        log.error(f"[wa-sync] background run failed: {e}")
+        _WA_SYNC_STATE["error"] = str(e)
+    finally:
+        from datetime import datetime as _dt, timezone as _tz
+        _WA_SYNC_STATE["running"] = False
+        _WA_SYNC_STATE["finished_at"] = _dt.now(_tz.utc).isoformat()
+
+
+class WaSyncRequest(BaseModel):
+    max_chats: int = 300
+    per_chat_messages: int = 80
+    classify: bool = True
+
+
+@router.post("/whatsapp/sync")
+async def whatsapp_sync(
+    req: WaSyncRequest,
+    _: None = Depends(_verify_member),
+):
+    """Запустить импорт всех WhatsApp-переписок из WAHA (в фоне). Идемпотентно:
+    уже импортированные сообщения пропускаются (дедуп по waha_id)."""
+    import asyncio
+    if _WA_SYNC_STATE.get("running"):
+        return {"ok": True, "already_running": True, "state": _WA_SYNC_STATE}
+    asyncio.create_task(_run_wa_sync_bg(
+        max(1, min(req.max_chats, 1000)),
+        max(1, min(req.per_chat_messages, 300)),
+        bool(req.classify),
+    ))
+    return {"ok": True, "started": True}
+
+
+@router.get("/whatsapp/status")
+async def whatsapp_status(
+    _: None = Depends(_verify_member),
+):
+    """Статус WhatsApp-подключения (WAHA-сессия) + прогресс последней синхронизации.
+    Сообщает, готов ли стор истории (можно ли тянуть существующие чаты)."""
+    import main as _main
+    from channels.waha import fetch_waha_session_status, fetch_waha_chats, WahaHistoryUnavailable
+
+    s = _main.settings
+    base = getattr(s, "waha_base_url", None)
+    out = {
+        "configured": bool(base),
+        "session": None,
+        "session_status": None,
+        "me": None,
+        "history_ready": False,
+        "history_hint": None,
+        "sync": _WA_SYNC_STATE,
+    }
+    if not base:
+        out["history_hint"] = "WAHA не настроен (нет WAHA_BASE_URL)."
+        return out
+
+    sess = await fetch_waha_session_status(base, s.waha_api_key or "", s.waha_session or "default")
+    out["session"] = s.waha_session or "default"
+    out["session_status"] = sess.get("status")
+    out["me"] = sess.get("me")
+
+    # Пробуем тронуть history-эндпоинт — определяем, включён ли стор.
+    if sess.get("status") == "WORKING":
+        try:
+            chats = await fetch_waha_chats(base, s.waha_api_key or "", s.waha_session or "default", limit=1)
+            out["history_ready"] = True
+            out["history_hint"] = f"Стор истории доступен (видно чатов в выборке: {len(chats)})."
+        except WahaHistoryUnavailable as e:
+            out["history_ready"] = False
+            out["history_hint"] = (
+                "Сессия подключена, но стор истории WAHA выключен — существующие "
+                "чаты пока не подтянуть (нужно включить NOWEB-стор и пересканировать QR). "
+                "Новые входящие сообщения уже сохраняются."
+            )
+            log.info(f"[wa-status] history unavailable: {e}")
+    else:
+        out["history_hint"] = "Сессия не подключена (нужен QR)."
+    return out
 
 
 # ============================================================================
