@@ -2342,6 +2342,10 @@ async def _handle_operator_callback(callback: dict, db: Session) -> None:
     token = settings.telegram_bot_token
 
     action, _, conv_id_str = data.partition(":")
+    # WhatsApp draft-mode approval buttons (✅ Отправить / 🚫 Не отправлять).
+    if action in ("wad", "wadx"):
+        await _handle_wa_draft_callback(action, conv_id_str, cb_id, db)
+        return
     if action not in ("takeover", "release"):
         await answer_callback_query(token, cb_id, text="Unknown action")
         return
@@ -2984,11 +2988,170 @@ async def whatsapp_webhook_verify(request: Request):
     raise HTTPException(403, "verification failed")
 
 
+# ============================================================================
+# WhatsApp draft-mode (безопасный тест на живых клиентах) — бот не отвечает
+# клиенту сам, а шлёт черновик + структурное ТЗ администратору в Telegram с
+# кнопками одобрения. Включается wa_draft_mode (bot_settings). См.
+# docs/WHATSAPP_INTEGRATION_RU.md.
+# ============================================================================
+
+_TECHSPEC_PROMPT = """Ты — ассистент отдела продаж. По переписке с клиентом составь краткое структурированное техзадание (ТЗ) для администратора. Используй ТОЛЬКО факты из диалога, ничего не выдумывай; чего нет — пиши «не указано». По-русски, сжато, по пунктам.
+
+📋 ТЗ (черновик)
+• Что нужно клиенту:
+• Детали / объём:
+• Адрес / локация:
+• Сроки / срочность:
+• Бюджет:
+• Имя / контакт:
+• Что уточнить:
+
+Переписка:
+{conversation}
+"""
+
+
+def _wa_find_conversation(db: Session, wa_id: str):
+    """Последний WhatsApp-диалог по номеру (channel_conversation_id = wa_id)."""
+    return db.execute(
+        _select(ConvRow)
+        .where(ConvRow.channel == "whatsapp", ConvRow.channel_conversation_id == wa_id)
+        .order_by(_desc(ConvRow.last_message_at))
+        .limit(1)
+    ).scalar_one_or_none()
+
+
+async def _compose_tech_spec(db: Session, conv) -> str:
+    """Собрать структурное ТЗ из последних реплик диалога (вкл. расшифровку
+    голоса — она уже сохранена как текст сообщения)."""
+    rows = (
+        db.query(MessageRow)
+        .filter(MessageRow.conversation_id == conv.id)
+        .order_by(MessageRow.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    rows = list(reversed(rows))
+    convo = "\n".join(
+        f"{(m.role.value if hasattr(m.role, 'value') else m.role)}: {m.content}"
+        for m in rows if m.content
+    )[:4000]
+    if not convo.strip():
+        return ""
+    return await call_llm(_TECHSPEC_PROMPT.format(conversation=convo))
+
+
+async def _tg_send_with_buttons(token: str, chat_id: str, text: str, reply_markup: dict) -> bool:
+    """sendMessage с inline-клавиатурой (send_telegram_reply кнопки не умеет)."""
+    if not token or not chat_id or not text:
+        return False
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": chat_id, "text": text[:4000],
+                      "reply_markup": reply_markup, "disable_web_page_preview": True},
+            )
+        if r.status_code != 200:
+            log.warning(f"_tg_send_with_buttons {r.status_code}: {r.text[:200]}")
+            return False
+        return True
+    except Exception as e:
+        log.error(f"_tg_send_with_buttons exception: {e}")
+        return False
+
+
+async def _wa_deliver_or_draft(
+    db: Session, *, to_wa_id: str, phone_number_id: str, draft_text: str,
+    client_msg: str, lead_name: Optional[str],
+) -> None:
+    """draft-mode ON → сохранить черновик на диалоге + отправить администратору
+    в Telegram (черновик + ТЗ + кнопки одобрения). OFF → ответить клиенту
+    сразу (прежнее поведение)."""
+    from services import bot_settings as _bs
+
+    if not bool(_bs.get("wa_draft_mode", False)):
+        await send_whatsapp_reply(settings.whatsapp_token, phone_number_id, to_wa_id, draft_text)
+        return
+
+    admin_chat = (_bs.get("manager_chat_id") or "").strip() or (settings.telegram_chat_id or "")
+    if not admin_chat or not settings.telegram_bot_token:
+        log.error("wa_draft_mode ON, но не задан admin Telegram chat / bot token — черновик не доставлен")
+        return
+
+    conv = _wa_find_conversation(db, to_wa_id)
+    if conv is None:
+        log.warning(f"wa_draft: диалог для {to_wa_id} не найден — отправляю клиенту напрямую")
+        await send_whatsapp_reply(settings.whatsapp_token, phone_number_id, to_wa_id, draft_text)
+        return
+
+    conv.pending_wa_draft = {
+        "text": draft_text,
+        "phone_number_id": phone_number_id,
+        "to_wa_id": to_wa_id,
+        "client_msg": (client_msg or "")[:500],
+        "ts": _dt.now(_tz.utc).isoformat(),
+    }
+    db.commit()
+
+    techspec = ""
+    if bool(_bs.get("wa_techspec", True)):
+        try:
+            techspec = await _compose_tech_spec(db, conv)
+        except Exception as e:
+            log.warning(f"wa_techspec failed: {e}")
+
+    name = lead_name or to_wa_id
+    parts = [f"🟢 WhatsApp · {name} · +{to_wa_id}", "", f"📩 Клиент: {(client_msg or '')[:600]}"]
+    if techspec:
+        parts += ["", techspec.strip()]
+    parts += ["", "💬 Предложенный ответ бота:", draft_text[:1500]]
+    text = "\n".join(parts)
+
+    keyboard = {"inline_keyboard": [[
+        {"text": "✅ Отправить", "callback_data": f"wad:{conv.id}"},
+        {"text": "🚫 Не отправлять", "callback_data": f"wadx:{conv.id}"},
+    ]]}
+    await _tg_send_with_buttons(settings.telegram_bot_token, admin_chat, text, keyboard)
+
+
+async def _handle_wa_draft_callback(action: str, conv_id_str: str, cb_id: str, db: Session) -> None:
+    """Админ нажал ✅/🚫 под черновиком WhatsApp в Telegram."""
+    token = settings.telegram_bot_token
+    try:
+        conv_id = PyUUID(conv_id_str)
+    except (ValueError, IndexError):
+        await answer_callback_query(token, cb_id, text="Bad conversation id")
+        return
+    conv = db.get(ConvRow, conv_id)
+    if conv is None or not conv.pending_wa_draft:
+        await answer_callback_query(token, cb_id, text="Черновик не найден или уже обработан.")
+        return
+    draft = conv.pending_wa_draft
+    if action == "wad":
+        ok = await send_whatsapp_reply(
+            settings.whatsapp_token,
+            draft.get("phone_number_id") or settings.whatsapp_phone_number_id or "",
+            draft.get("to_wa_id") or "",
+            draft.get("text") or "",
+        )
+        conv.pending_wa_draft = None
+        db.commit()
+        await answer_callback_query(
+            token, cb_id,
+            text="✅ Отправлено клиенту." if ok else "⚠️ Не отправилось — см. логи.",
+        )
+    else:  # wadx
+        conv.pending_wa_draft = None
+        db.commit()
+        await answer_callback_query(token, cb_id, text="🚫 Отклонено, клиенту не отправлено.")
+
+
 @app.post("/webhooks/whatsapp")
 async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
-    """Receive a WhatsApp Cloud API update, route the text DM through
-    _handle_message, and reply via the Graph API. Mirrors the Messenger/IG
-    handlers. Always returns 200 (Meta retries on non-200 → avoid loops).
+    """Receive a WhatsApp Cloud API update, route the text/voice DM through
+    _handle_message, and reply via the Graph API (or send a draft to the admin
+    when wa_draft_mode is on). Always returns 200 (Meta retries on non-200).
 
     Dormant unless WHATSAPP_TOKEN is configured; signature is verified with
     WHATSAPP_APP_SECRET (falls back to META_APP_SECRET)."""
@@ -3007,7 +3170,13 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
         log.warning(f"whatsapp_webhook: invalid JSON — {e}")
         return {"ok": True}
 
-    normalized = parse_whatsapp_webhook(payload)
+    # Voice messages are transcribed inside the parser (Groq Whisper) — needs
+    # the access token (media download) + groq key. Text path ignores both.
+    normalized = await parse_whatsapp_webhook(
+        payload,
+        access_token=settings.whatsapp_token,
+        groq_api_key=settings.groq_api_key,
+    )
     if normalized is None:
         return {"ok": True}
 
@@ -3027,17 +3196,23 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
         log.error(f"whatsapp_webhook: _handle_message failed — {e}")
         return {"ok": True}
 
+    # operator_takeover (or empty answer) → nothing to send/draft.
+    if not resp.answer:
+        return {"ok": True}
+
     # phone_number_id from the inbound metadata (multi-number safe), else config.
     phone_number_id = (
         (normalized.extra_meta or {}).get("phone_number_id")
         or settings.whatsapp_phone_number_id
         or ""
     )
-    await send_whatsapp_reply(
-        settings.whatsapp_token,
-        phone_number_id,
-        normalized.channel_conversation_id,
-        resp.answer,
+    await _wa_deliver_or_draft(
+        db,
+        to_wa_id=normalized.channel_conversation_id,
+        phone_number_id=phone_number_id,
+        draft_text=resp.answer,
+        client_msg=normalized.content,
+        lead_name=normalized.username,
     )
     return {"ok": True}
 

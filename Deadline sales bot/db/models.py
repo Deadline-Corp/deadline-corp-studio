@@ -247,6 +247,11 @@ class Conversation(Base):
     assigned_member_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), nullable=True, index=True
     )
+    # WhatsApp draft-mode: черновик ответа бота, ждущий одобрения администратора
+    # в Telegram (кнопки ✅/🚫). {text, phone_number_id, to_wa_id, client_msg, ts}.
+    # NULL = нет ожидающего черновика. Аддитивно; используется только когда
+    # включён wa_draft_mode (bot_settings).
+    pending_wa_draft: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     # Notion §20 active funnel stage. Default new_lead so existing rows are valid post-migration.
     # Values: new_lead / in_dialog / qualified / nda / on_call / tz_approved /
     #         proposal / prepayment / in_work / completed_won / post_sale / lost

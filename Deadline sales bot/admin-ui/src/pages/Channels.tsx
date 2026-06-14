@@ -1,8 +1,51 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { api } from '../api/client'
 import { useOverview } from '../overviewContext'
 import { CHANNEL_META, fmtAgo } from '../lib'
 import { HintBar } from '../components/HintBar'
+
+/* Переключатель «режим черновика» для WhatsApp: бот не отвечает клиенту сам,
+   а шлёт черновик + ТЗ администратору в Telegram на одобрение. Хранится в
+   bot_settings (wa_draft_mode) через /behavior. Для безопасного теста на
+   живых клиентах. */
+function WhatsAppDraftToggle() {
+  const [on, setOn] = useState<boolean | null>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    void api.get<any>('/behavior')
+      .then(r => setOn(!!r.overrides?.wa_draft_mode))
+      .catch(() => setOn(false))
+  }, [])
+  const toggle = async () => {
+    if (on === null || busy) return
+    const next = !on
+    setBusy(true)
+    try {
+      await api.post('/behavior', { values: { wa_draft_mode: next } })
+      setOn(next)
+    } catch { /* оставляем прежнее состояние */ }
+    finally { setBusy(false) }
+  }
+  if (on === null) return null
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'flex-start', gap: 8,
+      background: on ? 'var(--accent-soft)' : 'var(--panel-2)',
+      border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', fontSize: 12.5,
+    }}>
+      <label style={{ display: 'flex', gap: 8, cursor: 'pointer', alignItems: 'flex-start' }}>
+        <input type="checkbox" checked={on} disabled={busy} onChange={toggle} style={{ marginTop: 2 }} />
+        <span>
+          <b>🛡 Режим черновика {on ? '— включён' : '— выключен'}</b> — бот не пишет клиенту сам:
+          присылает черновик ответа <b>+ ТЗ</b> администратору в Telegram на одобрение (кнопки ✅/🚫).
+          Для безопасного теста на живых клиентах. Нужен заданный <span style={{ fontFamily: 'monospace' }}>manager_chat_id</span> или
+          <span style={{ fontFamily: 'monospace' }}> TELEGRAM_CHAT_ID</span>.
+        </span>
+      </label>
+    </div>
+  )
+}
 
 /* Каналы: карточки подключения в стиле «подключи за N шагов» (паттерн
    Kommo/Chatwoot). Статус из overview; инструкции — пошаговые раскрывашки.
@@ -121,7 +164,7 @@ export function Channels() {
           ]} />
         </Card>
 
-        <Card icon="🟢" title="WhatsApp (Cloud API)" {...{ status: statusOf('whatsapp').s, statusCls: statusOf('whatsapp').cls }} footer={counts('whatsapp')}>
+        <Card icon="🟢" title="WhatsApp (Cloud API)" {...{ status: statusOf('whatsapp').s, statusCls: statusOf('whatsapp').cls }} footer={<>{counts('whatsapp')}<WhatsAppDraftToggle /></>}>
           <p className="muted" style={{ margin: 0, fontSize: 13 }}>
             ✅ Коннектор готов в боте — приём и ответы тем же мозгом, что в Telegram. Подключаем
             официальным <b>WhatsApp Cloud API</b> от Meta: платформа бесплатна, без риска бана

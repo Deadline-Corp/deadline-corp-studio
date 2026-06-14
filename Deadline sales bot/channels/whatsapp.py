@@ -29,7 +29,15 @@ Typical incoming text message:
   }]
 }
 
-We accept only `type=text`. Skip statuses (delivery/read), media, reactions.
+We accept `type=text` and `type=audio` (voice). Voice is downloaded via the
+media API and transcribed with Groq Whisper (same engine as Telegram voice).
+Statuses (delivery/read), reactions, images, etc. are skipped.
+
+Coexistence (one number used in BOTH the WhatsApp Business App and the Cloud
+API): messages the team sends from the app arrive under the
+`smb_message_echoes` field and as messages from our own number — both are
+skipped so the bot never auto-replies to a human teammate's message.
+
 Sending free-form text only works inside the 24-hour customer-service window
 (i.e. when the user messaged us first — which is exactly the inbound-reply case
 this handler covers). Proactive/template messages are a separate path (TODO).
@@ -42,6 +50,10 @@ from typing import Optional
 
 import httpx
 from pydantic import BaseModel
+
+# Voice transcription is channel-agnostic — reuse the Telegram path's Groq
+# Whisper helper (telegram.py imports nothing from whatsapp.py → no cycle).
+from channels.telegram import transcribe_voice
 
 
 log = logging.getLogger(__name__)
@@ -63,15 +75,65 @@ class NormalizedMessage(BaseModel):
     extra_meta: Optional[dict] = None
 
 
-def parse_whatsapp_webhook(payload: dict) -> Optional[NormalizedMessage]:
-    """Extract the first inbound text message from a WhatsApp Cloud API
-    webhook payload. Returns None for statuses / non-text / malformed events."""
+def _digits(s: str) -> str:
+    """Keep only digits — for comparing phone numbers regardless of +/spaces."""
+    return "".join(ch for ch in s if ch.isdigit())
+
+
+async def download_whatsapp_media(access_token: str, media_id: str) -> Optional[bytes]:
+    """Fetch media (voice/audio) binary from the WhatsApp Cloud API. Two-step:
+      1. GET /<media_id> → {"url": "<lookaside url>", ...}  (url ~5 min TTL)
+      2. GET <url> with Bearer → binary bytes
+
+    Returns None on any failure. Incoming voice is audio/ogg;codecs=opus, which
+    Groq Whisper accepts directly — no FFmpeg transcoding needed."""
+    if not access_token or not media_id:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.get(
+                f"{GRAPH_API_BASE}/{media_id}",
+                headers={"Authorization": f"Bearer {access_token}"},
+            )
+            if r.status_code != 200:
+                log.warning(f"whatsapp getMedia {r.status_code}: {r.text[:200]}")
+                return None
+            url = (r.json() or {}).get("url")
+            if not url:
+                log.warning("whatsapp getMedia: no url in response")
+                return None
+            r2 = await client.get(url, headers={"Authorization": f"Bearer {access_token}"})
+            if r2.status_code != 200:
+                log.warning(f"whatsapp media download {r2.status_code}")
+                return None
+            return r2.content
+    except Exception as e:
+        log.error(f"whatsapp download_whatsapp_media exception: {e}")
+        return None
+
+
+async def parse_whatsapp_webhook(
+    payload: dict,
+    access_token: Optional[str] = None,
+    groq_api_key: Optional[str] = None,
+) -> Optional[NormalizedMessage]:
+    """Extract the first inbound text OR voice message from a WhatsApp Cloud
+    API webhook payload. Voice is downloaded + transcribed (Groq Whisper) when
+    `access_token` and `groq_api_key` are provided. Returns None for statuses,
+    coexistence echoes, self-messages, unsupported media, or malformed events.
+
+    Now async because the voice path performs network I/O (media download +
+    transcription)."""
     if not isinstance(payload, dict) or payload.get("object") != "whatsapp_business_account":
         return None
 
     for entry in payload.get("entry", []):
         for change in entry.get("changes", []):
-            if change.get("field") != "messages":
+            field = change.get("field")
+            # Coexistence: messages the team sends from the app come as echoes.
+            if field == "smb_message_echoes":
+                continue
+            if field != "messages":
                 continue
             value = change.get("value", {})
 
@@ -88,25 +150,72 @@ def parse_whatsapp_webhook(payload: dict) -> Optional[NormalizedMessage]:
                 if wid and nm:
                     name_by_waid[wid] = nm
 
-            phone_number_id = str((value.get("metadata") or {}).get("phone_number_id", ""))
+            metadata = value.get("metadata") or {}
+            phone_number_id = str(metadata.get("phone_number_id", ""))
+            # Our own business number (digits) — drop self/echo messages.
+            own_number = _digits(str(metadata.get("display_phone_number", "")))
 
             for msg in messages:
-                if msg.get("type") != "text":
-                    continue  # media/reaction/location/etc — skip for MVP
-                text = ((msg.get("text") or {}).get("body") or "").strip()
-                if not text:
-                    continue
                 wa_from = str(msg.get("from", ""))
                 if not wa_from:
                     continue
-                return NormalizedMessage(
-                    external_id=wa_from,
-                    content=text,
-                    username=name_by_waid.get(wa_from),
-                    channel_conversation_id=wa_from,
-                    message_type="dm",
-                    extra_meta={"phone_number_id": phone_number_id} if phone_number_id else None,
-                )
+                # Coexistence self-echo guard: never reply to our own number.
+                if own_number and _digits(wa_from) == own_number:
+                    continue
+
+                mtype = msg.get("type")
+                extra = {"phone_number_id": phone_number_id} if phone_number_id else {}
+                uname = name_by_waid.get(wa_from)
+
+                # ---- text ----
+                if mtype == "text":
+                    text = ((msg.get("text") or {}).get("body") or "").strip()
+                    if not text:
+                        continue
+                    return NormalizedMessage(
+                        external_id=wa_from, content=text, username=uname,
+                        channel_conversation_id=wa_from, message_type="dm",
+                        extra_meta=extra or None,
+                    )
+
+                # ---- voice / audio ----
+                if mtype == "audio":
+                    media_id = (msg.get("audio") or {}).get("id")
+                    if not media_id:
+                        continue
+                    base = {**extra, "source": "voice"}
+                    if not access_token or not groq_api_key:
+                        return NormalizedMessage(
+                            external_id=wa_from,
+                            content="[голосовое — транскрипция не настроена, напишите текстом]",
+                            username=uname, channel_conversation_id=wa_from, message_type="dm",
+                            extra_meta={**base, "transcription_failed": "stt_not_configured"},
+                        )
+                    audio = await download_whatsapp_media(access_token, media_id)
+                    if audio is None:
+                        return NormalizedMessage(
+                            external_id=wa_from,
+                            content="[не получилось скачать голосовое, повторите текстом пожалуйста]",
+                            username=uname, channel_conversation_id=wa_from, message_type="dm",
+                            extra_meta={**base, "transcription_failed": "download"},
+                        )
+                    transcript = await transcribe_voice(audio, groq_api_key)
+                    if not transcript:
+                        return NormalizedMessage(
+                            external_id=wa_from,
+                            content="[не разобрал голосовое, повторите текстом пожалуйста]",
+                            username=uname, channel_conversation_id=wa_from, message_type="dm",
+                            extra_meta={**base, "transcription_failed": "stt_empty"},
+                        )
+                    log.info(f"whatsapp voice transcribed ({len(transcript)} chars)")
+                    return NormalizedMessage(
+                        external_id=wa_from, content=transcript, username=uname,
+                        channel_conversation_id=wa_from, message_type="dm",
+                        extra_meta={**base, "transcribed_by": "groq-whisper-v3"},
+                    )
+
+                # other types (image/location/reaction/...) — skip for MVP
+                continue
 
     return None
 
