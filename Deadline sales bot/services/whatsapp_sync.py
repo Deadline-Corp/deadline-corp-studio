@@ -87,12 +87,19 @@ async def sync_waha_history(
     max_chats: int = 300,
     per_chat_messages: int = 80,
     classify: bool = True,
+    reconcile: bool = False,
 ) -> dict:
     """Вытянуть чаты + сообщения из WAHA и импортировать в БД.
 
+    reconcile=True — режим СВЕРКИ: WAHA = источник правды. После импорта чистим
+    «фантомные» локальные сообщения бота (role assistant/system без waha_id и без
+    approved_via — несработавшие черновики, которых в WhatsApp нет), и сверяем, что
+    число WhatsApp-сообщений в БД совпадает с WAHA. Так панель = зеркало WhatsApp.
+
     Возвращает dict со статистикой:
       {ok, chats_seen, chats_imported, groups_skipped, messages_imported,
-       leads, non_leads, errors, session_status, reason?}
+       leads, non_leads, errors, session_status, phantoms_removed,
+       chats_matched, chats_mismatched, mismatches[], reason?}
     """
     base = getattr(settings, "waha_base_url", None)
     key = getattr(settings, "waha_api_key", None) or ""
@@ -101,7 +108,8 @@ async def sync_waha_history(
     stats = {
         "ok": False, "chats_seen": 0, "chats_imported": 0, "groups_skipped": 0,
         "messages_imported": 0, "leads": 0, "non_leads": 0, "errors": 0,
-        "session_status": None,
+        "session_status": None, "phantoms_removed": 0,
+        "chats_matched": 0, "chats_mismatched": 0, "mismatches": [],
     }
     if not base:
         stats["reason"] = "WAHA не настроен (нет WAHA_BASE_URL)."
@@ -198,6 +206,32 @@ async def sync_waha_history(
                     conversation.last_message_at = last_ts_dt
                 stats["chats_imported"] += 1
                 db.flush()
+
+            # --- СВЕРКА (reconcile): WAHA = источник правды ---
+            if reconcile:
+                # 1) убрать фантомные локальные сообщения бота, которых нет в WhatsApp
+                local_msgs = db.execute(
+                    select(Message).where(
+                        Message.conversation_id == conversation.id,
+                        Message.role.in_(["assistant", "system"]),
+                    )
+                ).scalars().all()
+                for msg in local_msgs:
+                    meta = msg.extra_meta or {}
+                    if not meta.get("waha_id") and not meta.get("approved_via"):
+                        db.delete(msg)
+                        stats["phantoms_removed"] += 1
+                db.flush()
+                # 2) сверить: число WhatsApp-сообщений (с waha_id) в БД == число в WAHA
+                db_wa = len(_existing_waha_ids(db, conversation.id))
+                waha_n = len([1 for it in items if it.get("waha_id")])
+                if db_wa == waha_n:
+                    stats["chats_matched"] += 1
+                else:
+                    stats["chats_mismatched"] += 1
+                    stats["mismatches"].append({
+                        "peer": peer, "name": name, "db": db_wa, "waha": waha_n,
+                    })
 
             # --- классификация лид/не-лид ---
             if classify:

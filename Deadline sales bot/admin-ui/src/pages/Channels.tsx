@@ -72,7 +72,7 @@ function WhatsAppSyncPanel() {
   const start = async () => {
     if (busy) return
     setBusy(true)
-    try { await api.post('/whatsapp/sync', { classify: true }); await load() }
+    try { await api.post('/whatsapp/sync', { classify: true, reconcile: true }); await load() }
     catch { /* ignore */ }
     finally { setBusy(false) }
   }

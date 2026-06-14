@@ -701,7 +701,8 @@ _WA_SYNC_STATE: dict = {
 }
 
 
-async def _run_wa_sync_bg(max_chats: int, per_chat: int, classify: bool) -> None:
+async def _run_wa_sync_bg(max_chats: int, per_chat: int, classify: bool,
+                          reconcile: bool = False) -> None:
     """Фоновый прогон: своя DB-сессия (не request-scoped), пишет прогресс в
     _WA_SYNC_STATE. Любая ошибка ловится — состояние не зависает в running."""
     import main as _main
@@ -718,6 +719,7 @@ async def _run_wa_sync_bg(max_chats: int, per_chat: int, classify: bool) -> None
             stats = await sync_waha_history(
                 db, _main.settings, llm=_main.handoff_llm,
                 max_chats=max_chats, per_chat_messages=per_chat, classify=classify,
+                reconcile=reconcile,
             )
         _WA_SYNC_STATE["stats"] = stats
     except Exception as e:  # noqa: BLE001
@@ -733,6 +735,7 @@ class WaSyncRequest(BaseModel):
     max_chats: int = 300
     per_chat_messages: int = 80
     classify: bool = True
+    reconcile: bool = False
 
 
 @router.post("/whatsapp/sync")
@@ -749,6 +752,7 @@ async def whatsapp_sync(
         max(1, min(req.max_chats, 1000)),
         max(1, min(req.per_chat_messages, 300)),
         bool(req.classify),
+        bool(req.reconcile),
     ))
     return {"ok": True, "started": True}
 
