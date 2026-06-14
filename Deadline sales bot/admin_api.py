@@ -1881,6 +1881,18 @@ async def kb_upload(req: KbUploadRequest, _: None = Depends(_verify_owner)):
     return {"ok": True, "source": src, "chunks": n}
 
 
+@router.delete("/kb/{source}")
+async def kb_delete(
+    source: str,
+    _: None = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    """Удалить все чанки KB с данным source (только владелец — деструктивно)."""
+    n = db.query(KBChunk).filter(KBChunk.source == source).delete()
+    db.commit()
+    return {"ok": True, "deleted": n}
+
+
 class OnboardingGenerateRequest(BaseModel):
     dump: str = Field("", max_length=200_000)
     url: Optional[str] = Field(None, max_length=500)
@@ -2086,6 +2098,36 @@ async def automation_save(
     row.cooldown_hours = req.cooldown_hours
     db.commit()
     return {"ok": True, "id": str(row.id)}
+
+
+@router.get("/automations/{rule_id}/runs")
+async def automation_runs(
+    rule_id: str,
+    limit: int = 20,
+    _: None = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """Последние срабатывания правила (для раскрывашки «История» в UI)."""
+    uid = _uuid_or_422(rule_id)
+    limit = max(1, min(limit, 100))
+    rows = (
+        db.query(AutomationRun)
+        .filter(AutomationRun.rule_id == uid)
+        .order_by(AutomationRun.fired_at.desc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "items": [
+            {
+                "id": str(r.id),
+                "conversation_id": str(r.conversation_id),
+                "fired_at": r.fired_at.isoformat() if r.fired_at else None,
+                "detail": r.detail,
+            }
+            for r in rows
+        ]
+    }
 
 
 @router.post("/automations/{rule_id}/toggle")

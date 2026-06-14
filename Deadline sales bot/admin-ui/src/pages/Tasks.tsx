@@ -155,6 +155,7 @@ function MyDay({ showToast }: { showToast: (t: string) => void }) {
 
 function AllTasks({ showToast }: { showToast: (t: string) => void }) {
   const [status, setStatus] = useState('pending')
+  const [executor, setExecutor] = useState<'all' | 'human' | 'bot'>('all')
   const [items, setItems] = useState<ScheduledActionItem[]>([])
   const [loaded, setLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -168,6 +169,8 @@ function AllTasks({ showToast }: { showToast: (t: string) => void }) {
     } catch { /* ignore */ }
   }
   usePolling(load, 30000, [status])
+
+  const filtered = executor === 'all' ? items : items.filter(a => a.executor === executor)
 
   const cancel = async (id: string) => {
     setBusy(true)
@@ -185,7 +188,12 @@ function AllTasks({ showToast }: { showToast: (t: string) => void }) {
           <option value="failed">Ошибки</option>
           <option value="cancelled">Отменены</option>
         </select>
-        <span className="sub" style={{ alignSelf: 'center' }}>{loaded ? `${items.length} шт.` : '…'}</span>
+        <select value={executor} onChange={e => setExecutor(e.target.value as 'all' | 'human' | 'bot')}>
+          <option value="all">Все исполнители</option>
+          <option value="human">👤 Мои</option>
+          <option value="bot">🤖 Бот</option>
+        </select>
+        <span className="sub" style={{ alignSelf: 'center' }}>{loaded ? `${filtered.length} шт.` : '…'}</span>
       </div>
       <div className="card" style={{ padding: 0, overflow: 'auto' }}>
         <table className="tbl">
@@ -193,7 +201,7 @@ function AllTasks({ showToast }: { showToast: (t: string) => void }) {
             <tr><th>Когда</th><th>Тип</th><th>Лид</th><th>Канал</th><th>Текст</th><th>Кто</th><th></th></tr>
           </thead>
           <tbody>
-            {items.map(a => (
+            {filtered.map(a => (
               <tr key={a.id}>
                 <td className="mono" style={{ whiteSpace: 'nowrap' }}>{fmtTime(a.due_at)}</td>
                 <td>{TYPE_LABELS[a.action_type] ?? a.action_type}</td>
@@ -219,7 +227,7 @@ function AllTasks({ showToast }: { showToast: (t: string) => void }) {
             ))}
           </tbody>
         </table>
-        {loaded && items.length === 0 && <div className="empty">Пусто</div>}
+        {loaded && filtered.length === 0 && <div className="empty">Пусто</div>}
       </div>
     </>
   )

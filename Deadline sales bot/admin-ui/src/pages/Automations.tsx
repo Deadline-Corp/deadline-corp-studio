@@ -17,12 +17,22 @@ const ACTION_LABELS: Record<string, string> = {
   notify_admin: '🔔 Уведомить в Telegram',
 }
 
+interface RunItem {
+  id: string
+  conversation_id: string
+  fired_at: string | null
+  detail: Record<string, any> | null
+}
+
 export function Automations() {
   const [items, setItems] = useState<AutomationRuleItem[]>([])
   const [loaded, setLoaded] = useState(false)
   const [editing, setEditing] = useState<AutomationRuleItem | 'new' | null>(null)
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState<{ text: string; err?: boolean } | null>(null)
+  const [runsOpen, setRunsOpen] = useState<string | null>(null)
+  const [runsData, setRunsData] = useState<Record<string, RunItem[]>>({})
+  const [runsBusy, setRunsBusy] = useState(false)
   const stages = useStages()
 
   const showToast = (text: string, err = false) => {
@@ -52,6 +62,18 @@ export function Automations() {
     try { await api.post(`/automations/${r.id}/delete`); showToast('Удалено'); await load() }
     catch (e: any) { showToast(`Ошибка: ${e.message}`, true) }
     finally { setBusy(false) }
+  }
+
+  const toggleRuns = async (id: string) => {
+    if (runsOpen === id) { setRunsOpen(null); return }
+    setRunsOpen(id)
+    if (runsData[id]) return
+    setRunsBusy(true)
+    try {
+      const r = await api.get<{ items: RunItem[] }>(`/automations/${id}/runs?limit=20`)
+      setRunsData(prev => ({ ...prev, [id]: r.items }))
+    } catch { /* ignore */ }
+    finally { setRunsBusy(false) }
   }
 
   const describe = (r: AutomationRuleItem): string => {
@@ -93,20 +115,48 @@ export function Automations() {
           </div>
         )}
         {items.map(r => (
-          <div key={r.id} className="card" style={{ display: 'flex', alignItems: 'center', gap: 12, opacity: r.enabled ? 1 : 0.55 }}>
-            <label style={{ cursor: 'pointer' }} title={r.enabled ? 'Выключить' : 'Включить'}>
-              <input type="checkbox" checked={r.enabled} onChange={() => toggle(r.id)} disabled={busy} />
-            </label>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <b style={{ fontSize: 13.5 }}>{r.name}</b>
-              <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
-                Когда {describe(r)} → {r.actions.map(a => ACTION_LABELS[a.type] ?? a.type).join(' + ')}
+          <div key={r.id} className="card" style={{ opacity: r.enabled ? 1 : 0.55 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <label style={{ cursor: 'pointer' }} title={r.enabled ? 'Выключить' : 'Включить'}>
+                <input type="checkbox" checked={r.enabled} onChange={() => toggle(r.id)} disabled={busy} />
+              </label>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <b style={{ fontSize: 13.5 }}>{r.name}</b>
+                <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+                  Когда {describe(r)} → {r.actions.map(a => ACTION_LABELS[a.type] ?? a.type).join(' + ')}
+                </div>
               </div>
+              <span className="chip" title="Сколько раз сработало">⚡ {r.fired_count}</span>
+              {r.cooldown_hours > 0 && <span className="chip info">повтор через {r.cooldown_hours}ч</span>}
+              <button className="btn sm ghost" onClick={() => toggleRuns(r.id)} title="История срабатываний">
+                {runsOpen === r.id ? '▾' : '▸'} История
+              </button>
+              <button className="btn sm" onClick={() => setEditing(r)}>Изменить</button>
+              <button className="btn sm ghost" onClick={() => remove(r)}>✕</button>
             </div>
-            <span className="chip" title="Сколько раз сработало">⚡ {r.fired_count}</span>
-            {r.cooldown_hours > 0 && <span className="chip info">повтор через {r.cooldown_hours}ч</span>}
-            <button className="btn sm" onClick={() => setEditing(r)}>Изменить</button>
-            <button className="btn sm ghost" onClick={() => remove(r)}>✕</button>
+            {runsOpen === r.id && (
+              <div style={{ marginTop: 10, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+                {runsBusy && !runsData[r.id] && <span className="faint" style={{ fontSize: 12 }}><span className="spin" /> Загрузка…</span>}
+                {runsData[r.id] && runsData[r.id].length === 0 && (
+                  <span className="faint" style={{ fontSize: 12 }}>Правило ещё не срабатывало</span>
+                )}
+                {(runsData[r.id] ?? []).map(run => (
+                  <div key={run.id} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', fontSize: 12, padding: '3px 0' }}>
+                    <span className="faint" style={{ whiteSpace: 'nowrap' }}>
+                      {run.fired_at ? new Date(run.fired_at).toLocaleString('ru') : '—'}
+                    </span>
+                    <span className="muted" style={{ fontFamily: 'monospace', fontSize: 11 }}>
+                      лид {run.conversation_id.slice(0, 8)}
+                    </span>
+                    {run.detail && (
+                      <span className="faint" style={{ fontSize: 11 }}>
+                        {Object.entries(run.detail).map(([k, v]) => `${k}: ${v}`).join(' · ')}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -329,7 +379,7 @@ function RuleEditor({ rule, onClose, onSaved }: {
                           style={{ minHeight: 44, fontSize: 12.5 }} />
               )}
               {a.type === 'bot_message' && (
-                <span className="faint" style={{ fontSize: 11 }}>⚠️ Автоотправка от бота пока только Telegram-лидам; для прочих каналов действие пропустится</span>
+                <span className="faint" style={{ fontSize: 11 }}>Telegram-лидам бот напишет сам. Для не-Telegram каналов сообщение превратится в задачу оператору с готовым текстом.</span>
               )}
             </div>
           ))}

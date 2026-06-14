@@ -16,6 +16,12 @@ export function Brain() {
   const [toast, setToast] = useState<{ text: string; err?: boolean } | null>(null)
   const [advancedOpen, setAdvancedOpen] = useState(false)
 
+  // KB state
+  const [kbSources, setKbSources] = useState<{ source: string; chunks: number }[]>([])
+  const [kbName, setKbName] = useState('')
+  const [kbContent, setKbContent] = useState('')
+  const [kbBusy, setKbBusy] = useState(false)
+
   const showToast = (text: string, err = false) => {
     setToast({ text, err })
     setTimeout(() => setToast(null), 4500)
@@ -28,7 +34,40 @@ export function Brain() {
     } catch { /* ignore */ }
   }
 
-  useEffect(() => { void loadRules() }, [])
+  const loadKb = async () => {
+    try {
+      const r = await api.get<{ sources: { source: string; chunks: number }[] }>('/kb')
+      setKbSources(r.sources)
+    } catch { /* ignore */ }
+  }
+
+  useEffect(() => { void loadRules(); void loadKb() }, [])
+
+  const addKb = async () => {
+    const name = kbName.trim()
+    const content = kbContent.trim()
+    if (!name || content.length < 10 || kbBusy) return
+    setKbBusy(true)
+    try {
+      await api.post('/kb/upload', { source: name, content })
+      showToast('✅ Документ добавлен в базу знаний')
+      setKbName('')
+      setKbContent('')
+      await loadKb()
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setKbBusy(false) }
+  }
+
+  const deleteKb = async (source: string) => {
+    if (!confirm(`Удалить «${source}» из базы знаний?`)) return
+    setKbBusy(true)
+    try {
+      await api.del(`/kb/${encodeURIComponent(source)}`)
+      showToast('Удалено из базы знаний')
+      await loadKb()
+    } catch (e: any) { showToast(`Ошибка: ${e.message}`, true) }
+    finally { setKbBusy(false) }
+  }
 
   const addRule = async () => {
     const rule = newRule.trim()
@@ -70,12 +109,59 @@ export function Brain() {
         сразу, без программиста. Полный «характер» бота — в «Продвинутом» (трогайте осторожно).
       </HintBar>
 
+      {/* ---- База знаний ---- */}
+      <div className="card" style={{ marginBottom: 14 }}>
+        <b>📚 База знаний</b>
+        <p className="muted" style={{ margin: '4px 0 10px', fontSize: 12.5 }}>
+          Документы, которые бот цитирует в ответах: прайс, FAQ, условия работы, кейсы.
+          Добавьте текст — бот будет находить нужный фрагмент и включать в ответ.
+        </p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <input
+            placeholder="Название источника (напр. «Прайс 2025»)"
+            value={kbName}
+            onChange={e => setKbName(e.target.value)}
+          />
+          <textarea
+            placeholder="Содержимое документа (текст, FAQ, условия…)"
+            value={kbContent}
+            onChange={e => setKbContent(e.target.value)}
+            style={{ minHeight: 80 }}
+          />
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            <button className="btn primary" onClick={addKb}
+                    disabled={kbBusy || !kbName.trim() || kbContent.trim().length < 10}>
+              {kbBusy ? <span className="spin" /> : 'Добавить'}
+            </button>
+          </div>
+        </div>
+        {kbSources.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
+            <b style={{ fontSize: 12.5 }}>Загруженные источники</b>
+            {kbSources.map(s => (
+              <div key={s.source} className="version-item"
+                   style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontSize: 13 }}>{s.source}</span>
+                  <span className="faint" style={{ fontSize: 11, marginLeft: 8 }}>{s.chunks} чанков</span>
+                </div>
+                <button className="btn sm ghost" disabled={kbBusy}
+                        onClick={() => deleteKb(s.source)} title="Удалить источник">🗑</button>
+              </div>
+            ))}
+          </div>
+        )}
+        {kbSources.length === 0 && (
+          <div className="faint" style={{ fontSize: 12.5, marginTop: 10 }}>База знаний пуста — добавьте первый документ выше</div>
+        )}
+      </div>
+
       {/* ---- Лёгкий режим: быстрые правила ---- */}
       <div className="card" style={{ marginBottom: 14 }}>
-        <b>➕ Новое правило</b>
+        <b>⚡ Быстрые правила</b>
         <p className="muted" style={{ margin: '4px 0 10px', fontSize: 12.5 }}>
-          Опишите по-человечески: «Когда спрашивают про цену лендинга — называй вилку от $300
-          и сразу зови на созвон». Бот подхватит при похожих вопросах.
+          Короткие подсказки «Когда X — делай Y». Бот подхватывает их в похожих ситуациях.
+          Используйте для повседневной правки поведения — добавляйте в любой момент без деплоя.
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           <textarea
@@ -122,9 +208,9 @@ export function Brain() {
       <div className="card">
         <div style={{ display: 'flex', alignItems: 'center', cursor: 'pointer' }}
              onClick={() => setAdvancedOpen(v => !v)}>
-          <b>🛠 Продвинутое: системный промпт</b>
+          <b>⚙️ Системный промпт <span className="chip" style={{ fontSize: 11, marginLeft: 6 }}>продвинутое</span></b>
           <span className="faint" style={{ marginLeft: 10, fontSize: 12 }}>
-            характер и логика бота целиком — трогайте, только если понимаете зачем
+            ядро личности и инструкций бота, версионируется — менять осторожно
           </span>
           <div style={{ flex: 1 }} />
           <span>{advancedOpen ? '▾' : '▸'}</span>

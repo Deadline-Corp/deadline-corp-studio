@@ -402,7 +402,31 @@ async def _execute_actions(s, rule, conv, cust) -> dict:
         try:
             if at == "bot_message":
                 if (conv.channel or "").lower() != "telegram":
-                    detail[at] = f"skipped: канал {conv.channel} (бот-автоотправка пока Telegram)"
+                    # Не-Telegram канал: бот не может писать сам — создаём задачу оператору.
+                    from db.models import ScheduledAction
+                    text = a.get("text", "")
+                    row = ScheduledAction(
+                        customer_id=conv.customer_id,
+                        conversation_id=conv.id,
+                        channel=conv.channel,
+                        chat_id=conv.channel_conversation_id,
+                        action_type="operator_callback",
+                        executor="human",
+                        due_at=datetime.now(timezone.utc),
+                        status="pending",
+                        payload={
+                            "text": text,
+                            "source": "automation_fallback",
+                            "by": f"automation:{rule.name}",
+                        },
+                    )
+                    s.add(row)
+                    s.flush()
+                    logger.info(
+                        "[automation] bot_message fallback → operator_callback conv=%s channel=%s rule=%r",
+                        str(conv.id)[:8], conv.channel, rule.name,
+                    )
+                    detail[at] = f"fallback_task:{row.id}"
                     continue
                 from services.scheduled_actions import write_scheduled_action
                 action_id, _ = write_scheduled_action(

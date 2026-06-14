@@ -26,12 +26,13 @@ export function Funnel() {
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const [editorOpen, setEditorOpen] = useState(false)
+  const [channelFilter, setChannelFilter] = useState<string>('all')
   const { openConversation } = useDrawer()
   const stages = useStages()
 
   const load = async () => {
     try {
-      const r = await api.get<{ items: ConvSummary[] }>('/conversations?limit=200')
+      const r = await api.get<{ items: ConvSummary[] }>('/conversations?limit=1000')
       setItems(r.items)
       setLoaded(true)
     } catch { /* ignore */ }
@@ -60,9 +61,17 @@ export function Funnel() {
     } finally { setBusy(false) }
   }
 
-  const byStage = (stage: string) => items.filter(c => c.lead_stage === stage)
+  const displayItems = channelFilter === 'all' ? items : items.filter(c => c.channel === channelFilter)
+  const byStage = (stage: string) => displayItems.filter(c => c.lead_stage === stage)
   const known = new Set(stages.map(s => s.stage))
-  const other = items.filter(c => !known.has(c.lead_stage))
+  const other = displayItems.filter(c => !known.has(c.lead_stage))
+
+  const stuckDays = (lastMsgAt: string | null): number | null => {
+    if (!lastMsgAt) return null
+    const diff = Date.now() - new Date(lastMsgAt).getTime()
+    const days = Math.floor(diff / 86400000)
+    return days >= 7 ? days : null
+  }
 
   const renderCard = (c: ConvSummary) => {
     const ch = CHANNEL_META[c.channel]
@@ -85,6 +94,9 @@ export function Funnel() {
           {temp && <span className={`chip ${temp.cls}`}>{temp.label}</span>}
           <span className="chip">скор {c.customer.lead_score}</span>
           <span className="chip">{fmtAgo(c.last_message_at)}</span>
+          {stuckDays(c.last_message_at) !== null && (
+            <span className="chip warn" title="Нет активности больше 7 дней">⏳ {stuckDays(c.last_message_at)} дн.</span>
+          )}
           {c.operator_takeover && <span className="chip ok">👤</span>}
         </div>
       </div>
@@ -106,6 +118,20 @@ export function Funnel() {
         (и уйдёт в CRM). Клик по карточке — откроется переписка. «⚙ Настроить стадии» — переименуйте
         этапы под свой бизнес, бот продолжит работать.
       </HintBar>
+
+      <div className="filters" style={{ marginBottom: 10 }}>
+        <select value={channelFilter} onChange={e => setChannelFilter(e.target.value)}>
+          <option value="all">Все каналы</option>
+          {Object.entries(CHANNEL_META).map(([id, m]) => (
+            <option key={id} value={id}>{m.icon} {m.label}</option>
+          ))}
+        </select>
+        {channelFilter !== 'all' && (
+          <span className="sub" style={{ alignSelf: 'center' }}>
+            {displayItems.length} сделок
+          </span>
+        )}
+      </div>
 
       <div className="kanban">
         {stages.map(s => {
