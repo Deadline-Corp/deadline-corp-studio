@@ -5,44 +5,49 @@ import { useOverview } from '../overviewContext'
 import { CHANNEL_META, fmtAgo } from '../lib'
 import { HintBar } from '../components/HintBar'
 
-/* Переключатель «режим черновика» для WhatsApp: бот не отвечает клиенту сам,
-   а шлёт черновик + ТЗ администратору в Telegram на одобрение. Хранится в
-   bot_settings (wa_draft_mode) через /behavior. Для безопасного теста на
-   живых клиентах. */
-function WhatsAppDraftToggle() {
-  const [on, setOn] = useState<boolean | null>(null)
+/* Режим работы бота в WhatsApp (3 варианта, хранятся в bot_settings через
+   /behavior): 👀 наблюдение (видит, клиенту ничего не пишет) → 📝 черновик
+   администратору на одобрение (+ ТЗ) → 🤖 автоответ клиенту. */
+type WaMode = 'observe' | 'draft' | 'auto'
+const WA_MODES: Array<{ key: WaMode; label: string; desc: string }> = [
+  { key: 'observe', label: '👀 Только наблюдение', desc: 'Бот видит переписку в панели, клиенту НЕ пишет ничего. Самый безопасный — для первого подключения.' },
+  { key: 'draft', label: '📝 Черновик администратору', desc: 'Бот не пишет клиенту сам — присылает черновик ответа + ТЗ в Telegram на одобрение (кнопки ✅/🚫). Нужен manager_chat_id или TELEGRAM_CHAT_ID.' },
+  { key: 'auto', label: '🤖 Автоответ клиенту', desc: 'Бот отвечает клиенту сам, тем же мозгом, что в Telegram.' },
+]
+
+function WhatsAppModeSelector() {
+  const [mode, setMode] = useState<WaMode | null>(null)
   const [busy, setBusy] = useState(false)
   useEffect(() => {
     void api.get<any>('/behavior')
-      .then(r => setOn(!!r.overrides?.wa_draft_mode))
-      .catch(() => setOn(false))
+      .then(r => {
+        const o = r.overrides || {}
+        setMode(o.wa_observe_only ? 'observe' : (o.wa_draft_mode ? 'draft' : 'auto'))
+      })
+      .catch(() => setMode('observe'))
   }, [])
-  const toggle = async () => {
-    if (on === null || busy) return
-    const next = !on
+  const choose = async (m: WaMode) => {
+    if (busy || m === mode) return
     setBusy(true)
     try {
-      await api.post('/behavior', { values: { wa_draft_mode: next } })
-      setOn(next)
-    } catch { /* оставляем прежнее состояние */ }
+      await api.post('/behavior', { values: {
+        wa_observe_only: m === 'observe',
+        wa_draft_mode: m === 'draft',
+      } })
+      setMode(m)
+    } catch { /* оставляем прежнее */ }
     finally { setBusy(false) }
   }
-  if (on === null) return null
+  if (mode === null) return null
   return (
-    <div style={{
-      display: 'flex', alignItems: 'flex-start', gap: 8,
-      background: on ? 'var(--accent-soft)' : 'var(--panel-2)',
-      border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', fontSize: 12.5,
-    }}>
-      <label style={{ display: 'flex', gap: 8, cursor: 'pointer', alignItems: 'flex-start' }}>
-        <input type="checkbox" checked={on} disabled={busy} onChange={toggle} style={{ marginTop: 2 }} />
-        <span>
-          <b>🛡 Режим черновика {on ? '— включён' : '— выключен'}</b> — бот не пишет клиенту сам:
-          присылает черновик ответа <b>+ ТЗ</b> администратору в Telegram на одобрение (кнопки ✅/🚫).
-          Для безопасного теста на живых клиентах. Нужен заданный <span style={{ fontFamily: 'monospace' }}>manager_chat_id</span> или
-          <span style={{ fontFamily: 'monospace' }}> TELEGRAM_CHAT_ID</span>.
-        </span>
-      </label>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+      <b style={{ fontSize: 12.5 }}>Что бот делает с входящими WhatsApp:</b>
+      {WA_MODES.map(m => (
+        <label key={m.key} style={{ display: 'flex', gap: 8, cursor: 'pointer', alignItems: 'flex-start', fontSize: 12.5, opacity: busy ? 0.6 : 1 }}>
+          <input type="radio" name="wa-mode" checked={mode === m.key} disabled={busy} onChange={() => choose(m.key)} style={{ marginTop: 2 }} />
+          <span><b>{m.label}</b><br /><span className="muted">{m.desc}</span></span>
+        </label>
+      ))}
     </div>
   )
 }
@@ -164,7 +169,7 @@ export function Channels() {
           ]} />
         </Card>
 
-        <Card icon="🟢" title="WhatsApp (Cloud API)" {...{ status: statusOf('whatsapp').s, statusCls: statusOf('whatsapp').cls }} footer={<>{counts('whatsapp')}<WhatsAppDraftToggle /></>}>
+        <Card icon="🟢" title="WhatsApp (Cloud API)" {...{ status: statusOf('whatsapp').s, statusCls: statusOf('whatsapp').cls }} footer={<>{counts('whatsapp')}<WhatsAppModeSelector /></>}>
           <p className="muted" style={{ margin: 0, fontSize: 13 }}>
             ✅ Коннектор готов в боте — приём и ответы тем же мозгом, что в Telegram. Подключаем
             официальным <b>WhatsApp Cloud API</b> от Meta: платформа бесплатна, без риска бана

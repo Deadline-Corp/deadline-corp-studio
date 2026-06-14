@@ -3070,6 +3070,11 @@ async def _wa_deliver_or_draft(
     сразу (прежнее поведение)."""
     from services import bot_settings as _bs
 
+    # «Только наблюдение»: диалог уже сохранён/виден в панели — клиенту ничего
+    # не шлём и черновик не готовим. Самый безопасный режим (первое подключение).
+    if bool(_bs.get("wa_observe_only", False)):
+        return
+
     if not bool(_bs.get("wa_draft_mode", False)):
         await send_whatsapp_reply(settings.whatsapp_token, phone_number_id, to_wa_id, draft_text)
         return
