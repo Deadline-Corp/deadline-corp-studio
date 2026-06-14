@@ -91,6 +91,9 @@ async def parse_waha_webhook(
     peer = _digits(frm)
     if not peer:
         return None
+    # WhatsApp иногда шлёт скрытый идентификатор (@lid), а не телефон (@c.us).
+    # Помечаем тип, чтобы приёмник не записал ложный «+<lid>» как номер.
+    peer_type = "lid" if frm.endswith("@lid") else "phone"
 
     role_hint = "operator" if p.get("fromMe") else "user"
     uname = p.get("notifyName") or None
@@ -100,7 +103,8 @@ async def parse_waha_webhook(
     if mtype in ("ptt", "audio"):
         media = p.get("media") or {}
         url = media.get("url")
-        base = {"role_hint": role_hint, "source": "voice", "waha_id": p.get("id")}
+        base = {"role_hint": role_hint, "source": "voice", "waha_id": p.get("id"),
+                "wa_peer_type": peer_type}
         if not url:
             return None
         if not groq_api_key:
@@ -139,7 +143,8 @@ async def parse_waha_webhook(
         return NormalizedMessage(
             external_id=peer, content=text, username=uname,
             channel_conversation_id=peer,
-            extra_meta={"role_hint": role_hint, "waha_id": p.get("id")},
+            extra_meta={"role_hint": role_hint, "waha_id": p.get("id"),
+                        "wa_peer_type": peer_type},
         )
 
     return None

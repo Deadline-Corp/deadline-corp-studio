@@ -355,6 +355,9 @@ def _conv_summary_row(conv: Conversation, cust: Customer, preview: Optional[str]
         "handoff_done": conv.handoff_done,
         "last_message_at": conv.last_message_at.isoformat() if conv.last_message_at else None,
         "created_at": conv.created_at.isoformat() if conv.created_at else None,
+        # ID диалога на канале (для WhatsApp — номер/скрытый @lid). Чтобы карточка
+        # показывала контакт, даже если customer.phone ещё не заполнен.
+        "channel_conversation_id": conv.channel_conversation_id,
         # WhatsApp-триаж: лид/не-лид + причина (NULL если не классифицирован).
         "wa_classification": getattr(conv, "wa_classification", None),
         "customer": {

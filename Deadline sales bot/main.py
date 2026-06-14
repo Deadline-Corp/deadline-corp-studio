@@ -880,6 +880,21 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         except Exception:  # noqa: BLE001
             pass
 
+    # WhatsApp: подтянуть номер и имя ИЗ САМОГО мессенджера, иначе живые входящие
+    # висят без номера/имени и «не совпадают» с тем, что видно в WhatsApp. Имя —
+    # из notifyName (req.username). Телефон — из peer, НО только если это реальный
+    # номер (@c.us), а не скрытый @lid (тогда peer — не телефон; ставить нельзя,
+    # иначе будет ложный «+<lid>»). Тип кладёт парсер в extra_meta.wa_peer_type.
+    if (req.channel or "").lower() == "whatsapp":
+        _peer = (req.channel_conversation_id or req.external_id or "").strip()
+        _peer_type = (req.extra_meta or {}).get("wa_peer_type", "phone")
+        if req.username and not (customer.name or "").strip():
+            customer.name = req.username[:200]
+            db.flush()
+        if _peer and _peer_type != "lid" and not (customer.phone or "").strip():
+            customer.phone = ("+" + _peer)[:50]
+            db.flush()
+
     # Lazy-create a forum topic in the operator supergroup on first message
     # of this conversation. Topic name = "<channel>: <username or short id>".
     # Skip silently if TELEGRAM_OPERATOR_GROUP_ID isn't configured (the team
