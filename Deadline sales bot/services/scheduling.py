@@ -70,6 +70,43 @@ _RU_MONTHS = [
 ]
 
 
+def lead_tz_from_phone(phone: str) -> timezone:
+    """Определить timezone лида по началу номера телефона (только цифры).
+
+    77.. → UTC+5 (Казахстан/Астана)
+    79../78.. → UTC+3 (Москва)
+    971 → UTC+4 (ОАЭ)
+    995/374 → UTC+4 (Грузия/Армения)
+    иначе → BANGKOK (UTC+7, дефолт).
+    """
+    digits = re.sub(r"\D", "", phone or "")
+    if digits.startswith("77"):
+        return timezone(timedelta(hours=5))    # Казахстан (Астана)
+    if digits.startswith("79") or digits.startswith("78"):
+        return timezone(timedelta(hours=3))    # Москва
+    if digits.startswith("971"):
+        return timezone(timedelta(hours=4))    # ОАЭ
+    if digits.startswith("995") or digits.startswith("374"):
+        return timezone(timedelta(hours=4))    # Грузия / Армения
+    return BANGKOK                             # дефолт — Пхукет/Бангкок
+
+
+def tz_label_from_phone(phone: str) -> str:
+    """Короткая подпись пояса для подстановки в текст лиду («время Астаны» и т.п.)."""
+    digits = re.sub(r"\D", "", phone or "")
+    if digits.startswith("77"):
+        return "время Астаны"
+    if digits.startswith("79") or digits.startswith("78"):
+        return "время Москвы"
+    if digits.startswith("971"):
+        return "время Дубая"
+    if digits.startswith("995"):
+        return "время Тбилиси"
+    if digits.startswith("374"):
+        return "время Еревана"
+    return "время Пхукета"
+
+
 def _to_local(dt_utc: datetime) -> datetime:
     """UTC-aware → локальное (Бангкок) время."""
     if dt_utc.tzinfo is None:
@@ -234,16 +271,27 @@ def parse_time_preference(text: str, now_utc: datetime):
     return not_before, hour_min, hour_max
 
 
-def format_slot_human(dt_utc: datetime, now_utc: Optional[datetime] = None) -> str:
-    """Человекочитаемое время слота (локально, Бангкок).
+def format_slot_human(
+    dt_utc: datetime,
+    now_utc: Optional[datetime] = None,
+    tz: Optional[timezone] = None,
+) -> str:
+    """Человекочитаемое время слота.
+
+    По умолчанию форматирует в BANGKOK (UTC+7, для владельца/команды).
+    Если передан tz — форматирует в нём (для лида в его поясе).
 
     Если передан now_utc: сегодня → «сегодня в 14:00», завтра → «завтра в 14:00»,
     иначе — «вторник, 3 июня, в 14:00». Без now_utc — всегда по дню недели.
     """
-    loc = _to_local(dt_utc)
+    if dt_utc.tzinfo is None:
+        dt_utc = dt_utc.replace(tzinfo=timezone.utc)
+    display_tz = tz if tz is not None else BANGKOK
+    loc = dt_utc.astimezone(display_tz)
     hhmm = loc.strftime("%H:%M")
     if now_utc is not None:
-        today = _to_local(now_utc).date()
+        # «сегодня/завтра» тоже проверяем в том же поясе отображения
+        today = (now_utc if now_utc.tzinfo else now_utc.replace(tzinfo=timezone.utc)).astimezone(display_tz).date()
         d = loc.date()
         if d == today:
             return f"сегодня в {hhmm}"
@@ -455,10 +503,30 @@ _LEAD_REMINDER_TMPL = {
 }
 
 
-def lead_reminder_text(call_at_utc: datetime, label: str, medium: Optional[str] = None,
-                       lang: str = "ru") -> str:
-    """Текст напоминания ЛИДУ на его языке (ru/en/th; иначе ru)."""
-    when = format_slot_human(call_at_utc)
+def lead_reminder_text(
+    call_at_utc: datetime,
+    label: str,
+    medium: Optional[str] = None,
+    lang: str = "ru",
+    phone: Optional[str] = None,
+) -> str:
+    """Текст напоминания ЛИДУ на его языке (ru/en/th; иначе ru).
+
+    Если передан phone — время форматируется в поясе лида (определяется по номеру)
+    и к нему добавляется подпись пояса, напр. «в 12:00 (время Астаны)».
+    Без phone — форматирует в BANGKOK (UTC+7), как раньше.
+    """
+    if phone:
+        lead_tz = lead_tz_from_phone(phone)
+        tz_label = tz_label_from_phone(phone)
+        when_raw = format_slot_human(call_at_utc, tz=lead_tz)
+        # Добавляем подпись пояса только если это не дефолтный Пхукет
+        if lead_tz != BANGKOK:
+            when = f"{when_raw} ({tz_label})"
+        else:
+            when = when_raw
+    else:
+        when = format_slot_human(call_at_utc)
     via = f" ({medium})" if medium else ""
     tmpl = _LEAD_REMINDER_TMPL.get((lang or "ru").lower(), _LEAD_REMINDER_TMPL["ru"])
     return tmpl.format(label=label, when=when, via=via)

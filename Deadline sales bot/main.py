@@ -1599,7 +1599,8 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                                 channel=req.channel,
                                 chat_id=str(_chat),
                                 due_at=_fire,
-                                text=_sched.lead_reminder_text(_chosen, _label, _medium, lang=_lead_lang),
+                                text=_sched.lead_reminder_text(_chosen, _label, _medium, lang=_lead_lang,
+                                                              phone=str(_chat) if _chat else None),
                                 audience="lead",
                             )
                         # Админу — в опер-группу.

@@ -773,7 +773,8 @@ async def conversation_call(
                 write_call_reminder,
                 customer_id=str(cust.id), conversation_id=str(conv.id),
                 channel=conv.channel, chat_id=str(chat), due_at=fire,
-                text=_sched.lead_reminder_text(new_dt, label, medium, lang=lang),
+                text=_sched.lead_reminder_text(new_dt, label, medium, lang=lang,
+                                              phone=str(chat) if chat else None),
                 audience="lead",
             )
         if _main.settings.telegram_operator_group_id:
@@ -1223,10 +1224,14 @@ _WA_DRAFTS_STATE: dict = {
 }
 
 
-async def _run_prepare_drafts_bg(overwrite: bool) -> None:
+async def _run_prepare_drafts_bg(overwrite: bool, exclude_phones: list[str] | None = None) -> None:
     import main as _main
+    import re as _re
     from datetime import datetime, timezone
     from db.connection import session_scope
+
+    # Нормализуем exclude_phones до цифр для сравнения
+    _excluded = {_re.sub(r"\D", "", p) for p in (exclude_phones or []) if p}
 
     _WA_DRAFTS_STATE.update({
         "running": True, "started_at": datetime.now(timezone.utc).isoformat(),
@@ -1253,6 +1258,9 @@ async def _run_prepare_drafts_bg(overwrite: bool) -> None:
                 if conv.pending_wa_draft and not overwrite:
                     continue
                 if not conv.channel_conversation_id:
+                    continue
+                # Пропускаем номера из списка исключений
+                if _excluded and _re.sub(r"\D", "", conv.channel_conversation_id or "") in _excluded:
                     continue
                 targets.append((conv, cust))
             _WA_DRAFTS_STATE["total"] = len(targets)
@@ -1311,6 +1319,7 @@ async def _run_prepare_drafts_bg(overwrite: bool) -> None:
 
 class PrepareDraftsRequest(BaseModel):
     overwrite: bool = False
+    exclude_phones: list[str] = []
 
 
 @router.post("/whatsapp/prepare-drafts")
@@ -1319,11 +1328,12 @@ async def whatsapp_prepare_drafts(
     _: None = Depends(_verify_owner),
 ):
     """Сгенерировать черновики ответов для всех активных лидов (в фоне).
-    По умолчанию пропускает диалоги, где уже есть черновик (overwrite=true — пересоздать)."""
+    По умолчанию пропускает диалоги, где уже есть черновик (overwrite=true — пересоздать).
+    exclude_phones — список номеров (в любом формате), которые нужно пропустить."""
     import asyncio
     if _WA_DRAFTS_STATE.get("running"):
         return {"ok": True, "already_running": True, "state": _WA_DRAFTS_STATE}
-    asyncio.create_task(_run_prepare_drafts_bg(bool(req.overwrite)))
+    asyncio.create_task(_run_prepare_drafts_bg(bool(req.overwrite), list(req.exclude_phones)))
     return {"ok": True, "started": True}
 
 
