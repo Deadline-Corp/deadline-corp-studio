@@ -485,6 +485,28 @@ async def conversation_detail(
     )
     field_values = ((cust.profile_data or {}).get("fields") or {})
 
+    # Авто-актуализация черновика: если после его создания лид/оператор написали
+    # новое, старый текст уже не отвечает на последнее сообщение — перегенерируем
+    # под текущую переписку (один LLM-вызов на устаревший черновик; после этого
+    # based_on_count свежий и повторные опросы не триггерят регенерацию).
+    from services import wa_drafts
+    _draft_stale = False
+    if conv.pending_wa_draft and wa_drafts.is_stale(db, conv):
+        try:
+            refreshed = await wa_drafts.refresh_if_stale(db, conv, cust, _main.primary_llm)
+            if refreshed:
+                db.commit()
+            else:
+                _draft_stale = True
+        except Exception as e:  # noqa: BLE001 — не валим карточку из-за LLM
+            db.rollback()
+            _draft_stale = True
+            log.warning(f"[{conv_id[:8]}] auto-refresh draft failed: {e}")
+
+    _pending_draft = conv.pending_wa_draft
+    if _pending_draft:
+        _pending_draft = {**_pending_draft, "stale": _draft_stale}
+
     out = _conv_summary_row(conv, cust, None)
     out.update({
         "fields": [
@@ -500,7 +522,7 @@ async def conversation_detail(
         "crm_contact_id": cust.crm_contact_id,
         # WhatsApp: предложенный ботом ответ на одобрение (режим наблюдения/черновика)
         # + флаг «бот ведёт этот диалог сам».
-        "pending_wa_draft": conv.pending_wa_draft,
+        "pending_wa_draft": _pending_draft,
         "wa_autonomous": bool(getattr(conv, "wa_autonomous", False)),
         # Текущий назначенный созвон (для ручного переноса/отмены из карточки).
         "booked_call_at": (cust.profile_data or {}).get("booked_call_at"),
@@ -799,46 +821,19 @@ async def conversation_suggest_reply(
     pending_wa_draft → в карточке появится блок «🤖 Бот предлагает ответить»
     с кнопкой ✅ Отправить. Для любого лида по запросу (не только пакетно)."""
     import main as _main
-    from datetime import datetime, timezone
+    from services import wa_drafts
 
     conv, cust = _get_conv_or_404(db, conv_id)
-    recent = (
-        db.query(Message)
-        .filter(Message.conversation_id == conv.id)
-        .order_by(Message.created_at.desc()).limit(8).all()
-    )
-    dialog = "\n".join(
-        f"{'Лид' if m.role == 'user' else 'Мы'}: {m.content[:300]}"
-        for m in reversed(recent) if m.role in ("user", "assistant", "operator")
-    )
-    last_user = next((m.content for m in recent if m.role == "user"), "")
-    name = cust.name or "клиент"
-    stage = conv.lead_stage or "new_lead"
-    prompt = (
-        "Ты — менеджер веб-студии Deadline (сайты, автоматизация, AI-боты). "
-        "Веди лида к сделке. По переписке напиши ЛУЧШИЙ следующий ответ лиду: "
-        "ответь на его вопрос, предложи следующий шаг (созвон/демо) или мягко "
-        "верни в диалог. Учитывай стадию. Одно сообщение на «вы», коротко "
-        "(2-4 предложения), без «здравствуйте» если диалог уже шёл, без выдуманных "
-        "цен и фактов. Только текст сообщения.\n\n"
-        f"Имя лида: {name}\nСтадия: {stage}\nПереписка:\n{dialog or '(пусто)'}"
-    )
     try:
-        result = await _main.primary_llm.ainvoke(prompt)
-        draft = (result.content or "").strip()
+        payload = await wa_drafts.generate_for_conv(
+            db, conv, cust, _main.primary_llm, source="manual_suggest",
+        )
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"LLM draft failed: {e}")
-    if not draft:
+    if not payload:
         raise HTTPException(status_code=502, detail="LLM вернул пустой ответ")
-    conv.pending_wa_draft = {
-        "text": draft, "phone_number_id": "",
-        "to_wa_id": conv.channel_conversation_id,
-        "client_msg": (last_user or "")[:500],
-        "source": "manual_suggest",
-        "ts": datetime.now(timezone.utc).isoformat(),
-    }
     db.commit()
-    return {"ok": True, "draft": draft}
+    return {"ok": True, "draft": payload["text"]}
 
 
 # ============================================================================
@@ -1265,43 +1260,15 @@ async def _run_prepare_drafts_bg(overwrite: bool, exclude_phones: list[str] | No
                 targets.append((conv, cust))
             _WA_DRAFTS_STATE["total"] = len(targets)
 
+            from services import wa_drafts
             for conv, cust in targets:
                 try:
-                    recent = (
-                        db.query(Message)
-                        .filter(Message.conversation_id == conv.id)
-                        .order_by(Message.created_at.desc())
-                        .limit(8).all()
+                    payload = await wa_drafts.generate_for_conv(
+                        db, conv, cust, _main.primary_llm, source="batch_prepare",
                     )
-                    dialog = "\n".join(
-                        f"{'Лид' if m.role == 'user' else 'Мы'}: {m.content[:300]}"
-                        for m in reversed(recent) if m.role in ("user", "assistant", "operator")
-                    )
-                    last_user = next((m.content for m in recent if m.role == "user"), "")
-                    name = cust.name or "клиент"
-                    stage = conv.lead_stage or "new_lead"
-                    prompt = (
-                        "Ты — менеджер веб-студии Deadline (сайты, автоматизация, AI-боты). "
-                        "Веди лида к сделке. По переписке напиши ЛУЧШИЙ следующий ответ лиду: "
-                        "ответь на его вопрос, предложи следующий шаг (созвон/демо) или мягко "
-                        "верни в диалог если он замолчал. Учитывай стадию воронки. Одно "
-                        "сообщение на «вы», коротко (2-4 предложения), без «здравствуйте» если "
-                        "диалог уже шёл, без выдуманных цен и фактов. Только текст сообщения.\n\n"
-                        f"Имя лида: {name}\nСтадия: {stage}\nПереписка:\n{dialog or '(пусто)'}"
-                    )
-                    result = await _main.primary_llm.ainvoke(prompt)
-                    draft = (result.content or "").strip()
-                    if not draft:
+                    if not payload:
                         _WA_DRAFTS_STATE["skipped"] += 1
                         continue
-                    conv.pending_wa_draft = {
-                        "text": draft,
-                        "phone_number_id": "",
-                        "to_wa_id": conv.channel_conversation_id,
-                        "client_msg": (last_user or "")[:500],
-                        "source": "batch_prepare",
-                        "ts": datetime.now(timezone.utc).isoformat(),
-                    }
                     db.commit()
                     _WA_DRAFTS_STATE["prepared"] += 1
                 except Exception as e:  # noqa: BLE001

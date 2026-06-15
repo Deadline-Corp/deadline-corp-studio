@@ -139,7 +139,7 @@ export interface ConvDetail extends ConvSummary {
   forum_topic_id: number | null
   crm_deal_id: string | null
   crm_contact_id: string | null
-  pending_wa_draft: { text?: string; client_msg?: string; ts?: string } | null
+  pending_wa_draft: { text?: string; client_msg?: string; ts?: string; source?: string; stale?: boolean; based_on_count?: number } | null
   wa_autonomous: boolean
   hubspot: { contact_url?: string; deal_url?: string }
   utm: { source: string | null; campaign: string | null; medium: string | null; content: string | null }

@@ -486,7 +486,9 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
           <div style={{ borderTop: '1px solid var(--accent-border)', background: 'var(--accent-soft)', padding: '10px 14px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
               <b style={{ fontSize: 13 }}>🤖 Бот предлагает ответить</b>
-              <span className="faint" style={{ fontSize: 11 }}>клиенту НЕ отправлено — нужно ваше «ОК»</span>
+              {detail.pending_wa_draft.stale
+                ? <span className="faint" style={{ fontSize: 11, color: 'var(--warn, #c90)' }}>был ответ вручную — нажмите 🔄, чтобы обновить под последнюю переписку</span>
+                : <span className="faint" style={{ fontSize: 11 }}>клиенту НЕ отправлено — нужно ваше «ОК»</span>}
             </div>
             <textarea value={draftText} onChange={e => setDraftText(e.target.value)}
                       style={{ width: '100%', minHeight: 70, fontSize: 13 }} />

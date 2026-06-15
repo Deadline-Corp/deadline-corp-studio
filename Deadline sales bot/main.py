@@ -3116,13 +3116,16 @@ async def _wa_route_answer(db: Session, conversation, answer: str, req) -> bool:
         return False  # глобальный авто-режим
 
     # Удерживаем: предложенный ответ кладём в карточку диалога на одобрение.
-    conversation.pending_wa_draft = {
-        "text": answer,
-        "phone_number_id": (req.extra_meta or {}).get("phone_number_id") or settings.whatsapp_phone_number_id or "",
-        "to_wa_id": req.channel_conversation_id,
-        "client_msg": (req.content or "")[:500],
-        "ts": _dt.now(_tz.utc).isoformat(),
-    }
+    # based_on_count фиксирует свежесть — если лид/оператор напишут позже,
+    # черновик помечается устаревшим и авто-обновляется (services.wa_drafts).
+    from services import wa_drafts as _wad
+    conversation.pending_wa_draft = _wad.make_payload(
+        conversation, answer,
+        last_user=req.content or "",
+        source="observe",
+        based_on_count=_wad.count_dialog_messages(db, conversation.id),
+        phone_number_id=(req.extra_meta or {}).get("phone_number_id") or settings.whatsapp_phone_number_id or "",
+    )
     db.commit()
 
     # Режим черновика — дополнительно шлём администратору в Telegram (+ ТЗ) с кнопками.
@@ -3246,6 +3249,47 @@ async def _wa_send(to_peer: str, text: str, phone_number_id: str = "") -> bool:
     )
 
 
+async def _record_wa_operator_message(db: Session, normalized) -> None:
+    """Ручной ответ команды с телефона (fromMe) — НЕ гоняем через бота, но
+    СОХРАНЯЕМ в карточку, чтобы панель видела всю переписку (и менеджер, и я).
+    Плюс помечаем диалог: раз менеджер ответил сам, предложенный ботом черновик
+    устаревает и при открытии карточки авто-обновится под последнюю переписку.
+
+    Идемпотентно: дубль по waha_id пропускаем (история-синк мог уже импортировать)."""
+    meta = normalized.extra_meta or {}
+    try:
+        customer, _ = resolve_or_create_customer_with_meta(
+            db, channel="whatsapp",
+            external_id=normalized.external_id,
+            username=normalized.username,
+        )
+        conv = get_or_create_conversation(
+            db, customer_id=customer.id, channel="whatsapp",
+            channel_conversation_id=normalized.channel_conversation_id or normalized.external_id,
+        )
+        # дедуп по waha_id
+        waha_id = meta.get("waha_id")
+        if waha_id:
+            from services.whatsapp_sync import _existing_waha_ids
+            if str(waha_id) in _existing_waha_ids(db, conv.id):
+                return
+        # имя из notifyName, если ещё нет
+        if normalized.username and not (customer.name or "").strip():
+            customer.name = normalized.username[:200]
+            db.flush()
+        append_message(
+            db, conv.id, role="operator", content=normalized.content,
+            extra_meta={**meta, "source": "manual_wa",
+                        "delivered": True, "approved_via": "manual_phone"},
+        )
+        db.commit()
+        log.info(f"[{str(conv.id)[:8]}] manual operator WA reply recorded "
+                 f"(draft will auto-refresh on open)")
+    except Exception as e:  # noqa: BLE001 — запись ручного ответа best-effort
+        db.rollback()
+        log.warning(f"_record_wa_operator_message failed: {e}")
+
+
 @app.post("/webhooks/greenapi")
 async def greenapi_webhook(request: Request, db: Session = Depends(get_db)):
     """Приём вебхука Green-API (неофиц. WhatsApp). Входящее сообщение клиента →
@@ -3264,9 +3308,10 @@ async def greenapi_webhook(request: Request, db: Session = Depends(get_db)):
     if normalized is None:
         return {"ok": True}
 
-    # Исходящее (ручной ответ команды) — не гоняем через бота. (Показ ручных
-    # ответов в панели — отдельным шагом позже.)
+    # Исходящее (ручной ответ команды) — не гоняем через бота, но сохраняем в
+    # карточку, чтобы панель видела всю переписку + черновик авто-устаревал.
     if (normalized.extra_meta or {}).get("role_hint") == "operator":
+        await _record_wa_operator_message(db, normalized)
         return {"ok": True}
 
     msg_req = MessageRequest(
@@ -3309,7 +3354,10 @@ async def waha_webhook(request: Request, db: Session = Depends(get_db)):
     )
     if normalized is None:
         return {"ok": True}
+    # Ручной ответ команды с телефона (fromMe) — не гоним через бота, но СОХРАНЯЕМ
+    # в карточку (панель видит всю переписку) + черновик авто-устаревает.
     if (normalized.extra_meta or {}).get("role_hint") == "operator":
+        await _record_wa_operator_message(db, normalized)
         return {"ok": True}
 
     msg_req = MessageRequest(
