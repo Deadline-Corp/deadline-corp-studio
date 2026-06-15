@@ -3221,6 +3221,7 @@ def _resolve_wa_chat_id(to_peer: str) -> str:
     try:
         from db.connection import SessionLocal
         from channels.waha import chat_id_from_waha_id
+        from sqlalchemy import select
         with SessionLocal() as _db:
             rows = _db.execute(
                 select(MessageRow)
@@ -3355,7 +3356,7 @@ async def _brain_bg(channel_conversation_id: str) -> None:
 # вебхук отвечает 200 МГНОВЕННО (WAHA не ретраит → нет флуда-петли), а тяжёлая
 # работа (парс/LLM/RAG, каждая держит DB-коннект) идёт в фоне НЕ БОЛЕЕ 3 разом,
 # иначе бэклог сообщений после простоя исчерпывает пул → вис (инцидент 06-02).
-_WA_INBOUND_SEMA = _aio_brain.Semaphore(1)
+_WA_INBOUND_SEMA = _aio_brain.Semaphore(3)
 
 
 async def _process_wa_payload(payload: dict, engine: str) -> None:
