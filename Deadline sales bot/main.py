@@ -3294,31 +3294,43 @@ async def _record_wa_operator_message(db: Session, normalized) -> None:
         log.warning(f"_record_wa_operator_message failed: {e}")
 
 
+import asyncio as _aio_brain
+# Ограничитель: не больше N параллельных brain-задач (под флудом вебхуков
+# неограниченные create_task держат по коннекту на LLM → пул исчерпывается → вис).
+_BRAIN_SEMA = _aio_brain.Semaphore(2)
+
+
 async def _brain_bg(channel_conversation_id: str) -> None:
     """Умное авто-ведение в ФОНЕ со СВОЕЙ короткой сессией — НЕ держит коннект
-    вебхука во время LLM (иначе под нагрузкой пул исчерпывается → вис). Вызывать
-    через asyncio.create_task, чтобы вебхук отвечал мгновенно."""
+    вебхука во время LLM. ПО УМОЛЧАНИИ ВЫКЛ (env WA_BRAIN=1) — пока стабильность
+    под живым трафиком не подтверждена. Параллельность ≤2 (семафор)."""
+    import os as _os
+    if _os.getenv("WA_BRAIN", "").strip() not in ("1", "true", "yes"):
+        return
     if not channel_conversation_id:
         return
-    try:
-        from db.connection import session_scope
-        from db.models import Conversation as _C, Customer as _Cu
-        from services.conversation_brain import analyze_and_advance
-        with session_scope() as db:
-            row = (
-                db.query(_C, _Cu).join(_Cu, _C.customer_id == _Cu.id)
-                .filter(_C.channel == "whatsapp",
-                        _C.channel_conversation_id == channel_conversation_id)
-                .order_by(_C.last_message_at.desc().nullslast()).first()
-            )
-            if not row:
-                return
-            conv, cust = row
-            res = await analyze_and_advance(db, conv, cust, primary_llm, settings)
-            if any(res.values()):
-                log.info(f"[{str(conv.id)[:8]}] brain(bg): {res}")
-    except Exception as e:  # noqa: BLE001
-        log.warning(f"_brain_bg failed: {e}")
+    if _BRAIN_SEMA._value <= 0:
+        return  # уже заняты все слоты — пропускаем, периодический sweep догонит
+    async with _BRAIN_SEMA:
+        try:
+            from db.connection import session_scope
+            from db.models import Conversation as _C, Customer as _Cu
+            from services.conversation_brain import analyze_and_advance
+            with session_scope() as db:
+                row = (
+                    db.query(_C, _Cu).join(_Cu, _C.customer_id == _Cu.id)
+                    .filter(_C.channel == "whatsapp",
+                            _C.channel_conversation_id == channel_conversation_id)
+                    .order_by(_C.last_message_at.desc().nullslast()).first()
+                )
+                if not row:
+                    return
+                conv, cust = row
+                res = await analyze_and_advance(db, conv, cust, primary_llm, settings)
+                if any(res.values()):
+                    log.info(f"[{str(conv.id)[:8]}] brain(bg): {res}")
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"_brain_bg failed: {e}")
 
 
 @app.post("/webhooks/greenapi")
