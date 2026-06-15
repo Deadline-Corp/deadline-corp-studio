@@ -496,6 +496,9 @@ async def conversation_detail(
         # + флаг «бот ведёт этот диалог сам».
         "pending_wa_draft": conv.pending_wa_draft,
         "wa_autonomous": bool(getattr(conv, "wa_autonomous", False)),
+        # Текущий назначенный созвон (для ручного переноса/отмены из карточки).
+        "booked_call_at": (cust.profile_data or {}).get("booked_call_at"),
+        "call_medium": (cust.profile_data or {}).get("call_medium"),
         "hubspot": hubspot,
         "utm": {
             "source": cust.utm_source, "campaign": cust.utm_campaign,
@@ -686,6 +689,97 @@ async def conversation_wa_autonomous(
         conv.pending_wa_draft = None
     db.commit()
     return {"ok": True, "wa_autonomous": conv.wa_autonomous, "sent": sent, "delivered": delivered}
+
+
+# ============================================================================
+# СОЗВОН — ручной перенос/отмена из панели (раньше только если лид сам напишет).
+# Переиспользует те же функции, что и авто-бронь: cancel_call_actions (снять
+# старые напоминания), write_call_booking + write_call_reminder (новое время),
+# reminder_schedule/тексты из services.scheduling. Хранит booked_call_at в
+# customer.profile_data — как делает живой поток в main.py.
+# ============================================================================
+
+class CallActionRequest(BaseModel):
+    action: str                      # "reschedule" | "cancel"
+    time: Optional[str] = None       # ISO datetime (для reschedule)
+
+
+@router.post("/conversations/{conv_id}/call")
+async def conversation_call(
+    conv_id: str,
+    req: CallActionRequest,
+    _: None = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    import asyncio
+    from datetime import datetime, timezone
+    import main as _main
+    from services.scheduled_actions import (
+        cancel_call_actions, write_call_booking, write_call_reminder,
+    )
+    from services import scheduling as _sched
+
+    conv, cust = _get_conv_or_404(db, conv_id)
+    prof = dict(cust.profile_data or {})
+
+    # В обоих случаях снимаем старую бронь + напоминания (обратимо, в cancelled).
+    await asyncio.to_thread(cancel_call_actions, str(conv.id))
+
+    if req.action == "cancel":
+        prof.pop("booked_call_at", None)
+        prof.pop("call_medium", None)
+        cust.profile_data = prof
+        db.commit()
+        return {"ok": True, "action": "cancel"}
+
+    if req.action != "reschedule":
+        raise HTTPException(status_code=400, detail="action: reschedule | cancel")
+    if not req.time:
+        raise HTTPException(status_code=400, detail="Нужно время (time) для переноса")
+    new_dt = _parse_iso(req.time)
+    if new_dt.tzinfo is None:
+        new_dt = new_dt.replace(tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    if new_dt <= now:
+        raise HTTPException(status_code=400, detail="Время должно быть в будущем")
+
+    prof["booked_call_at"] = new_dt.isoformat()
+    cust.profile_data = prof
+    conv.lead_stage = "on_call"
+    db.commit()
+
+    chat = conv.channel_conversation_id
+    medium = prof.get("call_medium")
+    lead_name = cust.name or cust.email or "лид"
+    contact = cust.email or ""
+    lang = prof.get("lang") or "ru"
+    is_msgr = (conv.channel or "website").lower() != "website"
+
+    await asyncio.to_thread(
+        write_call_booking,
+        customer_id=str(cust.id), conversation_id=str(conv.id),
+        channel=conv.channel, chat_id=str(chat) if chat else None,
+        call_at=new_dt, medium=medium,
+    )
+    for fire, label in _sched.reminder_schedule(new_dt, now):
+        if chat and is_msgr:
+            await asyncio.to_thread(
+                write_call_reminder,
+                customer_id=str(cust.id), conversation_id=str(conv.id),
+                channel=conv.channel, chat_id=str(chat), due_at=fire,
+                text=_sched.lead_reminder_text(new_dt, label, medium, lang=lang),
+                audience="lead",
+            )
+        if _main.settings.telegram_operator_group_id:
+            await asyncio.to_thread(
+                write_call_reminder,
+                customer_id=str(cust.id), conversation_id=str(conv.id),
+                channel=conv.channel, chat_id=str(_main.settings.telegram_operator_group_id),
+                due_at=fire,
+                text=_sched.admin_reminder_text(new_dt, lead_name, label, medium, contact),
+                audience="admin",
+            )
+    return {"ok": True, "action": "reschedule", "call_at": new_dt.isoformat()}
 
 
 # ============================================================================

@@ -25,6 +25,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
   const [taskExec, setTaskExec] = useState<'human' | 'bot'>('human')
   const [fieldEdits, setFieldEdits] = useState<Record<string, any>>({})
   const [fieldsOpen, setFieldsOpen] = useState(false)
+  const [callDt, setCallDt] = useState('')  // ручной перенос/назначение созвона
   const [advice, setAdvice] = useState('')
   const [team, setTeam] = useState<any[]>([])
   const [draftText, setDraftText] = useState('')  // редактируемый предложенный ботом ответ (WhatsApp)
@@ -50,6 +51,23 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
   const showToast = (text: string, err = false) => {
     setToast({ text, err })
     setTimeout(() => setToast(null), 3500)
+  }
+
+  const setCall = async (action: 'reschedule' | 'cancel') => {
+    if (busy) return
+    const body: any = { action }
+    if (action === 'reschedule') {
+      if (!callDt) { showToast('Выберите дату и время созвона', true); return }
+      body.time = new Date(callDt).toISOString()  // datetime-local (локальное) → UTC
+    }
+    setBusy(true)
+    try {
+      await api.post(`/conversations/${convId}/call`, body)
+      showToast(action === 'cancel' ? 'Созвон отменён, напоминания сняты' : '📞 Созвон назначен — напоминания пересозданы')
+      setCallDt('')
+      await loadDetail()
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
   }
 
   const loadDetail = async () => {
@@ -309,6 +327,13 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                   finally { setBusy(false) }
                 }}>🔁 Регулярный</button>
                 <Help title="Регулярный клиент" text="Постоянный клининг / ТО: бот сам шлёт плановое напоминание каждые N дней («подтвердите время — команда приедет»). Снять — введите 0." />
+                <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                  {(detail as any).booked_call_at && <span className="chip accent">📞 {fmtTime((detail as any).booked_call_at)}</span>}
+                  <input type="datetime-local" value={callDt} onChange={e => setCallDt(e.target.value)} style={{ fontSize: 12, padding: '3px 6px' }} title="Дата и время созвона" />
+                  <button className="btn sm" onClick={() => setCall('reschedule')} disabled={busy}>📞 {(detail as any).booked_call_at ? 'Перенести' : 'Назначить'}</button>
+                  {(detail as any).booked_call_at && <button className="btn sm ghost" onClick={() => setCall('cancel')} disabled={busy}>Отменить созвон</button>}
+                  <Help title="Созвон" text="Назначить или перенести время созвона прямо из карточки. Бот пересоздаст напоминания (лиду в мессенджер и вам в опер-группу за сутки / 3 ч / 1 ч). Раньше это можно было только если лид сам напишет." />
+                </span>
                 {team.filter((m: any) => m.active).length > 0 && (
                   <select value="" disabled={busy} style={{ fontSize: 12 }}
                           onChange={async e => {
