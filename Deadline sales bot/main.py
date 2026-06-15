@@ -1752,7 +1752,21 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         await send_typing_action(settings.telegram_bot_token, req.channel_conversation_id)
 
     # 6. LLM
-    raw_answer = await call_llm(prompt)
+    # Выравнивание автопилота: когда включён (WA_BRAIN=1, ручной режим), ответы в
+    # WhatsApp генерим тем же «хорошим» движком, что и предлагаемые черновики
+    # (services.wa_drafts: собрать задачу → «от $X» → созвон). Так бот-сам-пишет
+    # = качество одобряемых черновиков. Один LLM-вызов; фолбэк на обычный движок.
+    import os as _os_wa
+    raw_answer = None
+    if (req.channel or "").lower() == "whatsapp" and \
+       _os_wa.getenv("WA_BRAIN", "").strip() in ("1", "true", "yes"):
+        try:
+            from services import wa_drafts as _wad
+            raw_answer = await _wad.generate_reply_text(db, conversation, customer, primary_llm)
+        except Exception as _wae:  # noqa: BLE001
+            log.warning(f"[{str(conversation.id)[:8]}] wa_drafts reply failed, fallback: {_wae}")
+    if not raw_answer:
+        raw_answer = await call_llm(prompt)
 
     # Anti-repeat guard (код-уровень): llama иногда дословно повторяет свой
     # прошлый ответ на коротких follow-up'ах («ааа», email, «успеете?»). Промпт-

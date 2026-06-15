@@ -160,6 +160,21 @@ async def generate_for_conv(
     return payload
 
 
+async def generate_reply_text(db: Session, conv: Any, cust: Any, llm: Any) -> Optional[str]:
+    """Сгенерировать ТЕКСТ следующего ответа лиду тем же «хорошим» движком, что
+    и предлагаемые черновики (собрать задачу → «от $X» → созвон). НЕ трогает
+    pending_wa_draft и БД — просто возвращает чистый текст (или None). Нужен,
+    чтобы автопилот (бот пишет сам) отвечал так же качественно, как черновики."""
+    dialog, _last = _build_dialog(db, conv)
+    name = (getattr(cust, "name", None) or "клиент")
+    stage = conv.lead_stage or "new_lead"
+    try:
+        result = await llm.ainvoke(_prompt(name, stage, dialog))
+    except Exception:  # noqa: BLE001
+        return None
+    return _clean_draft(getattr(result, "content", None) or "") or None
+
+
 async def refresh_if_stale(db: Session, conv: Any, cust: Any, llm: Any) -> bool:
     """Если черновик устарел — перегенерировать под последнюю переписку.
     Возвращает True, если обновили. НЕ коммитит."""
