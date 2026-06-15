@@ -1284,8 +1284,12 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
             conversation_id=str(conversation.id),
         )
 
-    # 4. RAG over kb_chunks via pgvector
-    docs = pgvector_search(req.content, k=4)
+    # 4. RAG over kb_chunks via pgvector. ВАЖНО: эмбеддинг bge-m3 — тяжёлый CPU
+    # (+ленивая загрузка модели 2-3ГБ на первом вызове). Делаем в to_thread, иначе
+    # синхронный embed БЛОКИРУЕТ event-loop на секунды → /health не отвечает →
+    # контейнер «виснет» (инцидент 06-15, вис через ~20с после старта на 1-м лиде).
+    import asyncio as _aio_rag
+    docs = await _aio_rag.to_thread(pgvector_search, req.content, 4)
     context = "\n\n".join([
         f"[source: {d.metadata.get('source', '?')}]\n{d.page_content}" for d in docs
     ])
@@ -4415,12 +4419,14 @@ async def training_list(
 # STARTUP LOG
 # ============================================================================
 
+import time as _t_hb
+_HEARTBEAT_MONO = [_t_hb.monotonic()]   # последний «пульс» event-loop (для watchdog)
+
+
 async def _heartbeat_loop():
-    """Лёгкий пульс каждые 4 мин: DB SELECT 1 + строка в лог. Зачем:
-    (1) не давать контейнеру «застывать» в простое (был idle-freeze 2026-06-03 —
-        4 часа тишины в логах, контейнер не отвечал, помог только рестарт);
-    (2) ДИАГНОСТИКА — если строки [heartbeat] в логах ОБРЫВАЮТСЯ, видно точный
-        момент зависания. Sync-ping уведён в to_thread, event-loop не грузит."""
+    """Пульс event-loop каждые 20с (обновляет _HEARTBEAT_MONO — сигнал watchdog'у,
+    что loop ЖИВ) + раз в ~4 мин DB SELECT 1 + строка в лог (анти-idle-freeze +
+    диагностика момента зависания). Sync-ping в to_thread, event-loop не грузит."""
     import asyncio as _a
     from db.connection import engine as _eng
     from sqlalchemy import text as _t
@@ -4429,13 +4435,33 @@ async def _heartbeat_loop():
         with _eng.connect() as c:
             c.execute(_t("SELECT 1"))
 
+    _beat = 0
     while True:
         try:
-            await _a.sleep(240)
-            await _a.to_thread(_ping)
-            log.info("[heartbeat] alive (db ok)")
+            await _a.sleep(20)
+            _HEARTBEAT_MONO[0] = _t_hb.monotonic()  # loop жив → watchdog спокоен
+            _beat += 1
+            if _beat % 12 == 0:                      # ~каждые 4 мин
+                await _a.to_thread(_ping)
+                log.info("[heartbeat] alive (db ok)")
         except Exception as _e:  # noqa: BLE001
             log.warning("[heartbeat] error: %s", _e)
+
+
+def _watchdog_thread() -> None:
+    """ОТДЕЛЬНЫЙ поток (не на event-loop): если пульс не обновлялся >120с — значит
+    event-loop ЗАВИС (процесс «жив, но не отвечает»). Railway restartPolicy
+    ON_FAILURE срабатывает только на КРАШ, не на зависание — поэтому такой вис
+    раньше держался часами. Принудительно роняем процесс (os._exit) → Railway
+    поднимает свежий контейнер за ~1-2 мин. Бесплатное авто-восстановление от виса."""
+    import os as _os
+    import time as _tt
+    while True:
+        _tt.sleep(30)
+        stale = _tt.monotonic() - _HEARTBEAT_MONO[0]
+        if stale > 120:
+            log.error(f"[watchdog] event loop wedged {stale:.0f}s — форсирую рестарт (os._exit)")
+            _os._exit(1)
 
 
 @app.on_event("startup")
@@ -4473,6 +4499,11 @@ async def startup():
     # Heartbeat — всегда: пульс + анти-idle + диагностика зависаний (см. _heartbeat_loop).
     asyncio.create_task(_heartbeat_loop())
     log.info("Heartbeat: running (every 4 min)")
+    # Watchdog — отдельный поток: если event-loop завис >120с, форсит рестарт процесса
+    # (Railway ON_FAILURE поднимет свежий контейнер). Бесплатное авто-восстановление.
+    import threading as _thr
+    _thr.Thread(target=_watchdog_thread, daemon=True, name="loop-watchdog").start()
+    log.info("Watchdog: running (force-restart if loop wedged >120s)")
     log.info(f"Origins:  {settings.allowed_origins}")
     log.info("=" * 60)
 
