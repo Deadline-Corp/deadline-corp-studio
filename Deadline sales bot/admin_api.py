@@ -1274,7 +1274,11 @@ async def _run_prepare_drafts_bg(overwrite: bool, exclude_phones: list[str] | No
             _WA_DRAFTS_STATE["total"] = len(targets)
 
             from services import wa_drafts
+            import asyncio as _aio_pd
             for conv, cust in targets:
+                # Пауза между лидами: пакет не «бежит» по всем разом, уступает
+                # event loop (health/вебхуки отвечают) и не давит на пул/LLM.
+                await _aio_pd.sleep(0.6)
                 try:
                     payload = await wa_drafts.generate_for_conv(
                         db, conv, cust, _main.primary_llm, source="batch_prepare",

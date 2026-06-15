@@ -98,6 +98,13 @@ async def stop_cron_worker(timeout: float = 5.0) -> None:
 async def _worker_loop(*, tenant_config: dict, interval_sec: int) -> None:
     """Run one sweep, sleep, repeat. Cancellation-friendly."""
     logger.info("[cron] worker loop entered")
+    # Стартовая пауза: не нагружаем контейнер тяжёлым sweep, пока он прогревается
+    # (загрузка bge-m3 + KB + первые запросы). Иначе коллизия на старте → пул под
+    # давлением → /health не отвечает (вис, инцидент 06-15). Даём 60с осесть.
+    try:
+        await asyncio.sleep(60)
+    except asyncio.CancelledError:
+        return
     while _running:
         try:
             await sweep_once(tenant_config=tenant_config)
