@@ -3337,13 +3337,16 @@ async def _brain_bg(channel_conversation_id: str) -> None:
 # вебхук отвечает 200 МГНОВЕННО (WAHA не ретраит → нет флуда-петли), а тяжёлая
 # работа (парс/LLM/RAG, каждая держит DB-коннект) идёт в фоне НЕ БОЛЕЕ 3 разом,
 # иначе бэклог сообщений после простоя исчерпывает пул → вис (инцидент 06-02).
-_WA_INBOUND_SEMA = _aio_brain.Semaphore(3)
+_WA_INBOUND_SEMA = _aio_brain.Semaphore(1)
 
 
 async def _process_wa_payload(payload: dict, engine: str) -> None:
     """Фоновая обработка одного входящего WhatsApp (вебхук уже ответил 200).
     Парсит, гонит через _handle_message, отправляет ответ (если не наблюдение),
     запускает умное авто-ведение. Своя сессия, ограничение параллельности."""
+    import os as _os
+    if _os.getenv("WA_WEBHOOK_PAUSE", "").strip() in ("1", "true", "yes"):
+        return  # аварийный стоп обработки (даём приложению разгрузиться)
     async with _WA_INBOUND_SEMA:
         try:
             from db.connection import session_scope

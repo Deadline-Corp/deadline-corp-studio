@@ -508,10 +508,15 @@ async def conversation_detail(
     # при открытии карточки генерируем черновик, если его нет ИЛИ он устарел (после
     # новых реплик лида/оператора). Один LLM-вызов на открытие/устаревание; дальше
     # based_on_count свежий и повторные опросы карточки не триггерят регенерацию.
+    import os as _os
     from services import wa_drafts
     _draft_stale = False
+    # Авто-генерация черновика в GET-пути держит DB-коннект во время LLM; при
+    # поллинге панели это исчерпывает пул и вешает event loop (sync SQLAlchemy).
+    # Поэтому ВКЛ только по env WA_BRAIN=1. Иначе — кнопка «Предложить ответ».
     _wa_active = (
-        conv.channel == "whatsapp"
+        _os.getenv("WA_BRAIN", "").strip() in ("1", "true", "yes")
+        and conv.channel == "whatsapp"
         and not bool(getattr(conv, "wa_autonomous", False))
         and (conv.lead_stage or "new_lead") not in ("lost", "completed_won")
         and conv.status != ConversationStatusEnum.ARCHIVED.value
