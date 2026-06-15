@@ -234,6 +234,10 @@ function PromptEditor({ showToast }: { showToast: (t: string, err?: boolean) => 
   const [busy, setBusy] = useState(false)
   const [problems, setProblems] = useState<string[]>([])
   const [dirty, setDirty] = useState(false)
+  const [previewQ, setPreviewQ] = useState('')
+  const [previewReply, setPreviewReply] = useState<string | null>(null)
+  const [previewErr, setPreviewErr] = useState<string | null>(null)
+  const [previewBusy, setPreviewBusy] = useState(false)
 
   const load = async () => {
     try {
@@ -286,6 +290,21 @@ function PromptEditor({ showToast }: { showToast: (t: string, err?: boolean) => 
     finally { setBusy(false) }
   }
 
+  const runPreview = async () => {
+    const q = previewQ.trim()
+    if (!q || previewBusy) return
+    setPreviewBusy(true)
+    setPreviewReply(null)
+    setPreviewErr(null)
+    try {
+      const r = await api.post<{ ok: boolean; reply?: string; error?: string }>(
+        '/prompt/preview', { question: q })
+      if (r.ok) setPreviewReply(r.reply ?? '')
+      else setPreviewErr(r.error ?? 'Неизвестная ошибка')
+    } catch (e: any) { setPreviewErr(e.detail ?? e.message) }
+    finally { setPreviewBusy(false) }
+  }
+
   return (
     <div style={{ marginTop: 14 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
@@ -330,6 +349,46 @@ function PromptEditor({ showToast }: { showToast: (t: string, err?: boolean) => 
           <div className="faint" style={{ fontSize: 11.5 }}>
             Обязательные плейсхолдеры: {'{context} {history} {question} {corrections} {handoff_block}'} —
             без них сохранение заблокируется. Активная версия подхватывается ботом за 60 секунд, без деплоя.
+          </div>
+
+          {/* ---- Превью ответа бота ---- */}
+          <div className="card" style={{ marginTop: 14, padding: 12, background: 'var(--bg2, rgba(0,0,0,0.04))' }}>
+            <b style={{ fontSize: 13 }}>🧪 Проверить ответ</b>
+            <p className="faint" style={{ fontSize: 11.5, margin: '4px 0 8px' }}>
+              Быстрый прогон без истории лида и базы знаний — примерная проверка тона/логики.
+            </p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <textarea
+                placeholder="Введите тестовый вопрос лида…"
+                value={previewQ}
+                onChange={e => setPreviewQ(e.target.value)}
+                style={{ flex: 1, minHeight: 52 }}
+                onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) runPreview() }}
+              />
+              <button
+                className="btn sm primary"
+                onClick={runPreview}
+                disabled={previewBusy || !previewQ.trim()}
+                style={{ alignSelf: 'flex-start' }}
+              >
+                {previewBusy ? <span className="spin" /> : 'Прогнать'}
+              </button>
+            </div>
+            {previewReply !== null && (
+              <div style={{
+                marginTop: 10, padding: '10px 12px',
+                background: 'var(--bg, #fff)', borderRadius: 8,
+                border: '1px solid var(--border, rgba(0,0,0,0.1))',
+                fontSize: 13, lineHeight: 1.55, whiteSpace: 'pre-wrap',
+              }}>
+                {previewReply}
+              </div>
+            )}
+            {previewErr && (
+              <div style={{ marginTop: 8, fontSize: 12.5, color: 'var(--danger)' }}>
+                Ошибка: {previewErr}
+              </div>
+            )}
           </div>
         </div>
 

@@ -30,6 +30,7 @@ from db.connection import get_db
 from db.models import (
     Customer,
     Conversation,
+    ConversationStatusEnum,
     Message,
     KBChunk,
     TrainingCorrection,
@@ -381,12 +382,13 @@ async def conversations_list(
     status: Optional[str] = None,
     takeover: Optional[bool] = None,
     q: Optional[str] = None,
+    include_archived: bool = False,
     limit: int = 50,
     offset: int = 0,
     _: None = Depends(_verify_member),
     db: Session = Depends(get_db),
 ):
-    limit = max(1, min(limit, 200))
+    limit = max(1, min(limit, 1000))
     query = (
         db.query(Conversation, Customer)
         .join(Customer, Conversation.customer_id == Customer.id)
@@ -397,6 +399,10 @@ async def conversations_list(
         query = query.filter(Conversation.lead_stage == stage)
     if status:
         query = query.filter(Conversation.status == status)
+    elif not include_archived:
+        # По умолчанию скрываем архивные (слитые дубли, сидлайн recall) из
+        # активных списков/воронки — чтобы не мешали управлению.
+        query = query.filter(Conversation.status != ConversationStatusEnum.ARCHIVED.value)
     if temperature:
         query = query.filter(Customer.lead_temperature == temperature)
     if takeover is not None:
@@ -1014,6 +1020,142 @@ async def whatsapp_import_leads(
     db.commit()
     return {"ok": True, "imported": imported, "updated": updated,
             "skipped": skipped, "items": items}
+
+
+# ============================================================================
+# WHATSAPP — дедупликация fable-import лидов и @lid-диалогов по имени.
+# Склеивает fable-import (channel_conversation_id = телефон, <13 символов,
+# wa_classification.by == 'fable-import') с @lid-диалогами (id >= 13 символов,
+# by == 'llm') РОВНО при ОДНОМ совпадении первого слова имени. Консервативно.
+# execute=false — только предпросмотр; execute=true — применить слияние.
+# ============================================================================
+
+_LEAD_STAGE_ORDER = [
+    "new_lead", "in_dialog", "qualified", "nda", "on_call", "tz_approved",
+    "proposal", "prepayment", "in_work", "completed_won", "post_sale", "lost",
+]
+
+
+class WaDedupRequest(BaseModel):
+    execute: bool = False
+
+
+@router.post("/whatsapp/dedup")
+async def whatsapp_dedup(
+    req: WaDedupRequest,
+    _: None = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    """Дедупликация: склеить fable-import карточки с @lid-диалогами по первому
+    слову имени. Консервативно — только при РОВНО ОДНОМ кандидате.
+    execute=false — dry-run (только предпросмотр); execute=true — применить."""
+    from db.models import ConversationStatusEnum
+
+    # Загружаем все WhatsApp-диалоги с Customer-ом
+    all_convs = (
+        db.query(Conversation, Customer)
+        .join(Customer, Conversation.customer_id == Customer.id)
+        .filter(Conversation.channel == "whatsapp")
+        .all()
+    )
+
+    # Разбиваем на fable-import (телефон, <13 символов) и @lid (>= 13 символов, llm)
+    fable_convs = []
+    lid_convs = []
+    for conv, cust in all_convs:
+        cid = conv.channel_conversation_id or ""
+        wac = conv.wa_classification or {}
+        by = wac.get("by", "")
+        if by == "fable-import" and len(cid) < 13:
+            fable_convs.append((conv, cust))
+        elif len(cid) >= 13 and by == "llm":
+            lid_convs.append((conv, cust))
+
+    merges = []
+    skipped = []
+
+    for fconv, fcust in fable_convs:
+        fname = (fcust.name or "").strip()
+        if not fname:
+            skipped.append({"name": "(нет имени)", "fable_id": str(fconv.id), "reason": "пустое имя"})
+            continue
+        core = fname.split()[0].lower()
+
+        candidates = [
+            (lconv, lcust)
+            for lconv, lcust in lid_convs
+            if (lcust.name or "").strip().split()[0:1] and
+               (lcust.name or "").strip().split()[0].lower() == core
+        ]
+
+        if len(candidates) == 0:
+            skipped.append({"name": fname, "fable_id": str(fconv.id), "reason": "нет кандидатов среди @lid"})
+            continue
+        if len(candidates) > 1:
+            names = [c.name for _, c in candidates]
+            skipped.append({"name": fname, "fable_id": str(fconv.id),
+                            "reason": f"неоднозначно: {len(candidates)} кандидата — {names}"})
+            continue
+
+        lconv, lcust = candidates[0]
+        action_taken = []
+
+        if req.execute:
+            # 1. pending_wa_draft: перенести из fable в lid если у lid нет своего
+            if fconv.pending_wa_draft and not lconv.pending_wa_draft:
+                lconv.pending_wa_draft = fconv.pending_wa_draft
+                action_taken.append("pending_wa_draft перенесён")
+
+            # 2. wa_classification: дописать demo_url/note в summary lid если пусто
+            fwac = fconv.wa_classification or {}
+            demo = fwac.get("demo_url")
+            note = fwac.get("note")
+            if demo or note:
+                bits = []
+                if demo: bits.append(f"Демо (из fable): {demo}")
+                if note: bits.append(f"Заметка (из fable): {note}")
+                addition = " · ".join(bits)
+                if not (lconv.summary or "").strip():
+                    lconv.summary = addition[:2000]
+                    action_taken.append("summary дополнен из fable")
+
+            # 3. lead_stage: поднять до fable-стадии если она «дальше» по воронке
+            try:
+                fstage_idx = _LEAD_STAGE_ORDER.index(fconv.lead_stage or "new_lead")
+            except ValueError:
+                fstage_idx = 0
+            try:
+                lstage_idx = _LEAD_STAGE_ORDER.index(lconv.lead_stage or "new_lead")
+            except ValueError:
+                lstage_idx = 0
+            if fstage_idx > lstage_idx:
+                lconv.lead_stage = fconv.lead_stage
+                action_taken.append(f"lead_stage поднят до {fconv.lead_stage}")
+
+            # 4. fable-conv → ARCHIVED (обратимо, не удалять)
+            fconv.status = ConversationStatusEnum.ARCHIVED
+            fconv.summary = ((fconv.summary or "") + f" → слит в {lconv.id}").strip()[:2000]
+            action_taken.append("fable-conv архивирован")
+
+            db.flush()
+
+        merges.append({
+            "name": fname,
+            "fable_id": str(fconv.id),
+            "lid_id": str(lconv.id),
+            "lid_cid": lconv.channel_conversation_id,
+            "action": ", ".join(action_taken) if action_taken else "dry-run",
+        })
+
+    if req.execute:
+        db.commit()
+
+    return {
+        "ok": True,
+        "execute": req.execute,
+        "merges": merges,
+        "skipped": skipped,
+    }
 
 
 # ============================================================================
@@ -1802,6 +1944,40 @@ async def prompt_test(
         handoff_block="[handoff-блок]",
     )
     return {"ok": True, "rendered_chars": len(rendered), "rendered_preview": rendered[:1500]}
+
+
+class PromptPreviewRequest(BaseModel):
+    question: str
+
+
+@router.post("/prompt/preview")
+async def prompt_preview(
+    req: PromptPreviewRequest,
+    _: None = Depends(_verify_owner),
+):
+    """Быстрый прогон активного системного промпта через LLM.
+    Плейсхолдеры заполняются заглушками — без RAG-контекста и истории лида.
+    Позволяет оператору проверить тон/логику текущего промпта."""
+    import asyncio
+    from services.prompt_store import get_active_system_prompt
+    from prompts import SYSTEM_PROMPT
+
+    tpl = get_active_system_prompt() or SYSTEM_PROMPT
+    filled = tpl.format(
+        context="(превью — без базы знаний)",
+        history="",
+        question=req.question,
+        corrections="",
+        handoff_block="",
+    )
+    try:
+        import main as _main
+        response = await asyncio.to_thread(_main.primary_llm.invoke, filled)
+        reply = response.content.strip()
+        return {"ok": True, "reply": reply}
+    except Exception as exc:  # noqa: BLE001
+        log.warning(f"prompt_preview LLM error: {exc}")
+        return {"ok": False, "error": str(exc)}
 
 
 # ============================================================================
