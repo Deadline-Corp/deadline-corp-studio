@@ -96,7 +96,26 @@ def _clean_draft(text: str) -> str:
     return t
 
 
-def _prompt(name: str, stage: str, dialog: str) -> str:
+def _kb_context(query: str, k: int = 3) -> str:
+    """Достать релевантные факты из базы знаний (pgvector) под запрос лида.
+    Best-effort: пусто, если KB не настроена / ошибка. Тяжёлый embed — в потоке
+    у вызывающего (здесь sync, но вызывается из to_thread-обёрток выше)."""
+    q = (query or "").strip()
+    if not q:
+        return ""
+    try:
+        from db.vector import similarity_search
+        docs = similarity_search(q, k=k)
+        return "\n".join(f"- {d.page_content.strip()}" for d in docs if d.page_content.strip())
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _prompt(name: str, stage: str, dialog: str, kb: str = "") -> str:
+    kb_block = (
+        f"\nФАКТЫ О КОМПАНИИ (опирайся на них, НЕ выдумывай сверх этого):\n{kb}\n"
+        if kb else ""
+    )
     return (
         "Ты менеджер веб-студии Deadline (сайты, боты, AI, автоматизация). "
         "Напиши ОДНО следующее сообщение этому лиду в WhatsApp: тёплое, на «вы», "
@@ -105,9 +124,11 @@ def _prompt(name: str, stage: str, dialog: str) -> str:
         "вопрос (что за проект, цель, сроки); когда понятен тип — можешь назвать "
         "стартовую цену «от $X» и предложить короткий созвон за точным расчётом; "
         "если лид сам просит звонок — согласись и уточни удобное время. Точную "
-        "сумму НЕ называй, фактов не выдумывай.\n"
+        "сумму НЕ называй, фактов не выдумывай. Если уместно — сошлись на наш "
+        "релевантный опыт/кейс из фактов ниже (коротко, без хвастовства).\n"
         "Стартовые цены: лендинг от $300, интернет-магазин от $700, Telegram-бот "
-        "от $300, Telegram Mini App от $500, AI-бот от $300.\n\n"
+        "от $300, Telegram Mini App от $500, AI-бот от $300.\n"
+        f"{kb_block}\n"
         f"Лид: {name}. Стадия: {stage}.\n"
         f"Переписка:\n{dialog or '(пусто)'}\n\n"
         "Ответь ТОЛЬКО готовым текстом сообщения лиду — на русском, без кавычек, "
@@ -148,7 +169,9 @@ async def generate_for_conv(
     dialog, last_user = _build_dialog(db, conv)
     name = (getattr(cust, "name", None) or "клиент")
     stage = conv.lead_stage or "new_lead"
-    result = await llm.ainvoke(_prompt(name, stage, dialog))
+    import asyncio as _aio
+    kb = await _aio.to_thread(_kb_context, last_user or dialog)
+    result = await llm.ainvoke(_prompt(name, stage, dialog, kb))
     text = _clean_draft((getattr(result, "content", None) or ""))
     if not text:
         return None
@@ -168,8 +191,10 @@ async def generate_reply_text(db: Session, conv: Any, cust: Any, llm: Any) -> Op
     dialog, _last = _build_dialog(db, conv)
     name = (getattr(cust, "name", None) or "клиент")
     stage = conv.lead_stage or "new_lead"
+    import asyncio as _aio
+    kb = await _aio.to_thread(_kb_context, _last or dialog)
     try:
-        result = await llm.ainvoke(_prompt(name, stage, dialog))
+        result = await llm.ainvoke(_prompt(name, stage, dialog, kb))
     except Exception:  # noqa: BLE001
         return None
     return _clean_draft(getattr(result, "content", None) or "") or None
