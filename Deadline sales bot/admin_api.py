@@ -2196,6 +2196,50 @@ async def prompt_preview(
         return {"ok": False, "error": str(exc)}
 
 
+_GOAL_LABELS = {
+    "call": "📞 вести на созвон с менеджером",
+    "collect_lead": "📥 собрать заявку (контакт + бриф задачи)",
+    "consult": "💬 проконсультировать и помочь определиться",
+    "sale": "💰 довести до оплаты/договорённости",
+}
+
+
+class SimulateLeadRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=2000)
+
+
+@router.post("/whatsapp/simulate-lead")
+async def whatsapp_simulate_lead(
+    req: SimulateLeadRequest,
+    _: None = Depends(_verify_member),
+):
+    """Симуляция: «если НОВЫЙ лид сейчас напишет это в WhatsApp — что ответит бот
+    и куда поведёт». Собирает РЕАЛЬНЫЙ чат-промпт (цель + цены + правила, как в
+    живом ответе, первый ход, канал whatsapp) и прогоняет через мозг. Один
+    LLM-вызов по запросу владельца — ничего не отправляет и не пишет в БД."""
+    import asyncio
+    import main as _main
+    from prompts import build_chat_prompt
+    from services import bot_settings as _bs
+
+    goal = (_bs.get_all() or {}).get("bot_goal") or "call"
+    prompt = build_chat_prompt(
+        context="", history="", question=req.message,
+        is_first_turn=True, channel="whatsapp",
+    )
+    try:
+        resp = await asyncio.to_thread(_main.primary_llm.invoke, prompt)
+        reply = (resp.content or "").strip()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"LLM error: {exc}")
+    return {
+        "ok": True,
+        "reply": reply,
+        "goal": goal,
+        "goal_label": _GOAL_LABELS.get(goal, goal),
+    }
+
+
 # ============================================================================
 # TRAINING RULES — read-only список (управление через /admin/training/*)
 # ============================================================================

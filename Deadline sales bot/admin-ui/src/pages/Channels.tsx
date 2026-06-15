@@ -10,19 +10,31 @@ import { HintBar } from '../components/HintBar'
    администратору на одобрение (+ ТЗ) → 🤖 автоответ клиенту. */
 type WaMode = 'observe' | 'draft' | 'auto'
 const WA_MODES: Array<{ key: WaMode; label: string; desc: string }> = [
-  { key: 'observe', label: '👀 Только наблюдение', desc: 'Бот видит переписку в панели, клиенту НЕ пишет ничего. Самый безопасный — для первого подключения.' },
-  { key: 'draft', label: '📝 Черновик администратору', desc: 'Бот не пишет клиенту сам — присылает черновик ответа + ТЗ в Telegram на одобрение (кнопки ✅/🚫). Нужен manager_chat_id или TELEGRAM_CHAT_ID.' },
-  { key: 'auto', label: '🤖 Автоответ клиенту', desc: 'Бот отвечает клиенту сам, тем же мозгом, что в Telegram.' },
+  { key: 'observe', label: '👀 Только наблюдение', desc: 'Бот видит переписку и готовит ответ, но клиенту НЕ пишет сам. Вы одобряете каждый ответ в карточке (✅). Безопасно.' },
+  { key: 'draft', label: '📝 Черновик в Telegram', desc: 'Бот не пишет клиенту сам — присылает черновик + ТЗ в Telegram на одобрение (✅/🚫). Нужен manager_chat_id или TELEGRAM_CHAT_ID.' },
+  { key: 'auto', label: '🤖 Автопилот — бот пишет сам', desc: 'Бот сам отвечает каждому новому лиду и ведёт диалог без вашего одобрения. Удобно «на ночь»; утром верните на 👀. В любой переписке можно выключить кнопкой «Взять на себя».' },
 ]
+const GOAL_LABELS: Record<string, string> = {
+  call: '📞 вести на созвон с менеджером',
+  collect_lead: '📥 собрать заявку (контакт + бриф)',
+  consult: '💬 проконсультировать',
+  sale: '💰 довести до оплаты',
+}
 
 function WhatsAppModeSelector() {
   const [mode, setMode] = useState<WaMode | null>(null)
+  const [goal, setGoal] = useState<string>('call')
   const [busy, setBusy] = useState(false)
+  // Тест «что бот ответит новому лиду»
+  const [simMsg, setSimMsg] = useState('Здравствуйте! Сколько стоит сделать сайт?')
+  const [simReply, setSimReply] = useState<string | null>(null)
+  const [simBusy, setSimBusy] = useState(false)
   useEffect(() => {
     void api.get<any>('/behavior')
       .then(r => {
         const o = r.overrides || {}
         setMode(o.wa_observe_only ? 'observe' : (o.wa_draft_mode ? 'draft' : 'auto'))
+        setGoal(o.bot_goal || 'call')
       })
       .catch(() => setMode('observe'))
   }, [])
@@ -38,9 +50,18 @@ function WhatsAppModeSelector() {
     } catch { /* оставляем прежнее */ }
     finally { setBusy(false) }
   }
+  const simulate = async () => {
+    if (simBusy || !simMsg.trim()) return
+    setSimBusy(true); setSimReply(null)
+    try {
+      const r = await api.post<any>('/whatsapp/simulate-lead', { message: simMsg })
+      setSimReply(r.reply || '(пусто)')
+    } catch (e: any) { setSimReply(`Ошибка: ${e.detail ?? e.message}`) }
+    finally { setSimBusy(false) }
+  }
   if (mode === null) return null
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, background: 'var(--panel-2)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 12px' }}>
       <b style={{ fontSize: 12.5 }}>Что бот делает с входящими WhatsApp:</b>
       {WA_MODES.map(m => (
         <label key={m.key} style={{ display: 'flex', gap: 8, cursor: 'pointer', alignItems: 'flex-start', fontSize: 12.5, opacity: busy ? 0.6 : 1 }}>
@@ -48,6 +69,26 @@ function WhatsAppModeSelector() {
           <span><b>{m.label}</b><br /><span className="muted">{m.desc}</span></span>
         </label>
       ))}
+      <div style={{ fontSize: 12, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+        <b>Куда бот ведёт:</b> {GOAL_LABELS[goal] || goal}
+        <span className="muted"> · сначала собирает задачу проекта → даёт «от $X» → созвон. Менять цель/тон — в «Мозг» и «Настройки → Поведение».</span>
+      </div>
+      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+        <b style={{ fontSize: 12.5 }}>🔮 Что бот ответит новому лиду</b>
+        <span className="muted" style={{ fontSize: 11.5, display: 'block', marginBottom: 4 }}>
+          Впишите первое сообщение клиента — увидите реальный ответ бота (тот же мозг и цель). Ничего не отправляется.
+        </span>
+        <textarea value={simMsg} onChange={e => setSimMsg(e.target.value)}
+                  style={{ width: '100%', minHeight: 44, fontSize: 12.5 }} />
+        <button className="btn sm" disabled={simBusy || !simMsg.trim()} onClick={simulate} style={{ marginTop: 4 }}>
+          {simBusy ? '⏳ Думаю…' : 'Показать ответ бота'}
+        </button>
+        {simReply && (
+          <div style={{ marginTop: 6, background: 'var(--accent-soft)', border: '1px solid var(--accent-border)', borderRadius: 6, padding: '8px 10px', fontSize: 12.5, whiteSpace: 'pre-wrap' }}>
+            {simReply}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
