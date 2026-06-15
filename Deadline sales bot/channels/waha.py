@@ -196,7 +196,9 @@ async def resolve_lid_phone(
     url = f"{base_url.rstrip('/')}/api/{session or 'default'}/lids/{digits}"
     headers = {"X-Api-Key": api_key} if api_key else {}
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        # короткий таймаут: вызывается в т.ч. в _handle_message, держа DB-сессию —
+        # длинный HTTP блокировал бы коннект (риск исчерпания пула)
+        async with httpx.AsyncClient(timeout=6) as client:
             r = await client.get(url, headers=headers)
         if r.status_code >= 400:
             return None

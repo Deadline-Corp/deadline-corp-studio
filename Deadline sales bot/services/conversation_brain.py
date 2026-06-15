@@ -155,8 +155,11 @@ async def _book(db: Session, conv: Conversation, cust: Customer,
 
 
 async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
-                              llm: Any, settings: Any) -> dict:
-    """Проанализировать диалог и применить решения. Возвращает что сделано."""
+                              llm: Any, settings: Any, refresh_draft: bool = True) -> dict:
+    """Проанализировать диалог и применить решения. Возвращает что сделано.
+    refresh_draft=False — НЕ перегенерировать черновик (его LLM+KB-эмбед тяжёлые;
+    в bulk-cron-sweep отключаем, чтобы не исчерпать пул; черновик освежается на
+    вебхуке per-message)."""
     done: dict = {"stage": None, "booked": None, "signaled": False}
     if (conv.lead_stage or "new_lead") in ("lost", "completed_won"):
         return done
@@ -262,7 +265,7 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
     # если черновика нет или он устарел. Так панель всегда показывает актуальный
     # ответ, а conversation_detail остаётся без LLM (не вешает пул).
     try:
-        if not bool(getattr(conv, "wa_autonomous", False)):
+        if refresh_draft and not bool(getattr(conv, "wa_autonomous", False)):
             from services import wa_drafts
             if not conv.pending_wa_draft or wa_drafts.is_stale(db, conv):
                 payload = await wa_drafts.generate_for_conv(
@@ -288,7 +291,7 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
 
 
 async def sweep_recent(llm: Any, settings: Any, since_minutes: int = 360,
-                       limit: int = 25) -> dict:
+                       limit: int = 10) -> dict:
     """Периодическая проверка актуальности: пройтись по недавно активным
     WhatsApp-диалогам и до-применить решения, если появились новые реплики
     (в т.ч. РУЧНОЙ ответ оператора с телефона, который мог не прийти вебхуком).
@@ -337,8 +340,12 @@ async def sweep_recent(llm: Any, settings: Any, since_minutes: int = 360,
                 if not row:
                     continue
                 conv, cust = row
-                res = await analyze_and_advance(db, conv, cust, llm, settings)
+                # В bulk-проходе НЕ перегенерируем черновик (LLM+KB-эмбед тяжёлые —
+                # исчерпывали пул, инцидент 06-15). Стадия/бронь/сигнал — да.
+                res = await analyze_and_advance(db, conv, cust, llm, settings, refresh_draft=False)
             out["analyzed"] += 1
+            import asyncio as _a
+            await _a.sleep(0.4)  # уступаем loop между LLM-вызовами (health не виснет)
             if res.get("stage"):
                 out["stage"] += 1
             if res.get("booked"):
