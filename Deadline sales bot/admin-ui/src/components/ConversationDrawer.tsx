@@ -70,6 +70,17 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
     finally { setBusy(false) }
   }
 
+  const suggestReply = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await api.post(`/conversations/${convId}/suggest-reply`, {})
+      showToast('🤖 Ответ предложен — проверьте и нажмите ✅ Отправить')
+      await loadDetail()
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
   const loadDetail = async () => {
     try { setDetail(await api.get<ConvDetail>(`/conversations/${convId}`)) } catch { /* drawer закроют по 401 */ }
   }
@@ -296,6 +307,9 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                   {detail.operator_takeover ? '🤖 Вернуть боту' : '👤 Взять на себя'}
                 </button>
                 <Help title="Взять на себя" text="Бот замолкает в этом диалоге — отвечаете только вы. Лид ничего не заметит. Когда закончите, верните боту — он продолжит сам с того же места." />
+                {detail.channel === 'whatsapp' && !detail.pending_wa_draft && (
+                  <button className="btn sm" onClick={suggestReply} disabled={busy}>🤖 Предложить ответ</button>
+                )}
                 <Help title="Стадия" text="Где лид в вашей воронке. Бот двигает сделку сам по мере прогресса; вы можете перевести вручную здесь или перетащив карточку в Воронке. Изменение уходит и в CRM." />
                 <select value={stagePick} onChange={e => setStagePick(e.target.value)} style={{ padding: '4px 8px', fontSize: 12 }}>
                   <option value="">Сменить стадию…</option>
