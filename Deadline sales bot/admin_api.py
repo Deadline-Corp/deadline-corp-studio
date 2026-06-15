@@ -345,6 +345,24 @@ async def overview(
 # INBOX — переписки всех каналов в одном месте
 # ============================================================================
 
+def _wa_display_name(cust: Customer, conv: Conversation) -> str:
+    """Никогда не «Без имени»: имя → телефон → +номер (реальный @c.us) → хвост
+    скрытого @lid. Юзер просил видеть хотя бы номер, а не «Без имени»."""
+    import re as _re
+    if (cust.name or "").strip():
+        return cust.name.strip()
+    if (cust.phone or "").strip():
+        return cust.phone.strip()
+    cid = (conv.channel_conversation_id or "").strip()
+    digits = _re.sub(r"\D", "", cid)
+    if digits:
+        # реальный номер (@c.us, ≤13 цифр) → +номер; скрытый @lid (длинный) → хвост
+        if len(digits) <= 13:
+            return "+" + digits
+        return "WhatsApp •" + digits[-4:]
+    return "Без имени"
+
+
 def _conv_summary_row(conv: Conversation, cust: Customer, preview: Optional[str]) -> dict:
     return {
         "id": str(conv.id),
@@ -364,6 +382,7 @@ def _conv_summary_row(conv: Conversation, cust: Customer, preview: Optional[str]
         "customer": {
             "id": str(cust.id),
             "name": cust.name,
+            "display_name": _wa_display_name(cust, conv),
             "email": cust.email,
             "phone": cust.phone,
             "lead_score": cust.lead_score,
@@ -485,23 +504,31 @@ async def conversation_detail(
     )
     field_values = ((cust.profile_data or {}).get("fields") or {})
 
-    # Авто-актуализация черновика: если после его создания лид/оператор написали
-    # новое, старый текст уже не отвечает на последнее сообщение — перегенерируем
-    # под текущую переписку (один LLM-вызов на устаревший черновик; после этого
-    # based_on_count свежий и повторные опросы не триггерят регенерацию).
+    # Всегда показывать АКТУАЛЬНЫЙ предложенный ответ: для активного WhatsApp-лида
+    # при открытии карточки генерируем черновик, если его нет ИЛИ он устарел (после
+    # новых реплик лида/оператора). Один LLM-вызов на открытие/устаревание; дальше
+    # based_on_count свежий и повторные опросы карточки не триггерят регенерацию.
     from services import wa_drafts
     _draft_stale = False
-    if conv.pending_wa_draft and wa_drafts.is_stale(db, conv):
+    _wa_active = (
+        conv.channel == "whatsapp"
+        and not bool(getattr(conv, "wa_autonomous", False))
+        and (conv.lead_stage or "new_lead") not in ("lost", "completed_won")
+        and conv.status != ConversationStatusEnum.ARCHIVED.value
+    )
+    if _wa_active and (not conv.pending_wa_draft or wa_drafts.is_stale(db, conv)):
         try:
-            refreshed = await wa_drafts.refresh_if_stale(db, conv, cust, _main.primary_llm)
-            if refreshed:
+            payload = await wa_drafts.generate_for_conv(
+                db, conv, cust, _main.primary_llm, source="auto_open",
+            )
+            if payload:
                 db.commit()
             else:
-                _draft_stale = True
+                _draft_stale = bool(conv.pending_wa_draft)
         except Exception as e:  # noqa: BLE001 — не валим карточку из-за LLM
             db.rollback()
-            _draft_stale = True
-            log.warning(f"[{conv_id[:8]}] auto-refresh draft failed: {e}")
+            _draft_stale = bool(conv.pending_wa_draft)
+            log.warning(f"[{conv_id[:8]}] auto-draft on open failed: {e}")
 
     _pending_draft = conv.pending_wa_draft
     if _pending_draft:

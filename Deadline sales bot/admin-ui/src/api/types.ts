@@ -69,6 +69,7 @@ export interface Overview {
 export interface CustomerBrief {
   id: string
   name: string | null
+  display_name?: string | null
   email: string | null
   phone: string | null
   lead_score: number

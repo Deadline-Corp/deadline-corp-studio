@@ -93,7 +93,7 @@ export function Inbox() {
               <div className="avatar">{initials(c.customer.name)}</div>
               <div className="c-main">
                 <div className="c-name">
-                  {c.customer.name || 'Без имени'}
+                  {c.customer.display_name || c.customer.name || 'Без имени'}
                   <span className={`chip ${ch?.cls ?? ''}`} style={{ fontWeight: 500 }}>
                     {ch?.icon} {ch?.label ?? c.channel}
                   </span>

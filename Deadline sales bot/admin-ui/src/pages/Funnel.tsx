@@ -86,7 +86,7 @@ export function Funnel() {
       >
         <div className="kc-name">
           <span style={{ color: 'var(--accent)', fontWeight: 700, fontSize: 11 }}>{initials(c.customer.name)}</span>
-          {c.customer.name || 'Без имени'}
+          {c.customer.display_name || c.customer.name || 'Без имени'}
           <span className="faint" style={{ marginLeft: 'auto', fontWeight: 400 }}>{ch?.icon}</span>
         </div>
         <div className="kc-preview">{c.preview || '—'}</div>

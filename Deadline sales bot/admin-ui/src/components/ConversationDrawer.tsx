@@ -288,7 +288,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
             <div className="avatar" style={{ width: 38, height: 38, borderRadius: '50%', background: 'var(--panel-2)', display: 'grid', placeItems: 'center', color: 'var(--accent)', fontWeight: 700 }}>
               {initials(detail?.customer.name)}
             </div>
-            <h2>{detail?.customer.name || 'Без имени'}</h2>
+            <h2>{detail?.customer.display_name || detail?.customer.name || 'Без имени'}</h2>
             <button className="btn ghost" onClick={onClose}>✕</button>
           </div>
           {detail && (
