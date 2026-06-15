@@ -57,17 +57,19 @@ function WhatsAppModeSelector() {
    статус опрашивается, пока идёт синхронизация. */
 function WhatsAppSyncPanel() {
   const [st, setSt] = useState<any>(null)
+  const [drafts, setDrafts] = useState<any>(null)
   const [busy, setBusy] = useState(false)
   const load = async () => {
     try { setSt(await api.get<any>('/whatsapp/status')) } catch { /* ignore */ }
+    try { setDrafts(await api.get<any>('/whatsapp/drafts-status')) } catch { /* ignore */ }
   }
   useEffect(() => { void load() }, [])
-  // Пока идёт синхронизация — опрашиваем статус каждые 3 с.
+  // Пока идёт синхронизация ИЛИ подготовка ответов — опрашиваем статус каждые 3 с.
   useEffect(() => {
-    if (!st?.sync?.running) return
+    if (!st?.sync?.running && !drafts?.running) return
     const t = setInterval(() => { void load() }, 3000)
     return () => clearInterval(t)
-  }, [st?.sync?.running])
+  }, [st?.sync?.running, drafts?.running])
 
   const start = async () => {
     if (busy) return
@@ -77,11 +79,20 @@ function WhatsAppSyncPanel() {
     finally { setBusy(false) }
   }
 
+  const prepareDrafts = async () => {
+    if (busy) return
+    setBusy(true)
+    try { await api.post('/whatsapp/prepare-drafts', {}); await load() }
+    catch { /* ignore */ }
+    finally { setBusy(false) }
+  }
+
   if (!st) return null
   if (!st.configured) return null
   const sync = st.sync || {}
   const stats = sync.stats
   const running = !!sync.running
+  const dRunning = !!drafts?.running
   const connected = st.session_status === 'WORKING'
 
   return (
@@ -97,12 +108,23 @@ function WhatsAppSyncPanel() {
         <button className="btn sm" disabled={busy || running || !connected || !st.history_ready} onClick={start}>
           {running ? '⏳ Синхронизирую…' : '🔄 Подтянуть все переписки'}
         </button>
+        <button className="btn sm" disabled={busy || dRunning || !connected} onClick={prepareDrafts} title="Бот сгенерит черновик ответа для каждого активного лида — вы одобряете в карточке">
+          {dRunning ? `⏳ Готовлю ответы ${drafts?.prepared ?? 0}/${drafts?.total ?? 0}` : '🤖 Подготовить ответы на одобрение'}
+        </button>
         {!st.history_ready && connected && (
           <span className="muted" style={{ fontSize: 11.5 }}>
             нужно включить стор истории на сервере WAHA
           </span>
         )}
       </div>
+      {drafts && (drafts.prepared > 0 || drafts.finished_at) && !dRunning && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', fontSize: 11.5 }}>
+          <span className="chip ok">черновиков готово: {drafts.prepared}</span>
+          {drafts.skipped > 0 && <span className="chip">пропущено: {drafts.skipped}</span>}
+          {drafts.errors > 0 && <span className="chip">ошибок: {drafts.errors}</span>}
+          <span className="muted">открой «Переписки» → в карточках лидов готовый ответ + ✅/🚫</span>
+        </div>
+      )}
       {stats && (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', fontSize: 11.5 }}>
           <span className="chip">чатов: {stats.chats_imported}/{stats.chats_seen}</span>

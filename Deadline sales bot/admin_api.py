@@ -1159,6 +1159,129 @@ async def whatsapp_dedup(
 
 
 # ============================================================================
+# WHATSAPP — пакетная подготовка ОТВЕТОВ на одобрение. Для каждого активного
+# лида генерируем «лучший следующий ответ» (по переписке + стадии) и кладём в
+# pending_wa_draft → всплывёт в карточке с кнопками ✅/🚫. Оператор просматривает
+# и одобряет. Фоновая задача (LLM по каждому лиду), прогресс в _WA_DRAFTS_STATE.
+# ============================================================================
+
+_WA_DRAFTS_STATE: dict = {
+    "running": False, "started_at": None, "finished_at": None,
+    "prepared": 0, "skipped": 0, "errors": 0, "total": 0, "error": None,
+}
+
+
+async def _run_prepare_drafts_bg(overwrite: bool) -> None:
+    import main as _main
+    from datetime import datetime, timezone
+    from db.connection import session_scope
+
+    _WA_DRAFTS_STATE.update({
+        "running": True, "started_at": datetime.now(timezone.utc).isoformat(),
+        "finished_at": None, "prepared": 0, "skipped": 0, "errors": 0,
+        "total": 0, "error": None,
+    })
+    try:
+        with session_scope() as db:
+            rows = (
+                db.query(Conversation, Customer)
+                .join(Customer, Conversation.customer_id == Customer.id)
+                .filter(Conversation.channel == "whatsapp")
+                .filter(Conversation.status != ConversationStatusEnum.ARCHIVED.value)
+                .all()
+            )
+            # активные лиды: классифицированы как лид, не «проигран», есть пир
+            targets = []
+            for conv, cust in rows:
+                wac = conv.wa_classification or {}
+                if not wac.get("is_lead"):
+                    continue
+                if (conv.lead_stage or "") in ("lost", "completed_won"):
+                    continue
+                if conv.pending_wa_draft and not overwrite:
+                    continue
+                if not conv.channel_conversation_id:
+                    continue
+                targets.append((conv, cust))
+            _WA_DRAFTS_STATE["total"] = len(targets)
+
+            for conv, cust in targets:
+                try:
+                    recent = (
+                        db.query(Message)
+                        .filter(Message.conversation_id == conv.id)
+                        .order_by(Message.created_at.desc())
+                        .limit(8).all()
+                    )
+                    dialog = "\n".join(
+                        f"{'Лид' if m.role == 'user' else 'Мы'}: {m.content[:300]}"
+                        for m in reversed(recent) if m.role in ("user", "assistant", "operator")
+                    )
+                    last_user = next((m.content for m in recent if m.role == "user"), "")
+                    name = cust.name or "клиент"
+                    stage = conv.lead_stage or "new_lead"
+                    prompt = (
+                        "Ты — менеджер веб-студии Deadline (сайты, автоматизация, AI-боты). "
+                        "Веди лида к сделке. По переписке напиши ЛУЧШИЙ следующий ответ лиду: "
+                        "ответь на его вопрос, предложи следующий шаг (созвон/демо) или мягко "
+                        "верни в диалог если он замолчал. Учитывай стадию воронки. Одно "
+                        "сообщение на «вы», коротко (2-4 предложения), без «здравствуйте» если "
+                        "диалог уже шёл, без выдуманных цен и фактов. Только текст сообщения.\n\n"
+                        f"Имя лида: {name}\nСтадия: {stage}\nПереписка:\n{dialog or '(пусто)'}"
+                    )
+                    result = await _main.primary_llm.ainvoke(prompt)
+                    draft = (result.content or "").strip()
+                    if not draft:
+                        _WA_DRAFTS_STATE["skipped"] += 1
+                        continue
+                    conv.pending_wa_draft = {
+                        "text": draft,
+                        "phone_number_id": "",
+                        "to_wa_id": conv.channel_conversation_id,
+                        "client_msg": (last_user or "")[:500],
+                        "source": "batch_prepare",
+                        "ts": datetime.now(timezone.utc).isoformat(),
+                    }
+                    db.commit()
+                    _WA_DRAFTS_STATE["prepared"] += 1
+                except Exception as e:  # noqa: BLE001
+                    db.rollback()
+                    _WA_DRAFTS_STATE["errors"] += 1
+                    log.warning(f"[prepare-drafts] lead {conv.id} failed: {e}")
+    except Exception as e:  # noqa: BLE001
+        log.error(f"[prepare-drafts] run failed: {e}")
+        _WA_DRAFTS_STATE["error"] = str(e)
+    finally:
+        from datetime import datetime as _dt, timezone as _tz
+        _WA_DRAFTS_STATE["running"] = False
+        _WA_DRAFTS_STATE["finished_at"] = _dt.now(_tz.utc).isoformat()
+
+
+class PrepareDraftsRequest(BaseModel):
+    overwrite: bool = False
+
+
+@router.post("/whatsapp/prepare-drafts")
+async def whatsapp_prepare_drafts(
+    req: PrepareDraftsRequest,
+    _: None = Depends(_verify_owner),
+):
+    """Сгенерировать черновики ответов для всех активных лидов (в фоне).
+    По умолчанию пропускает диалоги, где уже есть черновик (overwrite=true — пересоздать)."""
+    import asyncio
+    if _WA_DRAFTS_STATE.get("running"):
+        return {"ok": True, "already_running": True, "state": _WA_DRAFTS_STATE}
+    asyncio.create_task(_run_prepare_drafts_bg(bool(req.overwrite)))
+    return {"ok": True, "started": True}
+
+
+@router.get("/whatsapp/drafts-status")
+async def whatsapp_drafts_status(_: None = Depends(_verify_member)):
+    """Прогресс пакетной подготовки черновиков ответов."""
+    return _WA_DRAFTS_STATE
+
+
+# ============================================================================
 # FUNNEL — смена стадии (operator override) + зеркало в CRM
 # ============================================================================
 
