@@ -258,6 +258,23 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
             db.commit()
             done["signaled"] = True
 
+    # Держим предложенный ответ свежим — генерим В ФОНЕ (не в GET-пути карточки!),
+    # если черновика нет или он устарел. Так панель всегда показывает актуальный
+    # ответ, а conversation_detail остаётся без LLM (не вешает пул).
+    try:
+        if not bool(getattr(conv, "wa_autonomous", False)):
+            from services import wa_drafts
+            if not conv.pending_wa_draft or wa_drafts.is_stale(db, conv):
+                payload = await wa_drafts.generate_for_conv(
+                    db, conv, cust, llm, source="brain_refresh",
+                )
+                if payload:
+                    db.commit()
+                    done["draft"] = True
+    except Exception as e:  # noqa: BLE001
+        db.rollback()
+        log.warning(f"[{str(conv.id)[:8]}] brain draft refresh failed: {e}")
+
     # Запомнить «проанализировано до этого числа реплик» — периодический sweep
     # пропускает диалоги без новых сообщений (не жжёт LLM зря).
     try:

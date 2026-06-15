@@ -508,36 +508,17 @@ async def conversation_detail(
     # при открытии карточки генерируем черновик, если его нет ИЛИ он устарел (после
     # новых реплик лида/оператора). Один LLM-вызов на открытие/устаревание; дальше
     # based_on_count свежий и повторные опросы карточки не триггерят регенерацию.
-    import os as _os
+    # ВАЖНО: НИКАКИХ LLM в этом GET-пути (карточка поллится панелью; LLM держал
+    # бы DB-коннект → пул исчерпывается → event loop виснет, sync SQLAlchemy).
+    # Черновик генерится в ФОНЕ (services.conversation_brain по новым сообщениям
+    # + cron), здесь только отдаём готовый + дешёвый флаг свежести.
     from services import wa_drafts
-    _draft_stale = False
-    # Авто-генерация черновика в GET-пути держит DB-коннект во время LLM; при
-    # поллинге панели это исчерпывает пул и вешает event loop (sync SQLAlchemy).
-    # Поэтому ВКЛ только по env WA_BRAIN=1. Иначе — кнопка «Предложить ответ».
-    _wa_active = (
-        _os.getenv("WA_BRAIN", "").strip() in ("1", "true", "yes")
-        and conv.channel == "whatsapp"
-        and not bool(getattr(conv, "wa_autonomous", False))
-        and (conv.lead_stage or "new_lead") not in ("lost", "completed_won")
-        and conv.status != ConversationStatusEnum.ARCHIVED.value
-    )
-    if _wa_active and (not conv.pending_wa_draft or wa_drafts.is_stale(db, conv)):
-        try:
-            payload = await wa_drafts.generate_for_conv(
-                db, conv, cust, _main.primary_llm, source="auto_open",
-            )
-            if payload:
-                db.commit()
-            else:
-                _draft_stale = bool(conv.pending_wa_draft)
-        except Exception as e:  # noqa: BLE001 — не валим карточку из-за LLM
-            db.rollback()
-            _draft_stale = bool(conv.pending_wa_draft)
-            log.warning(f"[{conv_id[:8]}] auto-draft on open failed: {e}")
-
     _pending_draft = conv.pending_wa_draft
     if _pending_draft:
-        _pending_draft = {**_pending_draft, "stale": _draft_stale}
+        try:
+            _pending_draft = {**_pending_draft, "stale": wa_drafts.is_stale(db, conv)}
+        except Exception:  # noqa: BLE001
+            pass
 
     out = _conv_summary_row(conv, cust, None)
     out.update({

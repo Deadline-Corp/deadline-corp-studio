@@ -29,6 +29,8 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
   const [advice, setAdvice] = useState('')
   const [team, setTeam] = useState<any[]>([])
   const [draftText, setDraftText] = useState('')  // редактируемый предложенный ботом ответ (WhatsApp)
+  const [draftOpen, setDraftOpen] = useState(true)  // свернуть блок «бот предлагает», чтобы видеть переписку
+  const [replyOpen, setReplyOpen] = useState(false) // окно ручного ответа оператора — по умолчанию свёрнуто
   const msgsRef = useRef<HTMLDivElement>(null)
   const lastTsRef = useRef<string | null>(null)
 
@@ -483,25 +485,30 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
         </div>
 
         {detail?.pending_wa_draft && !detail.wa_autonomous && (
-          <div style={{ borderTop: '1px solid var(--accent-border)', background: 'var(--accent-soft)', padding: '10px 14px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+          <div style={{ borderTop: '1px solid var(--accent-border)', background: 'var(--accent-soft)', padding: '8px 14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
+                 onClick={() => setDraftOpen(v => !v)} title="Свернуть/развернуть">
+              <span style={{ fontSize: 12 }}>{draftOpen ? '▾' : '▸'}</span>
               <b style={{ fontSize: 13 }}>🤖 Бот предлагает ответить</b>
               {detail.pending_wa_draft.stale
-                ? <span className="faint" style={{ fontSize: 11, color: 'var(--warn, #c90)' }}>был ответ вручную — нажмите 🔄, чтобы обновить под последнюю переписку</span>
-                : <span className="faint" style={{ fontSize: 11 }}>клиенту НЕ отправлено — нужно ваше «ОК»</span>}
+                ? <span className="faint" style={{ fontSize: 11, color: 'var(--warn, #c90)' }}>был ответ вручную — нажмите 🔄</span>
+                : <span className="faint" style={{ fontSize: 11 }}>клиенту НЕ отправлено</span>}
+              {!draftOpen && <span className="faint" style={{ fontSize: 11, marginLeft: 'auto', maxWidth: '45%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{draftText}</span>}
             </div>
-            <textarea value={draftText} onChange={e => setDraftText(e.target.value)}
-                      style={{ width: '100%', minHeight: 70, fontSize: 13 }} />
-            <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-              <button className="btn sm primary" onClick={sendWaDraft} disabled={busy || !draftText.trim()}>✅ Отправить</button>
-              <button className="btn sm" onClick={suggestReply} disabled={busy} title="Сгенерировать другой вариант ответа">🔄 Переформулировать</button>
-              <button className="btn sm ghost" onClick={rejectWaDraft} disabled={busy}>🚫 Отклонить</button>
-              <div style={{ flex: 1 }} />
-              <button className="btn sm" onClick={() => setWaAutonomous(true)} disabled={busy}
-                      title="Бот будет отвечать в этом диалоге сам, без одобрения каждого ответа">
-                🤖 Разрешить боту вести диалог
-              </button>
-            </div>
+            {draftOpen && (<>
+              <textarea value={draftText} onChange={e => setDraftText(e.target.value)}
+                        style={{ width: '100%', minHeight: 56, fontSize: 13, marginTop: 6 }} />
+              <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                <button className="btn sm primary" onClick={sendWaDraft} disabled={busy || !draftText.trim()}>✅ Отправить</button>
+                <button className="btn sm" onClick={suggestReply} disabled={busy} title="Сгенерировать другой вариант ответа">🔄 Переформулировать</button>
+                <button className="btn sm ghost" onClick={rejectWaDraft} disabled={busy}>🚫 Отклонить</button>
+                <div style={{ flex: 1 }} />
+                <button className="btn sm" onClick={() => setWaAutonomous(true)} disabled={busy}
+                        title="Бот будет отвечать в этом диалоге сам, без одобрения каждого ответа">
+                  🤖 Бот ведёт сам
+                </button>
+              </div>
+            </>)}
           </div>
         )}
         {detail?.wa_autonomous && (
@@ -512,24 +519,36 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
           </div>
         )}
 
-        <div className="d-reply">
-          <textarea
-            placeholder="Ответить лиду как оператор… (Ctrl+Enter — отправить)"
-            value={text}
-            onChange={e => setText(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send() }}
-          />
-          <div className="r-row">
-            <span className="faint" style={{ fontSize: 11.5, flex: 1 }}>
-              {detail?.channel === 'website'
-                ? 'Website-канал: лид увидит ответ при следующем заходе в виджет'
-                : 'Уйдёт лиду в его канал + отметится в Telegram-форуме'}
-            </span>
-            <button className="btn primary" onClick={send} disabled={busy || !text.trim()}>
-              {busy ? <span className="spin" /> : 'Отправить'}
+        {!replyOpen ? (
+          <div style={{ borderTop: '1px solid var(--border)', padding: '6px 14px' }}>
+            <button className="btn sm ghost" onClick={() => setReplyOpen(true)} style={{ fontSize: 12 }}>
+              ✍️ Ответить вручную
             </button>
           </div>
-        </div>
+        ) : (
+          <div className="d-reply">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+              <span className="faint" style={{ fontSize: 11.5, flex: 1 }}>
+                {detail?.channel === 'website'
+                  ? 'Website-канал: лид увидит ответ при следующем заходе в виджет'
+                  : 'Уйдёт лиду в его канал + отметится в Telegram-форуме'}
+              </span>
+              <button className="btn sm ghost" onClick={() => setReplyOpen(false)} title="Свернуть">▾ свернуть</button>
+            </div>
+            <textarea
+              placeholder="Ответить лиду как оператор… (Ctrl+Enter — отправить)"
+              value={text}
+              onChange={e => setText(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send() }}
+            />
+            <div className="r-row">
+              <div style={{ flex: 1 }} />
+              <button className="btn primary" onClick={send} disabled={busy || !text.trim()}>
+                {busy ? <span className="spin" /> : 'Отправить'}
+              </button>
+            </div>
+          </div>
+        )}
 
         {toast && <div className={`toast ${toast.err ? 'err' : ''}`}>{toast.text}</div>}
       </div>
