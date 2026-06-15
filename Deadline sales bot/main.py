@@ -3187,6 +3187,40 @@ async def _handle_wa_draft_callback(action: str, conv_id_str: str, cb_id: str, d
         await answer_callback_query(token, cb_id, text="🚫 Отклонено, клиенту не отправлено.")
 
 
+def _resolve_wa_chat_id(to_peer: str) -> str:
+    """Определить НАСТОЯЩИЙ WhatsApp chatId (JID) для отправки. Рекламные лиды
+    (click-to-WhatsApp) приходят под скрытым `@lid`, а не `@c.us` — если слать на
+    `<цифры>@c.us`, WAHA принимает (201), но клиент НЕ получает. Берём реальный JID
+    из истории сообщений диалога (extra_meta.wa_chat_id или из waha_id вида
+    `false_<jid>_<id>`). Фоллбэк — `<цифры>@c.us` (как было)."""
+    if not to_peer:
+        return ""
+    if "@" in to_peer:
+        return to_peer
+    try:
+        from db.connection import SessionLocal
+        from channels.waha import chat_id_from_waha_id
+        with SessionLocal() as _db:
+            rows = _db.execute(
+                select(MessageRow)
+                .join(ConvRow, MessageRow.conversation_id == ConvRow.id)
+                .where(
+                    ConvRow.channel == "whatsapp",
+                    ConvRow.channel_conversation_id == to_peer,
+                )
+                .order_by(MessageRow.created_at.desc())
+                .limit(30)
+            ).scalars().all()
+            for m in rows:
+                meta = m.extra_meta or {}
+                jid = meta.get("wa_chat_id") or chat_id_from_waha_id(meta.get("waha_id"))
+                if jid and "@" in jid:
+                    return jid
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"_resolve_wa_chat_id failed for {to_peer}: {e}")
+    return f"{to_peer}@c.us"
+
+
 async def _wa_send(to_peer: str, text: str, phone_number_id: str = "") -> bool:
     """Единая отправка в WhatsApp: через Green-API (неофиц., linked-device) если
     он настроен, иначе через Meta Cloud API. `to_peer` — номер клиента (цифры) /
@@ -3194,9 +3228,10 @@ async def _wa_send(to_peer: str, text: str, phone_number_id: str = "") -> bool:
     оператора) работают независимо от транспорта."""
     if settings.waha_base_url:
         from channels.waha import send_waha_reply
+        chat_id = _resolve_wa_chat_id(to_peer)  # @lid для рекламных лидов
         return await send_waha_reply(
             settings.waha_base_url, settings.waha_api_key or "",
-            settings.waha_session or "default", to_peer, text,
+            settings.waha_session or "default", chat_id, text,
         )
     if settings.greenapi_id_instance and settings.greenapi_api_token:
         from channels.greenapi import send_greenapi_reply

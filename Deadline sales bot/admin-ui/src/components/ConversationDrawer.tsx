@@ -492,6 +492,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                       style={{ width: '100%', minHeight: 70, fontSize: 13 }} />
             <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
               <button className="btn sm primary" onClick={sendWaDraft} disabled={busy || !draftText.trim()}>✅ Отправить</button>
+              <button className="btn sm" onClick={suggestReply} disabled={busy} title="Сгенерировать другой вариант ответа">🔄 Переформулировать</button>
               <button className="btn sm ghost" onClick={rejectWaDraft} disabled={busy}>🚫 Отклонить</button>
               <div style={{ flex: 1 }} />
               <button className="btn sm" onClick={() => setWaAutonomous(true)} disabled={busy}

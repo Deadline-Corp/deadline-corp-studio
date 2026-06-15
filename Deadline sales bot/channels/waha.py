@@ -54,6 +54,18 @@ def _is_group(chat_id: str) -> bool:
     return (chat_id or "").endswith("@g.us")
 
 
+def chat_id_from_waha_id(waha_id: Optional[str]) -> Optional[str]:
+    """Достать настоящий JID (`<цифры>@lid` или `<цифры>@c.us`) из waha_id вида
+    `false_77001234567@c.us_ABC` / `false_94464181817450@lid_ABC`. Нужно для
+    отправки рекламным лидам на их @lid, а не на несуществующий @c.us."""
+    if not waha_id:
+        return None
+    for part in str(waha_id).split("_"):
+        if "@" in part:
+            return part
+    return None
+
+
 async def _download_waha_media(url: str, api_key: str) -> Optional[bytes]:
     """Скачать медиа (голос) из WAHA. URL может быть на нашем WAHA (нужен
     X-Api-Key) или внешний lookaside — заголовок не помешает."""
@@ -104,7 +116,7 @@ async def parse_waha_webhook(
         media = p.get("media") or {}
         url = media.get("url")
         base = {"role_hint": role_hint, "source": "voice", "waha_id": p.get("id"),
-                "wa_peer_type": peer_type}
+                "wa_peer_type": peer_type, "wa_chat_id": frm}
         if not url:
             return None
         if not groq_api_key:
@@ -144,7 +156,7 @@ async def parse_waha_webhook(
             external_id=peer, content=text, username=uname,
             channel_conversation_id=peer,
             extra_meta={"role_hint": role_hint, "waha_id": p.get("id"),
-                        "wa_peer_type": peer_type},
+                        "wa_peer_type": peer_type, "wa_chat_id": frm},
         )
 
     return None

@@ -109,28 +109,12 @@ async def deliver_operator_reply(
                 f"attachment forwarding not implemented for WhatsApp yet. Send text only."
             )
             delivered = False
-        elif getattr(settings, "waha_base_url", None):
-            from channels.waha import send_waha_reply
-            delivered = await send_waha_reply(
-                settings.waha_base_url, getattr(settings, "waha_api_key", None) or "",
-                getattr(settings, "waha_session", None) or "default",
-                conv.channel_conversation_id, text,
-            )
-        elif getattr(settings, "greenapi_id_instance", None) and getattr(settings, "greenapi_api_token", None):
-            from channels.greenapi import send_greenapi_reply
-            delivered = await send_greenapi_reply(
-                getattr(settings, "greenapi_api_url", None) or "https://api.green-api.com",
-                settings.greenapi_id_instance, settings.greenapi_api_token,
-                conv.channel_conversation_id, text,
-            )
         else:
-            from channels.whatsapp import send_whatsapp_reply
-            delivered = await send_whatsapp_reply(
-                settings.whatsapp_token,
-                settings.whatsapp_phone_number_id or "",
-                conv.channel_conversation_id,
-                text,
-            )
+            # Единый путь отправки (main._wa_send): WAHA>Green-API>Cloud + ВАЖНО
+            # резолв реального chatId (@lid для рекламных лидов, иначе клиент не
+            # получает, хотя WAHA отвечает 201). Раньше слали на @c.us напрямую.
+            import main as _main
+            delivered = await _main._wa_send(conv.channel_conversation_id, text)
     else:
         # Website — no push. Message just lives in DB; the widget will see
         # it on the next /chat poll (Phase 2: switch widget to long-poll or SSE).
