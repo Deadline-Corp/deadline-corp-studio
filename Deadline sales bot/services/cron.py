@@ -57,6 +57,7 @@ MAX_CUSTOMERS_PER_CYCLE: int = 200
 
 _worker_task: Optional[asyncio.Task] = None
 _running: bool = False
+_CRON_CYCLE = [0]   # счётчик циклов (для разреженных задач — авто-сверки раз в ~час)
 
 
 def is_running() -> bool:
@@ -137,6 +138,32 @@ async def _worker_loop(*, tenant_config: dict, interval_sec: int) -> None:
                 logger.info("[cron] wa cleanup: %s", _cl)
         except Exception as exc:  # noqa: BLE001
             logger.warning("[cron] wa cleanup failed (non-fatal): %s", exc)
+        # ПОЛНАЯ авто-сверка с WhatsApp раз в ~час (каждый 6-й цикл): WAHA = источник
+        # правды, убирает локальные сообщения, которых в WhatsApp НЕТ (в т.ч. ложно-
+        # «delivered», что обычная чистка не ловит), подтягивает новые. БЕЗ LLM
+        # (classify=False) + bounded. Сетка безопасности — вотчдог (если зависнет,
+        # авто-рестарт). Выключить: env WA_AUTO_RECONCILE=0.
+        import os as _osr
+        _CRON_CYCLE[0] += 1
+        if (_osr.getenv("WA_AUTO_RECONCILE", "1").strip() in ("1", "true", "yes")
+                and _CRON_CYCLE[0] % 6 == 0):
+            try:
+                from services.whatsapp_sync import sync_waha_history
+                from db.connection import session_scope
+                import main as _mr
+                with session_scope() as _rdb:
+                    _r = await sync_waha_history(
+                        _rdb, _mr.settings, llm=None,
+                        max_chats=150, per_chat_messages=40,
+                        classify=False, reconcile=True,
+                    )
+                logger.info("[cron] auto-reconcile: matched=%s mismatched=%s removed=%s",
+                            _r.get("chats_matched"), _r.get("chats_mismatched"),
+                            _r.get("phantoms_removed"))
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[cron] auto-reconcile failed (non-fatal): %s", exc)
         # Умное авто-ведение WhatsApp — периодическая проверка актуальности:
         # ловит ручные договорённости/новую инфу, которые могли не прийти вебхуком,
         # двигает воронку и ставит созвон в календарь. ОПАСНО на едином процессе с
