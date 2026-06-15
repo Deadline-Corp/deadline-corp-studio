@@ -3282,44 +3282,43 @@ async def _record_wa_operator_message(db: Session, normalized) -> None:
             extra_meta={**meta, "source": "manual_wa",
                         "delivered": True, "approved_via": "manual_phone"},
         )
+        _cid = conv.channel_conversation_id
         db.commit()
         log.info(f"[{str(conv.id)[:8]}] manual operator WA reply recorded")
-        # Умное авто-ведение: по ручной реплике двигаем воронку + ставим созвон,
-        # если из неё видно договорённость («договорились на среду в 15»).
-        try:
-            from services.conversation_brain import analyze_and_advance
-            res = await analyze_and_advance(db, conv, customer, primary_llm, settings)
-            if any(res.values()):
-                log.info(f"[{str(conv.id)[:8]}] brain(operator): {res}")
-        except Exception as _be:  # noqa: BLE001
-            log.warning(f"[{str(conv.id)[:8]}] brain(operator) failed: {_be}")
+        # Умное авто-ведение по ручной реплике («договорились на среду в 15») —
+        # в ФОНЕ со своей сессией, не держим коннект во время LLM.
+        import asyncio as _aio
+        _aio.create_task(_brain_bg(_cid))
     except Exception as e:  # noqa: BLE001 — запись ручного ответа best-effort
         db.rollback()
         log.warning(f"_record_wa_operator_message failed: {e}")
 
 
-async def _brain_for_wa_peer(db: Session, channel_conversation_id: str) -> None:
-    """Запустить умное авто-ведение для WhatsApp-диалога по его peer (после
-    входящего сообщения лида). Best-effort."""
+async def _brain_bg(channel_conversation_id: str) -> None:
+    """Умное авто-ведение в ФОНЕ со СВОЕЙ короткой сессией — НЕ держит коннект
+    вебхука во время LLM (иначе под нагрузкой пул исчерпывается → вис). Вызывать
+    через asyncio.create_task, чтобы вебхук отвечал мгновенно."""
     if not channel_conversation_id:
         return
     try:
+        from db.connection import session_scope
         from db.models import Conversation as _C, Customer as _Cu
-        row = (
-            db.query(_C, _Cu).join(_Cu, _C.customer_id == _Cu.id)
-            .filter(_C.channel == "whatsapp",
-                    _C.channel_conversation_id == channel_conversation_id)
-            .order_by(_C.last_message_at.desc().nullslast()).first()
-        )
-        if not row:
-            return
-        conv, cust = row
         from services.conversation_brain import analyze_and_advance
-        res = await analyze_and_advance(db, conv, cust, primary_llm, settings)
-        if any(res.values()):
-            log.info(f"[{str(conv.id)[:8]}] brain(lead): {res}")
+        with session_scope() as db:
+            row = (
+                db.query(_C, _Cu).join(_Cu, _C.customer_id == _Cu.id)
+                .filter(_C.channel == "whatsapp",
+                        _C.channel_conversation_id == channel_conversation_id)
+                .order_by(_C.last_message_at.desc().nullslast()).first()
+            )
+            if not row:
+                return
+            conv, cust = row
+            res = await analyze_and_advance(db, conv, cust, primary_llm, settings)
+            if any(res.values()):
+                log.info(f"[{str(conv.id)[:8]}] brain(bg): {res}")
     except Exception as e:  # noqa: BLE001
-        log.warning(f"_brain_for_wa_peer failed: {e}")
+        log.warning(f"_brain_bg failed: {e}")
 
 
 @app.post("/webhooks/greenapi")
@@ -3361,7 +3360,8 @@ async def greenapi_webhook(request: Request, db: Session = Depends(get_db)):
         log.error(f"greenapi_webhook: _handle_message failed — {e}")
         return {"ok": True}
 
-    await _brain_for_wa_peer(db, normalized.channel_conversation_id)
+    import asyncio as _aio
+    _aio.create_task(_brain_bg(normalized.channel_conversation_id))
     # suppress_send → наблюдение/черновик (ответ в карточке на одобрение).
     if resp.suppress_send or not resp.answer:
         return {"ok": True}
@@ -3407,8 +3407,10 @@ async def waha_webhook(request: Request, db: Session = Depends(get_db)):
     except Exception as e:  # noqa: BLE001
         log.error(f"waha_webhook: _handle_message failed — {e}")
         return {"ok": True}
-    # Умное авто-ведение по входящему лида (стадия + бронь созвона + сигнал).
-    await _brain_for_wa_peer(db, normalized.channel_conversation_id)
+    # Умное авто-ведение по входящему лида (стадия + бронь созвона + сигнал) —
+    # в ФОНЕ, чтобы не держать коннект вебхука во время LLM.
+    import asyncio as _aio
+    _aio.create_task(_brain_bg(normalized.channel_conversation_id))
     if resp.suppress_send or not resp.answer:
         return {"ok": True}
     await _wa_send(normalized.channel_conversation_id, resp.answer)

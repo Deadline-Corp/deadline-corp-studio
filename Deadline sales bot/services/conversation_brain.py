@@ -271,15 +271,24 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
 
 
 async def sweep_recent(llm: Any, settings: Any, since_minutes: int = 360,
-                       limit: int = 60) -> dict:
+                       limit: int = 25) -> dict:
     """Периодическая проверка актуальности: пройтись по недавно активным
     WhatsApp-диалогам и до-применить решения, если появились новые реплики
     (в т.ч. РУЧНОЙ ответ оператора с телефона, который мог не прийти вебхуком).
+
+    ВАЖНО для прода: НЕ держим одно DB-соединение на весь проход. Сначала
+    КОРОТКОЙ сессией собираем id диалогов, которым нужен анализ (дешёвый
+    count-чек), сессию закрываем. Затем каждый диалог обрабатываем В СВОЕЙ
+    короткой сессии — соединение возвращается в пул МЕЖДУ LLM-вызовами, а не
+    держится все минуты разом (иначе пул исчерпывается → вис, инцидент 06-02).
     Анализирует только диалоги с НОВЫМИ сообщениями с прошлого разбора."""
     from datetime import timedelta
     from db.connection import session_scope
     out = {"examined": 0, "analyzed": 0, "stage": 0, "booked": 0, "signaled": 0}
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=since_minutes)
+
+    # Фаза 1 — короткая сессия: собрать кандидатов (без LLM, соединение освобождаем).
+    candidates: list[str] = []
     with session_scope() as db:
         rows = (
             db.query(Conversation, Customer)
@@ -297,15 +306,28 @@ async def sweep_recent(llm: Any, settings: Any, since_minutes: int = 360,
             cur = _dialog_count(db, conv)
             if last_seen is not None and cur <= int(last_seen):
                 continue  # новых сообщений нет — пропускаем (без LLM)
-            try:
+            candidates.append(str(conv.id))
+
+    # Фаза 2 — по кандидату СВОЯ короткая сессия (LLM не держит общий коннект).
+    for cid in candidates:
+        try:
+            with session_scope() as db:
+                row = (
+                    db.query(Conversation, Customer)
+                    .join(Customer, Conversation.customer_id == Customer.id)
+                    .filter(Conversation.id == cid).first()
+                )
+                if not row:
+                    continue
+                conv, cust = row
                 res = await analyze_and_advance(db, conv, cust, llm, settings)
-                out["analyzed"] += 1
-                if res.get("stage"):
-                    out["stage"] += 1
-                if res.get("booked"):
-                    out["booked"] += 1
-                if res.get("signaled"):
-                    out["signaled"] += 1
-            except Exception as e:  # noqa: BLE001
-                log.warning(f"[{str(conv.id)[:8]}] sweep analyze failed: {e}")
+            out["analyzed"] += 1
+            if res.get("stage"):
+                out["stage"] += 1
+            if res.get("booked"):
+                out["booked"] += 1
+            if res.get("signaled"):
+                out["signaled"] += 1
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[{cid[:8]}] sweep analyze failed: {e}")
     return out

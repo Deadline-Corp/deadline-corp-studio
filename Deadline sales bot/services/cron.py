@@ -123,18 +123,23 @@ async def _worker_loop(*, tenant_config: dict, interval_sec: int) -> None:
             logger.warning("[cron] run_due_followups/call_reminders failed (non-fatal): %s", exc)
         # Умное авто-ведение WhatsApp — периодическая проверка актуальности:
         # ловит ручные договорённости/новую инфу, которые могли не прийти вебхуком,
-        # двигает воронку и ставит созвон в календарь. Анализирует только диалоги
-        # с новыми сообщениями (не жжёт LLM зря). Отдельный try — не ломает sweep.
-        try:
-            from services.conversation_brain import sweep_recent
-            import main as _m
-            res = await sweep_recent(_m.primary_llm, _m.settings)
-            if res.get("analyzed"):
-                logger.info("[cron] brain sweep: %s", res)
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("[cron] brain sweep failed (non-fatal): %s", exc)
+        # двигает воронку и ставит созвон в календарь. ОПАСНО на едином процессе с
+        # sync-SQLAlchemy: LLM-вызовы держат коннекты → пул может исчерпаться (вис,
+        # инцидент 06-02). Поэтому ПО УМОЛЧАНИИ ВЫКЛ — включается env WA_BRAIN_SWEEP=1
+        # только после подтверждённой стабильности (sweep_recent уже отпускает коннект
+        # между диалогами). Реальное время (вебхук/ручной ответ) работает всегда.
+        import os as _os
+        if _os.getenv("WA_BRAIN_SWEEP", "").strip() in ("1", "true", "yes"):
+            try:
+                from services.conversation_brain import sweep_recent
+                import main as _m
+                res = await sweep_recent(_m.primary_llm, _m.settings)
+                if res.get("analyzed"):
+                    logger.info("[cron] brain sweep: %s", res)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("[cron] brain sweep failed (non-fatal): %s", exc)
         try:
             await asyncio.sleep(interval_sec)
         except asyncio.CancelledError:
