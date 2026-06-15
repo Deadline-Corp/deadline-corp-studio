@@ -3333,99 +3333,78 @@ async def _brain_bg(channel_conversation_id: str) -> None:
             log.warning(f"_brain_bg failed: {e}")
 
 
+# Ограничитель параллельной обработки входящих WhatsApp. КРИТИЧНО для прода:
+# вебхук отвечает 200 МГНОВЕННО (WAHA не ретраит → нет флуда-петли), а тяжёлая
+# работа (парс/LLM/RAG, каждая держит DB-коннект) идёт в фоне НЕ БОЛЕЕ 3 разом,
+# иначе бэклог сообщений после простоя исчерпывает пул → вис (инцидент 06-02).
+_WA_INBOUND_SEMA = _aio_brain.Semaphore(3)
+
+
+async def _process_wa_payload(payload: dict, engine: str) -> None:
+    """Фоновая обработка одного входящего WhatsApp (вебхук уже ответил 200).
+    Парсит, гонит через _handle_message, отправляет ответ (если не наблюдение),
+    запускает умное авто-ведение. Своя сессия, ограничение параллельности."""
+    async with _WA_INBOUND_SEMA:
+        try:
+            from db.connection import session_scope
+            if engine == "waha":
+                from channels.waha import parse_waha_webhook
+                normalized = await parse_waha_webhook(
+                    payload, groq_api_key=settings.groq_api_key, api_key=settings.waha_api_key,
+                )
+            else:
+                from channels.greenapi import parse_greenapi_webhook
+                normalized = await parse_greenapi_webhook(
+                    payload, groq_api_key=settings.groq_api_key,
+                )
+            if normalized is None:
+                return
+            # Ручной ответ команды (fromMe) — сохраняем в карточку, бота не гоняем.
+            if (normalized.extra_meta or {}).get("role_hint") == "operator":
+                with session_scope() as db:
+                    await _record_wa_operator_message(db, normalized)
+                return
+            msg_req = MessageRequest(
+                channel="whatsapp", external_id=normalized.external_id,
+                content=normalized.content, username=normalized.username,
+                channel_conversation_id=normalized.channel_conversation_id,
+                message_type="dm", extra_meta=normalized.extra_meta,
+            )
+            with session_scope() as db:
+                resp = await _handle_message(msg_req, db)
+            if resp and not resp.suppress_send and resp.answer:
+                await _wa_send(normalized.channel_conversation_id, resp.answer)
+            # Умное авто-ведение (gated WA_BRAIN, само разрулит вкл/выкл).
+            await _brain_bg(normalized.channel_conversation_id)
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"_process_wa_payload({engine}) failed: {e}")
+
+
 @app.post("/webhooks/greenapi")
-async def greenapi_webhook(request: Request, db: Session = Depends(get_db)):
-    """Приём вебхука Green-API (неофиц. WhatsApp). Входящее сообщение клиента →
-    тот же пайплайн _handle_message (channel='whatsapp'), что даёт наблюдение/
-    черновик/карточку. Исходящие (ручные ответы команды с телефона) пока не
-    запускают бота (чтобы не реагировал на свою же команду). Всегда 200."""
+async def greenapi_webhook(request: Request):
+    """Green-API webhook: ACK 200 СРАЗУ, обработка в фоне (bounded). Это рвёт
+    петлю ретраев и ограничивает нагрузку — иначе бэклог вешает пул."""
     body = await request.body()
     try:
         payload = json.loads(body)
     except Exception as e:  # noqa: BLE001
         log.warning(f"greenapi_webhook: invalid JSON — {e}")
         return {"ok": True}
-
-    from channels.greenapi import parse_greenapi_webhook
-    normalized = await parse_greenapi_webhook(payload, groq_api_key=settings.groq_api_key)
-    if normalized is None:
-        return {"ok": True}
-
-    # Исходящее (ручной ответ команды) — не гоняем через бота, но сохраняем в
-    # карточку, чтобы панель видела всю переписку + черновик авто-устаревал.
-    if (normalized.extra_meta or {}).get("role_hint") == "operator":
-        await _record_wa_operator_message(db, normalized)
-        return {"ok": True}
-
-    msg_req = MessageRequest(
-        channel="whatsapp",
-        external_id=normalized.external_id,
-        content=normalized.content,
-        username=normalized.username,
-        channel_conversation_id=normalized.channel_conversation_id,
-        message_type="dm",
-        extra_meta=normalized.extra_meta,
-    )
-    try:
-        resp = await _handle_message(msg_req, db)
-    except Exception as e:  # noqa: BLE001
-        log.error(f"greenapi_webhook: _handle_message failed — {e}")
-        return {"ok": True}
-
-    import asyncio as _aio
-    _aio.create_task(_brain_bg(normalized.channel_conversation_id))
-    # suppress_send → наблюдение/черновик (ответ в карточке на одобрение).
-    if resp.suppress_send or not resp.answer:
-        return {"ok": True}
-    await _wa_send(normalized.channel_conversation_id, resp.answer)
+    _aio_brain.create_task(_process_wa_payload(payload, "greenapi"))
     return {"ok": True}
 
 
 @app.post("/webhooks/waha")
-async def waha_webhook(request: Request, db: Session = Depends(get_db)):
-    """Приём вебхука WAHA (self-hosted неофиц. WhatsApp на VPS). Входящее →
-    тот же пайплайн _handle_message (channel='whatsapp') → наблюдение/черновик/
-    карточка. Исходящие (ручные ответы с телефона, fromMe) не гоняем через бота."""
+async def waha_webhook(request: Request):
+    """WAHA webhook: ACK 200 СРАЗУ, обработка в фоне (bounded, ≤3). Мгновенный
+    ответ → WAHA не ретраит → нет флуда-петли, пул не исчерпывается."""
     body = await request.body()
     try:
         payload = json.loads(body)
     except Exception as e:  # noqa: BLE001
         log.warning(f"waha_webhook: invalid JSON — {e}")
         return {"ok": True}
-
-    from channels.waha import parse_waha_webhook
-    normalized = await parse_waha_webhook(
-        payload, groq_api_key=settings.groq_api_key, api_key=settings.waha_api_key,
-    )
-    if normalized is None:
-        return {"ok": True}
-    # Ручной ответ команды с телефона (fromMe) — не гоним через бота, но СОХРАНЯЕМ
-    # в карточку (панель видит всю переписку) + черновик авто-устаревает.
-    if (normalized.extra_meta or {}).get("role_hint") == "operator":
-        await _record_wa_operator_message(db, normalized)
-        return {"ok": True}
-
-    msg_req = MessageRequest(
-        channel="whatsapp",
-        external_id=normalized.external_id,
-        content=normalized.content,
-        username=normalized.username,
-        channel_conversation_id=normalized.channel_conversation_id,
-        message_type="dm",
-        extra_meta=normalized.extra_meta,
-    )
-    try:
-        resp = await _handle_message(msg_req, db)
-    except Exception as e:  # noqa: BLE001
-        log.error(f"waha_webhook: _handle_message failed — {e}")
-        return {"ok": True}
-    # Умное авто-ведение по входящему лида (стадия + бронь созвона + сигнал) —
-    # в ФОНЕ, чтобы не держать коннект вебхука во время LLM.
-    import asyncio as _aio
-    _aio.create_task(_brain_bg(normalized.channel_conversation_id))
-    if resp.suppress_send or not resp.answer:
-        return {"ok": True}
-    await _wa_send(normalized.channel_conversation_id, resp.answer)
+    _aio_brain.create_task(_process_wa_payload(payload, "waha"))
     return {"ok": True}
 
 
