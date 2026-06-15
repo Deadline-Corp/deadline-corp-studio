@@ -29,8 +29,9 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
   const [advice, setAdvice] = useState('')
   const [team, setTeam] = useState<any[]>([])
   const [draftText, setDraftText] = useState('')  // редактируемый предложенный ботом ответ (WhatsApp)
-  const [draftOpen, setDraftOpen] = useState(true)  // свернуть блок «бот предлагает», чтобы видеть переписку
+  const [draftOpen, setDraftOpen] = useState(true)  // свернуть блок «система предлагает», чтобы видеть переписку
   const [replyOpen, setReplyOpen] = useState(false) // окно ручного ответа оператора — по умолчанию свёрнуто
+  const [actionsOpen, setActionsOpen] = useState(false) // панель действий сверху — по умолчанию свёрнута (видно переписку)
   const msgsRef = useRef<HTMLDivElement>(null)
   const lastTsRef = useRef<string | null>(null)
 
@@ -303,8 +304,13 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                 {detail.operator_takeover && <span className="chip ok">👤 на операторе</span>}
                 {detail.customer.email && <span className="chip mono">{detail.customer.email}</span>}
                 {detail.customer.phone && <span className="chip mono">{detail.customer.phone}</span>}
+                <div style={{ flex: 1 }} />
+                <button className="btn sm ghost" onClick={() => setActionsOpen(v => !v)}
+                        title="Действия со сделкой — свернуть/развернуть, чтобы видеть переписку">
+                  {actionsOpen ? '▾ Действия' : '⚙️ Действия'}
+                </button>
               </div>
-              <div className="d-actions">
+              {actionsOpen && <div className="d-actions">
                 <button className="btn sm" onClick={toggleTakeover} disabled={busy}>
                   {detail.operator_takeover ? '🤖 Вернуть боту' : '👤 Взять на себя'}
                 </button>
@@ -373,7 +379,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                 {detail.hubspot.contact_url && (
                   <a className="btn sm ghost" href={detail.hubspot.contact_url} target="_blank" rel="noreferrer">HubSpot ↗</a>
                 )}
-              </div>
+              </div>}
               {advice && (
                 <div className="d-actions" style={{ background: 'var(--accent-soft)', borderRadius: 8, padding: '8px 10px', alignItems: 'flex-start' }}>
                   <span style={{ fontSize: 12.5, flex: 1 }}><b>🧭 Совет:</b> {advice}</span>
@@ -489,7 +495,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
                  onClick={() => setDraftOpen(v => !v)} title="Свернуть/развернуть">
               <span style={{ fontSize: 12 }}>{draftOpen ? '▾' : '▸'}</span>
-              <b style={{ fontSize: 13 }}>🤖 Бот предлагает ответить</b>
+              <b style={{ fontSize: 13 }}>🤖 Система предлагает ответить</b>
               {detail.pending_wa_draft.stale
                 ? <span className="faint" style={{ fontSize: 11, color: 'var(--warn, #c90)' }}>был ответ вручную — нажмите 🔄</span>
                 : <span className="faint" style={{ fontSize: 11 }}>клиенту НЕ отправлено</span>}
@@ -504,8 +510,8 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                 <button className="btn sm ghost" onClick={rejectWaDraft} disabled={busy}>🚫 Отклонить</button>
                 <div style={{ flex: 1 }} />
                 <button className="btn sm" onClick={() => setWaAutonomous(true)} disabled={busy}
-                        title="Бот будет отвечать в этом диалоге сам, без одобрения каждого ответа">
-                  🤖 Бот ведёт сам
+                        title="Система будет отвечать в этом диалоге сама, без одобрения каждого ответа">
+                  🤖 Ведёт система
                 </button>
               </div>
             </>)}
@@ -513,7 +519,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
         )}
         {detail?.wa_autonomous && (
           <div style={{ borderTop: '1px solid var(--border)', background: 'var(--panel-2)', padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5 }}>
-            <span>🤖 Бот ведёт этот диалог сам</span>
+            <span>🤖 Система ведёт этот диалог сама</span>
             <div style={{ flex: 1 }} />
             <button className="btn sm ghost" onClick={() => setWaAutonomous(false)} disabled={busy}>Вернуть на одобрение</button>
           </div>

@@ -431,10 +431,14 @@ def _resolve_llm_config() -> tuple[str, str, str, str, str]:
 _LLM_PROVIDER, _LLM_API_KEY, _LLM_BASE_URL, _LLM_PRIMARY_MODEL, _LLM_FALLBACK_MODEL = _resolve_llm_config()
 
 
-def make_llm(model_name: str, *, temperature: float = 0.2, max_tokens: int = 1200) -> ChatOpenAI:
+def make_llm(model_name: str, *, temperature: float = 0.2, max_tokens: int = 2048) -> ChatOpenAI:
     """Build a ChatOpenAI client pointed at the currently-active provider.
     OpenRouter recommends HTTP-Referer + X-Title headers for attribution and
     rate-limit class; harmless when sent to Ollama Cloud (it ignores them).
+
+    max_tokens=2048: gemini-2.5-flash тратит часть бюджета на внутренние
+    «размышления» (thinking-токены считаются в выходной лимит) — при 1200
+    ответ обрывался на полуслове. 2048 оставляет запас на thinking + полный ответ.
     """
     return ChatOpenAI(
         model=model_name,
@@ -451,7 +455,7 @@ def make_llm(model_name: str, *, temperature: float = 0.2, max_tokens: int = 120
 
 primary_llm = make_llm(_LLM_PRIMARY_MODEL)
 fallback_llm = make_llm(_LLM_FALLBACK_MODEL)
-handoff_llm = make_llm(_LLM_FALLBACK_MODEL, temperature=0.0, max_tokens=1000)
+handoff_llm = make_llm(_LLM_FALLBACK_MODEL, temperature=0.0, max_tokens=2048)
 # Trainer LLM — for /admin/training endpoints. Slightly higher temperature
 # than handoff_llm because we want variety on iterative refine (an operator
 # rejecting a proposal probably wants a meaningfully different next try, not
@@ -3353,7 +3357,8 @@ async def _process_wa_payload(payload: dict, engine: str) -> None:
             if engine == "waha":
                 from channels.waha import parse_waha_webhook
                 normalized = await parse_waha_webhook(
-                    payload, groq_api_key=settings.groq_api_key, api_key=settings.waha_api_key,
+                    payload, groq_api_key=settings.groq_api_key,
+                    api_key=settings.waha_api_key, base_url=settings.waha_base_url,
                 )
             else:
                 from channels.greenapi import parse_greenapi_webhook

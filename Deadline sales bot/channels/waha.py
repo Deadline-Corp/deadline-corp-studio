@@ -66,6 +66,19 @@ def chat_id_from_waha_id(waha_id: Optional[str]) -> Optional[str]:
     return None
 
 
+def _fix_media_url(url: str, base_url: Optional[str]) -> str:
+    """WAHA NOWEB отдаёт media URL со СВОИМ адресом `http://localhost:3000/...`
+    (его внутренняя точка зрения). Из Railway это недостижимо — переписываем
+    хост на публичный base_url WAHA (напр. http://84.247.148.135:3000)."""
+    if not url or not base_url:
+        return url
+    for bad in ("http://localhost:3000", "https://localhost:3000",
+                "http://127.0.0.1:3000", "https://127.0.0.1:3000"):
+        if url.startswith(bad):
+            return base_url.rstrip("/") + url[len(bad):]
+    return url
+
+
 async def _download_waha_media(url: str, api_key: str) -> Optional[bytes]:
     """Скачать медиа (голос) из WAHA. URL может быть на нашем WAHA (нужен
     X-Api-Key) или внешний lookaside — заголовок не помешает."""
@@ -87,6 +100,7 @@ async def parse_waha_webhook(
     payload: dict,
     groq_api_key: Optional[str] = None,
     api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
 ) -> Optional[NormalizedMessage]:
     """WAHA webhook → NormalizedMessage. Текст + голос (через Groq Whisper).
     fromMe (ручной ответ команды) помечается role_hint='operator'. Группы,
@@ -110,11 +124,16 @@ async def parse_waha_webhook(
     role_hint = "operator" if p.get("fromMe") else "user"
     uname = p.get("notifyName") or None
     mtype = (p.get("type") or "").lower()
+    media = p.get("media") or {}
+    mime = (media.get("mimetype") or "").lower()
+    # NOWEB часто отдаёт пустой type → распознаём голос по mime медиа (audio/*).
+    is_voice = (mtype in ("ptt", "audio")) or (
+        bool(p.get("hasMedia")) and mime.startswith("audio")
+    )
 
     # ---- voice / audio ----
-    if mtype in ("ptt", "audio"):
-        media = p.get("media") or {}
-        url = media.get("url")
+    if is_voice:
+        url = _fix_media_url(media.get("url") or "", base_url)
         base = {"role_hint": role_hint, "source": "voice", "waha_id": p.get("id"),
                 "wa_peer_type": peer_type, "wa_chat_id": frm}
         if not url:
