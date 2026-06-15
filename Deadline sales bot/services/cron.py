@@ -128,6 +128,15 @@ async def _worker_loop(*, tenant_config: dict, interval_sec: int) -> None:
             raise
         except Exception as exc:  # noqa: BLE001
             logger.warning("[cron] run_due_followups/call_reminders failed (non-fatal): %s", exc)
+        # Постоянная актуальность панели = WhatsApp: дешёвая (только БД) авто-чистка
+        # фантомов + эхо-дублей каждый цикл. Без WAHA/LLM — безопасно часто.
+        try:
+            from services.whatsapp_sync import cleanup_wa_artifacts
+            _cl = cleanup_wa_artifacts()
+            if _cl.get("phantoms") or _cl.get("echo_dupes"):
+                logger.info("[cron] wa cleanup: %s", _cl)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[cron] wa cleanup failed (non-fatal): %s", exc)
         # Умное авто-ведение WhatsApp — периодическая проверка актуальности:
         # ловит ручные договорённости/новую инфу, которые могли не прийти вебхуком,
         # двигает воронку и ставит созвон в календарь. ОПАСНО на едином процессе с

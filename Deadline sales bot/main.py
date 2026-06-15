@@ -3263,6 +3263,7 @@ async def _wa_send(to_peer: str, text: str, phone_number_id: str = "") -> bool:
     он настроен, иначе через Meta Cloud API. `to_peer` — номер клиента (цифры) /
     wa_id. Так все точки отправки (автоответ, одобрение черновика, ручной ответ
     оператора) работают независимо от транспорта."""
+    await _wa_throttle()  # антибан: разносим отправки во времени, без бурстов
     if settings.waha_base_url:
         from channels.waha import send_waha_reply, resolve_lid_phone
         chat_id = _resolve_wa_chat_id(to_peer)  # @lid для рекламных лидов
@@ -3402,6 +3403,26 @@ async def _brain_bg(channel_conversation_id: str) -> None:
 # работа (парс/LLM/RAG, каждая держит DB-коннект) идёт в фоне НЕ БОЛЕЕ 3 разом,
 # иначе бэклог сообщений после простоя исчерпывает пул → вис (инцидент 06-02).
 _WA_INBOUND_SEMA = _aio_brain.Semaphore(3)
+
+# АНТИБАН: неофициальный номер (WAHA/linked-device) банят за бурсты/спам-паттерн.
+# Поэтому ВСЕ исходящие сериализуем и разносим во времени, как человек: не чаще
+# одного сообщения раз в ~5с + случайная «человеческая» задержка перед отправкой.
+import time as _time_wa
+import random as _random_wa
+_WA_SEND_LOCK = _aio_brain.Lock()
+_WA_SEND_MIN_INTERVAL = 5.0          # минимум секунд между любыми двумя отправками
+_wa_last_send_mono = [0.0]
+
+
+async def _wa_throttle() -> None:
+    """Разнести отправки во времени (антибан). Держит lock, пока ждёт — значит
+    сообщения уходят строго по одному, спокойным человеческим темпом, без бурстов."""
+    async with _WA_SEND_LOCK:
+        gap = _WA_SEND_MIN_INTERVAL - (_time_wa.monotonic() - _wa_last_send_mono[0])
+        if gap > 0:
+            await _aio_brain.sleep(gap)
+        await _aio_brain.sleep(_random_wa.uniform(0.7, 2.2))  # «печатает…» по-человечески
+        _wa_last_send_mono[0] = _time_wa.monotonic()
 
 
 async def _process_wa_payload(payload: dict, engine: str) -> None:

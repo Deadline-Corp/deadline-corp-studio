@@ -47,6 +47,57 @@ from services.lead_classifier import classify_whatsapp_conversation
 log = logging.getLogger(__name__)
 
 
+def cleanup_wa_artifacts() -> dict:
+    """Дешёвая (только БД, без WAHA/LLM) авто-чистка для постоянной актуальности
+    панели = WhatsApp. Безопасно гонять часто (в кроне):
+
+    1. ФАНТОМЫ — assistant в whatsapp без признаков доставки (waha_id/approved_via/
+       delivered): бот сгенерил, но в WhatsApp их не было.
+    2. ЭХО-ДУБЛИ — operator-сообщение (наш же исходящий, отражённый WAHA как fromMe:
+       source=manual_wa / approved_via=manual_phone), чей текст совпадает с
+       assistant-сообщением в том же диалоге → дубль, удаляем эхо (assistant-копию
+       оставляем — это запись нашей отправки). Настоящие ручные ответы с телефона
+       (без совпадающего assistant) НЕ трогаем.
+    """
+    from db.connection import session_scope
+    out = {"phantoms": 0, "echo_dupes": 0}
+    with session_scope() as db:
+        # 1) фантомы
+        rows = (
+            db.query(Message).join(Conversation, Message.conversation_id == Conversation.id)
+            .filter(Conversation.channel == "whatsapp", Message.role == "assistant").all()
+        )
+        for m in rows:
+            meta = m.extra_meta or {}
+            if not (meta.get("waha_id") or meta.get("approved_via") or meta.get("delivered")):
+                db.delete(m)
+                out["phantoms"] += 1
+        db.flush()
+        # 2) эхо-дубли: operator-эхо нашего же отправленного
+        op_rows = (
+            db.query(Message).join(Conversation, Message.conversation_id == Conversation.id)
+            .filter(Conversation.channel == "whatsapp", Message.role == "operator").all()
+        )
+        for m in op_rows:
+            meta = m.extra_meta or {}
+            if meta.get("source") != "manual_wa" and meta.get("approved_via") != "manual_phone":
+                continue
+            content = (m.content or "").strip()
+            if not content:
+                continue
+            twin = (
+                db.query(Message.id)
+                .filter(Message.conversation_id == m.conversation_id,
+                        Message.role == "assistant",
+                        Message.content == m.content)
+                .first()
+            )
+            if twin is not None:
+                db.delete(m)
+                out["echo_dupes"] += 1
+    return out
+
+
 def _existing_waha_ids(db: Session, conversation_id) -> set[str]:
     """Все waha_id, уже сохранённые в этом диалоге — для дедупа."""
     rows = db.execute(
