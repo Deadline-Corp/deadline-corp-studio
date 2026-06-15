@@ -2213,25 +2213,24 @@ async def whatsapp_simulate_lead(
     req: SimulateLeadRequest,
     _: None = Depends(_verify_member),
 ):
-    """Симуляция: «если НОВЫЙ лид сейчас напишет это в WhatsApp — что ответит бот
-    и куда поведёт». Собирает РЕАЛЬНЫЙ чат-промпт (цель + цены + правила, как в
-    живом ответе, первый ход, канал whatsapp) и прогоняет через мозг. Один
-    LLM-вызов по запросу владельца — ничего не отправляет и не пишет в БД."""
-    import asyncio
+    """Симуляция: «если НОВЫЙ лид сейчас напишет это в WhatsApp — что предложит
+    бот и куда поведёт». Использует ТОТ ЖЕ генератор, что и предлагаемые ответы в
+    карточке (services.wa_drafts: цель проекта → «от $X» → созвон), поэтому
+    показывает ровно то, что вы одобряете в режиме наблюдения. Один LLM-вызов по
+    запросу владельца — ничего не отправляет и не пишет в БД."""
     import main as _main
-    from prompts import build_chat_prompt
     from services import bot_settings as _bs
+    from services import wa_drafts
 
     goal = (_bs.get_all() or {}).get("bot_goal") or "call"
-    prompt = build_chat_prompt(
-        context="", history="", question=req.message,
-        is_first_turn=True, channel="whatsapp",
-    )
+    dialog = f"Лид: {req.message.strip()[:500]}"
     try:
-        resp = await asyncio.to_thread(_main.primary_llm.invoke, prompt)
-        reply = (resp.content or "").strip()
+        result = await _main.primary_llm.ainvoke(wa_drafts._prompt("клиент", "new_lead", dialog))
+        reply = wa_drafts._clean_draft(getattr(result, "content", None) or "")
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"LLM error: {exc}")
+    if not reply:
+        reply = "(бот вернул пустой/служебный ответ — попробуйте переформулировать сообщение лида)"
     return {
         "ok": True,
         "reply": reply,
