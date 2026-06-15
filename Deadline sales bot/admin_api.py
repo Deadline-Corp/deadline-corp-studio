@@ -1374,6 +1374,20 @@ async def whatsapp_clean_phantoms(
     return {"ok": True, "execute": req.execute, "count": len(victims), "samples": samples}
 
 
+@router.post("/whatsapp/brain-sweep")
+async def whatsapp_brain_sweep(
+    since_minutes: int = 1440,
+    _: None = Depends(_verify_member),
+):
+    """Умное авто-ведение: пройтись по недавним WhatsApp-диалогам СЕЙЧАС —
+    подвинуть воронку и поставить созвоны из договорённостей (в т.ч. ручных).
+    Обычно крутится в кроне каждые ~10 мин; эндпоинт для ручного запуска/теста."""
+    import main as _main
+    from services.conversation_brain import sweep_recent
+    res = await sweep_recent(_main.primary_llm, _main.settings, since_minutes=since_minutes)
+    return {"ok": True, **res}
+
+
 # ============================================================================
 # FUNNEL — смена стадии (operator override) + зеркало в CRM
 # ============================================================================

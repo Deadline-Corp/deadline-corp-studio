@@ -55,6 +55,16 @@ def _transcript(db: Session, conv: Conversation, limit: int = 14) -> str:
     return "\n".join(out)
 
 
+def _dialog_count(db: Session, conv: Conversation) -> int:
+    """Число реплик лида/нас/оператора — мера новизны для периодического sweep."""
+    return (
+        db.query(Message)
+        .filter(Message.conversation_id == conv.id)
+        .filter(Message.role.in_(("user", "assistant", "operator")))
+        .count()
+    )
+
+
 def _parse_json(raw: str) -> Optional[dict]:
     if not raw:
         return None
@@ -162,8 +172,11 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
         "Проанализируй переписку веб-студии с лидом и верни СТРОГО JSON (без пояснений). "
         "Поля:\n"
         '  "stage": одна из new_lead|in_dialog|qualified|on_call|proposal|prepayment|completed_won '
-        "— текущая стадия по смыслу (in_dialog=идёт разговор; qualified=задача проекта ясна; "
-        "on_call=договорились о созвоне; proposal=обсуждается КП/цена; prepayment=готов платить);\n"
+        "— текущая стадия по смыслу (in_dialog=идёт разговор, но проект ещё не описан; "
+        "qualified=ТОЛЬКО если лид описал КОНКРЕТНУЮ задачу/проект — что именно нужно сделать "
+        "(сайт/магазин/бот/Mini App/AI и зачем); просто «привет/расскажите подробнее» — это "
+        "in_dialog, НЕ qualified; on_call=договорились о созвоне; proposal=обсуждается КП/цена; "
+        "prepayment=готов платить);\n"
         '  "call_agreed": true ТОЛЬКО если обе стороны согласовали КОНКРЕТный день и время созвона;\n'
         '  "call_datetime_utc": ISO8601 в UTC для согласованного времени (иначе null). '
         f"Сейчас {now_utc.isoformat()} (UTC), у лида {now_lead.strftime('%Y-%m-%d %H:%M')} ({tz_label}). "
@@ -245,4 +258,54 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
             db.commit()
             done["signaled"] = True
 
+    # Запомнить «проанализировано до этого числа реплик» — периодический sweep
+    # пропускает диалоги без новых сообщений (не жжёт LLM зря).
+    try:
+        prof = dict(cust.profile_data or {})
+        prof["brain_last_count"] = _dialog_count(db, conv)
+        cust.profile_data = prof
+        db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
     return done
+
+
+async def sweep_recent(llm: Any, settings: Any, since_minutes: int = 360,
+                       limit: int = 60) -> dict:
+    """Периодическая проверка актуальности: пройтись по недавно активным
+    WhatsApp-диалогам и до-применить решения, если появились новые реплики
+    (в т.ч. РУЧНОЙ ответ оператора с телефона, который мог не прийти вебхуком).
+    Анализирует только диалоги с НОВЫМИ сообщениями с прошлого разбора."""
+    from datetime import timedelta
+    from db.connection import session_scope
+    out = {"examined": 0, "analyzed": 0, "stage": 0, "booked": 0, "signaled": 0}
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=since_minutes)
+    with session_scope() as db:
+        rows = (
+            db.query(Conversation, Customer)
+            .join(Customer, Conversation.customer_id == Customer.id)
+            .filter(Conversation.channel == "whatsapp")
+            .filter(Conversation.last_message_at >= cutoff)
+            .order_by(Conversation.last_message_at.desc())
+            .limit(limit).all()
+        )
+        for conv, cust in rows:
+            out["examined"] += 1
+            if (conv.lead_stage or "new_lead") in ("lost", "completed_won"):
+                continue
+            last_seen = (cust.profile_data or {}).get("brain_last_count")
+            cur = _dialog_count(db, conv)
+            if last_seen is not None and cur <= int(last_seen):
+                continue  # новых сообщений нет — пропускаем (без LLM)
+            try:
+                res = await analyze_and_advance(db, conv, cust, llm, settings)
+                out["analyzed"] += 1
+                if res.get("stage"):
+                    out["stage"] += 1
+                if res.get("booked"):
+                    out["booked"] += 1
+                if res.get("signaled"):
+                    out["signaled"] += 1
+            except Exception as e:  # noqa: BLE001
+                log.warning(f"[{str(conv.id)[:8]}] sweep analyze failed: {e}")
+    return out
