@@ -898,6 +898,21 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         if _peer and _peer_type != "lid" and not (customer.phone or "").strip():
             customer.phone = ("+" + _peer)[:50]
             db.flush()
+        # Рекламный лид под скрытым @lid: WAHA часто ЗНАЕТ реальный номер
+        # (LID API). Разрезолвим и сохраним — тогда карточка показывает телефон
+        # (а не «WhatsApp •хвост»), а ответы уходят на надёжный @c.us, не на @lid.
+        if _peer and _peer_type == "lid" and not (customer.phone or "").strip() and settings.waha_base_url:
+            try:
+                from channels.waha import resolve_lid_phone
+                _pn = await resolve_lid_phone(
+                    settings.waha_base_url, settings.waha_api_key or "",
+                    settings.waha_session or "default", _peer,
+                )
+                if _pn:
+                    customer.phone = ("+" + _pn)[:50]
+                    db.flush()
+            except Exception as _lre:  # noqa: BLE001
+                log.debug(f"lid->phone resolve skipped: {_lre}")
 
     # Lazy-create a forum topic in the operator supergroup on first message
     # of this conversation. Topic name = "<channel>: <username or short id>".
@@ -3249,8 +3264,22 @@ async def _wa_send(to_peer: str, text: str, phone_number_id: str = "") -> bool:
     wa_id. Так все точки отправки (автоответ, одобрение черновика, ручной ответ
     оператора) работают независимо от транспорта."""
     if settings.waha_base_url:
-        from channels.waha import send_waha_reply
+        from channels.waha import send_waha_reply, resolve_lid_phone
         chat_id = _resolve_wa_chat_id(to_peer)  # @lid для рекламных лидов
+        # Рекламный лид под @lid: отправка на @lid через NOWEB нестабильна. Пробуем
+        # разрезолвить @lid → реальный телефон (WAHA LID API) и слать на надёжный
+        # @c.us. Если WAHA не знает номер (pn:null) — остаёмся на @lid (best-effort).
+        if chat_id.endswith("@lid"):
+            try:
+                _pn = await resolve_lid_phone(
+                    settings.waha_base_url, settings.waha_api_key or "",
+                    settings.waha_session or "default", chat_id,
+                )
+                if _pn:
+                    log.info(f"[wa-send] @lid → телефон {_pn} (надёжная доставка)")
+                    chat_id = f"{_pn}@c.us"
+            except Exception as _le:  # noqa: BLE001
+                log.warning(f"[wa-send] lid resolve skipped: {_le}")
         return await send_waha_reply(
             settings.waha_base_url, settings.waha_api_key or "",
             settings.waha_session or "default", chat_id, text,

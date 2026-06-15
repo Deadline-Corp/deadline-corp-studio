@@ -181,6 +181,34 @@ async def parse_waha_webhook(
     return None
 
 
+async def resolve_lid_phone(
+    base_url: str, api_key: str, session: str, lid: str,
+) -> Optional[str]:
+    """Разрезолвить скрытый `@lid` (рекламный лид) в реальный телефон через WAHA
+    LID API: GET /api/{session}/lids/{lid} → {lid, pn}. Возвращает цифры номера
+    или None, если WAHA не знает маппинг (pn:null — анонимный лид).
+
+    Отправка на @lid через NOWEB нестабильна («Waiting for this message»). Если
+    получили реальный номер — шлём на надёжный @c.us."""
+    digits = _digits(lid)
+    if not base_url or not digits:
+        return None
+    url = f"{base_url.rstrip('/')}/api/{session or 'default'}/lids/{digits}"
+    headers = {"X-Api-Key": api_key} if api_key else {}
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            r = await client.get(url, headers=headers)
+        if r.status_code >= 400:
+            return None
+        data = r.json()
+        pn = (data or {}).get("pn") if isinstance(data, dict) else None
+        pn = _digits(str(pn)) if pn else ""
+        return pn or None
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"waha resolve_lid_phone {lid}: {e}")
+        return None
+
+
 async def send_waha_reply(
     base_url: str, api_key: str, session: str, to_peer: str, text: str,
 ) -> bool:
