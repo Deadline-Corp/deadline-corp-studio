@@ -1281,6 +1281,43 @@ async def whatsapp_drafts_status(_: None = Depends(_verify_member)):
     return _WA_DRAFTS_STATE
 
 
+class CleanPhantomsRequest(BaseModel):
+    execute: bool = False
+
+
+@router.post("/whatsapp/clean-phantoms")
+async def whatsapp_clean_phantoms(
+    req: CleanPhantomsRequest,
+    _: None = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    """Удалить «фантомные» сообщения бота в WhatsApp-диалогах — те, что бот
+    сгенерил, но в WhatsApp их НЕ было: role=assistant без подтверждения
+    отправки (нет waha_id из истории, не одобрено оператором approved_via,
+    не доставлено delivered). Эти сообщения сбивают с толку — их в мессенджере
+    не существует. Системные [ADMIN]-заметки (role=system) НЕ трогаем.
+    execute=false — только посчитать; execute=true — удалить."""
+    rows = (
+        db.query(Message)
+        .join(Conversation, Message.conversation_id == Conversation.id)
+        .filter(Conversation.channel == "whatsapp")
+        .filter(Message.role == "assistant")
+        .all()
+    )
+    victims = []
+    for m in rows:
+        meta = m.extra_meta or {}
+        if meta.get("waha_id") or meta.get("approved_via") or meta.get("delivered"):
+            continue  # подтверждённо реальное — оставляем
+        victims.append(m)
+    samples = [(m.content or "")[:70] for m in victims[:10]]
+    if req.execute:
+        for m in victims:
+            db.delete(m)
+        db.commit()
+    return {"ok": True, "execute": req.execute, "count": len(victims), "samples": samples}
+
+
 # ============================================================================
 # FUNNEL — смена стадии (operator override) + зеркало в CRM
 # ============================================================================
