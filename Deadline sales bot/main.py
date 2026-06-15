@@ -3292,6 +3292,22 @@ async def _record_wa_operator_message(db: Session, normalized) -> None:
             from services.whatsapp_sync import _existing_waha_ids
             if str(waha_id) in _existing_waha_ids(db, conv.id):
                 return
+        # дедуп ЭХО: WAHA отражает наши ЖЕ исходящие (одобренный черновик / автопилот)
+        # обратно как fromMe — без этого каждое отправленное сообщение дублируется
+        # как «оператор». Если среди последних реплик уже есть такой же текст от
+        # нас (assistant/operator) — это эхо, не сохраняем.
+        _norm = (normalized.content or "").strip()
+        if _norm:
+            _recent = (
+                db.query(MessageRow)
+                .filter(MessageRow.conversation_id == conv.id)
+                .order_by(MessageRow.created_at.desc()).limit(8).all()
+            )
+            for _rm in _recent:
+                _role = _rm.role.value if hasattr(_rm.role, "value") else str(_rm.role)
+                if _role in ("assistant", "operator") and (_rm.content or "").strip() == _norm:
+                    log.info(f"[{str(conv.id)[:8]}] skip fromMe echo (наш исходящий) — без дубля")
+                    return
         # имя из notifyName, если ещё нет
         if normalized.username and not (customer.name or "").strip():
             customer.name = normalized.username[:200]
