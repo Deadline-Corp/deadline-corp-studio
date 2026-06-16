@@ -158,3 +158,92 @@ def test_polish_never_empty():
     ans = "Как считать наценку?"  # единственное предложение — выпытывание
     out = R.polish(ans, is_first_turn=False)
     assert out  # не пусто (лучше неидеально, чем пустой ответ)
+
+
+# ===========================================================================
+# АНТИ-УТЕЧКА мета-анализа модели (2026-06-16) — детектор + strip + polish.
+# ===========================================================================
+
+# Реальный текст утечки из прода (диалог a8838993…, msg 2026-06-15, role=operator).
+PROD_LEAK = (
+    ':** Warm, human tone. * **Goal (warm up + lead to messenger/call):** Yes, '
+    'trying to warm up and get project details. * **No «не наш профиль»: верно.'
+)
+
+
+def test_meta_detects_prod_leak():
+    assert R.looks_like_meta_analysis(PROD_LEAK) is True
+
+
+def test_meta_strip_blanks_prod_leak():
+    # Восстановить нечего (чистый разбор) → пусто, чтобы клиент не увидел рассуждения.
+    assert R.strip_meta_analysis(PROD_LEAK) == ""
+
+
+def test_meta_polish_blanks_prod_leak():
+    assert R.polish(PROD_LEAK, is_first_turn=False) == ""
+
+
+def test_meta_detects_bold_labels():
+    assert R.looks_like_meta_analysis("**Tone:** дружелюбный. **Goal:** прогреть.") is True
+
+
+def test_meta_detects_bullet_bold():
+    assert R.looks_like_meta_analysis("Разбор:\n* **Шаг 1:** поздороваться\n* **Шаг 2:** спросить") is True
+
+
+def test_meta_detects_english_line_label():
+    assert R.looks_like_meta_analysis("Strategy: warm the lead\nThen ask for details") is True
+
+
+def test_meta_recovers_after_reply_delimiter():
+    raw = (
+        "**Tone:** warm, human.\n**Goal:** get the brief.\n"
+        "**Reply:** Здравствуйте! Расскажите, что хотите реализовать? 🙂"
+    )
+    out = R.strip_meta_analysis(raw)
+    assert out == "Здравствуйте! Расскажите, что хотите реализовать? 🙂"
+    assert "**" not in out and "Tone" not in out
+
+
+def test_meta_recovers_after_russian_delimiter():
+    # «**Разбор:**» — детектируемый маркер; восстанавливаем хвост после «Ответ:».
+    raw = "**Разбор:** лид тёплый.\nОтвет: Добрый день! Чем можем помочь по проекту?"
+    out = R.strip_meta_analysis(raw)
+    assert out == "Добрый день! Чем можем помочь по проекту?"
+
+
+# --- НЕ-флаги: нормальные реплики на разных языках НЕ должны гаситься ---
+
+def test_meta_keeps_normal_russian_reply():
+    ans = "Добрый вечер! Всё просто 🙂 Мы запрограммируем и воплотим вашу идею. Расскажите подробнее?"
+    assert R.looks_like_meta_analysis(ans) is False
+    assert R.strip_meta_analysis(ans) == ans
+
+
+def test_meta_keeps_reply_with_price():
+    ans = "Здравствуйте! Лендинг у нас от $300. Давайте обсудим, что именно нужно?"
+    assert R.looks_like_meta_analysis(ans) is False
+
+
+def test_meta_keeps_english_reply():
+    ans = "Hello! We build sites, bots and AI automation. What would you like to create?"
+    assert R.looks_like_meta_analysis(ans) is False
+    assert R.strip_meta_analysis(ans) == ans
+
+
+def test_meta_keeps_english_reply_with_let_me():
+    # «let me» — обычная английская фраза, НЕ маркер разбора.
+    ans = "Sure — let me check the details and reply to your message shortly."
+    assert R.looks_like_meta_analysis(ans) is False
+
+
+def test_meta_keeps_georgian_reply():
+    ans = "გამარჯობა! ჩვენ ვქმნით საიტებსა და ბოტებს. რისი გაკეთება გსურთ?"
+    assert R.looks_like_meta_analysis(ans) is False
+
+
+def test_meta_keeps_reply_with_dash_and_colon():
+    # Тире «—» и двоеточие в обычной реплике — НЕ маркеры.
+    ans = "Понял задачу — интернет-магазин. Уточню: какой ассортимент планируете?"
+    assert R.looks_like_meta_analysis(ans) is False
