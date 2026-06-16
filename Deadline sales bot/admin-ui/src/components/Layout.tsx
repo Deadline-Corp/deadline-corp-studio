@@ -6,6 +6,7 @@ import { usePolling } from '../hooks/usePolling'
 import { DrawerProvider } from './DrawerContext'
 import { OverviewCtx, MeCtx, Me } from '../overviewContext'
 import { Tour } from './Tour'
+import { CallSuggestionToasts } from './CallSuggestionToasts'
 
 /* Постоянный сайдбар + Overview/Me контексты. Менеджеру навигация урезана
    (Мозг/Автоматизации/Каналы/Настройки скрыты; бэкенд форсит то же 403-ми). */
@@ -117,6 +118,7 @@ export function Layout() {
               <Outlet />
             </main>
             <Tour />
+            <CallSuggestionToasts />
           </div>
         </DrawerProvider>
       </OverviewCtx.Provider>

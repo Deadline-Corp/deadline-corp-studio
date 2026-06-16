@@ -866,6 +866,34 @@ async def conversation_call_suggestion(
     return {"ok": True, "action": "confirm", "call_at": new_dt.isoformat()}
 
 
+@router.get("/whatsapp/pending-suggestions")
+async def whatsapp_pending_suggestions(
+    _: None = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """Все диалоги с ОЖИДАЮЩИМ предложением созвона — для всплывающих уведомлений
+    в панели (бот распознал договорённость, ждёт подтверждения менеджера)."""
+    rows = (
+        db.query(Conversation, Customer)
+        .join(Customer, Conversation.customer_id == Customer.id)
+        .filter(Conversation.pending_call_suggestion.isnot(None))
+        .order_by(Conversation.last_message_at.desc().nullslast())
+        .limit(20).all()
+    )
+    items = []
+    for c, cust in rows:
+        sugg = c.pending_call_suggestion or {}
+        if not sugg.get("at"):
+            continue
+        items.append({
+            "id": str(c.id),
+            "name": _wa_display_name(cust, c),
+            "when_human": sugg.get("when_human"),
+            "at": sugg.get("at"),
+        })
+    return {"items": items}
+
+
 @router.post("/conversations/{conv_id}/suggest-reply")
 async def conversation_suggest_reply(
     conv_id: str,
