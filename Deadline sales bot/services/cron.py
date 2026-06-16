@@ -162,6 +162,19 @@ async def _worker_loop(*, tenant_config: dict, interval_sec: int) -> None:
             _ds = dedup_scheduled_actions()
             if _orf.get("superseded") or _ds.get("superseded"):
                 logger.info("[cron] actions: orphan=%s dups=%s", _orf, _ds)
+            # Авто-архивация «Не сложилось» старше N дней (если задано в настройках) —
+            # старая база не засоряет активный вид. Обратимо (status=ARCHIVED, не удаляем).
+            try:
+                from services import bot_settings as _bs2, funnel_store as _fs2
+                from db.connection import session_scope as _ss2
+                _days = _bs2.get("lost_auto_archive_days")
+                if isinstance(_days, int) and _days > 0:
+                    with _ss2() as _db2:
+                        _al = _fs2.archive_lost_leads(_db2, older_than_days=_days)
+                    if _al.get("archived"):
+                        logger.info("[cron] lost auto-archive (>%dд): %s", _days, _al)
+            except Exception as _ae:  # noqa: BLE001
+                logger.warning("[cron] lost auto-archive failed: %s", _ae)
         except Exception as exc:  # noqa: BLE001
             logger.warning("[cron] wa cleanup/dedup failed (non-fatal): %s", exc)
         # АВТО-БЭКАП БД раз в день → владельцу в Telegram (offsite-копия на случай

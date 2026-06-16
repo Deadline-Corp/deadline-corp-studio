@@ -61,6 +61,20 @@ export function Funnel() {
     } finally { setBusy(false) }
   }
 
+  // Убрать «Не сложилось» в архив — старая база не засоряет активный вид. Обратимо.
+  const archiveLost = async () => {
+    const n = items.filter(c => c.lead_stage === 'lost').length
+    if (n === 0) { showToast('«Не сложилось» пусто'); return }
+    if (!window.confirm(`Убрать ${n} карточек «Не сложилось» в архив?\nОни сохранятся (видны в экспорте и в «Переписках» с архивными) — просто уйдут из активного вида.`)) return
+    setBusy(true)
+    try {
+      const r = await api.post<{ archived: number }>('/funnel/archive-lost', {})
+      showToast(`🧹 Убрано в архив: ${r.archived} (сохранены, не удалены)`)
+      await load()
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message ?? 'ошибка'}`) }
+    finally { setBusy(false) }
+  }
+
   const displayItems = channelFilter === 'all' ? items : items.filter(c => c.channel === channelFilter)
   const byStage = (stage: string) => displayItems.filter(c => c.lead_stage === stage)
   const known = new Set(stages.map(s => s.stage))
@@ -109,6 +123,11 @@ export function Funnel() {
         <h1>Воронка</h1>
         <span className="sub">{loaded ? `${items.length} сделок · перетащите карточку, чтобы сменить стадию` : '…'}</span>
         <div className="spacer" />
+        {items.filter(c => c.lead_stage === 'lost').length > 0 && (
+          <button className="btn" onClick={archiveLost} disabled={busy} title="Убрать «Не сложилось» в архив (обратимо — сохранятся в экспорте и архиве)">
+            🧹 Убрать «Не сложилось» ({items.filter(c => c.lead_stage === 'lost').length})
+          </button>
+        )}
         <button className="btn" onClick={() => setEditorOpen(true)}>⚙ Настроить стадии</button>
         <Help title="Свои стадии" text="Переименуйте этапы под ваш бизнес («Запись на приём» вместо «Созвон»), скройте лишние, добавьте свои. Бот продолжит работать — встроенные этапы под замком 🔒 можно только переименовать/скрыть." />
       </div>

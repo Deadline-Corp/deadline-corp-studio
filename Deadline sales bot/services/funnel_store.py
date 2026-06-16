@@ -167,3 +167,43 @@ def migrate_orphaned_leads(db, fallback: Optional[str] = None) -> dict:
         log.info("funnel_store: migrated %d orphaned leads → %s (%s)",
                  len(rows), fallback, by_stage)
     return {"migrated": len(rows), "by_stage": by_stage, "fallback": fallback}
+
+
+def count_lost(db, older_than_days: Optional[int] = None) -> int:
+    """Сколько «Не сложилось» (lost) в активном виде (для кнопки уборки)."""
+    from db.models import Conversation, ConversationStatusEnum
+    q = db.query(Conversation.id).filter(
+        Conversation.lead_stage == "lost",
+        Conversation.status != ConversationStatusEnum.ARCHIVED.value,
+    )
+    if older_than_days and older_than_days > 0:
+        from datetime import datetime, timezone, timedelta
+        q = q.filter(Conversation.last_message_at < datetime.now(timezone.utc) - timedelta(days=older_than_days))
+    return q.count()
+
+
+def archive_lost_leads(db, older_than_days: Optional[int] = None) -> dict:
+    """Убрать «Не сложилось» (lost) из активного вида в АРХИВ — чтобы старая база
+    не засоряла канбан/инбокс/задачник. ОБРАТИМО: `status=ARCHIVED`, НЕ удаляем
+    (правило never-delete) — карточки сохраняются, видны в экспорте (leads/conversations
+    .csv) и в «Переписках» с include_archived. Полезных vs мусорных различает
+    `lost_reason` (hard_stop = отказ/ошибся). `older_than_days` — только молчащие дольше
+    N дней (None = все lost). Возвращает {archived, by_reason}."""
+    from db.models import Conversation, ConversationStatusEnum
+    q = db.query(Conversation).filter(
+        Conversation.lead_stage == "lost",
+        Conversation.status != ConversationStatusEnum.ARCHIVED.value,
+    )
+    if older_than_days and older_than_days > 0:
+        from datetime import datetime, timezone, timedelta
+        q = q.filter(Conversation.last_message_at < datetime.now(timezone.utc) - timedelta(days=older_than_days))
+    rows = q.all()
+    by_reason: dict[str, int] = {}
+    for conv in rows:
+        r = conv.lost_reason or "—"
+        by_reason[r] = by_reason.get(r, 0) + 1
+        conv.status = ConversationStatusEnum.ARCHIVED.value
+    db.flush()
+    if rows:
+        log.info("funnel_store: archived %d lost leads (%s)", len(rows), by_reason)
+    return {"archived": len(rows), "by_reason": by_reason}

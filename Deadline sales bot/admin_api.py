@@ -2157,6 +2157,39 @@ async def funnel_stages_usage(
     return {"usage": {k: int(n) for k, n in rows if k}}
 
 
+class ArchiveLostRequest(BaseModel):
+    older_than_days: Optional[int] = None
+
+
+@router.get("/funnel/lost-count")
+async def funnel_lost_count(
+    older_than_days: Optional[int] = None,
+    _: None = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """Сколько «Не сложилось» в активном виде (для кнопки уборки базы)."""
+    from services import funnel_store
+    return {"count": funnel_store.count_lost(db, older_than_days)}
+
+
+@router.post("/funnel/archive-lost")
+async def funnel_archive_lost(
+    req: ArchiveLostRequest,
+    _: None = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    """Убрать «Не сложилось» в архив — чтобы старая база не засоряла активный вид.
+    ОБРАТИМО (status=ARCHIVED, не удаляем): карточки сохраняются, видны в экспорте и в
+    «Переписках» с include_archived. older_than_days — только старше N дней."""
+    from services import funnel_store, config_snapshot
+    config_snapshot.snapshot_now("до архивации «Не сложилось»", "admin-ui", reason="auto:archive-lost")
+    res = funnel_store.archive_lost_leads(db, req.older_than_days)
+    db.commit()
+    from services.whatsapp_sync import cancel_orphan_scheduled_actions
+    cancel_orphan_scheduled_actions(db)  # погасить задачи архивных карточек
+    return {"ok": True, **res}
+
+
 def _stages_customized(db) -> bool:
     from db.models import PipelineStage
     return db.query(PipelineStage.id).first() is not None

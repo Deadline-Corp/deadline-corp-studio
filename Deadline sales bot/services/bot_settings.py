@@ -27,6 +27,9 @@ KNOWN_KEYS: dict[str, type] = {
     "nudge_max_hours": float,
     "nudge_text": str,
     "silence_lost_days": int,
+    # Авто-архивация «Не сложилось» старше N дней (крон) — чтобы старая база не
+    # засоряла активный вид. 0/пусто = не архивировать авто (только кнопкой).
+    "lost_auto_archive_days": int,
     # Онбординг/брендинг рабочего пространства (Admin UI, 2026-06-12)
     "onboarding_done": bool,
     "business_name": str,
