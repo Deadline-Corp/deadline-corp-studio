@@ -4579,6 +4579,48 @@ def _watchdog_thread() -> None:
             _os._exit(1)
 
 
+# Ключи каналов, управляемые из панели «Каналы» (override → in-memory settings, без
+# редеплоя). Webhook-СЕКРЕТЫ сюда НЕ входят — runtime-своп подписи опасен (fail-closed).
+_CHANNEL_OVERRIDE_KEYS = (
+    "telegram_bot_token", "telegram_operator_group_id",
+    "waha_base_url", "waha_api_key", "waha_session",
+    "whatsapp_token", "whatsapp_phone_number_id",
+    "meta_page_access_token", "meta_verify_token",
+    "greenapi_id_instance", "greenapi_api_token", "greenapi_api_url",
+)
+# Исходные env-значения (снимаем ОДИН раз при импорте, до любого override) — чтобы
+# при ОЧИСТКЕ override в панели ключ вернулся к env, а не застрял на старом значении.
+_CHANNEL_ENV_BASELINE = {k: getattr(settings, k, None) for k in _CHANNEL_OVERRIDE_KEYS}
+
+
+def apply_channel_settings_overrides() -> int:
+    """Подтянуть токены каналов из bot_settings (заданные в панели) в in-memory
+    `settings` — БЕЗ редеплоя и БЕЗ правки 50+ мест чтения. Каждый ключ = override из
+    панели ЕСЛИ задан, иначе исходное env-значение (так очистка override корректно
+    откатывает к env). Вызывается на старте и сразу после сохранения в /channels/config.
+    Возвращает число активных оверрайдов."""
+    try:
+        from services import bot_settings as _bs
+        ov = _bs.get_all()
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"channel overrides: bot_settings read failed: {e}")
+        return 0
+    n = 0
+    for k in _CHANNEL_OVERRIDE_KEYS:
+        v = ov.get(k)
+        has_ov = isinstance(v, str) and v.strip()
+        eff = v.strip() if has_ov else _CHANNEL_ENV_BASELINE.get(k)
+        try:
+            setattr(settings, k, eff)
+            if has_ov:
+                n += 1
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"channel override {k} apply failed: {e}")
+    if n:
+        log.info(f"channel overrides applied from panel: {n}")
+    return n
+
+
 @app.on_event("startup")
 async def startup():
     log.info("=" * 60)
@@ -4586,6 +4628,13 @@ async def startup():
     log.info(f"Model:    {_LLM_PRIMARY_MODEL} (fallback: {_LLM_FALLBACK_MODEL}) via {_LLM_PROVIDER}")
     log.info(f"Chroma:   {'loaded' if vectorstore else 'NOT LOADED (legacy)'}")
     log.info(f"Postgres: {'connected' if check_connection() else 'NOT CONNECTED'}")
+    # Токены каналов, заданные в панели «Каналы» (bot_settings) → in-memory settings
+    # БЕЗ редеплоя. Делаем ПОСЛЕ проверки Postgres (таблица bot_settings доступна).
+    try:
+        _ov = apply_channel_settings_overrides()
+        log.info(f"Channels: {_ov} override(s) from panel applied")
+    except Exception as _e:  # noqa: BLE001
+        log.warning(f"Channels: override apply skipped: {_e}")
     log.info(f"Telegram: {'configured' if settings.telegram_bot_token else 'NOT configured'}")
     log.info(f"Tenant:   {tenant.slug} ({tenant.display_name})")
     # CRM health-check is cheap on NoOp (always True) and a single API call

@@ -81,6 +81,23 @@ KNOWN_KEYS: dict[str, type] = {
     # оффера (тёплый стиль), потом собирает бриф. Пусто = обычный приветственный
     # вход. Меняется при смене рекламной кампании.
     "wa_active_offer": str,
+    # ── Токены каналов, управляемые из панели «Каналы» (без редеплоя) ──
+    # Сохраняются здесь → main.apply_channel_settings_overrides() подтягивает их в
+    # in-memory settings на старте и после сохранения. Пусто = берётся из env (как
+    # раньше). Webhook-СЕКРЕТЫ (telegram_webhook_secret/meta_app_secret/
+    # whatsapp_app_secret) сюда НЕ входят — их runtime-своп опасен (fail-closed подпись).
+    "telegram_bot_token": str,
+    "telegram_operator_group_id": str,
+    "waha_base_url": str,
+    "waha_api_key": str,
+    "waha_session": str,
+    "whatsapp_token": str,
+    "whatsapp_phone_number_id": str,
+    "meta_page_access_token": str,
+    "meta_verify_token": str,
+    "greenapi_id_instance": str,
+    "greenapi_api_token": str,
+    "greenapi_api_url": str,
 }
 
 _TTL = 60.0

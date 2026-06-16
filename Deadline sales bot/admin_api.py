@@ -2784,6 +2784,147 @@ async def config_snapshot_restore(
 
 
 # ============================================================================
+# CHANNELS CONFIG — подключение каналов из панели БЕЗ редеплоя. Токены пишутся в
+# bot_settings → main.apply_channel_settings_overrides() подтягивает их в живой
+# settings. Webhook-СЕКРЕТЫ не редактируются здесь (env-only, fail-closed подпись).
+# ============================================================================
+
+# Поля токенов на канал (key, человекочитаемая подпись).
+_CHANNEL_FIELD_MAP: dict[str, list] = {
+    "telegram": [("telegram_bot_token", "Токен бота (из @BotFather)"),
+                 ("telegram_operator_group_id", "ID операторской группы (необязательно)")],
+    "whatsapp": [("waha_base_url", "WAHA: URL (http://IP:3000)"),
+                 ("waha_api_key", "WAHA: API key"),
+                 ("waha_session", "WAHA: session (обычно default)"),
+                 ("whatsapp_token", "Cloud API: токен"),
+                 ("whatsapp_phone_number_id", "Cloud API: phone number id"),
+                 ("greenapi_id_instance", "Green-API: idInstance"),
+                 ("greenapi_api_token", "Green-API: apiToken")],
+    "instagram": [("meta_page_access_token", "Meta: page access token"),
+                  ("meta_verify_token", "Meta: verify token")],
+    "messenger": [("meta_page_access_token", "Meta: page access token"),
+                  ("meta_verify_token", "Meta: verify token")],
+}
+_CHANNEL_WEBHOOK_PATH: dict[str, Optional[str]] = {
+    "telegram": "/webhooks/telegram", "whatsapp": "/webhooks/waha",
+    "instagram": "/webhooks/instagram", "messenger": "/webhooks/messenger",
+}
+
+
+def _mask_token(v) -> str:
+    if not v:
+        return ""
+    v = str(v)
+    return ("•" * len(v)) if len(v) <= 8 else (v[:4] + "…" + v[-4:])
+
+
+@router.get("/channels/config")
+async def channels_config_get(_: None = Depends(_verify_owner)):
+    """Статус токенов каналов (маскированно) + какие webhook-секреты заданы. Сами
+    токены наружу НЕ отдаём — только set/нет + маска + источник (env/панель)."""
+    import main as _main
+    from services import bot_settings as _bs
+    ov = _bs.get_all()
+    s = _main.settings
+    channels: dict = {}
+    for ch, fields in _CHANNEL_FIELD_MAP.items():
+        items = []
+        for key, label in fields:
+            val = getattr(s, key, None)
+            has_ov = bool((ov.get(key) or "").strip()) if isinstance(ov.get(key), str) else False
+            items.append({
+                "key": key, "label": label, "set": bool(val),
+                "masked": _mask_token(val),
+                "source": "панель" if has_ov else ("env" if val else ""),
+            })
+        channels[ch] = {"fields": items, "webhook_path": _CHANNEL_WEBHOOK_PATH.get(ch)}
+    return {
+        "channels": channels,
+        "webhook_secrets": {
+            "telegram_webhook_secret": bool(getattr(s, "telegram_webhook_secret", None)),
+            "meta_app_secret": bool(getattr(s, "meta_app_secret", None)),
+            "whatsapp_app_secret": bool(getattr(s, "whatsapp_app_secret", None)),
+        },
+    }
+
+
+class ChannelConfigRequest(BaseModel):
+    values: dict  # {key: "значение" | "" чтобы стереть (вернуться к env)}
+
+
+@router.post("/channels/{channel}/config")
+async def channels_config_save(
+    channel: str,
+    req: ChannelConfigRequest,
+    _: None = Depends(_verify_owner),
+):
+    """Сохранить токены канала → bot_settings → применить в живой settings без редеплоя."""
+    allowed = {k for k, _l in _CHANNEL_FIELD_MAP.get(channel, [])}
+    if not allowed:
+        raise HTTPException(status_code=404, detail=f"Неизвестный канал {channel!r}")
+    payload: dict = {}
+    for k, v in (req.values or {}).items():
+        if k not in allowed:
+            raise HTTPException(status_code=422, detail=f"Поле {k!r} не относится к каналу {channel!r}")
+        sv = (str(v) if v is not None else "").strip()
+        payload[k] = sv if sv else None  # пусто → удалить override (вернуться к env)
+    if not payload:
+        raise HTTPException(status_code=422, detail="Нечего сохранять")
+    from services import bot_settings as _bs, config_snapshot
+    config_snapshot.snapshot_now(f"до настройки канала {channel}", "admin-ui", reason=f"auto:channel:{channel}")
+    try:
+        _bs.set_many(payload)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    import main as _main
+    applied = _main.apply_channel_settings_overrides()
+    return {"ok": True, "applied": applied}
+
+
+@router.post("/channels/{channel}/test")
+async def channels_test(channel: str, _: None = Depends(_verify_owner)):
+    """Живая проверка подключения канала (без отправки клиентам)."""
+    import main as _main
+    import httpx
+    s = _main.settings
+    try:
+        if channel == "telegram":
+            if not s.telegram_bot_token:
+                return {"ok": False, "detail": "Токен не задан"}
+            async with httpx.AsyncClient(timeout=10) as c:
+                r = await c.get(f"https://api.telegram.org/bot{s.telegram_bot_token}/getMe")
+            d = r.json()
+            if d.get("ok"):
+                return {"ok": True, "detail": f"@{d['result'].get('username', '?')}"}
+            return {"ok": False, "detail": d.get("description", "getMe failed")}
+        if channel == "whatsapp":
+            if s.waha_base_url:
+                from channels.waha import fetch_waha_session_status
+                st = await fetch_waha_session_status(s.waha_base_url, s.waha_api_key or "", s.waha_session or "default")
+                status = st.get("status")
+                return {"ok": status == "WORKING", "detail": f"WAHA: {status or 'нет ответа'}"}
+            if s.greenapi_id_instance and s.greenapi_api_token:
+                base = (s.greenapi_api_url or "https://api.green-api.com").rstrip("/")
+                async with httpx.AsyncClient(timeout=10) as c:
+                    r = await c.get(f"{base}/waInstance{s.greenapi_id_instance}/getStateInstance/{s.greenapi_api_token}")
+                d = r.json()
+                return {"ok": d.get("stateInstance") == "authorized", "detail": f"Green-API: {d.get('stateInstance', '?')}"}
+            return {"ok": False, "detail": "WhatsApp не настроен (ни WAHA, ни Green-API)"}
+        if channel in ("instagram", "messenger"):
+            if not s.meta_page_access_token:
+                return {"ok": False, "detail": "Page access token не задан"}
+            async with httpx.AsyncClient(timeout=10) as c:
+                r = await c.get(f"https://graph.facebook.com/v19.0/me?access_token={s.meta_page_access_token}")
+            d = r.json()
+            if "id" in d:
+                return {"ok": True, "detail": f"Page: {d.get('name', d['id'])}"}
+            return {"ok": False, "detail": ((d.get('error') or {}).get('message') or 'токен невалиден')[:120]}
+        return {"ok": False, "detail": "Тест для этого канала не поддержан"}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "detail": f"Ошибка: {str(e)[:120]}"}
+
+
+# ============================================================================
 # NUDGE — пинок зависшему лиду (сейчас / по расписанию / LLM-черновик)
 # ============================================================================
 

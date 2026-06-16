@@ -240,9 +240,70 @@ function Card({ icon, title, status, statusCls, children, footer }: {
   )
 }
 
+/* Подключение канала из панели (без редеплоя): webhook-URL для копирования +
+   поля токенов (сохраняются в bot_settings → применяются в живой settings) + тест. */
+function ChannelConfig({ channel, data, onSaved }: {
+  channel: string
+  data?: { fields: Array<{ key: string; label: string; set: boolean; masked: string; source: string }>; webhook_path: string | null }
+  onSaved: () => void
+}) {
+  const [vals, setVals] = useState<Record<string, string>>({})
+  const [busy, setBusy] = useState('')
+  const [msg, setMsg] = useState<{ t: string; ok?: boolean } | null>(null)
+  if (!data) return null
+  const webhookUrl = data.webhook_path ? location.origin + data.webhook_path : ''
+  const copy = () => { navigator.clipboard?.writeText(webhookUrl); setMsg({ t: '✅ скопировано', ok: true }) }
+  const save = async () => {
+    const payload = Object.fromEntries(Object.entries(vals).filter(([, v]) => (v ?? '').trim() !== ''))
+    if (!Object.keys(payload).length) { setMsg({ t: 'Заполните хотя бы одно поле' }); return }
+    setBusy('save'); setMsg(null)
+    try { await api.post(`/channels/${channel}/config`, { values: payload }); setVals({}); setMsg({ t: '✅ сохранено и применено', ok: true }); onSaved() }
+    catch (e: any) { setMsg({ t: 'Ошибка: ' + (e?.detail ?? e?.message ?? 'не вышло') }) }
+    finally { setBusy('') }
+  }
+  const test = async () => {
+    setBusy('test'); setMsg(null)
+    try { const r = await api.post<any>(`/channels/${channel}/test`, {}); setMsg({ t: (r.ok ? '✅ ' : '⚠️ ') + r.detail, ok: r.ok }) }
+    catch (e: any) { setMsg({ t: 'Ошибка: ' + (e?.detail ?? e?.message ?? 'не вышло') }) }
+    finally { setBusy('') }
+  }
+  return (
+    <div style={{ borderTop: '1px dashed var(--border)', paddingTop: 10, marginTop: 4, display: 'flex', flexDirection: 'column', gap: 7 }}>
+      <b style={{ fontSize: 12 }}>🔌 Подключить в панели (без редеплоя)</b>
+      {webhookUrl && (
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <span className="faint" style={{ fontSize: 11, flexShrink: 0 }}>Webhook URL</span>
+          <input readOnly value={webhookUrl} onFocus={e => e.currentTarget.select()}
+            style={{ flex: 1, fontSize: 11, fontFamily: 'monospace', padding: '4px 7px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', minWidth: 0 }} />
+          <button className="btn sm" onClick={copy}>Копировать</button>
+        </div>
+      )}
+      {data.fields.map(f => (
+        <div key={f.key} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <span className="faint" style={{ fontSize: 11, width: 160, flexShrink: 0 }}>{f.label}</span>
+          <input type="text"
+            placeholder={f.set ? `задано (${f.masked}) · ${f.source}` : 'не задано'}
+            value={vals[f.key] ?? ''}
+            onChange={e => setVals(v => ({ ...v, [f.key]: e.target.value }))}
+            style={{ flex: 1, fontSize: 12, padding: '4px 7px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', minWidth: 0 }} />
+        </div>
+      ))}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button className="btn sm primary" onClick={save} disabled={!!busy}>{busy === 'save' ? '…' : '💾 Сохранить токены'}</button>
+        <button className="btn sm" onClick={test} disabled={!!busy}>{busy === 'test' ? '…' : '🔍 Проверить'}</button>
+        {msg && <span className="chip" style={{ color: msg.ok ? 'var(--ok)' : undefined }}>{msg.t}</span>}
+      </div>
+      <span className="faint" style={{ fontSize: 10.5 }}>Пусто = берётся из Railway-переменных. Токены показываются маской. 🔒 не пересылай ссылку/токены.</span>
+    </div>
+  )
+}
+
 export function Channels() {
   const ov = useOverview()
   const navigate = useNavigate()
+  const [cfg, setCfg] = useState<any>(null)
+  const loadCfg = () => api.get<any>('/channels/config').then(setCfg).catch(() => { /* member без owner — нет доступа */ })
+  useEffect(() => { void loadCfg() }, [])
 
   const ch = (id: string) => ov?.channels.find(c => c.id === id)
   const statusOf = (id: string) =>
@@ -288,7 +349,7 @@ export function Channels() {
           ]} />
         </Card>
 
-        <Card icon="✈️" title="Telegram" {...{ status: statusOf('telegram').s, statusCls: statusOf('telegram').cls }} footer={counts('telegram')}>
+        <Card icon="✈️" title="Telegram" {...{ status: statusOf('telegram').s, statusCls: statusOf('telegram').cls }} footer={<>{counts('telegram')}<ChannelConfig channel="telegram" data={cfg?.channels?.telegram} onSaved={loadCfg} /></>}>
           <p className="muted" style={{ margin: 0, fontSize: 13 }}>Бот в TG + операторская группа (перехват диалогов). Для нового бота/аккаунта:</p>
           <Steps items={[
             <span>В <b>@BotFather</b>: /newbot → получите токен → в Railway положите <span style={mono}>TELEGRAM_BOT_TOKEN</span></span>,
@@ -299,7 +360,7 @@ export function Channels() {
           ]} />
         </Card>
 
-        <Card icon="📸" title="Instagram (DM + комментарии)" {...{ status: statusOf('instagram').s, statusCls: statusOf('instagram').cls }} footer={counts('instagram')}>
+        <Card icon="📸" title="Instagram (DM + комментарии)" {...{ status: statusOf('instagram').s, statusCls: statusOf('instagram').cls }} footer={<>{counts('instagram')}<ChannelConfig channel="instagram" data={cfg?.channels?.instagram} onSaved={loadCfg} /></>}>
           <p className="muted" style={{ margin: 0, fontSize: 13 }}>
             Код в боте уже готов (DM + автоответы на комменты) — нужно только подключение Meta. Чеклист (актуален на 2026):
           </p>
@@ -313,7 +374,7 @@ export function Channels() {
           ]} />
         </Card>
 
-        <Card icon="💬" title="Facebook Messenger" {...{ status: statusOf('messenger').s, statusCls: statusOf('messenger').cls }} footer={counts('messenger')}>
+        <Card icon="💬" title="Facebook Messenger" {...{ status: statusOf('messenger').s, statusCls: statusOf('messenger').cls }} footer={<>{counts('messenger')}<ChannelConfig channel="messenger" data={cfg?.channels?.messenger} onSaved={loadCfg} /></>}>
           <p className="muted" style={{ margin: 0, fontSize: 13 }}>Идёт в комплекте с Instagram — то же Meta-приложение и тот же Page Access Token:</p>
           <Steps items={[
             'Выполните подключение Instagram (карточка выше) — Messenger использует те же ключи',
@@ -322,7 +383,7 @@ export function Channels() {
           ]} />
         </Card>
 
-        <Card icon="🟢" title="WhatsApp" {...{ status: statusOf('whatsapp').s, statusCls: statusOf('whatsapp').cls }} footer={<>{counts('whatsapp')}<WhatsAppSyncPanel /><WhatsAppModeSelector /></>}>
+        <Card icon="🟢" title="WhatsApp" {...{ status: statusOf('whatsapp').s, statusCls: statusOf('whatsapp').cls }} footer={<>{counts('whatsapp')}<ChannelConfig channel="whatsapp" data={cfg?.channels?.whatsapp} onSaved={loadCfg} /><WhatsAppSyncPanel /><WhatsAppModeSelector /></>}>
           <p className="muted" style={{ margin: 0, fontSize: 13 }}>
             ✅ Коннектор готов в боте — приём и ответы тем же мозгом, что в Telegram. Подключаем
             официальным <b>WhatsApp Cloud API</b> от Meta: платформа бесплатна, без риска бана
