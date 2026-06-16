@@ -165,20 +165,35 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
     finally { setBusy(false) }
   }
 
-  const send = async () => {
-    const t = text.trim()
+  // ЕДИНОЕ поле ответа: отправляет то, что в поле (предложку бота — отредактированную
+  // или свой текст). Если есть черновик WhatsApp — через wa-draft (он же его чистит),
+  // иначе обычный operator-reply (работает для всех каналов).
+  const sendReply = async () => {
+    const t = draftText.trim()
     if (!t || busy) return
     setBusy(true)
     try {
-      const r = await api.post<{ delivered: boolean; channel: string }>(`/conversations/${convId}/reply`, { text: t })
-      setText('')
-      if (!r.delivered) showToast('⚠️ Сохранено, но НЕ доставлено лиду (см. логи)', true)
-      else if (r.channel === 'website') showToast('Сохранено. Website-лид увидит при следующем визите.')
+      let delivered = false; let channel = ''
+      if (detail?.pending_wa_draft) {
+        const r = await api.post<{ delivered: boolean }>(`/conversations/${convId}/wa-draft`, { action: 'send', text: t })
+        delivered = r.delivered
+      } else {
+        const r = await api.post<{ delivered: boolean; channel: string }>(`/conversations/${convId}/reply`, { text: t })
+        delivered = r.delivered; channel = r.channel
+      }
+      if (!delivered) showToast('⚠️ Сохранено, но НЕ доставлено лиду (см. логи)', true)
+      else if (channel === 'website') showToast('Сохранено. Website-лид увидит при следующем визите.')
       else showToast('✅ Доставлено лиду')
-      await loadMessages(false)
-    } catch (e: any) {
-      showToast(`Ошибка: ${e.message}`, true)
-    } finally { setBusy(false) }
+      setDraftText('')
+      await loadDetail(); await loadMessages(false)
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+  const clearDraft = async () => {
+    setDraftText('')
+    if (detail?.pending_wa_draft) {
+      try { await api.post(`/conversations/${convId}/wa-draft`, { action: 'reject' }); await loadDetail() } catch { /* ignore */ }
+    }
   }
 
   const toggleTakeover = async () => {
@@ -514,69 +529,38 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
           </div>
         )}
 
-        {detail?.pending_wa_draft && !detail.wa_autonomous && (
-          <div style={{ borderTop: '1px solid var(--accent-border)', background: 'var(--accent-soft)', padding: '8px 14px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}
-                 onClick={() => setDraftOpen(v => !v)} title="Свернуть/развернуть">
-              <span style={{ fontSize: 12 }}>{draftOpen ? '▾' : '▸'}</span>
-              <b style={{ fontSize: 13 }}>🤖 Система предлагает ответить</b>
-              {detail.pending_wa_draft.stale
-                ? <span className="faint" style={{ fontSize: 11, color: 'var(--warn, #c90)' }}>был ответ вручную — нажмите 🔄</span>
-                : <span className="faint" style={{ fontSize: 11 }}>клиенту НЕ отправлено</span>}
-              {!draftOpen && <span className="faint" style={{ fontSize: 11, marginLeft: 'auto', maxWidth: '45%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{draftText}</span>}
-            </div>
-            {draftOpen && (<>
-              <textarea value={draftText} onChange={e => setDraftText(e.target.value)}
-                        style={{ width: '100%', minHeight: 56, fontSize: 13, marginTop: 6 }} />
-              <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                <button className="btn sm primary" onClick={sendWaDraft} disabled={busy || !draftText.trim()}>✅ Отправить</button>
-                <button className="btn sm" onClick={suggestReply} disabled={busy} title="Сгенерировать другой вариант ответа">🔄 Переформулировать</button>
-                <button className="btn sm ghost" onClick={rejectWaDraft} disabled={busy}>🚫 Отклонить</button>
-                <div style={{ flex: 1 }} />
-                <button className="btn sm" onClick={() => setWaAutonomous(true)} disabled={busy}
-                        title="Система будет отвечать в этом диалоге сама, без одобрения каждого ответа">
-                  🤖 Ведёт система
-                </button>
-              </div>
-            </>)}
-          </div>
-        )}
-        {detail?.wa_autonomous && (
+        {detail?.wa_autonomous ? (
           <div style={{ borderTop: '1px solid var(--border)', background: 'var(--panel-2)', padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5 }}>
             <span>🤖 Система ведёт этот диалог сама</span>
             <div style={{ flex: 1 }} />
             <button className="btn sm ghost" onClick={() => setWaAutonomous(false)} disabled={busy}>Вернуть на одобрение</button>
           </div>
-        )}
-
-        {!replyOpen ? (
-          <div style={{ borderTop: '1px solid var(--border)', padding: '6px 14px' }}>
-            <button className="btn sm ghost" onClick={() => setReplyOpen(true)} style={{ fontSize: 12 }}>
-              ✍️ Ответить вручную
-            </button>
-          </div>
-        ) : (
-          <div className="d-reply">
+        ) : detail && (
+          /* ЕДИНОЕ поле ответа: предложка системы сразу в поле — измените, очистите
+             или напишите своё, затем «Отправить». Второго поля ввода нет. */
+          <div style={{ borderTop: '1px solid var(--accent-border)', background: detail.pending_wa_draft ? 'var(--accent-soft)' : 'var(--panel-2)', padding: '8px 14px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-              <span className="faint" style={{ fontSize: 11.5, flex: 1 }}>
-                {detail?.channel === 'website'
-                  ? 'Website-канал: лид увидит ответ при следующем заходе в виджет'
-                  : 'Уйдёт лиду в его канал + отметится в Telegram-форуме'}
-              </span>
-              <button className="btn sm ghost" onClick={() => setReplyOpen(false)} title="Свернуть">▾ свернуть</button>
+              <b style={{ fontSize: 12.5 }}>✍️ Ответ лиду</b>
+              {detail.pending_wa_draft
+                ? (detail.pending_wa_draft.stale
+                    ? <span className="faint" style={{ fontSize: 11, color: 'var(--warn, #c90)' }}>был ответ вручную — нажмите 🤖 для свежего</span>
+                    : <span className="faint" style={{ fontSize: 11 }}>🤖 система предложила — измените, очистите или напишите своё</span>)
+                : <span className="faint" style={{ fontSize: 11 }}>напишите ответ или нажмите 🤖 Предложить</span>}
             </div>
-            <textarea
-              placeholder="Ответить лиду как оператор… (Ctrl+Enter — отправить)"
-              value={text}
-              onChange={e => setText(e.target.value)}
-              onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) send() }}
-            />
-            <div className="r-row">
+            <textarea value={draftText} onChange={e => setDraftText(e.target.value)}
+                      placeholder="Напишите ответ лиду… (Ctrl+Enter — отправить)"
+                      onKeyDown={e => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) sendReply() }}
+                      style={{ width: '100%', minHeight: 60, fontSize: 13 }} />
+            <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+              <button className="btn sm primary" onClick={sendReply} disabled={busy || !draftText.trim()}>✅ Отправить</button>
+              {detail.channel === 'whatsapp' && <button className="btn sm" onClick={suggestReply} disabled={busy} title="Сгенерировать ответ системой">🤖 Предложить</button>}
+              {draftText.trim() && <button className="btn sm ghost" onClick={clearDraft} disabled={busy}>🚫 Очистить</button>}
               <div style={{ flex: 1 }} />
-              <button className="btn primary" onClick={send} disabled={busy || !text.trim()}>
-                {busy ? <span className="spin" /> : 'Отправить'}
-              </button>
+              {detail.channel === 'whatsapp' && <button className="btn sm" onClick={() => setWaAutonomous(true)} disabled={busy} title="Система будет отвечать сама, без одобрения">🤖 Ведёт система</button>}
             </div>
+            <span className="faint" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>
+              {detail.channel === 'website' ? 'Website: лид увидит при следующем визите' : 'Уйдёт лиду в его канал'}
+            </span>
           </div>
         )}
 
