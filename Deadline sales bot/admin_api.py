@@ -1169,6 +1169,11 @@ _LEAD_STAGE_ORDER = [
 
 class WaDedupRequest(BaseModel):
     execute: bool = False
+    # Бэклог: разрезолвить телефон у старых @lid-карточек без штампа (WAHA LID API,
+    # СЕТЬ) — чтобы дедуп-по-телефону потом схлопнул их. Ограничено `limit`, чтобы
+    # не держать коннект долго. Новые входящие штампуются сами в _handle_message.
+    resolve_lids: bool = False
+    limit: int = 15
 
 
 @router.post("/whatsapp/dedup")
@@ -1179,8 +1184,49 @@ async def whatsapp_dedup(
 ):
     """Дедупликация: склеить fable-import карточки с @lid-диалогами по первому
     слову имени. Консервативно — только при РОВНО ОДНОМ кандидате.
-    execute=false — dry-run (только предпросмотр); execute=true — применить."""
+    execute=false — dry-run (только предпросмотр); execute=true — применить.
+    resolve_lids=true — сперва добить телефоны у старых @lid-карточек (СЕТЬ, bounded
+    limit) → потом дедуп-по-телефону их схлопнет."""
     from db.models import ConversationStatusEnum
+
+    # БЭКЛОГ: разрезолвить телефон у старых @lid-карточек без штампа. Сетевые вызовы
+    # WAHA LID API — отпускаем коннект (commit) ПЕРЕД сетью, чтобы не держать пул
+    # (урок висов 06-15). Bounded по req.limit.
+    resolved_lids: list = []
+    if req.resolve_lids and req.execute:
+        import main as _main
+        from channels.waha import resolve_lid_phone
+        st = _main.settings
+        cands: list = []
+        if getattr(st, "waha_base_url", None):
+            _rows = (
+                db.query(Conversation, Customer)
+                .join(Customer, Conversation.customer_id == Customer.id)
+                .filter(Conversation.channel == "whatsapp",
+                        Conversation.status != ConversationStatusEnum.ARCHIVED)
+                .all()
+            )
+            for _conv, _cust in _rows:
+                _cid = _conv.channel_conversation_id or ""
+                if len(_cid) >= 13 and not (_cust.phone or "").strip():
+                    cands.append((str(_cust.id), _cid))
+                if len(cands) >= max(1, min(req.limit, 50)):
+                    break
+        db.commit()  # отпустить коннект ПЕРЕД сетевыми вызовами
+        for _cust_id, _cid in cands:
+            try:
+                _pn = await resolve_lid_phone(
+                    st.waha_base_url, st.waha_api_key or "",
+                    st.waha_session or "default", _cid)
+            except Exception:  # noqa: BLE001
+                _pn = None
+            if not _pn:
+                continue
+            _c = db.query(Customer).filter(Customer.id == _cust_id).first()
+            if _c is not None and not (_c.phone or "").strip():
+                _c.phone = ("+" + _pn)[:50]
+                db.commit()
+                resolved_lids.append({"customer": _cust_id, "phone": _pn})
 
     # Загружаем все WhatsApp-диалоги с Customer-ом
     all_convs = (
@@ -1278,7 +1324,13 @@ async def whatsapp_dedup(
             "action": ", ".join(action_taken) if action_taken else "dry-run",
         })
 
+    # Проход B: дедуп по штампованному телефону (чисто БД) — схлопывает @lid-
+    # дубли с телефонными двойниками. Идёт ПОСЛЕ resolve_lids, чтобы поймать
+    # только что добитые номера.
+    phone_dedup = {"groups": 0, "archived": 0, "pairs": []}
     if req.execute:
+        from services.whatsapp_sync import dedup_wa_by_phone
+        phone_dedup = dedup_wa_by_phone(db)
         db.commit()
 
     return {
@@ -1286,6 +1338,8 @@ async def whatsapp_dedup(
         "execute": req.execute,
         "merges": merges,
         "skipped": skipped,
+        "resolved_lids": resolved_lids,
+        "phone_dedup": phone_dedup,
     }
 
 

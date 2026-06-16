@@ -132,12 +132,18 @@ async def _worker_loop(*, tenant_config: dict, interval_sec: int) -> None:
         # Постоянная актуальность панели = WhatsApp: дешёвая (только БД) авто-чистка
         # фантомов + эхо-дублей каждый цикл. Без WAHA/LLM — безопасно часто.
         try:
-            from services.whatsapp_sync import cleanup_wa_artifacts
+            from services.whatsapp_sync import cleanup_wa_artifacts, dedup_wa_by_phone
             _cl = cleanup_wa_artifacts()
             if _cl.get("phantoms") or _cl.get("echo_dupes"):
                 logger.info("[cron] wa cleanup: %s", _cl)
+            # Дедуп @lid-дублей по штампованному телефону (чисто БД, без сети) —
+            # рекламные лиды не плодят вторую карточку: @lid-карточка и её
+            # телефонный двойник схлопываются в одну (старая → ARCHIVED).
+            _dd = dedup_wa_by_phone()
+            if _dd.get("archived"):
+                logger.info("[cron] wa dedup-by-phone: %s", _dd)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("[cron] wa cleanup failed (non-fatal): %s", exc)
+            logger.warning("[cron] wa cleanup/dedup failed (non-fatal): %s", exc)
         # ПОЛНАЯ авто-сверка с WhatsApp раз в ~час (каждый 6-й цикл): WAHA = источник
         # правды, убирает локальные сообщения, которых в WhatsApp НЕТ (в т.ч. ложно-
         # «delivered», что обычная чистка не ловит), подтягивает новые. БЕЗ LLM

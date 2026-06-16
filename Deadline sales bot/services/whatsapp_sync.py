@@ -98,6 +98,88 @@ def cleanup_wa_artifacts() -> dict:
     return out
 
 
+# Порядок стадий воронки — для слияния «только вперёд» (не откатываем стадию).
+_STAGE_ORDER = [
+    "new_lead", "in_dialog", "qualified", "nda", "on_call", "tz_approved",
+    "proposal", "prepayment", "in_work", "completed_won", "post_sale", "lost",
+]
+
+
+def _norm_phone(p: Optional[str]) -> str:
+    return "".join(ch for ch in (p or "") if ch.isdigit())
+
+
+def dedup_wa_by_phone(db: Optional[Session] = None) -> dict:
+    """Дедуп WhatsApp-карточек по РЕАЛЬНОМУ телефону (чисто БД, без сети/LLM —
+    безопасно гонять в кроне). Рекламные лиды приходят под скрытым `@lid` и
+    заводят свою карточку; на входящем мы резолвим их телефон через WAHA LID API
+    и штампуем `customer.phone` (main._handle_message). Здесь: если ДВЕ+ активные
+    whatsapp-карточки имеют ОДИН и тот же штампованный телефон (@lid-карточка + та
+    же, импортированная/синкнутая по номеру) — схлопываем в одну, чтобы панель не
+    плодила дубли рекламных лидов.
+
+    Канон = самая свежеактивная карточка (туда падают живые сообщения от лида);
+    остальные → ARCHIVED (ОБРАТИМО, не удаляем — правило never-delete). Переносим
+    на канон: стадию (только вперёд), pending_wa_draft и summary, если у канона
+    пусто. Идемпотентно (архивные исключены из выборки)."""
+    from db.connection import session_scope
+    from db.models import ConversationStatusEnum
+
+    def _run(_db: Session) -> dict:
+        out: dict = {"groups": 0, "archived": 0, "pairs": []}
+        rows = (
+            _db.query(Conversation, Customer)
+            .join(Customer, Conversation.customer_id == Customer.id)
+            .filter(Conversation.channel == "whatsapp",
+                    Conversation.status != ConversationStatusEnum.ARCHIVED)
+            .all()
+        )
+        by_phone: dict[str, list] = {}
+        for conv, cust in rows:
+            phone = _norm_phone(getattr(cust, "phone", None))
+            if len(phone) < 8:  # нет надёжного номера — не угадываем, пропускаем
+                continue
+            by_phone.setdefault(phone, []).append((conv, cust))
+
+        _floor = datetime.min.replace(tzinfo=timezone.utc)
+        for phone, group in by_phone.items():
+            if len(group) < 2:
+                continue
+            out["groups"] += 1
+            # канон = самая свежеактивная (живые сообщения приходят туда)
+            group.sort(
+                key=lambda gc: getattr(gc[0], "last_message_at", None) or _floor,
+                reverse=True,
+            )
+            canon = group[0][0]
+            for src, _scust in group[1:]:
+                if src.id == canon.id:
+                    continue
+                # стадия только вперёд
+                try:
+                    si = _STAGE_ORDER.index(getattr(src, "lead_stage", None) or "new_lead")
+                    ci = _STAGE_ORDER.index(getattr(canon, "lead_stage", None) or "new_lead")
+                    if si > ci:
+                        canon.lead_stage = src.lead_stage
+                except ValueError:
+                    pass
+                if getattr(src, "pending_wa_draft", None) and not getattr(canon, "pending_wa_draft", None):
+                    canon.pending_wa_draft = src.pending_wa_draft
+                if (getattr(src, "summary", None) or "").strip() and not (getattr(canon, "summary", None) or "").strip():
+                    canon.summary = (src.summary or "")[:2000]
+                src.status = ConversationStatusEnum.ARCHIVED
+                src.summary = ((src.summary or "") + f" → дубль слит в {canon.id} (по тел. {phone})").strip()[:2000]
+                out["archived"] += 1
+                out["pairs"].append({"phone": phone, "archived": str(src.id), "canon": str(canon.id)})
+        _db.flush()
+        return out
+
+    if db is not None:
+        return _run(db)
+    with session_scope() as _db:
+        return _run(_db)
+
+
 def _existing_waha_ids(db: Session, conversation_id) -> set[str]:
     """Все waha_id, уже сохранённые в этом диалоге — для дедупа."""
     rows = db.execute(

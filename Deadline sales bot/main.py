@@ -2305,10 +2305,24 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
 async def health():
     # GET и HEAD: UptimeRobot/мониторы по умолчанию шлют HEAD — без него был
     # 405 → монитор считал бота DOWN (ложные алерты). Теперь оба → 200.
+    #
+    # ЗАКАЛКА (инцидент 2026-06-15/16): раньше check_connection() звался СИНХРОННО
+    # на event-loop и делал checkout из пула; при исчерпанном пуле он висел
+    # (до pool_timeout и дольше) → /health не отвечал, а loop при этом был жив
+    # (статика/404 отвечали). Railway решает рестарт ПО /health — если он висит,
+    # рестарта НЕ будет, и вотчдог (пульс>120с→os._exit) остаётся единственной
+    # страховкой. Теперь: DB-проверка УХОДИТ В ПОТОК (loop не блокируется) +
+    # жёсткий таймаут 3с. /health ВСЕГДА отвечает быстро 200/ok:True (liveness);
+    # при недоступной/медленной БД → db_connected:false (degraded), а не вис.
+    db_ok = False
+    try:
+        db_ok = await asyncio.wait_for(asyncio.to_thread(check_connection), timeout=3.0)
+    except Exception:
+        db_ok = False
     return {
         "ok": True,
         "vectorstore_loaded": vectorstore is not None,
-        "db_connected": check_connection(),
+        "db_connected": db_ok,
         "model": _LLM_PRIMARY_MODEL,
         "llm_provider": _LLM_PROVIDER,
     }
@@ -3267,6 +3281,10 @@ async def _wa_send(to_peer: str, text: str, phone_number_id: str = "") -> bool:
     он настроен, иначе через Meta Cloud API. `to_peer` — номер клиента (цифры) /
     wa_id. Так все точки отправки (автоответ, одобрение черновика, ручной ответ
     оператора) работают независимо от транспорта."""
+    if _wa_over_daily_cap():  # антибан: дневной потолок исходящих достигнут
+        log.warning("[wa-send] дневной лимит исходящих (WA_DAILY_SEND_CAP) достигнут "
+                    "— отправка пропущена (антибан)")
+        return False
     await _wa_throttle()  # антибан: разносим отправки во времени, без бурстов
     if settings.waha_base_url:
         from channels.waha import send_waha_reply, resolve_lid_phone
@@ -3413,20 +3431,50 @@ _WA_INBOUND_SEMA = _aio_brain.Semaphore(3)
 # одного сообщения раз в ~5с + случайная «человеческая» задержка перед отправкой.
 import time as _time_wa
 import random as _random_wa
+import os as _os_wa
+import datetime as _dt_wa
 _WA_SEND_LOCK = _aio_brain.Lock()
 _WA_SEND_MIN_INTERVAL = 5.0          # минимум секунд между любыми двумя отправками
 _wa_last_send_mono = [0.0]
+# Дневной потолок исходящих (антибан): неофиц. linked-device (WAHA) банят за
+# всплески/объём. Жёсткий лимит сообщений/сутки — предохранитель от убегания
+# автопилота. Настройка: env WA_DAILY_SEND_CAP (дефолт 300). 0/пусто = без лимита.
+_wa_daily = {"date": None, "count": 0}
+
+
+def _wa_daily_cap() -> int:
+    try:
+        return int(_os_wa.getenv("WA_DAILY_SEND_CAP", "300") or "0")
+    except ValueError:
+        return 300
+
+
+def _wa_over_daily_cap() -> bool:
+    cap = _wa_daily_cap()
+    if cap <= 0:
+        return False
+    today = _dt_wa.date.today().isoformat()
+    if _wa_daily["date"] != today:   # новый день — сброс счётчика
+        _wa_daily["date"] = today
+        _wa_daily["count"] = 0
+    return _wa_daily["count"] >= cap
 
 
 async def _wa_throttle() -> None:
     """Разнести отправки во времени (антибан). Держит lock, пока ждёт — значит
-    сообщения уходят строго по одному, спокойным человеческим темпом, без бурстов."""
+    сообщения уходят строго по одному, спокойным человеческим темпом, без бурстов.
+    Также считает дневной объём (потолок проверяется в _wa_send до отправки)."""
     async with _WA_SEND_LOCK:
         gap = _WA_SEND_MIN_INTERVAL - (_time_wa.monotonic() - _wa_last_send_mono[0])
         if gap > 0:
             await _aio_brain.sleep(gap)
         await _aio_brain.sleep(_random_wa.uniform(0.7, 2.2))  # «печатает…» по-человечески
         _wa_last_send_mono[0] = _time_wa.monotonic()
+        today = _dt_wa.date.today().isoformat()
+        if _wa_daily["date"] != today:
+            _wa_daily["date"] = today
+            _wa_daily["count"] = 0
+        _wa_daily["count"] += 1
 
 
 async def _process_wa_payload(payload: dict, engine: str) -> None:
