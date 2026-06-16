@@ -74,6 +74,40 @@
 .react-flow__controls-button:hover { background: var(--panel); }
 .react-flow__controls-button svg { fill: var(--text-dim); }
 .react-flow__controls-button:hover svg { fill: var(--text); }
+
+/* FullCalendar — тёмная тема под палитру панели (как Google Calendar). */
+.fc {
+  --fc-border-color: var(--border);
+  --fc-page-bg-color: transparent;
+  --fc-neutral-bg-color: var(--panel-2);
+  --fc-today-bg-color: var(--accent-soft);
+  --fc-now-indicator-color: var(--accent);
+  --fc-event-border-color: transparent;
+  color: var(--text);
+}
+.fc .fc-toolbar.fc-header-toolbar { margin-bottom: 12px; flex-wrap: wrap; gap: 8px; }
+.fc .fc-toolbar-title { font-size: 1.05rem; font-weight: 700; color: var(--text); }
+.fc .fc-button {
+  background: var(--panel-2); border: 1px solid var(--border-strong); color: var(--text-dim);
+  box-shadow: none; text-transform: none; font-size: 12.5px; padding: 5px 10px; font-weight: 600;
+}
+.fc .fc-button:hover { background: var(--panel); color: var(--text); }
+.fc .fc-button:focus { box-shadow: none; }
+.fc .fc-button-primary:not(:disabled).fc-button-active,
+.fc .fc-button-primary:not(:disabled):active {
+  background: var(--accent); border-color: var(--accent); color: #fff;
+}
+.fc .fc-button-primary:disabled { background: var(--panel-2); border-color: var(--border); opacity: .5; }
+.fc-theme-standard td, .fc-theme-standard th, .fc-theme-standard .fc-scrollgrid { border-color: var(--border); }
+.fc .fc-col-header-cell-cushion, .fc .fc-daygrid-day-number,
+.fc .fc-timegrid-axis-cushion, .fc .fc-timegrid-slot-label-cushion,
+.fc .fc-list-day-text { color: var(--text-faint); text-decoration: none; }
+.fc .fc-daygrid-day.fc-day-today, .fc .fc-timegrid-col.fc-day-today { background: var(--accent-soft); }
+.fc-event { cursor: pointer; border-radius: 5px; padding: 1px 3px; font-weight: 600; }
+.fc-event:hover { filter: brightness(1.12); }
+.fc .fc-timegrid-slot { height: 2.1em; }
+.fc .fc-scroller::-webkit-scrollbar { width: 8px; height: 8px; }
+.fc .fc-scroller::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 6px; }
 :root[data-theme="light"] .login-wrap {
   background: radial-gradient(900px 500px at 70% -10%, rgba(124,108,255,0.08), transparent 60%), var(--bg);
 }

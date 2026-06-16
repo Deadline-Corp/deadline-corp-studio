@@ -1,188 +1,160 @@
-import { useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
+import FullCalendar from '@fullcalendar/react'
+import dayGridPlugin from '@fullcalendar/daygrid'
+import timeGridPlugin from '@fullcalendar/timegrid'
+import interactionPlugin from '@fullcalendar/interaction'
+import ruLocale from '@fullcalendar/core/locales/ru'
 import { api, getToken } from '../api/client'
 import { TodayView } from '../api/types'
 import { usePolling } from '../hooks/usePolling'
 import { useDrawer } from '../components/DrawerContext'
-import { CHANNEL_META, fmtTime } from '../lib'
 import { HintBar } from '../components/HintBar'
 
-/* Календарь v2 — «повестка» (agenda): события сгруппированы по дням сверху вниз,
-   каждое во всю ширину (текст не режется), просроченные задачи закреплены сверху.
-   Источник — /today (созвоны + задачи). Клик по событию открывает карточку лида
-   (там перенос/отмена созвона). Кнопка «Подписаться» — ICS-фид в телефон. */
+/* Календарь v3 — FullCalendar (как Google Calendar): виды месяц/неделя/3 дня/день,
+   перетаскивание событий мышью → перенос бронируется на бэке (созвон и задача),
+   обновляется везде. Клик по событию открывает карточку лида. Источник — /today. */
 
-type Ev = {
-  kind: 'call' | 'bot' | 'task'
-  time: string | null
-  title: string
-  detail: string
-  conv: string | null
-  ch?: string
+const COLORS = {
+  call: '#7c6cff',   // созвон — акцент
+  bot: '#3bb4a0',    // задача бота
+  task: '#c9a23b',   // задача человека
+  overdue: '#e0524f', // просрочено
 }
 
-const KIND_META: Record<Ev['kind'], { icon: string; tone: string }> = {
-  call: { icon: '📞', tone: 'var(--accent)' },
-  bot: { icon: '🤖', tone: '#3bb4a0' },
-  task: { icon: '📋', tone: '#c9a23b' },
-}
-const DOWS = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб']
-
-function dayKey(d: Date) {
-  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
-}
-function relLabel(d: Date, now: Date) {
-  const diff = Math.round((+new Date(d.getFullYear(), d.getMonth(), d.getDate())
-    - +new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 864e5)
-  const base = `${DOWS[d.getDay()]} ${d.getDate()}.${String(d.getMonth() + 1).padStart(2, '0')}`
-  if (diff === 0) return `Сегодня · ${base}`
-  if (diff === 1) return `Завтра · ${base}`
-  return base
+function addMin(iso: string, min: number) {
+  return new Date(new Date(iso).getTime() + min * 60000).toISOString()
 }
 
 export function Calendar() {
   const [view, setView] = useState<TodayView | null>(null)
   const [copied, setCopied] = useState(false)
+  const [note, setNote] = useState('')
   const { openConversation } = useDrawer()
+  const calRef = useRef<FullCalendar | null>(null)
 
   const subscribeUrl = `${location.origin}/calendar.ics?token=${encodeURIComponent(getToken() || '')}`
   const copySubscribe = () => {
     navigator.clipboard?.writeText(subscribeUrl)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 3000)
+    setCopied(true); setTimeout(() => setCopied(false), 3000)
   }
 
-  usePolling(async () => {
+  const refresh = useCallback(async () => {
     try { setView(await api.get<TodayView>('/today')) } catch { /* */ }
-  }, 30000)
+  }, [])
+  usePolling(refresh, 30000)
 
-  const now = new Date()
-  const todayStart = +new Date(now.getFullYear(), now.getMonth(), now.getDate())
-  const overdue: Ev[] = []
-  const byDay = new Map<string, { date: Date; items: Ev[] }>()
-
-  const place = (iso: string | null, ev: Ev) => {
-    if (!iso) return
-    const d = new Date(iso)
-    const dStart = +new Date(d.getFullYear(), d.getMonth(), d.getDate())
-    if (dStart < todayStart) { overdue.push({ ...ev, time: iso }); return }
-    if (dStart > todayStart + 13 * 864e5) return // окно 14 дней
-    const k = dayKey(d)
-    if (!byDay.has(k)) byDay.set(k, { date: d, items: [] })
-    byDay.get(k)!.items.push({ ...ev, time: iso })
-  }
-
-  if (view) {
-    view.calls.forEach(c => place(c.call_at, {
-      kind: 'call',
-      title: c.customer.name || c.customer.email || 'Лид',
-      detail: c.medium ? `созвон · ${c.medium}` : 'созвон',
-      conv: c.conversation_id, ch: c.channel,
-    }))
-    const asTask = (t: any): Ev => ({
-      kind: t.executor === 'bot' ? 'bot' : 'task',
-      title: t.customer.name || 'Лид',
-      detail: (t.text || '').replace(/\s+/g, ' ').trim(),
-      conv: t.conversation_id, ch: t.channel,
+  const now = Date.now()
+  const events = useMemo(() => {
+    if (!view) return []
+    const evs: any[] = []
+    view.calls.forEach(c => {
+      if (!c.call_at) return
+      evs.push({
+        id: 'call-' + c.conversation_id,
+        title: `📞 ${c.customer.name || c.customer.email || 'Лид'}${c.medium ? ' · ' + c.medium : ''}`,
+        start: c.call_at, end: addMin(c.call_at, 30),
+        backgroundColor: COLORS.call, borderColor: COLORS.call,
+        extendedProps: { kind: 'call', conv: c.conversation_id },
+      })
     })
-    view.overdue.forEach(t => place(t.due_at, asTask(t)))
-    view.today.forEach(t => place(t.due_at, asTask(t)))
-    view.upcoming.forEach(t => place(t.due_at, asTask(t)))
-  }
+    const tasks = [...view.overdue, ...view.today, ...view.upcoming]
+    tasks.forEach(t => {
+      if (!t.due_at) return
+      const isBot = t.executor === 'bot'
+      const overdue = new Date(t.due_at).getTime() < now
+      const col = overdue ? COLORS.overdue : (isBot ? COLORS.bot : COLORS.task)
+      evs.push({
+        id: 'task-' + t.id,
+        title: `${isBot ? '🤖' : '📋'} ${t.customer.name || 'Лид'}: ${(t.text || '').replace(/\s+/g, ' ').trim().slice(0, 44)}`,
+        start: t.due_at, end: addMin(t.due_at, 30),
+        backgroundColor: col, borderColor: col,
+        extendedProps: { kind: isBot ? 'bot' : 'task', conv: t.conversation_id, actionId: t.id },
+      })
+    })
+    return evs
+  }, [view, now])
 
-  const days = [...byDay.values()].sort((a, b) => +a.date - +b.date)
-  days.forEach(d => d.items.sort((a, b) => (a.time || '').localeCompare(b.time || '')))
-  overdue.sort((a, b) => (a.time || '').localeCompare(b.time || ''))
-
-  const callCount = (view?.calls.length) || 0
-  const taskCount = days.reduce((n, d) => n + d.items.filter(i => i.kind !== 'call').length, 0)
-  const isEmpty = view && !overdue.length && !days.length
-
-  const Row = (it: Ev, k: number) => {
-    const m = KIND_META[it.kind]
-    return (
-      <div key={k}
-           onClick={() => it.conv && openConversation(it.conv)}
-           style={{
-             display: 'flex', alignItems: 'flex-start', gap: 10,
-             padding: '9px 11px', borderRadius: 9,
-             cursor: it.conv ? 'pointer' : 'default',
-             background: 'var(--panel)',
-             border: '1px solid var(--border)',
-             borderLeft: `3px solid ${m.tone}`,
-           }}>
-        <div style={{
-          minWidth: 46, fontSize: 13, fontWeight: 700, color: 'var(--text)',
-          fontVariantNumeric: 'tabular-nums', paddingTop: 1,
-        }}>{fmtTime(it.time) || '—'}</div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
-            <span style={{ marginRight: 6 }}>{m.icon}</span>{it.title}
-            {it.ch && <span style={{ marginLeft: 6 }}>{CHANNEL_META[it.ch]?.icon ?? ''}</span>}
-          </div>
-          {it.detail && (
-            <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 2, lineHeight: 1.4 }}>
-              {it.detail.length > 140 ? it.detail.slice(0, 140) + '…' : it.detail}
-            </div>
-          )}
-        </div>
-      </div>
-    )
+  // Перетащил/растянул событие → переносим на бэке. Ошибка → откат на место.
+  const onMove = async (info: any) => {
+    const p = info.event.extendedProps
+    const startISO: string | undefined = info.event.start?.toISOString()
+    if (!startISO) { info.revert(); return }
+    try {
+      if (p.kind === 'call') {
+        if (!p.conv) { info.revert(); return }
+        await api.post(`/conversations/${p.conv}/call`, { action: 'reschedule', time: startISO })
+        setNote('📞 Созвон перенесён — напоминания обновлены')
+      } else {
+        await api.post(`/scheduled-actions/${p.actionId}/reschedule`, { due_at: startISO })
+        setNote('📋 Задача перенесена')
+      }
+      setTimeout(() => setNote(''), 3000)
+      await refresh()
+    } catch (e: any) {
+      info.revert()
+      setNote(`Не удалось перенести: ${e?.detail ?? e?.message ?? 'ошибка'}`)
+      setTimeout(() => setNote(''), 4000)
+    }
   }
 
   return (
     <div className="page">
       <div className="page-head">
         <h1>Календарь</h1>
-        <span className="sub">созвоны и дедлайны на 2 недели · бот сам бронирует время и напоминает за день и за час</span>
+        <span className="sub">созвоны и задачи · перетащи событие мышью, чтобы перенести — изменится везде</span>
       </div>
       <HintBar id="calendar" icon="📅">
-        Повестка по дням: созвоны, которые бот назначил с лидами, и задачи с дедлайном.
-        Клик по событию открывает карточку лида — там можно <b>перенести/отменить созвон</b> (📞 Созвон).
-        Кнопка <b>«📲 Подписаться»</b> добавит созвоны в твой телефон/Google-календарь (обновляются сами).
+        Как Google-календарь: переключай <b>месяц / неделю / 3 дня / день</b> справа сверху.
+        <b> Перетащи событие</b> на другое время — созвон/задача перенесётся и напоминания обновятся.
+        Клик по событию — карточка лида. <b>«📲 Подписаться»</b> — те же события в твоём телефоне.
       </HintBar>
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
         <button className="btn sm primary" onClick={copySubscribe}>
           {copied ? '✅ Ссылка скопирована' : '📲 Подписаться в телефоне'}
         </button>
-        {view && (
-          <span className="faint" style={{ fontSize: 12.5 }}>
-            📞 {callCount} {callCount === 1 ? 'созвон' : 'созвонов'} · 📋 {taskCount} {taskCount === 1 ? 'задача' : 'задач'} на 2 недели
-            {overdue.length > 0 && <span style={{ color: '#e0524f', fontWeight: 600 }}> · ⚠️ {overdue.length} просрочено</span>}
-          </span>
-        )}
+        <span style={{ fontSize: 11.5, display: 'inline-flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={{ color: COLORS.call }}>● созвон</span>
+          <span style={{ color: COLORS.bot }}>● задача бота</span>
+          <span style={{ color: COLORS.task }}>● задача человека</span>
+          <span style={{ color: COLORS.overdue }}>● просрочено</span>
+        </span>
+        {note && <span className="chip accent" style={{ marginLeft: 'auto' }}>{note}</span>}
       </div>
 
-      {overdue.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 700, color: '#e0524f', marginBottom: 8 }}>
-            ⚠️ Просрочено ({overdue.length})
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            {overdue.map(Row)}
-          </div>
-        </div>
-      )}
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-        {days.map((d, di) => (
-          <div key={di}>
-            <div style={{
-              fontSize: 12.5, fontWeight: 700, marginBottom: 8,
-              color: di === 0 && dayKey(d.date) === dayKey(now) ? 'var(--accent)' : 'var(--text-dim)',
-            }}>
-              {relLabel(d.date, now)}
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-              {d.items.map(Row)}
-            </div>
-          </div>
-        ))}
+      <div className="card" style={{ padding: 12 }}>
+        <FullCalendar
+          ref={calRef as any}
+          plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+          initialView="timeGridWeek"
+          locale={ruLocale}
+          firstDay={1}
+          nowIndicator
+          headerToolbar={{
+            left: 'prev,next today',
+            center: 'title',
+            right: 'dayGridMonth,timeGridWeek,timeGridThreeDay,timeGridDay',
+          }}
+          views={{
+            timeGridThreeDay: { type: 'timeGrid', duration: { days: 3 }, buttonText: '3 дня' },
+          }}
+          buttonText={{ today: 'сегодня', month: 'месяц', week: 'неделя', day: 'день' }}
+          events={events}
+          editable
+          eventStartEditable
+          eventDurationEditable={false}
+          eventDrop={onMove}
+          eventResize={onMove}
+          eventClick={(info) => { const c = info.event.extendedProps.conv; if (c) openConversation(c) }}
+          slotMinTime="07:00:00"
+          slotMaxTime="22:00:00"
+          allDaySlot={false}
+          expandRows
+          height="calc(100vh - 230px)"
+          dayMaxEvents
+          eventTimeFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
+        />
       </div>
-
-      {isEmpty && (
-        <div className="empty">Пока пусто — назначенные ботом созвоны и задачи появятся здесь сами</div>
-      )}
     </div>
   )
 }

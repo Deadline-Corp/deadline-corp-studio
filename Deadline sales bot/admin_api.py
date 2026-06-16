@@ -1824,6 +1824,33 @@ async def scheduled_action_done(
     return {"ok": True}
 
 
+class ActionRescheduleRequest(BaseModel):
+    due_at: str
+
+
+@router.post("/scheduled-actions/{action_id}/reschedule")
+async def scheduled_action_reschedule(
+    action_id: str,
+    req: ActionRescheduleRequest,
+    _: None = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """Перенос задачи на новое время (drag-n-drop в календаре) — меняет due_at."""
+    try:
+        aid = UUID(action_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="action_id must be a UUID")
+    row = db.get(ScheduledAction, aid)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Action not found")
+    if row.status not in ("pending", "processing"):
+        raise HTTPException(status_code=409, detail=f"Уже в статусе {row.status}")
+    new_dt = _parse_iso(req.due_at)
+    row.due_at = new_dt
+    db.commit()
+    return {"ok": True, "due_at": new_dt.isoformat()}
+
+
 # ============================================================================
 # QUICK TRAINING RULES — «лёгкий мозг»: правило одной строкой
 # ============================================================================
