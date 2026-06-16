@@ -245,6 +245,37 @@ async def overview(
         "instagram": bool(s.meta_page_access_token),
         "messenger": bool(s.meta_page_access_token),
     }
+    # Доп.метрики каналов для Канваса-обзора: новых за вчера, горячих, без задачи.
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    _now = _dt.now(_tz.utc)
+    _t0 = _now.replace(hour=0, minute=0, second=0, microsecond=0)
+    _y0 = _t0 - _td(days=1)
+    new_yest = dict(db.execute(
+        sql_select(Conversation.channel, sql_func.count())
+        .where(Conversation.created_at >= _y0, Conversation.created_at < _t0)
+        .group_by(Conversation.channel)
+    ).fetchall())
+    hot_by_ch = dict(db.execute(
+        sql_select(Conversation.channel, sql_func.count())
+        .select_from(Conversation).join(Customer, Conversation.customer_id == Customer.id)
+        .where(Customer.lead_temperature.in_(("hot", "ready")),
+               Conversation.status != "archived")
+        .group_by(Conversation.channel)
+    ).fetchall())
+    _have_task = {r[0] for r in db.execute(
+        sql_select(ScheduledAction.conversation_id)
+        .where(ScheduledAction.status.in_(("pending", "processing")),
+               ScheduledAction.conversation_id.isnot(None))
+    ).fetchall()}
+    _active_rows = db.execute(
+        sql_select(Conversation.channel, Conversation.id)
+        .where(Conversation.status != "archived",
+               Conversation.lead_stage.in_(list(_ACTIVE_STAGES)))
+    ).fetchall()
+    no_task_ch: dict = {}
+    for _chn, _cid in _active_rows:
+        if _cid not in _have_task:
+            no_task_ch[_chn] = no_task_ch.get(_chn, 0) + 1
     channels = []
     for ch in CHANNELS:
         last = last_msg_by_channel.get(ch)
@@ -253,6 +284,9 @@ async def overview(
             "configured": configured[ch],
             "conversations": int(by_channel_total.get(ch, 0)),
             "open": int(by_channel_open.get(ch, 0)),
+            "new_yesterday": int(new_yest.get(ch, 0)),
+            "hot": int(hot_by_ch.get(ch, 0)),
+            "no_task": int(no_task_ch.get(ch, 0)),
             "last_message_at": last.isoformat() if last else None,
         })
 
@@ -302,6 +336,18 @@ async def overview(
         sql_select(sql_func.count()).select_from(Conversation)
         .where(Conversation.status == "handed_off")
     ).scalar() or 0
+    _eod = _now.replace(hour=23, minute=59, second=59)
+    tasks_overdue = db.execute(
+        sql_select(sql_func.count()).select_from(ScheduledAction)
+        .where(ScheduledAction.status.in_(("pending", "processing")),
+               ScheduledAction.due_at < _now)
+    ).scalar() or 0
+    tasks_today = db.execute(
+        sql_select(sql_func.count()).select_from(ScheduledAction)
+        .where(ScheduledAction.status.in_(("pending", "processing")),
+               ScheduledAction.due_at >= _now, ScheduledAction.due_at <= _eod)
+    ).scalar() or 0
+    no_task_total = sum(no_task_ch.values())
 
     # «Мозг»: активная DB-версия или константа.
     prompt_source = "file"
@@ -332,7 +378,12 @@ async def overview(
             "events_pending": int(crm_pending),
             "events_failed": int(crm_failed),
         },
-        "tasks": {"scheduled_pending": int(tasks_pending)},
+        "tasks": {
+            "scheduled_pending": int(tasks_pending),
+            "overdue": int(tasks_overdue),
+            "today": int(tasks_today),
+            "no_task": int(no_task_total),
+        },
         "inbox": {
             "open": int(inbox_open),
             "takeover": int(inbox_takeover),

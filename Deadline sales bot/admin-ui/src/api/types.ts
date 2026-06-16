@@ -3,6 +3,9 @@ export interface ChannelInfo {
   configured: boolean
   conversations: number
   open: number
+  new_yesterday?: number
+  hot?: number
+  no_task?: number
   last_message_at: string | null
 }
 
@@ -62,7 +65,7 @@ export interface Overview {
   kb: { chunks: number; sources: number }
   training: { active_corrections: number }
   crm: { enabled: boolean; provider: string; events_pending: number; events_failed: number }
-  tasks: { scheduled_pending: number }
+  tasks: { scheduled_pending: number; overdue?: number; today?: number; no_task?: number }
   inbox: { open: number; takeover: number; handed_off: number }
 }
 

@@ -1,52 +1,73 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ReactFlow, Background, Controls, Node, Edge, Handle, Position, useNodesState } from '@xyflow/react'
+import {
+  ReactFlow, Background, Controls, MiniMap, Node, Edge, Handle, Position, useNodesState,
+} from '@xyflow/react'
 import { api } from '../api/client'
 import { AnalyticsView } from '../api/types'
 import { useOverview } from '../overviewContext'
 import { CHANNEL_META, fmtAgo } from '../lib'
 import { HintBar } from '../components/HintBar'
 
-/* Раскладка канваса настраивается: тащите ноды куда удобно — позиции
-   запоминаются (localStorage) и переживают перезагрузку. «↺ Раскладка»
-   возвращает стандарт. */
+/* Канвас-«рубка» в духе eva.bz: бот в центре, слева каналы, справа подсистемы —
+   живые узлы с метриками. Тащи ноды куда удобно (раскладка в localStorage),
+   клик по ноде → её раздел (сквозная навигация). «↺ Раскладка» = стандарт. */
 const LAYOUT_KEY = 'deadline_canvas_layout_v2'
 
 function loadLayout(): Record<string, { x: number; y: number }> {
   try { return JSON.parse(localStorage.getItem(LAYOUT_KEY) || '{}') } catch { return {} }
 }
 
-/* Канвас в духе eva.bz: бот в центре, слева каналы, справа подсистемы.
-   Клик по ноде → соответствующий раздел (сквозная навигация). */
+const TONE = {
+  bot: '#7c6cff', funnel: '#7c6cff', brain: '#3bb4a0', kb: '#6ba3e8',
+  crm: '#c06bd8', tasks: '#e0a23b', auto: '#3bb4a0',
+  whatsapp: '#25d366', telegram: '#3b9eff', website: '#8b93a7',
+  instagram: '#e1306c', messenger: '#0084ff',
+}
+const HOT = '#e0524f'
+const WARN = '#e0a23b'
 
+interface Metric { label: string; value: string | number; tone?: string }
 interface NodeData {
-  icon: string
-  title: string
-  sub?: string
+  icon: string; title: string; sub?: string; tone?: string; badge?: string
   rows?: Array<{ k: string; v: string | number; cls?: string }>
+  metrics?: Metric[]
+  bars?: number[]
   chips?: Array<{ text: string; cls: string }>
-  center?: boolean
-  dim?: boolean
-  to?: string
+  center?: boolean; dim?: boolean; to?: string
   [key: string]: unknown
 }
 
 function CardNode({ data }: { data: NodeData }) {
   return (
-    <div className={`flow-node${data.center ? ' center' : ''}${data.dim ? ' dim' : ''}`}>
+    <div className={`flow-node${data.center ? ' center' : ''}${data.dim ? ' dim' : ''}`}
+         style={{ ['--tone' as any]: data.tone || 'var(--accent)' }}>
+      <span className="n-stripe" />
       <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
       <div className="n-head">
         <div className="n-ico">{data.icon}</div>
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div className="n-title">{data.title}</div>
           {data.sub && <div className="n-sub">{data.sub}</div>}
         </div>
+        {data.badge && <span className="n-badge">{data.badge}</span>}
       </div>
+      {data.bars && (
+        <div className="n-bars">{data.bars.map((h, i) => <i key={i} style={{ height: Math.max(2, h) + '%' }} />)}</div>
+      )}
+      {data.metrics && (
+        <div className="n-metrics">
+          {data.metrics.map((m, i) => (
+            <div className="n-metric" key={i}>
+              <div className="ml">{m.label}</div>
+              <div className="mv" style={m.tone ? { color: m.tone } : undefined}>{m.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
       {data.rows && (
         <div className="n-body">
-          {data.rows.map((r, i) => (
-            <div className="n-row" key={i}><span>{r.k}</span><b className={r.cls}>{r.v}</b></div>
-          ))}
+          {data.rows.map((r, i) => <div className="n-row" key={i}><span>{r.k}</span><b className={r.cls}>{r.v}</b></div>)}
         </div>
       )}
       {data.chips && (
@@ -54,6 +75,7 @@ function CardNode({ data }: { data: NodeData }) {
           {data.chips.map((c, i) => <span key={i} className={`chip ${c.cls}`}>{c.text}</span>)}
         </div>
       )}
+      {data.to && <div className="n-go">Открыть <span>→</span></div>}
       <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
     </div>
   )
@@ -71,136 +93,127 @@ export function Canvas() {
     void api.get<AnalyticsView>('/analytics?days=7').then(setKpi).catch(() => { /* */ })
   }, [])
 
-  // ВАЖНО: ноды держим в state через useNodesState — React Flow в
-  // контролируемом режиме без onNodesChange блокирует перетаскивание
-  // (баг «карточки не двигаются», пойман пользователем 2026-06-12).
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
 
   const computed = useMemo(() => {
     if (!ov) return { nodes: [] as Node[], edges: [] as Edge[] }
-
     const saved = loadLayout()
     const nodes: Node[] = []
     const edges: Edge[] = []
+    const edge = (id: string, source: string, target: string, tone: string, on = true): Edge => ({
+      id, source, target, type: 'smoothstep', animated: on,
+      style: { stroke: tone, strokeWidth: 1.6, opacity: on ? 0.7 : 0.25 },
+    })
 
-    // KPI-дашборд за 7 дней — сверху по центру.
     if (kpi) {
       nodes.push({
-        id: 'kpi', type: 'card', position: saved['kpi'] ?? { x: 430, y: 30 },
+        id: 'kpi', type: 'card', position: saved['kpi'] ?? { x: 470, y: 20 },
         data: {
-          icon: '📈', title: 'Дашборд · 7 дней', to: '/analytics',
-          rows: [
-            { k: 'Новых лидов', v: kpi.totals.new_leads },
-            { k: 'Созвонов назначено', v: kpi.totals.booked_calls },
-            { k: 'Автоматизаций сработало', v: kpi.totals.automation_fires },
+          icon: '📈', title: 'Дашборд · 7 дней', to: '/analytics', tone: TONE.bot,
+          metrics: [
+            { label: 'новых лидов', value: kpi.totals.new_leads },
+            { label: 'созвонов', value: kpi.totals.booked_calls },
+            { label: 'автоматизаций', value: kpi.totals.automation_fires },
           ],
         } satisfies NodeData,
       })
     }
 
-    // Центр — бот.
     nodes.push({
-      id: 'bot', type: 'card', position: saved['bot'] ?? { x: 430, y: 230 },
+      id: 'bot', type: 'card', position: saved['bot'] ?? { x: 470, y: 250 },
       data: {
-        icon: '🤖', title: 'Дедлайн · AI-агент', center: true,
-        sub: ov.bot.model.split('/').pop(),
-        rows: [
-          { k: 'Открытых диалогов', v: ov.inbox.open },
-          { k: 'На операторе', v: ov.inbox.takeover },
-          { k: 'Мозг', v: ov.bot.prompt_source === 'db' ? 'кастомный' : 'заводской' },
+        icon: '🤖', title: 'Дедлайн · AI-агент', center: true, tone: TONE.bot,
+        badge: ov.bot.model.split('/').pop(),
+        sub: ov.bot.prompt_source === 'db' ? 'мозг кастомный' : 'мозг заводской',
+        metrics: [
+          { label: 'диалогов', value: ov.inbox.open },
+          { label: 'на операторе', value: ov.inbox.takeover },
+          { label: 'передано', value: ov.inbox.handed_off },
         ],
         to: '/brain',
       } satisfies NodeData,
     })
 
-    // Слева — каналы.
+    // Слева — каналы трафика с метриками.
     ov.channels.forEach((ch, i) => {
       const meta = CHANNEL_META[ch.id]
+      const tone = (TONE as any)[ch.id] || TONE.website
+      const id = `ch-${ch.id}`
       nodes.push({
-        id: `ch-${ch.id}`, type: 'card', position: saved[`ch-${ch.id}`] ?? { x: 60, y: 40 + i * 150 },
+        id, type: 'card', position: saved[id] ?? { x: 60, y: 30 + i * 168 },
         data: {
-          icon: meta.icon, title: meta.label,
-          dim: !ch.configured,
-          sub: ch.configured ? `активность: ${fmtAgo(ch.last_message_at)} назад` : 'не подключён',
-          rows: ch.configured ? [
-            { k: 'Диалогов', v: ch.conversations },
-            { k: 'Открыто', v: ch.open },
+          icon: meta.icon, title: meta.label, tone, dim: !ch.configured,
+          badge: ch.configured ? 'подключён' : 'выкл',
+          sub: ch.configured ? `актив. ${fmtAgo(ch.last_message_at)} назад` : 'не подключён',
+          metrics: ch.configured ? [
+            { label: 'диалогов', value: ch.conversations },
+            { label: 'вчера', value: ch.new_yesterday ?? 0 },
+            { label: 'горячих', value: ch.hot ?? 0, tone: (ch.hot ?? 0) > 0 ? HOT : undefined },
+            { label: 'без задачи', value: ch.no_task ?? 0, tone: (ch.no_task ?? 0) > 0 ? WARN : undefined },
           ] : undefined,
-          chips: ch.configured ? [{ text: 'подключён', cls: 'ok' }] : [{ text: 'выключен', cls: '' }],
           to: `/inbox?channel=${ch.id}`,
         } satisfies NodeData,
       })
-      edges.push({
-        id: `e-${ch.id}`, source: `ch-${ch.id}`, target: 'bot',
-        animated: ch.configured, style: { strokeWidth: 1.5 },
-      })
+      edges.push(edge(`e-${ch.id}`, id, 'bot', tone, ch.configured))
     })
 
     // Справа — подсистемы.
-    const totalFunnel = ov.funnel.stages.reduce((s, x) => s + x.count, 0)
+    const fcounts = ov.funnel.stages.map(s => s.count)
+    const fmax = Math.max(1, ...fcounts)
+    const totalFunnel = fcounts.reduce((s, x) => s + x, 0)
+    const t = ov.tasks
     const right: Array<{ id: string; y: number; data: NodeData }> = [
       {
         id: 'funnel', y: 10,
         data: {
-          icon: '📊', title: 'Воронка', to: '/funnel',
-          rows: ov.funnel.stages.filter(s => s.count > 0).slice(0, 4)
-            .map(s => ({ k: s.label, v: s.count })),
-          sub: `${totalFunnel} сделок`,
+          icon: '📊', title: 'Воронка', to: '/funnel', tone: TONE.funnel,
+          sub: `${totalFunnel} сделок в работе`,
+          bars: fcounts.map(c => Math.round((c / fmax) * 100)),
         },
       },
       {
-        id: 'kb', y: 165,
+        id: 'tasks', y: 180,
         data: {
-          icon: '📚', title: 'База знаний', to: '/settings',
-          rows: [
-            { k: 'Документов', v: ov.kb.sources },
-            { k: 'Чанков', v: ov.kb.chunks },
+          icon: '⏰', title: 'Задачи', to: '/tasks', tone: TONE.tasks,
+          metrics: [
+            { label: 'просрочено', value: t.overdue ?? 0, tone: (t.overdue ?? 0) > 0 ? HOT : undefined },
+            { label: 'сегодня', value: t.today ?? 0 },
+            { label: 'без задачи', value: t.no_task ?? 0, tone: (t.no_task ?? 0) > 0 ? WARN : undefined },
           ],
         },
       },
       {
-        id: 'training', y: 300,
+        id: 'brain', y: 350,
         data: {
-          icon: '🎓', title: 'Обучение', to: '/brain',
-          rows: [{ k: 'Активных правил', v: ov.training.active_corrections }],
-        },
-      },
-      {
-        id: 'crm', y: 410,
-        data: {
-          icon: '🗂', title: 'CRM', to: '/settings',
-          sub: ov.crm.enabled ? ov.crm.provider : 'выключена',
-          dim: !ov.crm.enabled,
-          rows: [
-            { k: 'В очереди', v: ov.crm.events_pending },
-            { k: 'Ошибок', v: ov.crm.events_failed, cls: ov.crm.events_failed ? 'chip danger' : undefined },
+          icon: '🧠', title: 'Мозг', to: '/brain', tone: TONE.brain,
+          sub: ov.bot.provider,
+          metrics: [
+            { label: 'правил', value: ov.training.active_corrections },
+            { label: 'KB фактов', value: ov.kb.chunks },
           ],
-          chips: ov.crm.events_failed
-            ? [{ text: `⚠ ${ov.crm.events_failed} failed`, cls: 'danger' }]
-            : undefined,
         },
       },
       {
-        id: 'tasks', y: 545,
+        id: 'crm', y: 500,
         data: {
-          icon: '⏰', title: 'Задачи', to: '/tasks',
-          rows: [{ k: 'Отложенных', v: ov.tasks.scheduled_pending }],
+          icon: '🗂', title: 'CRM', to: '/settings', tone: TONE.crm,
+          sub: ov.crm.enabled ? ov.crm.provider : 'выключена', dim: !ov.crm.enabled,
+          metrics: [
+            { label: 'в очереди', value: ov.crm.events_pending },
+            { label: 'ошибок', value: ov.crm.events_failed, tone: ov.crm.events_failed ? HOT : undefined },
+          ],
         },
       },
     ]
     right.forEach(r => {
-      nodes.push({ id: r.id, type: 'card', position: saved[r.id] ?? { x: 850, y: r.y }, data: r.data })
-      edges.push({
-        id: `e-${r.id}`, source: 'bot', target: r.id,
-        animated: true, style: { strokeWidth: 1.5 },
-      })
+      nodes.push({ id: r.id, type: 'card', position: saved[r.id] ?? { x: 880, y: r.y }, data: r.data })
+      edges.push(edge(`e-${r.id}`, 'bot', r.id, r.data.tone || TONE.bot))
     })
 
     return { nodes, edges }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ov, kpi, layoutV])
 
-  // Данные обновились (поллинг/раскладка) → пересобрать ноды в state.
   useEffect(() => {
     setNodes(computed.nodes)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -214,8 +227,8 @@ export function Canvas() {
     <div className="page canvas-page">
       <div style={{ padding: '14px 18px 0' }}>
         <HintBar id="canvas" icon="🕸">
-          Пульт системы: слева каналы, в центре бот, справа подсистемы. Кликните по карточке —
-          провалитесь внутрь. <b>Карточки можно перетаскивать</b> — раскладка запомнится.
+          Пульт системы: слева каналы трафика (с метриками), в центре бот, справа подсистемы.
+          Клик по карточке — <b>провалитесь внутрь</b>. Карточки <b>перетаскиваются</b> — раскладка запомнится.
         </HintBar>
       </div>
       <div className="canvas-wrap" style={{ position: 'relative' }}>
@@ -230,10 +243,11 @@ export function Canvas() {
           onNodesChange={onNodesChange}
           nodeTypes={nodeTypes}
           fitView
-          fitViewOptions={{ padding: 0.18 }}
+          fitViewOptions={{ padding: 0.16 }}
           proOptions={{ hideAttribution: true }}
           nodesDraggable
           nodesConnectable={false}
+          minZoom={0.4}
           onNodeClick={(_, node) => {
             const to = (node.data as NodeData).to
             if (to) navigate(to)
@@ -244,8 +258,12 @@ export function Canvas() {
             localStorage.setItem(LAYOUT_KEY, JSON.stringify(saved))
           }}
         >
-          <Background gap={26} size={1.4} color="rgba(148,156,210,0.10)" />
+          <Background gap={22} size={1.2} color="rgba(148,156,210,0.12)" />
           <Controls showInteractive={false} />
+          <MiniMap pannable zoomable nodeStrokeWidth={2}
+                   nodeColor={(n) => ((n.data as NodeData)?.tone as string) || '#7c6cff'}
+                   maskColor="rgba(10,12,22,0.6)"
+                   style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 10 }} />
         </ReactFlow>
       </div>
     </div>
