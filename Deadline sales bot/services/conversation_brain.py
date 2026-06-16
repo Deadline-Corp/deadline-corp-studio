@@ -366,10 +366,11 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
                 )
         except (ValueError, TypeError) as e:
             log.warning(f"[{str(conv.id)[:8]}] brain bad call_datetime: {e}")
-    # Бот пересмотрел и созвона НЕТ → снимаем СВОЁ ложное/устаревшее предложение
-    # (кейс Вячеслав: «отправлю инфо» ≠ созвон). Подтверждённые брони не трогаем
+    # Бот пересмотрел и предложение в этот проход НЕ создаётся (нет явного согласия о
+    # ЗВОНКЕ с названным днём) → снимаем СВОЁ прежнее предложение (ложное/устаревшее,
+    # кейс Вячеслав: «отправлю инфо» ≠ созвон). Подтверждённые брони не трогаем
     # (они в profile_data.booked_call_at, а не в pending_call_suggestion).
-    elif data.get("call_agreed") is False and getattr(conv, "pending_call_suggestion", None):
+    elif getattr(conv, "pending_call_suggestion", None):
         conv.pending_call_suggestion = None
         db.commit()
         done["cleared_suggestion"] = True
