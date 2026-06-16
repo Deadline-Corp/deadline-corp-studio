@@ -152,6 +152,20 @@ async def _book(db: Session, conv: Conversation, cust: Customer,
                 text=_sched.admin_reminder_text(new_dt, lead_name, label, medium, contact),
                 audience="admin",
             )
+    # СРАЗУ уведомить владельца/менеджера: «поймал договорённость и поставил в
+    # календарь» (просьба владельца — видеть, что бот распознал ручную договорённость).
+    try:
+        when_lead = _sched.format_slot_human(new_dt, tz=_sched.lead_tz_from_phone(str(chat or "")))
+        tzlbl = _sched.tz_label_from_phone(str(chat or ""))
+        await _signal_owner(
+            settings,
+            f"📅 Поставил созвон в календарь из переписки:\n"
+            f"Лид: {lead_name} ({chat})\n"
+            f"Когда: {when_lead} ({tzlbl}){(' · ' + medium) if medium else ''}\n"
+            f"Стадия → 📞 Созвон назначен. Если время не то — поправьте в карточке.",
+        )
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[{str(conv.id)[:8]}] book notify failed: {e}")
 
 
 async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
@@ -180,10 +194,14 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
         "(сайт/магазин/бот/Mini App/AI и зачем); просто «привет/расскажите подробнее» — это "
         "in_dialog, НЕ qualified; on_call=договорились о созвоне; proposal=обсуждается КП/цена; "
         "prepayment=готов платить);\n"
-        '  "call_agreed": true ТОЛЬКО если обе стороны согласовали КОНКРЕТный день и время созвона;\n'
-        '  "call_datetime_utc": ISO8601 в UTC для согласованного времени (иначе null). '
+        '  "call_agreed": true если СТОРОНЫ ДОГОВОРИЛИСЬ о созвоне на конкретный ДЕНЬ '
+        "(точный час не обязателен — «в среду утром», «завтра днём», «в пятницу» тоже "
+        "считаются договорённостью; в т.ч. если ЭТО НАШ менеджер написал «договорились/"
+        "поставил на среду утром»);\n"
+        '  "call_datetime_utc": ISO8601 в UTC. Если час не назван — бери разумный по части '
+        "суток (утро→10:00, день→14:00, вечер→18:00 ПО ВРЕМЕНИ ЛИДА), иначе null. "
         f"Сейчас {now_utc.isoformat()} (UTC), у лида {now_lead.strftime('%Y-%m-%d %H:%M')} ({tz_label}). "
-        "Считай дни недели/«завтра»/«в среду в 15» от времени ЛИДА, затем переведи в UTC;\n"
+        "Считай дни недели/«завтра»/«в среду утром» от времени ЛИДА, затем переведи в UTC;\n"
         '  "call_medium": "WhatsApp"|"Телефон"|"Zoom"|"Google Meet"|null;\n'
         '  "wants_human": true если лид ЯВНО просит позвонить/связаться с человеком/менеджером;\n'
         '  "reason": кратко почему (≤120 симв).\n\n'
