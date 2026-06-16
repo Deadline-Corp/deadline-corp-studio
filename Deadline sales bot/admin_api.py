@@ -1744,6 +1744,90 @@ async def today_view(
     return {"overdue": overdue, "today": today, "upcoming": upcoming, "calls": calls}
 
 
+@router.get("/calendar-events")
+async def calendar_events(
+    start: str,
+    end: str,
+    _: None = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """События календаря за ПРОИЗВОЛЬНЫЙ диапазон [start, end) — для FullCalendar
+    (месяц/неделя/день подгружают свой видимый период). Созвоны (booked_call_at) +
+    задачи (scheduled_actions.due_at). Архивные карточки исключены."""
+    from db.models import ConversationStatusEnum
+    try:
+        rng_start = _parse_iso(start)
+        rng_end = _parse_iso(end)
+    except Exception:
+        raise HTTPException(status_code=422, detail="start/end must be ISO datetimes")
+
+    events: list = []
+    # 1) Задачи/напоминания (due_at в диапазоне), не из архивных карточек
+    rows = (
+        db.query(ScheduledAction, Customer)
+        .join(Customer, ScheduledAction.customer_id == Customer.id)
+        .outerjoin(Conversation, ScheduledAction.conversation_id == Conversation.id)
+        .filter(ScheduledAction.status.in_(("pending", "processing")))
+        .filter(ScheduledAction.due_at >= rng_start, ScheduledAction.due_at < rng_end)
+        .filter((Conversation.id.is_(None)) |
+                (Conversation.status != ConversationStatusEnum.ARCHIVED))
+        .order_by(ScheduledAction.due_at.asc())
+        .limit(500)
+        .all()
+    )
+    for a, c in rows:
+        if not a.due_at:
+            continue
+        is_bot = a.executor == "bot"
+        text = (a.payload or {}).get("text") or (a.payload or {}).get("title") or ""
+        events.append({
+            "id": "task-" + str(a.id),
+            "kind": "bot" if is_bot else "task",
+            "title": f"{'🤖' if is_bot else '📋'} {c.name or 'Лид'}: {text[:44]}",
+            "start": a.due_at.isoformat(),
+            "conversation_id": str(a.conversation_id) if a.conversation_id else None,
+            "action_id": str(a.id),
+        })
+
+    # 2) Назначенные созвоны (booked_call_at в диапазоне), дедуп по тел./имени
+    custs = (
+        db.query(Customer, Conversation)
+        .join(Conversation, Conversation.customer_id == Customer.id)
+        .filter(Customer.profile_data.isnot(None))
+        .filter(Conversation.lead_stage == "on_call")
+        .filter(Conversation.status != ConversationStatusEnum.ARCHIVED)
+        .limit(300)
+        .all()
+    )
+    seen_call: set = set()
+    for c, conv in custs:
+        booked = (c.profile_data or {}).get("booked_call_at")
+        if not booked:
+            continue
+        try:
+            bdt = _parse_iso(str(booked))
+        except Exception:
+            continue
+        if not (rng_start <= bdt < rng_end):
+            continue
+        phone = "".join(ch for ch in (getattr(c, "phone", None) or "") if ch.isdigit())
+        key = phone or (c.name or "").strip().lower() or str(c.id)
+        if key in seen_call:
+            continue
+        seen_call.add(key)
+        medium = (c.profile_data or {}).get("call_medium")
+        events.append({
+            "id": "call-" + str(conv.id),
+            "kind": "call",
+            "title": f"📞 {c.name or c.email or 'Лид'}{' · ' + medium if medium else ''}",
+            "start": bdt.isoformat(),
+            "conversation_id": str(conv.id),
+            "action_id": None,
+        })
+
+    return {"events": events}
+
+
 class TaskCreateRequest(BaseModel):
     conversation_id: str
     text: str = Field(..., min_length=1, max_length=2000)

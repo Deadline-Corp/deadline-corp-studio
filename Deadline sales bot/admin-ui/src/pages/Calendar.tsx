@@ -1,24 +1,24 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import interactionPlugin from '@fullcalendar/interaction'
 import ruLocale from '@fullcalendar/core/locales/ru'
 import { api, getToken } from '../api/client'
-import { TodayView } from '../api/types'
-import { usePolling } from '../hooks/usePolling'
 import { useDrawer } from '../components/DrawerContext'
 import { HintBar } from '../components/HintBar'
 
 /* Календарь v3 — FullCalendar (как Google Calendar): виды месяц/неделя/3 дня/день,
-   перетаскивание событий мышью → перенос бронируется на бэке (созвон и задача),
-   обновляется везде. Клик по событию открывает карточку лида. Источник — /today. */
+   перетаскивание событий мышью → перенос бронируется на бэке (созвон и задача).
+   События подгружаются за видимый диапазон через /calendar-events. Клик — карточка. */
 
 const COLORS = {
-  call: '#7c6cff',   // созвон — акцент
-  bot: '#3bb4a0',    // задача бота
-  task: '#c9a23b',   // задача человека
-  overdue: '#e0524f', // просрочено
+  call: '#7c6cff', bot: '#3bb4a0', task: '#c9a23b', overdue: '#e0524f',
+}
+
+type ApiEvent = {
+  id: string; kind: 'call' | 'bot' | 'task'; title: string
+  start: string; conversation_id: string | null; action_id: string | null
 }
 
 function addMin(iso: string, min: number) {
@@ -26,7 +26,6 @@ function addMin(iso: string, min: number) {
 }
 
 export function Calendar() {
-  const [view, setView] = useState<TodayView | null>(null)
   const [copied, setCopied] = useState(false)
   const [note, setNote] = useState('')
   const { openConversation } = useDrawer()
@@ -38,50 +37,31 @@ export function Calendar() {
     setCopied(true); setTimeout(() => setCopied(false), 3000)
   }
 
-  const refresh = useCallback(async () => {
-    try { setView(await api.get<TodayView>('/today')) } catch { /* */ }
-  }, [])
-  usePolling(refresh, 30000)
-
-  const now = Date.now()
-  const events = useMemo(() => {
-    if (!view) return []
-    const evs: any[] = []
-    view.calls.forEach(c => {
-      if (!c.call_at) return
-      evs.push({
-        id: 'call-' + c.conversation_id,
-        title: `📞 ${c.customer.name || c.customer.email || 'Лид'}${c.medium ? ' · ' + c.medium : ''}`,
-        start: c.call_at, end: addMin(c.call_at, 30),
-        backgroundColor: COLORS.call, borderColor: COLORS.call,
-        extendedProps: { kind: 'call', conv: c.conversation_id },
-      })
-    })
-    const tasks = [...view.overdue, ...view.today, ...view.upcoming]
-    tasks.forEach(t => {
-      if (!t.due_at) return
-      const isBot = t.executor === 'bot'
-      const overdue = new Date(t.due_at).getTime() < now
-      const col = overdue ? COLORS.overdue : (isBot ? COLORS.bot : COLORS.task)
-      evs.push({
-        id: 'task-' + t.id,
-        title: `${isBot ? '🤖' : '📋'} ${t.customer.name || 'Лид'}: ${(t.text || '').replace(/\s+/g, ' ').trim().slice(0, 44)}`,
-        start: t.due_at, end: addMin(t.due_at, 30),
+  // Источник событий — подгружаем за видимый период (FullCalendar зовёт при смене вида/даты).
+  const fetchEvents = async (info: { startStr: string; endStr: string }) => {
+    const r = await api.get<{ events: ApiEvent[] }>(
+      `/calendar-events?start=${encodeURIComponent(info.startStr)}&end=${encodeURIComponent(info.endStr)}`,
+    )
+    const now = Date.now()
+    return (r.events || []).map(e => {
+      const overdue = e.kind !== 'call' && new Date(e.start).getTime() < now
+      const col = overdue ? COLORS.overdue : COLORS[e.kind]
+      return {
+        id: e.id, title: e.title, start: e.start, end: addMin(e.start, 30),
         backgroundColor: col, borderColor: col,
-        extendedProps: { kind: isBot ? 'bot' : 'task', conv: t.conversation_id, actionId: t.id },
-      })
+        extendedProps: { kind: e.kind, conv: e.conversation_id, actionId: e.action_id },
+      }
     })
-    return evs
-  }, [view, now])
+  }
 
-  // Перетащил/растянул событие → переносим на бэке. Ошибка → откат на место.
-  const onMove = async (info: any) => {
-    const p = info.event.extendedProps
-    const startISO: string | undefined = info.event.start?.toISOString()
-    if (!startISO) { info.revert(); return }
+  // Перетащил событие → переносим на бэке. Ошибка → откат на место.
+  const onMove = async (mv: any) => {
+    const p = mv.event.extendedProps
+    const startISO: string | undefined = mv.event.start?.toISOString()
+    if (!startISO) { mv.revert(); return }
     try {
       if (p.kind === 'call') {
-        if (!p.conv) { info.revert(); return }
+        if (!p.conv) { mv.revert(); return }
         await api.post(`/conversations/${p.conv}/call`, { action: 'reschedule', time: startISO })
         setNote('📞 Созвон перенесён — напоминания обновлены')
       } else {
@@ -89,9 +69,9 @@ export function Calendar() {
         setNote('📋 Задача перенесена')
       }
       setTimeout(() => setNote(''), 3000)
-      await refresh()
+      calRef.current?.getApi().refetchEvents()
     } catch (e: any) {
-      info.revert()
+      mv.revert()
       setNote(`Не удалось перенести: ${e?.detail ?? e?.message ?? 'ошибка'}`)
       setTimeout(() => setNote(''), 4000)
     }
@@ -105,7 +85,7 @@ export function Calendar() {
       </div>
       <HintBar id="calendar" icon="📅">
         Как Google-календарь: переключай <b>месяц / неделю / 3 дня / день</b> справа сверху.
-        <b> Перетащи событие</b> на другое время — созвон/задача перенесётся и напоминания обновятся.
+        <b> Перетащи событие</b> на другое время — созвон/задача перенесётся, напоминания обновятся.
         Клик по событию — карточка лида. <b>«📲 Подписаться»</b> — те же события в твоём телефоне.
       </HintBar>
 
@@ -135,16 +115,13 @@ export function Calendar() {
             center: 'title',
             right: 'dayGridMonth,timeGridWeek,timeGridThreeDay,timeGridDay',
           }}
-          views={{
-            timeGridThreeDay: { type: 'timeGrid', duration: { days: 3 }, buttonText: '3 дня' },
-          }}
+          views={{ timeGridThreeDay: { type: 'timeGrid', duration: { days: 3 }, buttonText: '3 дня' } }}
           buttonText={{ today: 'сегодня', month: 'месяц', week: 'неделя', day: 'день' }}
-          events={events}
+          events={fetchEvents}
           editable
           eventStartEditable
           eventDurationEditable={false}
           eventDrop={onMove}
-          eventResize={onMove}
           eventClick={(info) => { const c = info.event.extendedProps.conv; if (c) openConversation(c) }}
           slotMinTime="07:00:00"
           slotMaxTime="22:00:00"
