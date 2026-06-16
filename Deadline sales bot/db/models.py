@@ -252,6 +252,10 @@ class Conversation(Base):
     # NULL = нет ожидающего черновика. Аддитивно; используется только когда
     # включён wa_draft_mode (bot_settings).
     pending_wa_draft: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    # Предложение созвона: бот распознал договорённость в переписке → кладёт сюда
+    # {at (ISO UTC), when_human, medium, reason}. Менеджер подтверждает в карточке →
+    # создаётся событие в календаре. NULL = нет предложения. Не авто-создаём.
+    pending_call_suggestion: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     # Per-conversation: админ разрешил боту вести ЭТОТ диалог сам (override над
     # глобальным режимом наблюдения/черновика). True → бот отвечает клиенту
     # автономно. Деф. False. Кнопка «🤖 Разрешить боту вести диалог» в карточке.

@@ -174,7 +174,7 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
     refresh_draft=False — НЕ перегенерировать черновик (его LLM+KB-эмбед тяжёлые;
     в bulk-cron-sweep отключаем, чтобы не исчерпать пул; черновик освежается на
     вебхуке per-message)."""
-    done: dict = {"stage": None, "booked": None, "signaled": False}
+    done: dict = {"stage": None, "booked": None, "suggested": None, "signaled": False}
     if (conv.lead_stage or "new_lead") in ("lost", "completed_won"):
         return done
     transcript = _transcript(db, conv)
@@ -237,7 +237,8 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
             except Exception as e:  # noqa: BLE001
                 log.warning(f"[{str(conv.id)[:8]}] brain CRM mirror failed: {e}")
 
-    # 2) бронь созвона
+    # 2) ПРЕДЛОЖЕНИЕ созвона (НЕ авто-бронь): распознали договорённость → кладём
+    #    в conv.pending_call_suggestion → менеджер подтверждает в карточке → событие.
     if data.get("call_agreed") and data.get("call_datetime_utc"):
         try:
             raw = str(data["call_datetime_utc"]).replace("Z", "+00:00")
@@ -246,25 +247,44 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
                 new_dt = new_dt.replace(tzinfo=timezone.utc)
             new_dt = new_dt.astimezone(timezone.utc)
             prof = cust.profile_data or {}
-            existing = prof.get("booked_call_at")
-            # не дублируем, если уже забронировано ~то же время (±10 мин)
-            dup = False
-            if existing:
+            # не дублируем: уже забронировано ~то же время, или уже есть такое же
+            # предложение, или предложение по тому же времени недавно отклоняли.
+            def _close(a_iso) -> bool:
                 try:
-                    ex = datetime.fromisoformat(str(existing).replace("Z", "+00:00"))
-                    if ex.tzinfo is None:
-                        ex = ex.replace(tzinfo=timezone.utc)
-                    dup = abs((ex - new_dt).total_seconds()) < 600
+                    a = datetime.fromisoformat(str(a_iso).replace("Z", "+00:00"))
+                    if a.tzinfo is None:
+                        a = a.replace(tzinfo=timezone.utc)
+                    return abs((a - new_dt).total_seconds()) < 600
                 except (ValueError, TypeError):
-                    dup = False
+                    return False
+            existing_sugg = getattr(conv, "pending_call_suggestion", None) or {}
+            dup = _close(prof.get("booked_call_at")) or _close(existing_sugg.get("at")) \
+                or _close(prof.get("call_suggest_dismissed_at_val"))
             if new_dt > now_utc and not dup:
-                await _book(db, conv, cust, settings, new_dt, data.get("call_medium"))
-                done["booked"] = new_dt.isoformat()
+                tz = _sched.lead_tz_from_phone(str(conv.channel_conversation_id or ""))
+                tzlbl = _sched.tz_label_from_phone(str(conv.channel_conversation_id or ""))
+                when_h = _sched.format_slot_human(new_dt, tz=tz)
+                conv.pending_call_suggestion = {
+                    "at": new_dt.isoformat(),
+                    "when_human": f"{when_h} ({tzlbl})",
+                    "medium": data.get("call_medium"),
+                    "reason": str(data.get("reason") or "")[:200],
+                    "ts": now_utc.isoformat(),
+                }
+                db.commit()
+                done["suggested"] = new_dt.isoformat()
+                name = cust.name or conv.channel_conversation_id or "лид"
+                await _signal_owner(
+                    settings,
+                    f"📅 Похоже, договорились о созвоне:\nЛид: {name}\n"
+                    f"Когда: {when_h} ({tzlbl})\n"
+                    f"Откройте карточку в панели → «Создать событие», если верно.",
+                )
         except (ValueError, TypeError) as e:
             log.warning(f"[{str(conv.id)[:8]}] brain bad call_datetime: {e}")
 
     # 3) сигнал владельцу (один раз на эпизод «просит человека», пока нет брони)
-    if data.get("wants_human") and not done["booked"]:
+    if data.get("wants_human") and not done.get("booked") and not done.get("suggested"):
         prof = dict(cust.profile_data or {})
         if not prof.get("brain_signaled"):
             name = cust.name or conv.channel_conversation_id or "лид"
@@ -322,7 +342,7 @@ async def sweep_recent(llm: Any, settings: Any, since_minutes: int = 360,
     Анализирует только диалоги с НОВЫМИ сообщениями с прошлого разбора."""
     from datetime import timedelta
     from db.connection import session_scope
-    out = {"examined": 0, "analyzed": 0, "stage": 0, "booked": 0, "signaled": 0}
+    out = {"examined": 0, "analyzed": 0, "stage": 0, "booked": 0, "suggested": 0, "signaled": 0}
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=since_minutes)
 
     # Фаза 1 — короткая сессия: собрать кандидатов (без LLM, соединение освобождаем).
@@ -369,6 +389,8 @@ async def sweep_recent(llm: Any, settings: Any, since_minutes: int = 360,
                 out["stage"] += 1
             if res.get("booked"):
                 out["booked"] += 1
+            if res.get("suggested"):
+                out["suggested"] = out.get("suggested", 0) + 1
             if res.get("signaled"):
                 out["signaled"] += 1
         except Exception as e:  # noqa: BLE001

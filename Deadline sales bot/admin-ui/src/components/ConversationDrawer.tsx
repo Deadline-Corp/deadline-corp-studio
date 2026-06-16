@@ -490,6 +490,30 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
           ))}
         </div>
 
+        {detail?.pending_call_suggestion?.at && (
+          <div style={{ borderTop: '1px solid var(--accent-border)', background: 'var(--accent-soft)', padding: '10px 14px' }}>
+            <div style={{ fontSize: 13, marginBottom: 6 }}>
+              <b>📅 Похоже, договорились о созвоне</b>
+              <div style={{ marginTop: 3 }}>Когда: <b>{detail.pending_call_suggestion.when_human}</b>{detail.pending_call_suggestion.medium ? ` · ${detail.pending_call_suggestion.medium}` : ''}</div>
+              {detail.pending_call_suggestion.reason && <div className="faint" style={{ fontSize: 11.5 }}>{detail.pending_call_suggestion.reason}</div>}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn sm primary" disabled={busy} onClick={async () => {
+                setBusy(true)
+                try { await api.post(`/conversations/${convId}/call-suggestion`, { action: 'confirm' }); showToast('📅 Событие создано в календаре'); await loadDetail() }
+                catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+                finally { setBusy(false) }
+              }}>✅ Создать событие</button>
+              <button className="btn sm ghost" disabled={busy} onClick={async () => {
+                setBusy(true)
+                try { await api.post(`/conversations/${convId}/call-suggestion`, { action: 'dismiss' }); showToast('Предложение отклонено'); await loadDetail() }
+                catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+                finally { setBusy(false) }
+              }}>🚫 Нет</button>
+            </div>
+          </div>
+        )}
+
         {detail?.pending_wa_draft && !detail.wa_autonomous && (
           <div style={{ borderTop: '1px solid var(--accent-border)', background: 'var(--accent-soft)', padding: '8px 14px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}

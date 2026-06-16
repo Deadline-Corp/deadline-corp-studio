@@ -536,6 +536,7 @@ async def conversation_detail(
         # WhatsApp: предложенный ботом ответ на одобрение (режим наблюдения/черновика)
         # + флаг «бот ведёт этот диалог сам».
         "pending_wa_draft": _pending_draft,
+        "pending_call_suggestion": getattr(conv, "pending_call_suggestion", None),
         "wa_autonomous": bool(getattr(conv, "wa_autonomous", False)),
         # Текущий назначенный созвон (для ручного переноса/отмены из карточки).
         "booked_call_at": (cust.profile_data or {}).get("booked_call_at"),
@@ -822,6 +823,47 @@ async def conversation_call(
                 audience="admin",
             )
     return {"ok": True, "action": "reschedule", "call_at": new_dt.isoformat()}
+
+
+class CallSuggestionRequest(BaseModel):
+    action: str  # "confirm" | "dismiss"
+
+
+@router.post("/conversations/{conv_id}/call-suggestion")
+async def conversation_call_suggestion(
+    conv_id: str,
+    req: CallSuggestionRequest,
+    _: None = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """Предложение созвона (бот распознал договорённость в переписке):
+    confirm → создаём событие в календаре (та же логика, что ручная бронь) + чистим;
+    dismiss → запоминаем, что отклонили это время (бот не предложит снова) + чистим."""
+    from datetime import datetime, timezone
+    import main as _main
+    conv, cust = _get_conv_or_404(db, conv_id)
+    sugg = getattr(conv, "pending_call_suggestion", None) or {}
+    if req.action == "dismiss":
+        prof = dict(cust.profile_data or {})
+        if sugg.get("at"):
+            prof["call_suggest_dismissed_at_val"] = sugg.get("at")
+        cust.profile_data = prof
+        conv.pending_call_suggestion = None
+        db.commit()
+        return {"ok": True, "action": "dismiss"}
+    if req.action != "confirm":
+        raise HTTPException(status_code=400, detail="action: confirm | dismiss")
+    if not sugg.get("at"):
+        raise HTTPException(status_code=404, detail="Нет предложения созвона")
+    new_dt = datetime.fromisoformat(str(sugg["at"]).replace("Z", "+00:00"))
+    if new_dt.tzinfo is None:
+        new_dt = new_dt.replace(tzinfo=timezone.utc)
+    new_dt = new_dt.astimezone(timezone.utc)
+    from services.conversation_brain import _book  # бронь+напоминания+уведомление
+    await _book(db, conv, cust, _main.settings, new_dt, sugg.get("medium"))
+    conv.pending_call_suggestion = None
+    db.commit()
+    return {"ok": True, "action": "confirm", "call_at": new_dt.isoformat()}
 
 
 @router.post("/conversations/{conv_id}/suggest-reply")
