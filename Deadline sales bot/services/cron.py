@@ -58,6 +58,7 @@ MAX_CUSTOMERS_PER_CYCLE: int = 200
 _worker_task: Optional[asyncio.Task] = None
 _running: bool = False
 _CRON_CYCLE = [0]   # счётчик циклов (для разреженных задач — авто-сверки раз в ~час)
+_LAST_BACKUP_DATE = [None]   # дата последнего авто-бэкапа БД в Telegram (раз в день)
 
 
 def is_running() -> bool:
@@ -152,6 +153,29 @@ async def _worker_loop(*, tenant_config: dict, interval_sec: int) -> None:
                 logger.info("[cron] orphan actions superseded: %s", _orf)
         except Exception as exc:  # noqa: BLE001
             logger.warning("[cron] wa cleanup/dedup failed (non-fatal): %s", exc)
+        # АВТО-БЭКАП БД раз в день → владельцу в Telegram (offsite-копия на случай
+        # потери системы/номера; Telegram хранит файл). Дамп в потоке — не держит loop.
+        # Выключить: env DB_BACKUP_TG=0.
+        try:
+            import os as _osb
+            if _osb.getenv("DB_BACKUP_TG", "1").strip() in ("1", "true", "yes"):
+                _today = datetime.now(timezone.utc).date().isoformat()
+                if _LAST_BACKUP_DATE[0] != _today:
+                    import main as _mb
+                    from services import bot_settings as _bs
+                    _chat = (_bs.get("manager_chat_id") or "").strip() \
+                        or (getattr(_mb.settings, "telegram_chat_id", None) or "")
+                    _token = getattr(_mb.settings, "telegram_bot_token", None)
+                    if _token and _chat:
+                        from services.db_backup import build_export
+                        from channels.telegram import send_telegram_document
+                        _fn, _blob = await asyncio.to_thread(build_export)
+                        if await send_telegram_document(_token, str(_chat), _fn, _blob,
+                                                        caption="💾 Авто-бэкап базы DEADLINE"):
+                            _LAST_BACKUP_DATE[0] = _today
+                            logger.info("[cron] db backup → telegram: %s (%d КБ)", _fn, len(_blob) // 1024)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[cron] db backup failed (non-fatal): %s", exc)
         # ПОЛНАЯ авто-сверка с WhatsApp раз в ~час (каждый 6-й цикл): WAHA = источник
         # правды, убирает локальные сообщения, которых в WhatsApp НЕТ (в т.ч. ложно-
         # «delivered», что обычная чистка не ловит), подтягивает новые. БЕЗ LLM

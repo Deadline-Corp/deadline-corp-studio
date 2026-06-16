@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api } from '../api/client'
+import { api, getToken } from '../api/client'
 import { HintBar, hintsEnabled, setHintsEnabled } from '../components/HintBar'
 import { Help } from '../components/Help'
 
@@ -48,6 +48,8 @@ export function Settings() {
       <BehaviorCard />
       <div style={{ height: 14 }} />
       <FieldsCard />
+      <div style={{ height: 14 }} />
+      <BackupCard />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 14, marginTop: 14 }}>
         <div className="card">
@@ -119,6 +121,49 @@ export function Settings() {
         Серые карточки читаются из env/конфига на сервере — секреты живут в Railway.
         Тон и правила бота — во вкладке «Мозг»; стадии воронки — в «Воронке» (⚙ Настроить стадии).
       </p>
+    </div>
+  )
+}
+
+/* ---------- Бэкап базы ---------- */
+
+function BackupCard() {
+  const [busy, setBusy] = useState('')
+  const [msg, setMsg] = useState('')
+  const download = async () => {
+    setBusy('dl'); setMsg('')
+    try {
+      const r = await fetch('/admin/api/db-backup', { headers: { Authorization: `Bearer ${getToken() || ''}` } })
+      if (!r.ok) throw new Error('HTTP ' + r.status)
+      const blob = await r.blob()
+      const cd = r.headers.get('Content-Disposition') || ''
+      const m = cd.match(/filename="?([^"]+)"?/)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = m ? m[1] : 'deadline-backup.json.gz'; a.click()
+      URL.revokeObjectURL(url)
+      setMsg('✅ Скачано')
+    } catch (e: any) { setMsg('Ошибка: ' + (e?.message ?? 'не вышло')) }
+    finally { setBusy('') }
+  }
+  const sendTg = async () => {
+    setBusy('tg'); setMsg('')
+    try { const r = await api.post<any>('/db-backup/send-telegram', {}); setMsg(`✅ В Telegram (${r.size_kb} КБ)`) }
+    catch (e: any) { setMsg('Ошибка: ' + (e?.detail ?? e?.message ?? 'не вышло')) }
+    finally { setBusy('') }
+  }
+  return (
+    <div className="card">
+      <b>💾 Бэкап базы</b>
+      <p className="faint" style={{ fontSize: 11.5, margin: '6px 0 10px' }}>
+        Полная копия всех переписок, статусов, стадий, задач и правил. Авто-бэкап уходит
+        владельцу в Telegram раз в день (offsite-копия). Скачать вручную — в любой момент.
+      </p>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <button className="btn sm primary" onClick={download} disabled={!!busy}>{busy === 'dl' ? '…' : '💾 Скачать бэкап'}</button>
+        <button className="btn sm" onClick={sendTg} disabled={!!busy}>{busy === 'tg' ? '…' : '📤 В Telegram сейчас'}</button>
+        {msg && <span className="chip accent">{msg}</span>}
+      </div>
     </div>
   )
 }

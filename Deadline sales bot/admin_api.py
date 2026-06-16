@@ -1778,12 +1778,19 @@ async def calendar_events(
     for a, c in rows:
         if not a.due_at:
             continue
-        is_bot = a.executor == "bot"
+        if a.action_type == "call_booked":
+            continue  # сам созвон показываем из booked_call_at (ниже) — не дублируем
         text = (a.payload or {}).get("text") or (a.payload or {}).get("title") or ""
+        if a.action_type == "call_reminder":
+            kind, icon = "reminder", "⏰"
+        elif a.executor == "bot":
+            kind, icon = "bot", "🤖"
+        else:
+            kind, icon = "task", "📋"
         events.append({
             "id": "task-" + str(a.id),
-            "kind": "bot" if is_bot else "task",
-            "title": f"{'🤖' if is_bot else '📋'} {c.name or 'Лид'}: {text[:44]}",
+            "kind": kind,
+            "title": f"{icon} {c.name or 'Лид'}: {text[:44]}",
             "start": a.due_at.isoformat(),
             "conversation_id": str(a.conversation_id) if a.conversation_id else None,
             "action_id": str(a.id),
@@ -2044,6 +2051,52 @@ async def task_board_generate(
         except Exception as e:  # noqa: BLE001
             log.warning(f"next_action gen failed {cid[:8]}: {e}")
     return {"ok": True, "processed": len(cand), "by_mode": counts}
+
+
+# ============================================================================
+# БЭКАП БД — портативный дамп (все переписки/статусы/задачи). Скачать вручную или
+# отправить в Telegram владельцу (offsite-копия). Авто-бэкап раз в день — в кроне.
+# ============================================================================
+
+def _owner_tg() -> tuple:
+    import main as _main
+    from services import bot_settings as _bs
+    st = _main.settings
+    chat = (_bs.get("manager_chat_id") or "").strip() or (getattr(st, "telegram_chat_id", None) or "")
+    token = getattr(st, "telegram_bot_token", None)
+    return token, chat
+
+
+@router.get("/db-backup")
+async def db_backup_download(_: None = Depends(_verify_owner)):
+    """Скачать полный бэкап БД (gzip JSON): все переписки, статусы, стадии, задачи,
+    правила. Обход БД в потоке (не блокирует event loop)."""
+    import asyncio
+    from fastapi import Response
+    from services.db_backup import build_export
+    fname, blob = await asyncio.to_thread(build_export)
+    return Response(
+        content=blob, media_type="application/gzip",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
+@router.post("/db-backup/send-telegram")
+async def db_backup_send_telegram(_: None = Depends(_verify_owner)):
+    """Отправить бэкап БД владельцу в Telegram прямо сейчас (offsite-копия)."""
+    import asyncio
+    from services.db_backup import build_export
+    from channels.telegram import send_telegram_document
+    token, chat = _owner_tg()
+    if not (token and chat):
+        raise HTTPException(status_code=409,
+                            detail="Telegram владельца не настроен (TELEGRAM_CHAT_ID / BOT_TOKEN)")
+    fname, blob = await asyncio.to_thread(build_export)
+    ok = await send_telegram_document(token, str(chat), fname, blob,
+                                      caption="💾 Бэкап базы DEADLINE (все переписки/статусы)")
+    if not ok:
+        raise HTTPException(status_code=502, detail="Не удалось отправить в Telegram")
+    return {"ok": True, "filename": fname, "size_kb": len(blob) // 1024}
 
 
 class TaskCreateRequest(BaseModel):

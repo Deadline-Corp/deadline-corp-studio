@@ -12,12 +12,19 @@ import { HintBar } from '../components/HintBar'
    перетаскивание событий мышью → перенос бронируется на бэке (созвон и задача).
    События подгружаются за видимый диапазон через /calendar-events. Клик — карточка. */
 
-const COLORS = {
-  call: '#7c6cff', bot: '#3bb4a0', task: '#c9a23b', overdue: '#e0524f',
+const COLORS: Record<string, string> = {
+  call: '#7c6cff', bot: '#3bb4a0', task: '#c9a23b', reminder: '#6b7280', overdue: '#e0524f',
 }
+// Фильтры показа событий по типу (можно скрыть шум — оставить только реальные созвоны).
+const KINDS: { k: string; label: string }[] = [
+  { k: 'call', label: '📞 Созвоны' },
+  { k: 'task', label: '📋 Задачи человека' },
+  { k: 'bot', label: '🤖 Задачи бота' },
+  { k: 'reminder', label: '⏰ Напоминания' },
+]
 
 type ApiEvent = {
-  id: string; kind: 'call' | 'bot' | 'task'; title: string
+  id: string; kind: 'call' | 'bot' | 'task' | 'reminder'; title: string
   start: string; conversation_id: string | null; action_id: string | null
 }
 
@@ -31,6 +38,19 @@ export function Calendar() {
   const { openConversation } = useDrawer()
   const calRef = useRef<FullCalendar | null>(null)
 
+  const [visible, setVisible] = useState<Record<string, boolean>>(() => {
+    try { const s = localStorage.getItem('cal_filters'); if (s) return JSON.parse(s) } catch { /* */ }
+    return { call: true, task: true, bot: true, reminder: false } // напоминания скрыты по умолчанию (шум)
+  })
+  const visibleRef = useRef(visible)
+  visibleRef.current = visible
+  const toggle = (k: string) => setVisible(v => {
+    const nv = { ...v, [k]: !v[k] }
+    try { localStorage.setItem('cal_filters', JSON.stringify(nv)) } catch { /* */ }
+    setTimeout(() => calRef.current?.getApi().refetchEvents(), 0)
+    return nv
+  })
+
   const subscribeUrl = `${location.origin}/calendar.ics?token=${encodeURIComponent(getToken() || '')}`
   const copySubscribe = () => {
     navigator.clipboard?.writeText(subscribeUrl)
@@ -43,7 +63,7 @@ export function Calendar() {
       `/calendar-events?start=${encodeURIComponent(info.startStr)}&end=${encodeURIComponent(info.endStr)}`,
     )
     const now = Date.now()
-    return (r.events || []).map(e => {
+    return (r.events || []).filter(e => visibleRef.current[e.kind] !== false).map(e => {
       const overdue = e.kind !== 'call' && new Date(e.start).getTime() < now
       const col = overdue ? COLORS.overdue : COLORS[e.kind]
       return {
@@ -93,11 +113,22 @@ export function Calendar() {
         <button className="btn sm primary" onClick={copySubscribe}>
           {copied ? '✅ Ссылка скопирована' : '📲 Подписаться в телефоне'}
         </button>
-        <span style={{ fontSize: 11.5, display: 'inline-flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span style={{ color: COLORS.call }}>● созвон</span>
-          <span style={{ color: COLORS.bot }}>● задача бота</span>
-          <span style={{ color: COLORS.task }}>● задача человека</span>
-          <span style={{ color: COLORS.overdue }}>● просрочено</span>
+        <span style={{ fontSize: 11.5, display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          {KINDS.map(({ k, label }) => {
+            const on = visible[k] !== false
+            return (
+              <button key={k} onClick={() => toggle(k)} title={on ? 'скрыть' : 'показать'}
+                style={{
+                  cursor: 'pointer', fontSize: 11.5, padding: '3px 9px', borderRadius: 20,
+                  border: `1px solid ${on ? COLORS[k] : 'var(--border)'}`,
+                  background: on ? COLORS[k] + '22' : 'transparent',
+                  color: on ? 'var(--text)' : 'var(--text-faint)',
+                  opacity: on ? 1 : 0.55, textDecoration: on ? 'none' : 'line-through',
+                }}>
+                {label}
+              </button>
+            )
+          })}
         </span>
         {note && <span className="chip accent" style={{ marginLeft: 'auto' }}>{note}</span>}
       </div>

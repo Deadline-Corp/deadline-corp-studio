@@ -284,6 +284,33 @@ async def send_telegram_reply(token: str, chat_id: str, text: str) -> bool:
         return False
 
 
+async def send_telegram_document(
+    token: str, chat_id: str, filename: str, data: bytes,
+    caption: Optional[str] = None,
+) -> bool:
+    """Отправить файл (бэкап БД) владельцу в Telegram через sendDocument (multipart).
+    Telegram хранит файл — это и есть offsite-копия. Лимит файла 50 МБ."""
+    if not token or not chat_id or not data:
+        return False
+    files = {"document": (filename, data, "application/gzip")}
+    payload: dict = {"chat_id": str(chat_id)}
+    if caption:
+        payload["caption"] = caption[:1024]
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            r = await client.post(
+                f"{TELEGRAM_API_BASE}/bot{token}/sendDocument",
+                data=payload, files=files,
+            )
+        if r.status_code != 200:
+            log.warning(f"sendDocument {r.status_code}: {r.text[:200]}")
+            return False
+        return True
+    except Exception as e:
+        log.error(f"sendDocument exception: {e}")
+        return False
+
+
 # Map of attachment-type → Bot API method. Used by forward_attachment to
 # re-send a file via its file_id (Telegram caches uploads — no re-upload needed
 # when forwarding between chats handled by the same bot).
