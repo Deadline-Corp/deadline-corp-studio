@@ -25,6 +25,9 @@ function WhatsAppModeSelector() {
   const [mode, setMode] = useState<WaMode | null>(null)
   const [goal, setGoal] = useState<string>('call')
   const [busy, setBusy] = useState(false)
+  // Текущий оффер активной рекламы (для контекстного первого сообщения)
+  const [offer, setOffer] = useState('')
+  const [offerStatus, setOfferStatus] = useState('')
   // Тест «что бот ответит новому лиду»
   const [simMsg, setSimMsg] = useState('Здравствуйте! Сколько стоит сделать сайт?')
   const [simReply, setSimReply] = useState<string | null>(null)
@@ -35,9 +38,18 @@ function WhatsAppModeSelector() {
         const o = r.overrides || {}
         setMode(o.wa_observe_only ? 'observe' : (o.wa_draft_mode ? 'draft' : 'auto'))
         setGoal(o.bot_goal || 'call')
+        setOffer(o.wa_active_offer || '')
       })
       .catch(() => setMode('observe'))
   }, [])
+  const saveOffer = async () => {
+    setBusy(true); setOfferStatus('')
+    try {
+      await api.post('/behavior', { values: { wa_active_offer: offer } })
+      setOfferStatus('✅ сохранено')
+    } catch (e: any) { setOfferStatus(`Ошибка: ${e.detail ?? e.message}`) }
+    finally { setBusy(false); setTimeout(() => setOfferStatus(''), 3000) }
+  }
   const choose = async (m: WaMode) => {
     if (busy || m === mode) return
     setBusy(true)
@@ -72,6 +84,18 @@ function WhatsAppModeSelector() {
       <div style={{ fontSize: 12, borderTop: '1px solid var(--border)', paddingTop: 8 }}>
         <b>Куда бот ведёт:</b> {GOAL_LABELS[goal] || goal}
         <span className="muted"> · сначала собирает задачу проекта → даёт «от $X» → созвон. Менять цель/тон — в «Мозг» и «Настройки → Поведение».</span>
+      </div>
+      <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
+        <b style={{ fontSize: 12.5 }}>🎯 Оффер активной рекламы</b>
+        <span className="muted" style={{ fontSize: 11.5, display: 'block', marginBottom: 4 }}>
+          Вставьте текст оффера из текущих рекламных креативов. Лидов, пришедших по рекламе, бот встретит первым сообщением В КОНТЕКСТЕ этого оффера (своими словами, тепло), потом соберёт бриф. Пусто = обычное приветствие. Меняйте при смене кампании.
+        </span>
+        <textarea value={offer} onChange={e => setOffer(e.target.value)} placeholder="Напр.: Запрограммируем и воплотим любую вашу идею — сайты, боты, AI. Расскажите, что хотите реализовать?"
+                  style={{ width: '100%', minHeight: 56, fontSize: 12.5 }} />
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 4 }}>
+          <button className="btn sm primary" disabled={busy} onClick={saveOffer}>Сохранить оффер</button>
+          {offerStatus && <span className="muted" style={{ fontSize: 11.5 }}>{offerStatus}</span>}
+        </div>
       </div>
       <div style={{ borderTop: '1px solid var(--border)', paddingTop: 8 }}>
         <b style={{ fontSize: 12.5 }}>🔮 Что бот ответит новому лиду</b>

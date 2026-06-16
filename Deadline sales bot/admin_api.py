@@ -2231,7 +2231,7 @@ async def whatsapp_simulate_lead(
     dialog = f"Лид: {req.message.strip()[:500]}"
     kb = await _aio.to_thread(wa_drafts._kb_context, req.message)
     try:
-        result = await _main.primary_llm.ainvoke(wa_drafts._prompt("клиент", "new_lead", dialog, kb))
+        result = await _main.primary_llm.ainvoke(wa_drafts._prompt("клиент", "new_lead", dialog, kb, wa_drafts._active_offer()))
         reply = wa_drafts._clean_draft(getattr(result, "content", None) or "")
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"LLM error: {exc}")

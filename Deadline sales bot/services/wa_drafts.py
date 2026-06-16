@@ -111,21 +111,41 @@ def _kb_context(query: str, k: int = 3) -> str:
         return ""
 
 
-def _prompt(name: str, stage: str, dialog: str, kb: str = "") -> str:
+def _active_offer() -> str:
+    """Текущий оффер активной рекламы из настроек (bot_settings, кэш 60с)."""
+    try:
+        from services import bot_settings as _bs
+        return (_bs.get_all() or {}).get("wa_active_offer") or ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _prompt(name: str, stage: str, dialog: str, kb: str = "", offer: str = "") -> str:
     kb_block = (
         f"\nФАКТЫ О КОМПАНИИ (опирайся на них, НЕ выдумывай сверх этого):\n{kb}\n"
         if kb else ""
     )
     # Первый контакт = в переписке ещё НЕ было нашего ответа («Мы:»).
     first_contact = "Мы:" not in (dialog or "")
-    intro_rule = (
-        "Это ПЕРВЫЙ наш ответ — начни тепло и живо: коротко представься от Deadline "
-        "и зацепи («Здравствуйте! Мы в Deadline воплощаем в код любые идеи — сайты, "
-        "боты, AI, автоматизацию»), затем СРАЗУ спроси, что именно хочет реализовать. "
-        "По-человечески и с лёгкостью, НЕ сухо, можно 1 уместный эмодзи 🙂\n"
-        if first_contact else
-        "Диалог уже идёт — без «здравствуйте», продолжай по сути.\n"
-    )
+    if first_contact and (offer or "").strip():
+        # Лид пришёл по рекламе с конкретным оффером — встречаем в его контексте.
+        intro_rule = (
+            "Это ПЕРВЫЙ наш ответ, и лид пришёл ПО РЕКЛАМЕ с таким оффером:\n"
+            f"«{offer.strip()}»\n"
+            "Поприветствуй тепло и живо В КОНТЕКСТЕ этого оффера (покажи, что мы как "
+            "раз про это и поможем), затем СРАЗУ спроси, что именно он хочет "
+            "реализовать / какая у него идея. От лица «мы», по-человечески, можно 1 "
+            "эмодзи 🙂. НЕ копируй оффер дословно — обыграй своими словами.\n"
+        )
+    elif first_contact:
+        intro_rule = (
+            "Это ПЕРВЫЙ наш ответ — начни тепло и живо от лица студии («Здравствуйте! "
+            "Мы в Deadline воплощаем в код любые идеи — сайты, боты, AI, "
+            "автоматизацию»), затем СРАЗУ спроси, что именно хочет реализовать. "
+            "По-человечески, НЕ сухо, можно 1 эмодзи 🙂\n"
+        )
+    else:
+        intro_rule = "Диалог уже идёт — без «здравствуйте», продолжай по сути.\n"
     return (
         "Ты — ГОЛОС студии Deadline (сайты, боты, AI, автоматизация) в WhatsApp. "
         "Говори от лица КОМПАНИИ — «МЫ» (мы делаем, у нас был кейс, можем). НЕ "
@@ -187,7 +207,7 @@ async def generate_for_conv(
     stage = conv.lead_stage or "new_lead"
     import asyncio as _aio
     kb = await _aio.to_thread(_kb_context, last_user or dialog)
-    result = await llm.ainvoke(_prompt(name, stage, dialog, kb))
+    result = await llm.ainvoke(_prompt(name, stage, dialog, kb, _active_offer()))
     text = _clean_draft((getattr(result, "content", None) or ""))
     if not text:
         return None
@@ -210,7 +230,7 @@ async def generate_reply_text(db: Session, conv: Any, cust: Any, llm: Any) -> Op
     import asyncio as _aio
     kb = await _aio.to_thread(_kb_context, _last or dialog)
     try:
-        result = await llm.ainvoke(_prompt(name, stage, dialog, kb))
+        result = await llm.ainvoke(_prompt(name, stage, dialog, kb, _active_offer()))
     except Exception:  # noqa: BLE001
         return None
     return _clean_draft(getattr(result, "content", None) or "") or None
