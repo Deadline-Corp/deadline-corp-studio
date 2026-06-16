@@ -2118,11 +2118,13 @@ async def funnel_stages_save(
     config_snapshot.snapshot_now("до изменения воронки", "admin-ui", reason="auto:funnel-save")
     try:
         items = funnel_store.save_stages(db, [it.model_dump() for it in req.items])
+        # ГАРАНТИЯ: карточки на удалённых стадиях не теряются — переезжают на безопасную.
+        mig = funnel_store.migrate_orphaned_leads(db)
     except ValueError as e:
         db.rollback()
         raise HTTPException(status_code=422, detail=str(e))
     db.commit()
-    return {"ok": True, "items": items}
+    return {"ok": True, "items": items, "migrated": mig}
 
 
 @router.post("/funnel/stages/reset")
@@ -2133,8 +2135,26 @@ async def funnel_stages_reset(
     from services import funnel_store, config_snapshot
     config_snapshot.snapshot_now("до сброса воронки", "admin-ui", reason="auto:funnel-reset")
     items = funnel_store.reset_to_builtin(db)
+    mig = funnel_store.migrate_orphaned_leads(db)
     db.commit()
-    return {"ok": True, "items": items}
+    return {"ok": True, "items": items, "migrated": mig}
+
+
+@router.get("/funnel/stages/usage")
+async def funnel_stages_usage(
+    _: None = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """Сколько активных карточек на каждой стадии — для предупреждения при правке
+    воронки/смене ниши («N карточек на этой стадии переедут, если её убрать»)."""
+    from db.models import ConversationStatusEnum as _CSE
+    from sqlalchemy import func as _sf
+    rows = (
+        db.query(Conversation.lead_stage, _sf.count())
+        .filter(Conversation.status != _CSE.ARCHIVED.value)
+        .group_by(Conversation.lead_stage).all()
+    )
+    return {"usage": {k: int(n) for k, n in rows if k}}
 
 
 def _stages_customized(db) -> bool:
@@ -4498,6 +4518,9 @@ async def preset_apply(
         ))
         applied["automations"] += 1
 
+    # ГАРАНТИЯ: лиды на стадиях, которых нет в новом пресете, не теряются — переезжают
+    # на безопасную стадию (а не сиротеют в «Прочее»). Возвращаем сколько перенесли.
+    mig = funnel_store.migrate_orphaned_leads(db)
     db.commit()
 
     # 4. Текст пинка (поведение) — через bot_settings.
@@ -4507,7 +4530,7 @@ async def preset_apply(
         except Exception:  # noqa: BLE001 — не критично
             pass
 
-    return {"ok": True, "applied": applied, "preset": preset["title"]}
+    return {"ok": True, "applied": applied, "preset": preset["title"], "migrated": mig}
 
 
 # ============================================================================

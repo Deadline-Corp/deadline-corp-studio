@@ -126,3 +126,44 @@ def reset_to_builtin(db) -> list[dict]:
     db.flush()
     log.info("funnel_store: reset to builtin")
     return get_stages(db)
+
+
+def migrate_orphaned_leads(db, fallback: Optional[str] = None) -> dict:
+    """ГАРАНТИЯ: ни одна карточка не теряется при смене воронки/ниши. После любого
+    изменения набора стадий активные диалоги, чья стадия БОЛЬШЕ НЕ СУЩЕСТВУЕТ (удалили
+    кастом-стадию / сменили пресет), переносим на безопасную стадию (fallback или
+    первую активную нового набора), чтобы они не «осиротели» (не пропали с канбана).
+    Каждый перенос логируется в StageTransition (by='funnel-migrate'). Терминальные и
+    legacy-ключи (lost/completed_won + nda/tz_approved/in_work/post_sale) НЕ трогаем —
+    они валидны как исходная стадия. Возвращает {migrated, by_stage, fallback}."""
+    from db.models import Conversation, StageTransition, ConversationStatusEnum
+
+    stages = get_stages(db)
+    valid = {s["key"] for s in stages}
+    # не сиротим терминальные/служебные: они могут быть валидной финальной стадией
+    keep = valid | {"lost", "completed_won"} | LEGACY_KEYS
+    if not fallback:
+        actives = [s["key"] for s in stages if s["active"] and s["kind"] == "active"]
+        fallback = actives[0] if actives else "in_dialog"
+
+    rows = (
+        db.query(Conversation)
+        .filter(Conversation.status != ConversationStatusEnum.ARCHIVED.value,
+                Conversation.lead_stage.isnot(None),
+                ~Conversation.lead_stage.in_(list(keep)))
+        .all()
+    )
+    by_stage: dict[str, int] = {}
+    for conv in rows:
+        old = conv.lead_stage
+        by_stage[old] = by_stage.get(old, 0) + 1
+        db.add(StageTransition(
+            conversation_id=conv.id, customer_id=conv.customer_id,
+            from_stage=old, to_stage=fallback, by="funnel-migrate",
+        ))
+        conv.lead_stage = fallback
+    db.flush()
+    if rows:
+        log.info("funnel_store: migrated %d orphaned leads → %s (%s)",
+                 len(rows), fallback, by_stage)
+    return {"migrated": len(rows), "by_stage": by_stage, "fallback": fallback}

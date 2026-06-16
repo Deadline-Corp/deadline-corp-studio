@@ -199,7 +199,7 @@ export function Funnel() {
         </>
       )}
 
-      {editorOpen && <StageEditor onClose={() => setEditorOpen(false)} onSaved={() => { setEditorOpen(false); showToast('✅ Стадии сохранены — канвас/канбан обновятся за полминуты') }} />}
+      {editorOpen && <StageEditor onClose={() => setEditorOpen(false)} onSaved={(n) => { setEditorOpen(false); showToast(n ? `✅ Стадии сохранены · ${n} карточек безопасно перенесено на ближайшую стадию (не потеряны)` : '✅ Стадии сохранены — канвас/канбан обновятся за полминуты') }} />}
 
       {toast && <div className="toast">{toast}</div>}
     </div>
@@ -208,7 +208,7 @@ export function Funnel() {
 
 /* ---------- Редактор стадий (своя CRM) ---------- */
 
-function StageEditor({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
+function StageEditor({ onClose, onSaved }: { onClose: () => void; onSaved: (migrated?: number) => void }) {
   const [items, setItems] = useState<StageDef[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
@@ -250,10 +250,10 @@ function StageEditor({ onClose, onSaved }: { onClose: () => void; onSaved: () =>
     setBusy(true)
     setErr('')
     try {
-      await api.post('/funnel/stages', {
+      const r = await api.post<{ migrated?: { migrated: number } }>('/funnel/stages', {
         items: items.map(it => ({ key: it.key || undefined, label: it.label, kind: it.kind, active: it.active })),
       })
-      onSaved()
+      onSaved(r.migrated?.migrated || 0)
     } catch (e: any) {
       setErr(typeof e.detail === 'string' ? e.detail : e.message)
     } finally { setBusy(false) }

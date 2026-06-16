@@ -548,8 +548,9 @@ function PresetsCard() {
   const apply = async (key: string) => {
     setBusy(true)
     try {
-      const r = await api.post<{ applied: any; preset: string }>('/presets/apply', { key })
-      showToast(`✅ «${r.preset}»: стадии ${r.applied.stages}, поля ${r.applied.fields}, правила ${r.applied.automations}. Обнови вкладки Воронка/Автоматизации.`)
+      const r = await api.post<{ applied: any; preset: string; migrated?: { migrated: number } }>('/presets/apply', { key })
+      const mg = r.migrated?.migrated || 0
+      showToast(`✅ «${r.preset}»: стадии ${r.applied.stages}, поля ${r.applied.fields}, правила ${r.applied.automations}.${mg ? ` ${mg} карточек безопасно перенесено (не потеряны).` : ''} Обнови вкладки Воронка/Автоматизации.`)
       setConfirmKey(null)
     } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
     finally { setBusy(false) }
@@ -562,7 +563,9 @@ function PresetsCard() {
       </b>
       <p className="muted" style={{ margin: '4px 0 10px', fontSize: 12.5 }}>
         Пресет заменит стадии воронки, поля лида и пресет-правила автоматизаций (📦) под выбранную нишу.
-        Ваши ручные правила и данные лидов не трогаются. Тон бота настраивается отдельно во вкладке «Мозг».
+        Ваши ручные правила и данные лидов не трогаются — карточки с убранных стадий <b>безопасно переедут</b> на
+        ближайшую (не потеряются). Перед применением автоматически сохраняется снимок конфигурации (откат в
+        «Версии конфигурации»). Тон бота настраивается отдельно во вкладке «Мозг».
       </p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 10 }}>
         {items.map(p => (
