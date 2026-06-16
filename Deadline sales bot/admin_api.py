@@ -1529,6 +1529,154 @@ async def whatsapp_drafts_status(_: None = Depends(_verify_member)):
     return _WA_DRAFTS_STATE
 
 
+# ============================================================================
+# МАССОВЫЙ ДОЖИМ СПЯЩИХ (под контролем): бот находит молчунов, для них уже готовы
+# черновики (prepare-drafts) → менеджер смотрит список и одобряет (пачкой/точечно).
+# Отправка фоном, троттл анти-бан, БЕЗ удержания DB-сессии во время пауз.
+# ============================================================================
+
+_WA_SLEEP_TEMP_PRI = {"ready": 4, "hot": 3, "warm": 2, "cold": 1}
+
+
+@router.get("/whatsapp/sleeping")
+async def whatsapp_sleeping(
+    hours: int = 24,
+    limit: int = 80,
+    _: None = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """Спящие лиды = активные whatsapp-карточки, молчащие дольше `hours` часов
+    (last_message_at старее порога). С готовым черновиком — сверху."""
+    from db.models import ConversationStatusEnum
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    cutoff = _dt.now(_tz.utc) - _td(hours=max(1, hours))
+    rows = (
+        db.query(Conversation, Customer)
+        .join(Customer, Conversation.customer_id == Customer.id)
+        .filter(Conversation.channel == "whatsapp",
+                Conversation.status != ConversationStatusEnum.ARCHIVED,
+                Conversation.lead_stage.in_(list(_ACTIVE_STAGES)),
+                Conversation.last_message_at < cutoff)
+        .order_by(Conversation.last_message_at.desc().nullslast())
+        .limit(min(limit, 200)).all()
+    )
+    now = _dt.now(_tz.utc)
+    items = []
+    for conv, c in rows:
+        pend = conv.pending_wa_draft or {}
+        lm = conv.last_message_at
+        hrs = int((now - lm).total_seconds() // 3600) if lm else None
+        items.append({
+            "conversation_id": str(conv.id),
+            "name": _wa_display_name(c, conv),
+            "stage": conv.lead_stage,
+            "stage_label": _STAGE_LABEL.get(conv.lead_stage or "", conv.lead_stage or ""),
+            "temperature": c.lead_temperature,
+            "hours_silent": hrs,
+            "draft": (pend.get("text") or "")[:600],
+            "has_draft": bool(pend.get("text")),
+            "_pri": _WA_SLEEP_TEMP_PRI.get((c.lead_temperature or "").lower(), 0),
+        })
+    items.sort(key=lambda x: (not x["has_draft"], -x["_pri"]))
+    for it in items:
+        it.pop("_pri", None)
+    return {"items": items, "count": len(items),
+            "ready": sum(1 for i in items if i["has_draft"])}
+
+
+_WA_SEND_STATE: dict = {
+    "running": False, "started_at": None, "finished_at": None,
+    "sent": 0, "skipped": 0, "errors": 0, "total": 0, "error": None,
+}
+
+
+async def _run_send_sleeping_bg(conv_ids: list) -> None:
+    """Фон: отправить готовые черновики пачке диалогов. Троттл в _wa_send (анти-бан).
+    DB-сессию НЕ держим во время паузы-троттла — читаем/пишем короткими сессиями."""
+    import main as _main
+    from db.connection import session_scope
+    from services.conversations import append_message
+    from datetime import datetime as _dt, timezone as _tz
+    _WA_SEND_STATE.update({"running": True, "started_at": _dt.now(_tz.utc).isoformat(),
+                           "finished_at": None, "sent": 0, "skipped": 0, "errors": 0,
+                           "total": len(conv_ids), "error": None})
+    try:
+        for cid in conv_ids:
+            try:
+                with session_scope() as db:  # 1) прочитать черновик (короткая сессия)
+                    conv = db.get(Conversation, UUID(cid))
+                    if conv is None:
+                        _WA_SEND_STATE["skipped"] += 1
+                        continue
+                    pend = dict(conv.pending_wa_draft or {})
+                    to = pend.get("to_wa_id") or conv.channel_conversation_id or ""
+                text = (pend.get("text") or "").strip()
+                if not text or not to:
+                    _WA_SEND_STATE["skipped"] += 1
+                    continue
+                delivered = await _main._wa_send(to, text, pend.get("phone_number_id") or "")  # троттл, сессия НЕ держится
+                with session_scope() as db:  # 3) записать факт + снять черновик
+                    conv = db.get(Conversation, UUID(cid))
+                    if conv is not None:
+                        append_message(db, conv.id, role="assistant", content=text,
+                                       extra_meta={"approved_via": "mass-sleeping", "delivered": delivered})
+                        conv.pending_wa_draft = None
+                _WA_SEND_STATE["sent"] += 1
+            except Exception as e:  # noqa: BLE001
+                _WA_SEND_STATE["errors"] += 1
+                log.warning(f"[send-sleeping] {str(cid)[:8]} failed: {e}")
+    except Exception as e:  # noqa: BLE001
+        _WA_SEND_STATE["error"] = str(e)
+    finally:
+        _WA_SEND_STATE["running"] = False
+        from datetime import datetime as _dt2, timezone as _tz2
+        _WA_SEND_STATE["finished_at"] = _dt2.now(_tz2.utc).isoformat()
+
+
+class SendSleepingRequest(BaseModel):
+    conversation_ids: list = []   # пусто = все спящие с готовым черновиком
+    hours: int = 24
+
+
+@router.post("/whatsapp/send-sleeping")
+async def whatsapp_send_sleeping(
+    req: SendSleepingRequest,
+    _: None = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    """Под контролем: отправить ОДОБРЕННЫЕ (готовые) черновики пачке спящих лидов.
+    Если ids пусто — всем спящим с готовым черновиком. Фон + троттл (анти-бан)."""
+    import asyncio
+    if _WA_SEND_STATE.get("running"):
+        return {"ok": True, "already_running": True, "state": _WA_SEND_STATE}
+    ids = [str(x) for x in (req.conversation_ids or [])]
+    if not ids:
+        from db.models import ConversationStatusEnum
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+        cutoff = _dt.now(_tz.utc) - _td(hours=max(1, req.hours))
+        rows = (
+            db.query(Conversation.id)
+            .filter(Conversation.channel == "whatsapp",
+                    Conversation.status != ConversationStatusEnum.ARCHIVED,
+                    Conversation.lead_stage.in_(list(_ACTIVE_STAGES)),
+                    Conversation.last_message_at < cutoff,
+                    Conversation.pending_wa_draft.isnot(None))
+            .limit(100).all()
+        )
+        ids = [str(r[0]) for r in rows]
+    if not ids:
+        return {"ok": True, "started": False, "reason": "нет готовых черновиков"}
+    ids = ids[:100]
+    asyncio.create_task(_run_send_sleeping_bg(ids))
+    return {"ok": True, "started": True, "total": len(ids)}
+
+
+@router.get("/whatsapp/send-status")
+async def whatsapp_send_status(_: None = Depends(_verify_member)):
+    """Прогресс массовой отправки дожима спящим."""
+    return _WA_SEND_STATE
+
+
 class CleanPhantomsRequest(BaseModel):
     execute: bool = False
 

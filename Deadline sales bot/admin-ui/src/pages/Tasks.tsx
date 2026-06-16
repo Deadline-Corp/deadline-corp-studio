@@ -159,6 +159,8 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
         <Help title="Прогнать крон" text="Бот сам проверяет задачи каждые ~10 минут. Кнопка запускает проверку прямо сейчас." />
       </div>
 
+      <SleepingPanel showToast={showToast} />
+
       {board.no_task_leads.length > 0 && (
         <div className="card" style={{ padding: 12, borderColor: 'var(--accent-border)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
@@ -293,5 +295,100 @@ function AllTasks({ showToast }: { showToast: (t: string) => void }) {
         {loaded && filtered.length === 0 && <div className="empty">Пусто</div>}
       </div>
     </>
+  )
+}
+
+/* ---------- Массовый дожим спящих (под контролем) ---------- */
+
+function SleepingPanel({ showToast }: { showToast: (t: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const [data, setData] = useState<{ items: any[]; count: number; ready: number } | null>(null)
+  const [busy, setBusy] = useState('')
+  const { openConversation } = useDrawer()
+
+  const load = async () => { try { setData(await api.get('/whatsapp/sleeping?hours=24')) } catch { /* */ } }
+  const toggle = () => { const n = !open; setOpen(n); if (n && !data) void load() }
+
+  const pollDone = async (url: string) => {
+    for (let i = 0; i < 45; i++) {
+      await new Promise(r => setTimeout(r, 4000))
+      try { const s = await api.get<any>(url); if (!s.running) return s } catch { /* */ }
+    }
+    return null
+  }
+  const prepare = async () => {
+    setBusy('prep')
+    try {
+      await api.post('/whatsapp/prepare-drafts', {})
+      showToast('🤖 Бот готовит дожим спящим…')
+      const s = await pollDone('/whatsapp/drafts-status')
+      if (s) showToast(`✅ Подготовлено черновиков: ${s.prepared ?? 0}`)
+      await load()
+    } catch (e: any) { showToast(`Ошибка: ${e?.detail ?? e?.message ?? 'ошибка'}`) }
+    finally { setBusy('') }
+  }
+  const sendAll = async () => {
+    setBusy('send')
+    try {
+      const r = await api.post<any>('/whatsapp/send-sleeping', { hours: 24 })
+      if (!r.started) { showToast(r.reason || 'нет готовых черновиков'); setBusy(''); return }
+      showToast(`📤 Отправляю ${r.total} (с паузами анти-бан)…`)
+      const s = await pollDone('/whatsapp/send-status')
+      if (s) showToast(`✅ Отправлено: ${s.sent ?? 0} · пропущено ${s.skipped ?? 0}`)
+      await load()
+    } catch (e: any) { showToast(`Ошибка: ${e?.detail ?? e?.message ?? 'ошибка'}`) }
+    finally { setBusy('') }
+  }
+  const sendOne = async (id: string) => {
+    setBusy(id)
+    try { await api.post(`/conversations/${id}/wa-draft`, { action: 'send' }); showToast('✅ Отправлено'); await load() }
+    catch (e: any) { showToast(`Ошибка: ${e?.detail ?? e?.message ?? 'ошибка'}`) }
+    finally { setBusy('') }
+  }
+
+  const items = data?.items || []
+  return (
+    <div className="card" style={{ padding: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <button className="btn sm ghost" onClick={toggle} style={{ minWidth: 26 }}>{open ? '▾' : '▸'}</button>
+        <b style={{ fontSize: 13, cursor: 'pointer' }} onClick={toggle}>💤 Спящие лиды{data ? ` (${data.count})` : ''}</b>
+        {data && data.ready > 0 && <span className="chip accent">{data.ready} готовы</span>}
+        <span style={{ flex: 1 }} />
+        {open && <button className="btn sm" onClick={prepare} disabled={!!busy}>{busy === 'prep' ? '…' : '🤖 Подготовить дожим'}</button>}
+        {open && data && data.ready > 0 && <button className="btn sm primary" onClick={sendAll} disabled={!!busy}>{busy === 'send' ? '…' : `✅ Отправить всем готовым (${data.ready})`}</button>}
+      </div>
+      {open && (
+        <>
+          <div className="faint" style={{ fontSize: 11.5, margin: '6px 0 8px' }}>
+            Молчат больше суток. «Подготовить» — бот напишет дожим каждому (ПОД КОНТРОЛЕМ — само не уходит).
+            Проверь и отправь точечно «✅ Отправить» или сразу «всем готовым».
+          </div>
+          {!data && <div className="faint" style={{ fontSize: 12 }}><span className="spin" /> загрузка…</div>}
+          {data && items.length === 0 && <div className="faint" style={{ fontSize: 12 }}>спящих нет 🎉</div>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+            {items.map((l: any) => (
+              <div className="conv-row" key={l.conversation_id} style={{ cursor: 'default' }}>
+                <div className="c-main" style={{ cursor: 'pointer' }} onClick={() => openConversation(l.conversation_id)}>
+                  <div className="c-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <TempDot t={l.temperature} />{l.name}
+                    <StageChip s={l.stage_label} />
+                    {l.hours_silent != null && <span className="faint" style={{ fontSize: 11 }}>молчит {l.hours_silent}ч</span>}
+                  </div>
+                  {l.draft
+                    ? <div className="faint" style={{ fontSize: 11.5, marginTop: 2, fontStyle: 'italic' }}>✍️ «{l.draft.slice(0, 120)}{l.draft.length > 120 ? '…' : ''}»</div>
+                    : <div className="faint" style={{ fontSize: 11.5, marginTop: 2 }}>нет черновика — нажми «Подготовить»</div>}
+                </div>
+                <div className="c-meta">
+                  <div style={{ display: 'flex', gap: 5 }}>
+                    {l.has_draft && <button className="btn sm primary" disabled={!!busy} onClick={() => sendOne(l.conversation_id)}>✅ Отправить</button>}
+                    <button className="btn sm ghost" onClick={() => openConversation(l.conversation_id)}>Открыть</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
   )
 }
