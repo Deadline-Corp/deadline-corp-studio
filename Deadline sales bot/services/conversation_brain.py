@@ -262,10 +262,13 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
         "(сайт/магазин/бот/Mini App/AI и зачем); просто «привет/расскажите подробнее» — это "
         "in_dialog, НЕ qualified; on_call=договорились о созвоне; proposal=обсуждается КП/цена; "
         "prepayment=готов платить);\n"
-        '  "call_agreed": true если СТОРОНЫ ДОГОВОРИЛИСЬ о созвоне на конкретный ДЕНЬ '
-        "(точный час не обязателен — «в среду утром», «завтра днём», «в пятницу» тоже "
-        "считаются договорённостью; в т.ч. если ЭТО НАШ менеджер написал «договорились/"
-        "поставил на среду утром»);\n"
+        '  "call_agreed": true ТОЛЬКО если в переписке есть ЯВНАЯ ВЗАИМНАЯ '
+        "договорённость СОЗВОНИТЬСЯ/ПОЗВОНИТЬ (именно звонок/созвон, голосом) на "
+        "КОНКРЕТНЫЙ ДЕНЬ — обе стороны подтвердили. ЯВНО НЕ считается договорённостью "
+        "о созвоне (тут false): «отправлю/скину информацию/материалы», «напишу/отвечу "
+        "позже», «в течение дня пришлю», «подумаю», «жду подробности», «посмотрю», "
+        "обмен ссылками/файлами, вопросы по проекту, общая заинтересованность. Если про "
+        "ЗВОНОК явно не договорились с конкретным днём — false. Сомневаешься — false;\n"
         '  "call_day": НАЗВАНИЕ дня договорённости как его произнесли — одно из '
         '"today"|"tomorrow"|"mon"|"tue"|"wed"|"thu"|"fri"|"sat"|"sun", иначе null. '
         "НЕ вычисляй дату сам — только верни, какой день назвали («в среду»→wed, "
@@ -320,16 +323,13 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
     # СТОП ФАНТОМ-СОЗВОНАМ: если лид молчит (мы написали последними), договорённости
     # по факту нет — не создаём призрачный созвон (кейс «увидел КП и пропал»). Такой
     # лид попадёт в дожим через next_action, а не в календарь.
-    if data.get("call_agreed") and not _lead_silent(db, conv) and (resolved_dt or data.get("call_datetime_utc")):
+    # Предлагаем созвон ТОЛЬКО при: явной договорённости (call_agreed) + НАЗВАННОМ
+    # дне (call_day) + лид НЕ молчит. Без названного дня = бот «угадал» время →
+    # ложное срабатывание (кейс Вячеслав: «отправлю инфо в течение дня» ≠ созвон).
+    if (data.get("call_agreed") and data.get("call_day") and resolved_dt
+            and not _lead_silent(db, conv)):
         try:
-            if resolved_dt is not None:
-                new_dt = resolved_dt
-            else:
-                raw = str(data["call_datetime_utc"]).replace("Z", "+00:00")
-                new_dt = datetime.fromisoformat(raw)
-                if new_dt.tzinfo is None:
-                    new_dt = new_dt.replace(tzinfo=timezone.utc)
-                new_dt = new_dt.astimezone(timezone.utc)
+            new_dt = resolved_dt
             prof = cust.profile_data or {}
             # не дублируем: уже забронировано ~то же время, или уже есть такое же
             # предложение, или предложение по тому же времени недавно отклоняли.
@@ -366,6 +366,13 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
                 )
         except (ValueError, TypeError) as e:
             log.warning(f"[{str(conv.id)[:8]}] brain bad call_datetime: {e}")
+    # Бот пересмотрел и созвона НЕТ → снимаем СВОЁ ложное/устаревшее предложение
+    # (кейс Вячеслав: «отправлю инфо» ≠ созвон). Подтверждённые брони не трогаем
+    # (они в profile_data.booked_call_at, а не в pending_call_suggestion).
+    elif data.get("call_agreed") is False and getattr(conv, "pending_call_suggestion", None):
+        conv.pending_call_suggestion = None
+        db.commit()
+        done["cleared_suggestion"] = True
 
     # 3) сигнал владельцу (один раз на эпизод «просит человека», пока нет брони)
     if data.get("wants_human") and not done.get("booked") and not done.get("suggested"):
