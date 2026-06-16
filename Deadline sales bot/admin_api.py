@@ -1328,9 +1328,13 @@ async def whatsapp_dedup(
     # дубли с телефонными двойниками. Идёт ПОСЛЕ resolve_lids, чтобы поймать
     # только что добитые номера.
     phone_dedup = {"groups": 0, "archived": 0, "pairs": []}
+    orphan_actions = {"superseded": 0}
     if req.execute:
-        from services.whatsapp_sync import dedup_wa_by_phone
+        from services.whatsapp_sync import dedup_wa_by_phone, cancel_orphan_scheduled_actions
         phone_dedup = dedup_wa_by_phone(db)
+        # Погасить задачи/напоминания всех архивных карточек (вкл. только что слитые)
+        # — чтобы задачник и календарь сразу актуализировались.
+        orphan_actions = cancel_orphan_scheduled_actions(db)
         db.commit()
 
     return {
@@ -1340,6 +1344,7 @@ async def whatsapp_dedup(
         "skipped": skipped,
         "resolved_lids": resolved_lids,
         "phone_dedup": phone_dedup,
+        "orphan_actions": orphan_actions,
     }
 
 
@@ -1644,15 +1649,21 @@ async def today_view(
     _: None = Depends(_verify_member),
     db: Session = Depends(get_db),
 ):
+    from db.models import ConversationStatusEnum
     now = datetime.now(timezone.utc)
     eod = now.replace(hour=23, minute=59, second=59)
     week = now + timedelta(days=7)
 
+    # Исключаем задачи АРХИВНЫХ карточек (дубли, слитые дедупом) — иначе осиротевшие
+    # задачи/напоминания висят в «Мой день» как просрочка, хотя карточки уже нет.
     rows = (
         db.query(ScheduledAction, Customer)
         .join(Customer, ScheduledAction.customer_id == Customer.id)
+        .outerjoin(Conversation, ScheduledAction.conversation_id == Conversation.id)
         .filter(ScheduledAction.status.in_(("pending", "processing")))
         .filter(ScheduledAction.due_at <= week)
+        .filter((Conversation.id.is_(None)) |
+                (Conversation.status != ConversationStatusEnum.ARCHIVED))
         .order_by(ScheduledAction.due_at.asc())
         .limit(200)
         .all()
@@ -1690,6 +1701,7 @@ async def today_view(
         .join(Conversation, Conversation.customer_id == Customer.id)
         .filter(Customer.profile_data.isnot(None))
         .filter(Conversation.lead_stage == "on_call")
+        .filter(Conversation.status != ConversationStatusEnum.ARCHIVED)
         .limit(100)
         .all()
     )

@@ -132,7 +132,9 @@ async def _worker_loop(*, tenant_config: dict, interval_sec: int) -> None:
         # Постоянная актуальность панели = WhatsApp: дешёвая (только БД) авто-чистка
         # фантомов + эхо-дублей каждый цикл. Без WAHA/LLM — безопасно часто.
         try:
-            from services.whatsapp_sync import cleanup_wa_artifacts, dedup_wa_by_phone
+            from services.whatsapp_sync import (
+                cleanup_wa_artifacts, dedup_wa_by_phone, cancel_orphan_scheduled_actions,
+            )
             _cl = cleanup_wa_artifacts()
             if _cl.get("phantoms") or _cl.get("echo_dupes"):
                 logger.info("[cron] wa cleanup: %s", _cl)
@@ -142,6 +144,12 @@ async def _worker_loop(*, tenant_config: dict, interval_sec: int) -> None:
             _dd = dedup_wa_by_phone()
             if _dd.get("archived"):
                 logger.info("[cron] wa dedup-by-phone: %s", _dd)
+            # Гасим осиротевшие задачи/напоминания архивных карточек — чтобы
+            # «Мой день»/Календарь сами актуализировались под слияния (нет дублей
+            # созвонов и просрочки от уже слитых карточек).
+            _orf = cancel_orphan_scheduled_actions()
+            if _orf.get("superseded"):
+                logger.info("[cron] orphan actions superseded: %s", _orf)
         except Exception as exc:  # noqa: BLE001
             logger.warning("[cron] wa cleanup/dedup failed (non-fatal): %s", exc)
         # ПОЛНАЯ авто-сверка с WhatsApp раз в ~час (каждый 6-й цикл): WAHA = источник

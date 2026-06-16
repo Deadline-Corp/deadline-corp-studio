@@ -180,6 +180,38 @@ def dedup_wa_by_phone(db: Optional[Session] = None) -> dict:
         return _run(_db)
 
 
+def cancel_orphan_scheduled_actions(db: Optional[Session] = None) -> dict:
+    """Погасить осиротевшие задачи/напоминания (чисто БД). Когда карточку
+    архивируют (дедуп дублей), её pending/processing scheduled_actions остаются —
+    и висят в «Мой день»/Календаре как просрочка/дубли созвонов, хотя карточки
+    уже нет. Здесь: все pending/processing действия, чья карточка ARCHIVED →
+    status='superseded' (терминальный, /today их не показывает). Так задачник и
+    календарь сами актуализируются под слияния. Идемпотентно."""
+    from db.connection import session_scope
+    from db.models import ScheduledAction, ConversationStatusEnum
+
+    def _run(_db: Session) -> dict:
+        archived_ids = [
+            r[0] for r in _db.query(Conversation.id)
+            .filter(Conversation.status == ConversationStatusEnum.ARCHIVED).all()
+        ]
+        if not archived_ids:
+            return {"superseded": 0}
+        n = (
+            _db.query(ScheduledAction)
+            .filter(ScheduledAction.conversation_id.in_(archived_ids),
+                    ScheduledAction.status.in_(("pending", "processing")))
+            .update({"status": "superseded"}, synchronize_session=False)
+        )
+        _db.flush()
+        return {"superseded": int(n or 0)}
+
+    if db is not None:
+        return _run(db)
+    with session_scope() as _db:
+        return _run(_db)
+
+
 def _existing_waha_ids(db: Session, conversation_id) -> set[str]:
     """Все waha_id, уже сохранённые в этом диалоге — для дедупа."""
     rows = db.execute(
