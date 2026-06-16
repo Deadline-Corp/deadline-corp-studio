@@ -459,15 +459,25 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                   )}
                 </div>
               )}
-              {detail.scheduled_actions.length > 0 && (
-                <div className="d-chips">
-                  {detail.scheduled_actions.map(a => (
-                    <span key={a.id} className="chip info" title={a.payload?.text ?? ''}>
-                      ⏳ {a.executor === 'bot' ? 'бот' : 'я'}: {fmtTime(a.due_at)}
-                    </span>
-                  ))}
-                </div>
-              )}
+              {(() => {
+                // Показываем ТОЛЬКО актуальные задачи. Авто-плумбинг созвона прячем:
+                // сам созвон уже виден как «📞 14:00» в Действиях, а напоминания
+                // (call_reminder) идут ПАРАМИ лид+админ на каждый слот -3ч/-1ч →
+                // в чипах выглядели как дубли. Они автоматические — не задачи.
+                const acts = detail.scheduled_actions.filter(
+                  a => a.action_type !== 'call_reminder' && a.action_type !== 'call_booked',
+                )
+                if (acts.length === 0) return null
+                return (
+                  <div className="d-chips">
+                    {acts.map(a => (
+                      <span key={a.id} className="chip info" title={a.payload?.text ?? ''}>
+                        ⏳ {a.executor === 'bot' ? 'бот' : 'я'}: {fmtTime(a.due_at)}
+                      </span>
+                    ))}
+                  </div>
+                )
+              })()}
             </>
           )}
         </div>

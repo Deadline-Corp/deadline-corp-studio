@@ -87,6 +87,8 @@ export interface ConvSummary {
   lead_stage: string
   lost_reason: string | null
   operator_takeover: boolean
+  wa_autonomous?: boolean
+  pinned?: boolean
   handoff_done: boolean
   last_message_at: string | null
   created_at: string | null

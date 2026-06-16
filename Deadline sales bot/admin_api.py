@@ -423,6 +423,10 @@ def _conv_summary_row(conv: Conversation, cust: Customer, preview: Optional[str]
         "lead_stage": conv.lead_stage,
         "lost_reason": conv.lost_reason,
         "operator_takeover": conv.operator_takeover,
+        # Подсветка в списке переписок: «бот ведёт сам» (зелёным) + «важный/мой лид»
+        # (жёлтым, ручная пометка-звёздочка, хранится в profile_data['pinned']).
+        "wa_autonomous": bool(getattr(conv, "wa_autonomous", False)),
+        "pinned": bool((cust.profile_data or {}).get("pinned")),
         "handoff_done": conv.handoff_done,
         "last_message_at": conv.last_message_at.isoformat() if conv.last_message_at else None,
         "created_at": conv.created_at.isoformat() if conv.created_at else None,
@@ -698,6 +702,28 @@ async def conversation_takeover(
     conv, _cust = _get_conv_or_404(db, conv_id)
     await set_takeover_with_mirror(db, conv, req.on, _main.settings, source="admin-ui")
     return {"ok": True, "operator_takeover": req.on}
+
+
+class PinRequest(BaseModel):
+    pinned: bool
+
+
+@router.post("/conversations/{conv_id}/pin")
+async def conversation_pin(
+    conv_id: str,
+    req: PinRequest,
+    _: None = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """Пометить лида как «важный/мой» (жёлтая подсветка в списке) — чтобы не
+    потерять контакт, с которым ведёшь свою работу через систему. Хранится в
+    customer.profile_data['pinned']; пометка на КЛИЕНТЕ (все его диалоги)."""
+    _conv, cust = _get_conv_or_404(db, conv_id)
+    prof = dict(cust.profile_data or {})
+    prof["pinned"] = bool(req.pinned)
+    cust.profile_data = prof
+    db.commit()
+    return {"ok": True, "pinned": prof["pinned"]}
 
 
 # ============================================================================
@@ -2082,6 +2108,7 @@ async def calendar_events(
         raise HTTPException(status_code=422, detail="start/end must be ISO datetimes")
 
     events: list = []
+    seen_reminder: set = set()  # схлопывание пары лид+админ напоминаний в одно событие
     # 1) Задачи/напоминания (due_at в диапазоне), не из архивных карточек
     rows = (
         db.query(ScheduledAction, Customer)
@@ -2106,6 +2133,13 @@ async def calendar_events(
             continue
         text = (a.payload or {}).get("text") or (a.payload or {}).get("title") or ""
         if a.action_type == "call_reminder":
+            # Напоминания о созвоне создаются ПАРОЙ (лид + админ) на один слот -3ч/-1ч.
+            # Схлопываем в ОДНО событие (ключ: карточка + время), иначе на календаре
+            # выглядят как дубль того же самого.
+            rkey = (str(a.conversation_id), a.due_at.isoformat())
+            if rkey in seen_reminder:
+                continue
+            seen_reminder.add(rkey)
             kind, icon = "reminder", "⏰"
         elif a.executor == "bot":
             kind, icon = "bot", "🤖"

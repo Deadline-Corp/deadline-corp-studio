@@ -45,6 +45,14 @@ export function Inbox() {
     } catch { /* 401 редиректит сам */ }
   }
 
+  // Пометить «важный/мой лид» (жёлтая подсветка) — оптимистично, с откатом при ошибке.
+  const togglePin = async (c: ConvSummary) => {
+    const next = !c.pinned
+    setItems(prev => prev.map(x => (x.id === c.id ? { ...x, pinned: next } : x)))
+    try { await api.post(`/conversations/${c.id}/pin`, { pinned: next }) }
+    catch { setItems(prev => prev.map(x => (x.id === c.id ? { ...x, pinned: !next } : x))) }
+  }
+
   usePolling(load, 10000, [channel, stage, temperature, q])
 
   return (
@@ -89,7 +97,16 @@ export function Inbox() {
           const ch = CHANNEL_META[c.channel]
           const temp = TEMP_META[c.customer.lead_temperature]
           return (
-            <div className="conv-row" key={c.id} onClick={() => openConversation(c.id)}>
+            <div
+              className={`conv-row${c.pinned ? ' pinned' : ''}${c.wa_autonomous ? ' autonomous' : ''}`}
+              key={c.id}
+              onClick={() => openConversation(c.id)}
+            >
+              <button
+                className={`pin-star${c.pinned ? ' on' : ''}`}
+                title={c.pinned ? 'Важный лид — снять пометку' : 'Пометить как важный (чтобы не потерять)'}
+                onClick={e => { e.stopPropagation(); togglePin(c) }}
+              >★</button>
               <div className="avatar">{initials(c.customer.name)}</div>
               <div className="c-main">
                 <div className="c-name">
@@ -97,6 +114,7 @@ export function Inbox() {
                   <span className={`chip ${ch?.cls ?? ''}`} style={{ fontWeight: 500 }}>
                     {ch?.icon} {ch?.label ?? c.channel}
                   </span>
+                  {c.wa_autonomous && <span className="chip bot-led">🤖 бот ведёт</span>}
                   {c.operator_takeover && <span className="chip ok">👤 оператор</span>}
                 </div>
                 <div className="c-preview">{c.preview || '—'}</div>

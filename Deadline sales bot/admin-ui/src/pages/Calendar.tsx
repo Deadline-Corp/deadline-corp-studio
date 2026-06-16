@@ -162,6 +162,9 @@ export function Calendar() {
           height="calc(100vh - 230px)"
           dayMaxEvents
           eventTimeFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
+          slotLabelFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
+          slotLabelInterval="01:00:00"
+          slotDuration="01:00:00"
         />
       </div>
 
