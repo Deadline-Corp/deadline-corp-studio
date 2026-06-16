@@ -692,6 +692,32 @@ class CustomFieldDef(Base):
     active: Mapped[bool] = mapped_column(default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+
+class ConfigSnapshot(Base):
+    """Снимок конфигурации для отката на любую точку (2026-06-16).
+
+    payload — бандл конфиг-таблиц: воронка (стадии), кастом-поля, автоматизации,
+    bot_settings, активный системный промпт. Восстановление применяет ТОЛЬКО эти
+    таблицы — данные лидов (переписки/клиенты) не трогаются. Авто-снимок ПЕРЕД
+    каждым конфиг-меняющим действием (reason='auto:...') + ручной чекпойнт. Никогда
+    не hard-delete старые версии (хранение дешёвое, JSONB)."""
+    __tablename__ = "config_snapshots"
+    __table_args__ = (
+        Index("ix_config_snapshots_created", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    label: Mapped[str] = mapped_column(String(120), nullable=False)
+    created_by: Mapped[str] = mapped_column(String(100), nullable=False, server_default="admin-ui")
+    reason: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False)
+
+    def __repr__(self) -> str:
+        return f"<ConfigSnapshot {str(self.id)[:8]} {self.label!r} @ {self.created_at}>"
+
     def __repr__(self) -> str:
         return f"<CustomFieldDef {self.key} ({self.field_type})>"
 

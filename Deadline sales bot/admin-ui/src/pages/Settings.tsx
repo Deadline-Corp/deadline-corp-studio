@@ -51,6 +51,8 @@ export function Settings() {
       <div style={{ height: 14 }} />
       <BackupCard />
       <div style={{ height: 14 }} />
+      <SnapshotsCard />
+      <div style={{ height: 14 }} />
       <TimezoneCard />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 14, marginTop: 14 }}>
@@ -165,6 +167,79 @@ function BackupCard() {
         <button className="btn sm primary" onClick={download} disabled={!!busy}>{busy === 'dl' ? '…' : '💾 Скачать бэкап'}</button>
         <button className="btn sm" onClick={sendTg} disabled={!!busy}>{busy === 'tg' ? '…' : '📤 В Telegram сейчас'}</button>
         {msg && <span className="chip accent">{msg}</span>}
+      </div>
+    </div>
+  )
+}
+
+/* ---------- Версии конфигурации (откат на любую точку) ---------- */
+
+function SnapshotsCard() {
+  const [items, setItems] = useState<any[]>([])
+  const [label, setLabel] = useState('')
+  const [busy, setBusy] = useState('')
+  const [msg, setMsg] = useState('')
+  const [confirmId, setConfirmId] = useState<string | null>(null)
+  const load = () => api.get<{ items: any[] }>('/config/snapshots').then(r => setItems(r.items)).catch(() => { /* */ })
+  useEffect(() => { void load() }, [])
+  const save = async () => {
+    setBusy('save'); setMsg('')
+    try { await api.post('/config/snapshot', { label: label.trim() || undefined }); setLabel(''); setMsg('✅ Чекпойнт сохранён'); await load() }
+    catch (e: any) { setMsg('Ошибка: ' + (e?.detail ?? e?.message ?? 'не вышло')) }
+    finally { setBusy('') }
+  }
+  const restore = async (id: string) => {
+    setBusy(id); setMsg('')
+    try {
+      const r = await api.post<any>(`/config/restore/${id}`, {})
+      const errN = r.errors ? Object.keys(r.errors).length : 0
+      setMsg(errN ? `⚠️ Частично (ошибки: ${Object.keys(r.errors).join(', ')})` : '✅ Конфигурация восстановлена')
+      setConfirmId(null); await load()
+    } catch (e: any) { setMsg('Ошибка: ' + (e?.detail ?? e?.message ?? 'не вышло')) }
+    finally { setBusy('') }
+  }
+  const fmt = (iso: string) => {
+    try { return new Date(iso).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) }
+    catch { return (iso || '').slice(0, 16) }
+  }
+  return (
+    <div className="card">
+      <b>🗂 Версии конфигурации · откат</b>
+      <p className="faint" style={{ fontSize: 11.5, margin: '6px 0 10px' }}>
+        Снимок настроек (воронка, поля, автоматизации, поведение, промпт) — можно вернуться на любую версию.
+        Снимок берётся автоматически <b>перед каждым изменением</b> + вручную кнопкой. Откат меняет только
+        настройки — переписки и клиенты не трогаются.
+      </p>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+        <input
+          placeholder="Название чекпойнта (необязательно)"
+          value={label}
+          onChange={e => setLabel(e.target.value)}
+          style={{ flex: 1, minWidth: 200, fontSize: 12.5, padding: '6px 9px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }}
+        />
+        <button className="btn sm primary" onClick={save} disabled={!!busy}>{busy === 'save' ? '…' : '💾 Сохранить чекпойнт'}</button>
+        {msg && <span className="chip accent">{msg}</span>}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 320, overflowY: 'auto' }}>
+        {items.length === 0 && <span className="faint" style={{ fontSize: 12 }}>Пока нет снимков</span>}
+        {items.map(it => (
+          <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.label}</div>
+              <div className="faint" style={{ fontSize: 11 }}>
+                {fmt(it.created_at)} · {it.reason || 'manual'} · воронка {it.counts?.stages} · поля {it.counts?.fields} · авто {it.counts?.automations}
+              </div>
+            </div>
+            {confirmId === it.id ? (
+              <>
+                <button className="btn sm" style={{ color: '#e0524f', borderColor: '#e0524f' }} onClick={() => restore(it.id)} disabled={!!busy}>{busy === it.id ? '…' : 'Точно откатить'}</button>
+                <button className="btn sm ghost" onClick={() => setConfirmId(null)}>Отмена</button>
+              </>
+            ) : (
+              <button className="btn sm" onClick={() => setConfirmId(it.id)} disabled={!!busy}>↩︎ Восстановить</button>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   )

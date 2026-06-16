@@ -1972,7 +1972,8 @@ async def funnel_stages_save(
     _: None = Depends(_verify_owner),
     db: Session = Depends(get_db),
 ):
-    from services import funnel_store
+    from services import funnel_store, config_snapshot
+    config_snapshot.snapshot_now("до изменения воронки", "admin-ui", reason="auto:funnel-save")
     try:
         items = funnel_store.save_stages(db, [it.model_dump() for it in req.items])
     except ValueError as e:
@@ -1987,7 +1988,8 @@ async def funnel_stages_reset(
     _: None = Depends(_verify_owner),
     db: Session = Depends(get_db),
 ):
-    from services import funnel_store
+    from services import funnel_store, config_snapshot
+    config_snapshot.snapshot_now("до сброса воронки", "admin-ui", reason="auto:funnel-reset")
     items = funnel_store.reset_to_builtin(db)
     db.commit()
     return {"ok": True, "items": items}
@@ -2721,12 +2723,64 @@ async def behavior_save(
     req: BehaviorSaveRequest,
     _: None = Depends(_verify_owner),
 ):
-    from services import bot_settings
+    from services import bot_settings, config_snapshot
+    config_snapshot.snapshot_now("до изменения настроек", "admin-ui", reason="auto:behavior")
     try:
         current = bot_settings.set_many(req.values)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return {"ok": True, "overrides": current}
+
+
+# ============================================================================
+# CONFIG SNAPSHOTS — версии конфигурации (откат на любую точку). Снимок = воронка
+# + кастом-поля + автоматизации + bot_settings + активный промпт. Восстановление
+# трогает ТОЛЬКО конфиг-таблицы, данные лидов остаются. См. services/config_snapshot.
+# ============================================================================
+
+class ConfigSnapshotRequest(BaseModel):
+    label: Optional[str] = None
+
+
+@router.post("/config/snapshot")
+async def config_snapshot_create(
+    req: ConfigSnapshotRequest,
+    _: None = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    """Ручной чекпойнт текущей конфигурации."""
+    from services import config_snapshot as _cs
+    snap = _cs.capture(db, req.label or "Ручной чекпойнт", created_by="admin-ui", reason="manual")
+    db.commit()
+    return {"ok": True, "id": str(snap.id)}
+
+
+@router.get("/config/snapshots")
+async def config_snapshots_list(
+    _: None = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    """Список версий конфигурации (новые сверху)."""
+    from services import config_snapshot as _cs
+    return {"items": _cs.list_snapshots(db, limit=100)}
+
+
+@router.post("/config/restore/{snapshot_id}")
+async def config_snapshot_restore(
+    snapshot_id: str,
+    _: None = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    """Восстановить конфигурацию из снимка (ТОЛЬКО конфиг-таблицы; переписки/клиенты
+    не трогаются). Перед откатом — авто-снимок текущего состояния (можно откатить откат)."""
+    from services import config_snapshot as _cs
+    _cs.snapshot_now("до восстановления", "admin-ui", reason="auto:before-restore")
+    try:
+        out = _cs.restore(db, snapshot_id)
+        db.commit()
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return {"ok": True, **out}
 
 
 # ============================================================================
@@ -3715,6 +3769,8 @@ async def custom_fields_save(
     (profile_data['fields']) не трогаются — вернёте поле с тем же key,
     значения снова видны."""
     import re
+    from services import config_snapshot
+    config_snapshot.snapshot_now("до изменения полей", "admin-ui", reason="auto:fields-save")
     seen: set[str] = set()
     cleaned = []
     for i, it in enumerate(req.items):
@@ -4124,7 +4180,9 @@ async def preset_apply(
     if preset is None:
         raise HTTPException(status_code=404, detail=f"Нет пресета {req.key!r}")
 
-    from services import funnel_store, bot_settings
+    from services import funnel_store, bot_settings, config_snapshot
+    # КРИТИЧНО: пресет полностью заменяет стадии/поля → авто-снимок ДО (откат на любую точку).
+    config_snapshot.snapshot_now(f"до пресета «{req.key}»", "admin-ui", reason=f"auto:preset:{req.key}")
     applied = {"stages": 0, "fields": 0, "automations": 0}
 
     # 1. Стадии (None = сброс на заводские).
