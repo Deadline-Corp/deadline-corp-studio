@@ -220,6 +220,17 @@ async def _book(db: Session, conv: Conversation, cust: Customer,
         log.warning(f"[{str(conv.id)[:8]}] book notify failed: {e}")
 
 
+def _multi_tz_enabled() -> bool:
+    """Учитывать ли часовой пояс ЛИДА (мультипояс). Выкл в настройках (tz_multi=false)
+    → всё в поясе админа (Пхукет) — для тех, кто работает в одном городе. Деф. ВКЛ."""
+    try:
+        from services import bot_settings as _bs
+        v = _bs.get("tz_multi")
+        return True if v is None else bool(v)
+    except Exception:  # noqa: BLE001
+        return True
+
+
 async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
                               llm: Any, settings: Any, refresh_draft: bool = True) -> dict:
     """Проанализировать диалог и применить решения. Возвращает что сделано.
@@ -233,8 +244,13 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
     if not transcript.strip():
         return done
 
-    tz = _sched.lead_tz_from_phone(conv.channel_conversation_id or "")
-    tz_label = _sched.tz_label_from_phone(conv.channel_conversation_id or "")
+    # Пояс ЛИДА — по его РЕАЛЬНОМУ телефону (cust.phone), а не channel_conversation_id:
+    # у рекламных лидов там скрытый @lid (не телефон) → пояс падал в Пхукет даже для
+    # Астаны. Если мультипояс выключен в настройках — все в поясе админа (Бангкок).
+    _phone_for_tz = (getattr(cust, "phone", None) or conv.channel_conversation_id or "")
+    _multi = _multi_tz_enabled()
+    tz = _sched.lead_tz_from_phone(_phone_for_tz) if _multi else _sched.BANGKOK
+    tz_label = _sched.tz_label_from_phone(_phone_for_tz) if _multi else "время Пхукета"
     now_utc = datetime.now(timezone.utc)
     now_lead = now_utc.astimezone(tz)
     prompt = (
@@ -254,8 +270,10 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
         '"today"|"tomorrow"|"mon"|"tue"|"wed"|"thu"|"fri"|"sat"|"sun", иначе null. '
         "НЕ вычисляй дату сам — только верни, какой день назвали («в среду»→wed, "
         "«завтра»→tomorrow, «сегодня»→today). Дату посчитает система;\n"
-        '  "call_time": время по части суток — "HH:MM" (по времени ЛИДА), либо '
-        '"morning"|"day"|"evening", либо null;\n'
+        '  "call_time": ТОЧНЫЙ час, если лид/менеджер его назвал — строго "HH:MM" по '
+        'времени ЛИДА (его городу). «в 18:00», «после 18», «к 18», «в 6 вечера» → "18:00"; '
+        '«в 14», «в 2 дня» → "14:00". Если назван только период — "morning"|"day"|"evening". '
+        'Время лид указывает в СВОЁМ часовом поясе — не пересчитывай сам, верни как сказал;\n'
         '  "call_datetime_utc": ISO8601 в UTC (запасной вариант, если call_day не подходит). '
         "Если час не назван — утро→10:00, день→14:00, вечер→18:00 ПО ВРЕМЕНИ ЛИДА, иначе null. "
         f"Сейчас у лида {now_lead.strftime('%Y-%m-%d %H:%M')} ({tz_label}), {_WEEKDAY_RU[now_lead.weekday()]};\n"
@@ -327,8 +345,8 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
             dup = _close(prof.get("booked_call_at")) or _close(existing_sugg.get("at")) \
                 or _close(prof.get("call_suggest_dismissed_at_val"))
             if new_dt > now_utc and not dup:
-                tz = _sched.lead_tz_from_phone(str(conv.channel_conversation_id or ""))
-                tzlbl = _sched.tz_label_from_phone(str(conv.channel_conversation_id or ""))
+                # ВЕРНЫЙ пояс — из cust.phone + мультипояс (см. выше), НЕ из @lid
+                tzlbl = tz_label
                 when_h = _sched.format_slot_human(new_dt, tz=tz)
                 conv.pending_call_suggestion = {
                     "at": new_dt.isoformat(),

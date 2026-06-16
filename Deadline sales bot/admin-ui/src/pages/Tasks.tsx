@@ -282,7 +282,7 @@ function AllTasks({ showToast }: { showToast: (t: string) => void }) {
                 <td className="muted" style={{ maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {a.payload?.text ?? '—'}
                 </td>
-                <td><span className="chip">{a.executor === 'bot' ? '🤖 бот' : '👤 человек'}</span></td>
+                <td><span className="chip">{a.executor === 'bot' ? '🤖 бот' : '👤 менеджер'}</span></td>
                 <td>
                   {a.status === 'pending' && (
                     <button className="btn sm danger" onClick={() => cancel(a.id)} disabled={busy}>Отменить</button>

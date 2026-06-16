@@ -18,7 +18,7 @@ const COLORS: Record<string, string> = {
 // Фильтры показа событий по типу (можно скрыть шум — оставить только реальные созвоны).
 const KINDS: { k: string; label: string }[] = [
   { k: 'call', label: '📞 Созвоны' },
-  { k: 'task', label: '📋 Задачи человека' },
+  { k: 'task', label: '📋 Задачи менеджера' },
   { k: 'bot', label: '🤖 Задачи бота' },
   { k: 'reminder', label: '⏰ Напоминания' },
 ]

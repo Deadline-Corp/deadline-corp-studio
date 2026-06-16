@@ -50,6 +50,8 @@ export function Settings() {
       <FieldsCard />
       <div style={{ height: 14 }} />
       <BackupCard />
+      <div style={{ height: 14 }} />
+      <TimezoneCard />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 14, marginTop: 14 }}>
         <div className="card">
@@ -164,6 +166,38 @@ function BackupCard() {
         <button className="btn sm" onClick={sendTg} disabled={!!busy}>{busy === 'tg' ? '…' : '📤 В Telegram сейчас'}</button>
         {msg && <span className="chip accent">{msg}</span>}
       </div>
+    </div>
+  )
+}
+
+/* ---------- Часовые пояса лидов ---------- */
+
+function TimezoneCard() {
+  const [multi, setMulti] = useState<boolean | null>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { void (async () => {
+    try { const r = await api.get<any>('/behavior'); const v = r.overrides?.tz_multi; setMulti(v === undefined ? true : !!v) }
+    catch { setMulti(true) }
+  })() }, [])
+  const toggle = async () => {
+    if (multi === null) return
+    setBusy(true)
+    const nv = !multi
+    try { await api.post('/behavior', { values: { tz_multi: nv } }); setMulti(nv) }
+    catch { /* */ } finally { setBusy(false) }
+  }
+  return (
+    <div className="card">
+      <b>🌍 Часовые пояса лидов</b>
+      <p className="faint" style={{ fontSize: 11.5, margin: '6px 0 10px' }}>
+        ВКЛ — бот понимает время в поясе ЛИДА (по его номеру): «после 18 по Астане» переведётся
+        верно (= 20:00 Пхукета). Для DEADLINE (лиды из разных стран) держите ВКЛ. ВЫКЛ — все
+        времена в вашем поясе (если работаете в одном городе — не нужны чужие пояса).
+      </p>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+        <input type="checkbox" checked={!!multi} disabled={multi === null || busy} onChange={toggle} />
+        Учитывать часовой пояс лида {multi === null ? '…' : (multi ? '— включено' : '— выключено (всё в вашем поясе)')}
+      </label>
     </div>
   )
 }

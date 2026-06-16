@@ -523,7 +523,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
 
         {detail?.wa_autonomous ? (
           <div style={{ borderTop: '1px solid var(--border)', background: 'var(--panel-2)', padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5 }}>
-            <span>🤖 Система ведёт этот диалог сама</span>
+            <span>🤖 Бот ведёт этот диалог сам</span>
             <div style={{ flex: 1 }} />
             <button className="btn sm ghost" onClick={() => setWaAutonomous(false)} disabled={busy}>Вернуть на одобрение</button>
           </div>
@@ -536,7 +536,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
               {detail.pending_wa_draft
                 ? (detail.pending_wa_draft.stale
                     ? <span className="faint" style={{ fontSize: 11, color: 'var(--warn, #c90)' }}>был ответ вручную — нажмите 🔄 Переформулировать для свежего</span>
-                    : <span className="faint" style={{ fontSize: 11 }}>🤖 система предложила — измените или напишите своё</span>)
+                    : <span className="faint" style={{ fontSize: 11 }}>🤖 бот предложил — измените или напишите своё</span>)
                 : <span className="faint" style={{ fontSize: 11 }}>напишите ответ или нажмите 🔄 Переформулировать</span>}
             </div>
             <textarea value={draftText} onChange={e => setDraftText(e.target.value)}
@@ -547,7 +547,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
               <button className="btn sm primary" onClick={sendReply} disabled={busy || !draftText.trim()}>✅ Отправить</button>
               {detail.channel === 'whatsapp' && <button className="btn sm" onClick={suggestReply} disabled={busy} title="Перечитать всю переписку и предложить свежий ответ с учётом контекста">🔄 Переформулировать</button>}
               <div style={{ flex: 1 }} />
-              {detail.channel === 'whatsapp' && <button className="btn sm" onClick={() => setWaAutonomous(true)} disabled={busy} title="Дальше система сама ведёт этот диалог и отвечает без вашего одобрения">🤖 Передать боту</button>}
+              {detail.channel === 'whatsapp' && <button className="btn sm" onClick={() => setWaAutonomous(true)} disabled={busy} title="Дальше бот сам ведёт этот диалог и отвечает без вашего одобрения">🤖 Передать боту</button>}
             </div>
             <span className="faint" style={{ fontSize: 11, display: 'block', marginTop: 4 }}>
               {detail.channel === 'website' ? 'Website: лид увидит при следующем визите' : 'Уйдёт лиду в его канал'}
