@@ -35,6 +35,7 @@ function addMin(iso: string, min: number) {
 export function Calendar() {
   const [copied, setCopied] = useState(false)
   const [note, setNote] = useState('')
+  const [showSub, setShowSub] = useState(false)  // попап-инструкция «Подписаться в телефоне»
   const { openConversation } = useDrawer()
   const calRef = useRef<FullCalendar | null>(null)
 
@@ -110,8 +111,8 @@ export function Calendar() {
       </HintBar>
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
-        <button className="btn sm primary" onClick={copySubscribe}>
-          {copied ? '✅ Ссылка скопирована' : '📲 Подписаться в телефоне'}
+        <button className="btn sm primary" onClick={() => setShowSub(true)}>
+          📲 Подписаться в телефоне
         </button>
         <span style={{ fontSize: 11.5, display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           {KINDS.map(({ k, label }) => {
@@ -163,6 +164,78 @@ export function Calendar() {
           eventTimeFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
         />
       </div>
+
+      {showSub && (
+        <>
+          <div className="drawer-overlay" onClick={() => setShowSub(false)} />
+          <div className="card" style={{
+            position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
+            zIndex: 50, width: 'min(560px, 94vw)', maxHeight: '90vh', overflowY: 'auto',
+            display: 'flex', flexDirection: 'column', gap: 14,
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <h2 style={{ margin: 0, fontSize: 17 }}>📲 Календарь в телефоне</h2>
+              <button className="btn sm ghost" onClick={() => setShowSub(false)}>✕</button>
+            </div>
+
+            <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: 'var(--text-faint)' }}>
+              Добавь ссылку <b>один раз</b> — и все события из панели (📞 созвоны,
+              📋 задачи, ⏰ напоминания) появятся в календаре телефона и будут
+              обновляться сами. Перенёс созвон в панели — он переедет и в телефоне.
+              Это <b>только просмотр</b>: создаёшь и двигаешь события здесь, в панели.
+            </p>
+
+            {/* Ссылка-подписка + копирование */}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'stretch' }}>
+              <input readOnly value={subscribeUrl} onFocus={e => e.currentTarget.select()}
+                style={{
+                  flex: 1, fontSize: 12, fontFamily: 'monospace', padding: '8px 10px',
+                  borderRadius: 8, border: '1px solid var(--border)',
+                  background: 'var(--bg)', color: 'var(--text)', minWidth: 0,
+                }} />
+              <button className="btn sm primary" style={{ whiteSpace: 'nowrap' }} onClick={copySubscribe}>
+                {copied ? '✅ Скопировано' : 'Копировать'}
+              </button>
+            </div>
+
+            {/* iPhone */}
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>🍏 iPhone / iPad (Apple Календарь)</div>
+              <ol style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, lineHeight: 1.7, color: 'var(--text)' }}>
+                <li>Нажми <b>«Копировать»</b> выше</li>
+                <li><b>Настройки</b> → <b>Календарь</b> → <b>Учётные записи</b></li>
+                <li><b>Новая учётная запись</b> → <b>Другое</b></li>
+                <li><b>Подписной календарь</b></li>
+                <li>Вставь ссылку → <b>Далее</b> → <b>Сохранить</b></li>
+              </ol>
+            </div>
+
+            {/* Android / Google */}
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>🤖 Android / Google Календарь</div>
+              <p style={{ margin: '0 0 4px', fontSize: 11.5, color: 'var(--text-faint)' }}>
+                Google не даёт добавить ссылку с телефона — нужен компьютер (один раз):
+              </p>
+              <ol style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, lineHeight: 1.7, color: 'var(--text)' }}>
+                <li>На компьютере открой <b>calendar.google.com</b></li>
+                <li>Слева <b>«Другие календари»</b> → <b>«＋»</b> → <b>«Подписаться по URL»</b></li>
+                <li>Вставь ссылку → <b>«Добавить календарь»</b></li>
+                <li>В Google Календаре на телефоне он появится сам</li>
+              </ol>
+            </div>
+
+            <div style={{ fontSize: 11.5, color: 'var(--text-faint)', lineHeight: 1.5,
+              borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+              🔒 В ссылке твой секретный ключ — <b>никому не пересылай</b> (у кого ссылка,
+              тот видит твой календарь).<br />
+              ⏱ Телефон тянет обновления <b>раз в несколько часов</b> (это поведение iOS/Google,
+              не панели) — мгновенной синхронизации тут не бывает.
+            </div>
+
+            <button className="btn primary" onClick={() => setShowSub(false)}>Готово</button>
+          </div>
+        </>
+      )}
     </div>
   )
 }
