@@ -169,8 +169,40 @@ def _active_offer() -> str:
         return ""
 
 
+def _lead_script(text: str) -> Optional[str]:
+    """Доминирующий скрипт сообщения лида: geo/arm/arab/cyr/lat (или None). Детерминированно
+    по Unicode-блокам — чтобы ЖЁСТКО форсить язык, а не надеяться на инструкцию (Gemini её
+    игнорит и сваливается в русский на грузинских лидах — кейс Kaxa)."""
+    c = {"geo": 0, "arm": 0, "arab": 0, "cyr": 0, "lat": 0}
+    for ch in (text or ""):
+        o = ord(ch)
+        if 0x10A0 <= o <= 0x10FF:
+            c["geo"] += 1
+        elif 0x0530 <= o <= 0x058F:
+            c["arm"] += 1
+        elif 0x0600 <= o <= 0x06FF:
+            c["arab"] += 1
+        elif 0x0400 <= o <= 0x04FF:
+            c["cyr"] += 1
+        elif "a" <= ch.lower() <= "z":
+            c["lat"] += 1
+    return max(c, key=c.get) if any(c.values()) else None
+
+
+# Жёсткий форс только для скриптов, на которых Gemini упорно сваливается в русский.
+_LANG_FORCE = {
+    "geo": "🔴 ЯЗЫК — ЛИД ПИШЕТ НА ГРУЗИНСКОМ. Ответь ИСКЛЮЧИТЕЛЬНО на грузинском (ქართულ ენაზე). НЕ на русском и НЕ на английском.",
+    "arm": "🔴 ЯЗЫК — ЛИД ПИШЕТ НА АРМЯНСКОМ. Ответь ИСКЛЮЧИТЕЛЬНО на армянском (հայերեն). НЕ на русском.",
+    "arab": "🔴 ЯЗЫК — ЛИД ПИШЕТ НА АРАБСКОМ. Ответь ИСКЛЮЧИТЕЛЬНО на арабском (بالعربية). НЕ на русском.",
+}
+
+
+def _lang_directive(last_user: str) -> str:
+    return _LANG_FORCE.get(_lead_script(last_user) or "", "")
+
+
 def _prompt(name: str, stage: str, dialog: str, kb: str = "", offer: str = "",
-            corrections: str = "", silent: bool = False) -> str:
+            corrections: str = "", silent: bool = False, last_user_text: str = "") -> str:
     kb_block = (
         f"\nФАКТЫ О НАШЕЙ СТУДИИ (фон — про НАС, НЕ про задачу лида; опирайся, не "
         f"выдумывай сверх):\n{kb}\n"
@@ -211,8 +243,10 @@ def _prompt(name: str, stage: str, dialog: str, kb: str = "", offer: str = "",
         )
     else:
         intro_rule = "Диалог уже идёт — без «здравствуйте», продолжай по сути.\n"
+    _ld = _lang_directive(last_user_text)
     return (
-        "Ты — ГОЛОС студии Deadline (сайты, боты, AI, автоматизация) в WhatsApp. "
+        (f"{_ld}\n\n" if _ld else "")
+        + "Ты — ГОЛОС студии Deadline (сайты, боты, AI, автоматизация) в WhatsApp. "
         "Говори от лица КОМПАНИИ — «МЫ» (мы делаем, у нас был кейс, можем). НЕ "
         "называй себя ботом/AI/агентом и НЕ говори «свести вас с командой» — это "
         "запрещено, звучит как автоответчик. Напиши ОДНО следующее сообщение лиду: "
@@ -287,7 +321,8 @@ async def generate_for_conv(
     kb = await _aio.to_thread(_kb_context, last_user or dialog)
     corr = await _aio.to_thread(_corrections_context, last_user or dialog, getattr(conv, "channel", None))
     result = await llm.ainvoke(_prompt(name, stage, dialog, kb, _active_offer(),
-                                       corrections=corr, silent=_is_silent(dialog)))
+                                       corrections=corr, silent=_is_silent(dialog),
+                                       last_user_text=last_user or dialog))
     text = _clean_draft((getattr(result, "content", None) or ""))
     if not text:
         return None
@@ -312,7 +347,8 @@ async def generate_reply_text(db: Session, conv: Any, cust: Any, llm: Any) -> Op
     corr = await _aio.to_thread(_corrections_context, _last or dialog, getattr(conv, "channel", None))
     try:
         result = await llm.ainvoke(_prompt(name, stage, dialog, kb, _active_offer(),
-                                           corrections=corr, silent=_is_silent(dialog)))
+                                           corrections=corr, silent=_is_silent(dialog),
+                                           last_user_text=_last or dialog))
     except Exception:  # noqa: BLE001
         return None
     return _clean_draft(getattr(result, "content", None) or "") or None

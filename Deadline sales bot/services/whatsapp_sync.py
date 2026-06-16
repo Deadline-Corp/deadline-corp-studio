@@ -73,27 +73,35 @@ def cleanup_wa_artifacts() -> dict:
                 db.delete(m)
                 out["phantoms"] += 1
         db.flush()
-        # 2) эхо-дубли: operator-эхо нашего же отправленного
-        op_rows = (
+        # 2) ЭХО-ДУБЛИ: одно сообщение хранится ДВАЖДЫ — assistant (наша запись отправки,
+        #    approved_via/delivered) И operator (то же самое, затянутое обратно из WhatsApp
+        #    как fromMe-эхо, source=waha_history_sync/webhook). Кейс T-Group. Оставляем ОДНУ
+        #    копию: предпочитаем ту, у которой есть waha_id (реальная запись WhatsApp) — иначе
+        #    history-sync переимпортирует её снова (бесконечный цикл). Удаляем дубль без waha_id.
+        _floor = datetime.min.replace(tzinfo=timezone.utc)
+        wa_msgs = (
             db.query(Message).join(Conversation, Message.conversation_id == Conversation.id)
-            .filter(Conversation.channel == "whatsapp", Message.role == "operator").all()
+            .filter(Conversation.channel == "whatsapp",
+                    Message.role.in_(["assistant", "operator"])).all()
         )
-        for m in op_rows:
-            meta = m.extra_meta or {}
-            if meta.get("source") != "manual_wa" and meta.get("approved_via") != "manual_phone":
-                continue
+        by_key: dict = {}
+        for m in wa_msgs:
             content = (m.content or "").strip()
-            if not content:
+            if content:
+                by_key.setdefault((m.conversation_id, content), []).append(m)
+        for group in by_key.values():
+            if len(group) < 2:
                 continue
-            twin = (
-                db.query(Message.id)
-                .filter(Message.conversation_id == m.conversation_id,
-                        Message.role == "assistant",
-                        Message.content == m.content)
-                .first()
-            )
-            if twin is not None:
-                db.delete(m)
+            # эхо = есть И assistant, И operator с одинаковым текстом (наша же отправка
+            # вернулась из WhatsApp). Два operator («Хорошо» дважды от команды) — НЕ трогаем.
+            if not ({"assistant", "operator"} <= {m.role for m in group}):
+                continue
+            group.sort(key=lambda m: (
+                0 if (m.extra_meta or {}).get("waha_id") else 1,
+                m.created_at or _floor,
+            ))
+            for dup in group[1:]:  # оставляем первый (с waha_id), остальные — дубли
+                db.delete(dup)
                 out["echo_dupes"] += 1
     return out
 
