@@ -1705,20 +1705,29 @@ async def today_view(
         .limit(100)
         .all()
     )
-    seen_cust = set()
+    # Дедуп созвонов: один человек может иметь ДВЕ карточки-контакта (рекламный @lid
+    # + импорт по телефону) → созвон дублировался («Денис ×2»). Ключ — телефон, иначе
+    # имя, иначе id. Приоритет карточке с назначенным временем (booked_call_at).
+    seen_call: dict = {}
     for c, conv in custs:
-        if c.id in seen_cust:
-            continue
-        seen_cust.add(c.id)
         booked = (c.profile_data or {}).get("booked_call_at")
+        phone = "".join(ch for ch in (getattr(c, "phone", None) or "") if ch.isdigit())
+        key = phone or (c.name or "").strip().lower() or str(c.id)
+        if key in seen_call:
+            # уже есть — заменяем только если у нового есть время, а у старого нет
+            if booked and not seen_call[key].get("call_at"):
+                seen_call[key]["call_at"] = booked
+                seen_call[key]["medium"] = (c.profile_data or {}).get("call_medium")
+            continue
         medium = (c.profile_data or {}).get("call_medium")
-        calls.append({
+        seen_call[key] = {
             "customer": {"id": str(c.id), "name": c.name, "email": c.email},
             "conversation_id": str(conv.id),
             "channel": conv.channel,
             "call_at": booked,
             "medium": medium,
-        })
+        }
+    calls = list(seen_call.values())
 
     return {"overdue": overdue, "today": today, "upcoming": upcoming, "calls": calls}
 
