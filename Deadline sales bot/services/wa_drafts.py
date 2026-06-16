@@ -89,6 +89,13 @@ def _clean_draft(text: str) -> str:
     # снять одинарную пару обрамляющих кавычек
     if len(t) >= 2 and t[0] in "\"'«" and t[-1] in "\"'»":
         t = t[1:-1].strip()
+    # АНТИ-УТЕЧКА мета-анализа: модель иногда возвращает СВОЙ разбор вместо реплики
+    # («**Tone:** … * **Goal (...):** …»). Восстанавливаем реплику или гасим — клиент
+    # не должен видеть внутренние рассуждения (services.reply_polish, тесты test_meta_*).
+    from services.reply_polish import strip_meta_analysis
+    t = strip_meta_analysis(t)
+    if not t:
+        return ""
     low = t.lower()
     if any(m in low for m in _DRAFT_BAD_MARKERS):
         # эхо промпта / размышления — лучше пусто (черновик не покажем кривой)

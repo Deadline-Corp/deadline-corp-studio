@@ -1727,6 +1727,70 @@ async def whatsapp_clean_phantoms(
     return {"ok": True, "execute": req.execute, "count": len(victims), "samples": samples}
 
 
+class CleanLeakedMetaRequest(BaseModel):
+    execute: bool = False
+
+
+@router.post("/whatsapp/clean-leaked-meta")
+async def whatsapp_clean_leaked_meta(
+    req: CleanLeakedMetaRequest,
+    _: None = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    """Найти и ОБЕЗВРЕДИТЬ сообщения, в которые протёк ВНУТРЕННИЙ мета-анализ модели
+    («**Tone:** … * **Goal (...):** …») вместо реплики. Такой текст мог уйти клиенту
+    (role=operator = эхо нашего исходящего fromMe → реально отправлено).
+
+    НЕ удаляем (правило проекта «ничего не удалять без нужды»): оригинал кладём в
+    extra_meta.leaked_original, content гасим в '' — обратимо. Идемпотентно: уже
+    обезвреженные (extra_meta.leaked_cleaned_at) пропускаем. Детекция — той же
+    функцией reply_polish.looks_like_meta_analysis, что и рантайм-гард (один
+    источник правды). execute=false — только список; execute=true — обезвредить."""
+    from services.reply_polish import looks_like_meta_analysis
+    # Дешёвый SQL-префильтр кандидатов (реальная реплика почти никогда не содержит
+    # «**»); точную проверку делает детектор ниже. Все каналы, role assistant/operator.
+    rows = (
+        db.query(Message)
+        .filter(Message.role.in_(("assistant", "operator")))
+        .filter(or_(
+            Message.content.ilike("%**%"),
+            Message.content.ilike("%human tone%"),
+            Message.content.ilike("%warm up + lead%"),
+        ))
+        .order_by(Message.created_at.desc())
+        .all()
+    )
+    victims = []
+    for m in rows:
+        if not (m.content or "").strip():
+            continue
+        if (m.extra_meta or {}).get("leaked_cleaned_at"):
+            continue  # уже обезврежено
+        if looks_like_meta_analysis(m.content):
+            victims.append(m)
+    samples = [
+        {
+            "id": str(m.id),
+            "role": m.role.value if hasattr(m.role, "value") else str(m.role),
+            "conversation_id": str(m.conversation_id),
+            "created_at": m.created_at.isoformat() if m.created_at else None,
+            "content": (m.content or "")[:200],
+        }
+        for m in victims[:25]
+    ]
+    if req.execute:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        for m in victims:
+            meta = dict(m.extra_meta or {})
+            meta["leaked_original"] = m.content
+            meta["leaked_cleaned_at"] = now_iso
+            meta["leaked_reason"] = "llm-meta-analysis-leak"
+            m.extra_meta = meta
+            m.content = ""  # гасим — обратимо (оригинал в extra_meta.leaked_original)
+        db.commit()
+    return {"ok": True, "execute": req.execute, "count": len(victims), "samples": samples}
+
+
 @router.post("/whatsapp/brain-sweep")
 async def whatsapp_brain_sweep(
     since_minutes: int = 1440,
@@ -2803,6 +2867,11 @@ async def conversation_nudge(
             draft = (result.content or "").strip()
         except Exception as e:  # noqa: BLE001
             raise HTTPException(status_code=502, detail=f"LLM draft failed: {e}")
+        # АНТИ-УТЕЧКА: модель иногда отдаёт свой разбор вместо реплики — гасим.
+        from services.reply_polish import strip_meta_analysis
+        draft = strip_meta_analysis(draft)
+        if not draft:
+            raise HTTPException(status_code=502, detail="LLM вернул разбор вместо ответа — повторите")
         return {"ok": True, "draft": draft}
 
     if not req.text or not req.text.strip():

@@ -253,14 +253,109 @@ def limit_questions(answer, max_questions=1):
     return " ".join(out).strip()
 
 
+# ===========================================================================
+# АНТИ-УТЕЧКА МЕТА-АНАЛИЗА МОДЕЛИ (added 2026-06-16)
+#
+# Инцидент: Gemini иногда выдаёт СВОЙ внутренний разбор вместо/перед готовой
+# репликой, даже когда промпт просит «только текст сообщения». Пример из прода
+# (диалог a8838993…, msg 2026-06-15, сохранён role=operator = эхо нашего
+# исходящего → текст РЕАЛЬНО ушёл клиенту):
+#   ":** Warm, human tone. * **Goal (warm up + lead to messenger/call):** Yes,
+#    trying to warm up and get project details. * **No «не наш профиль»: …"
+# Это внутренние рассуждения — клиент их видеть НЕ должен.
+#
+# Гарды ДЕТЕРМИНИРОВАННЫЕ (только re+str) и ВЫСОКОТОЧНЫЕ: нормальная реплика на
+# любом языке (ru/ka/en, цены «$300», эмодзи 🙂, тире «—») этих маркеров НЕ
+# содержит. Реальная реплика лиду никогда не несёт markdown-меток «**Tone:**»,
+# маркеров «* **», ведущего «:**» или англо-меток разбора в начале строки.
+# ===========================================================================
+
+# **Tone:** / **Goal (...):** / **Ответ:** — жирная метка-разбор.
+_META_BOLD_LABEL_RE = re.compile(r"\*\*[^*\n]{1,60}?:\*\*")
+# Маркер списка + жирный текст: «* **», «- **», «• **».
+_META_BULLET_BOLD_RE = re.compile(r"(?:^|\s)[*\-•]\s+\*\*")
+# Текст НАЧИНАЕТСЯ с «:**» (обрезанная метка) или с «**».
+_META_LEADING_BOLD_RE = re.compile(r"^\s*:?\*\*")
+# Англоязычная метка-разбор в НАЧАЛЕ строки: «Tone:», «Goal (», «Strategy:»…
+_META_LINE_LABEL_RE = re.compile(
+    r"(?im)^\s*(?:tone|goal|strategy|approach|reasoning|analysis|context|"
+    r"language|stage|persona|objective|rationale|step\s*\d)\s*[:(]"
+)
+# Конкретные англо-фразы из реальных утечек разбора.
+_META_PHRASES = (
+    "warm, human tone", "human tone", "warm up + lead",
+    "lead to messenger", "(warm up", "lead to messenger/call",
+)
+# Явный разделитель «вот финальная реплика» в НАЧАЛЕ строки — после него пробуем
+# восстановить настоящий ответ (кейс «разбор\n**Reply:** <текст>»).
+_META_REPLY_DELIM_RE = re.compile(
+    r"(?im)^\s*(?:\*\*\s*)?(?:"
+    r"reply|response|final\s+reply|final\s+message|final\s+answer|"
+    r"message\s+to\s+(?:the\s+)?(?:lead|client|user)|"
+    r"ответ|сообщение(?:\s+лиду)?|финальн\w*\s+(?:ответ|сообщение)|"
+    r"готов\w*\s+(?:ответ|сообщение|текст)"
+    r")\s*(?:\*\*)?\s*[:\-—]\s*"
+)
+
+
+def looks_like_meta_analysis(text):
+    """True, если в тексте — ВНУТРЕННИЙ разбор модели (метки «**Tone:**», маркеры
+    «* **», ведущий «:**», англо-метки «Goal (...)»), а не реплика лиду.
+
+    Высокоточно: обычная реплика на любом языке такие маркеры не содержит — см.
+    тесты test_meta_* (ru/ka/en/цены/эмодзи НЕ флагуются)."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if _META_LEADING_BOLD_RE.search(t):
+        return True
+    if _META_BOLD_LABEL_RE.search(t):
+        return True
+    if _META_BULLET_BOLD_RE.search(t):
+        return True
+    if _META_LINE_LABEL_RE.search(t):
+        return True
+    low = t.lower()
+    return any(p in low for p in _META_PHRASES)
+
+
+def strip_meta_analysis(text):
+    """Обезвредить утечку разбора. Чистую реплику возвращает как есть. Если текст —
+    разбор модели, пробует ВОССТАНОВИТЬ финальную реплику (то, что после явной
+    метки «Reply:/Ответ:/Сообщение лиду:» в начале строки); если восстановить
+    нечего — возвращает '' (пусто). Принцип: внутренние рассуждения НИКОГДА не
+    должны уйти клиенту — при сомнении гасим (пусто лучше утечки)."""
+    t = (text or "").strip()
+    if not t or not looks_like_meta_analysis(t):
+        return t
+    # Попытка восстановления: хвост ПОСЛЕ последнего «финальный ответ»-разделителя.
+    last = None
+    for m in _META_REPLY_DELIM_RE.finditer(t):
+        last = m
+    if last is not None:
+        tail = t[last.end():].strip().strip("*").strip().strip("«»\"'").strip()
+        if tail and not looks_like_meta_analysis(tail):
+            return tail
+    return ""
+
+
 def polish(answer, *, lead_message="", is_first_turn=False,
            name_known=False, email_known=False, channel="", suppress_tg_push=False):
     """Применить все гарды. Если вырезали всё — вернуть версию после greeting-фикса
     (пустой ответ хуже неидеального).
 
+    ИСКЛЮЧЕНИЕ (2026-06-16): если ответ оказался ВНУТРЕННИМ разбором модели
+    («**Tone:** … * **Goal:** …»), а не репликой — возвращаем '' (пусто). Здесь
+    пусто ЛУЧШЕ неидеального: показать клиенту рассуждения модели недопустимо.
+    Вызывающий (main._handle_message) ловит пустой ответ и перегенерит/молчит.
+
     suppress_tg_push: лид попросил другой канал → не пушим Telegram/@deadline_corp."""
     if not answer:
         return answer
+    # АНТИ-УТЕЧКА: разбор модели → восстановить реплику или погасить.
+    answer = strip_meta_analysis(answer)
+    if not answer:
+        return ""
     # Лид реально дал @ник (тогда «записал ваш телеграм» — правда, не трогаем).
     tg_handle_given = bool(re.search(r"@[A-Za-z0-9_]{3,}", lead_message or ""))
     lead_to_tg = lead_going_to_tg(lead_message)

@@ -364,7 +364,7 @@ def merge_wa_split(db: Optional[Session] = None, *, execute: bool = True) -> dic
     def _run(_db: Session) -> dict:
         out: dict = {
             "groups": 0, "merged_convs": 0, "moved_msgs": 0, "skipped_dupes": 0,
-            "archived": 0, "pairs": [], "dry": not execute,
+            "archived": 0, "relabeled": 0, "pairs": [], "dry": not execute,
         }
         rows = (
             _db.query(Conversation, Customer)
@@ -382,6 +382,30 @@ def merge_wa_split(db: Optional[Session] = None, *, execute: bool = True) -> dic
         _floor = datetime.min.replace(tzinfo=timezone.utc)
         for phone, group in by_phone.items():
             if len(group) < 2:
+                # Латентный край: ОДИНОЧНАЯ активная @lid-карточка, у которой телефон
+                # уже разрезолвлен (но пары-дубля ещё нет). Следующее сообщение под
+                # @lid с известным телефоном маршрутизируется на phone-ключ → форкнет
+                # новую карточку. Перекеиваем заранее в phone-canonical + вешаем
+                # (whatsapp, телефон) идентичность. Безопасно: раз группа из одного —
+                # на этот телефон больше никакая активная карточка не завязана.
+                conv0, cust0 = group[0]
+                cid0 = _norm_phone(getattr(conv0, "channel_conversation_id", None))
+                if cid0 != phone and _is_lid_key(cid0) and conv0.status != _ARCH:
+                    out["relabeled"] += 1
+                    if execute:
+                        conv0.channel_conversation_id = phone
+                        if not _norm_phone(getattr(cust0, "phone", None)):
+                            cust0.phone = ("+" + phone)[:50]
+                        ex0 = _db.execute(
+                            select(ChannelIdentity).where(
+                                ChannelIdentity.channel == "whatsapp",
+                                ChannelIdentity.external_id == phone,
+                            )
+                        ).scalar_one_or_none()
+                        if ex0 is None:
+                            _db.add(ChannelIdentity(customer_id=cust0.id, channel="whatsapp", external_id=phone))
+                        elif ex0.customer_id != cust0.id:
+                            ex0.customer_id = cust0.id
                 continue
             # канон = самая свежеактивная НЕархивная (иначе самая свежая вообще)
             active = [g for g in group if g[0].status != _ARCH]

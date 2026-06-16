@@ -1933,12 +1933,40 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     except Exception as _pe:  # noqa: BLE001
         log.debug(f"reply_polish skipped: {_pe}")
 
+    # АНТИ-УТЕЧКА мета-анализа (2026-06-16): reply_polish.polish ГАСИТ ответ,
+    # оказавшийся внутренним разбором модели («**Tone:** … * **Goal:** …»), а не
+    # репликой (см. services/reply_polish.strip_meta_analysis). Пустой answer при
+    # непустом raw_answer = поймали утечку. ОДИН раз перегенерим с жёстким запретом
+    # анализа; если снова утечка — оставляем пусто (промолчать ЛУЧШЕ, чем показать
+    # клиенту рассуждения модели — ниже пустой answer не отправляется и не пишется).
+    try:
+        from services import reply_polish as _rpm
+        if not (answer or "").strip() and (raw_answer or "").strip():
+            log.warning(f"[{str(conversation.id)[:8]}] meta-analysis leak → blanked, regen once")
+            _anti = (
+                prompt
+                + "\n\n# КРИТИЧНО — НИКАКОГО АНАЛИЗА И МЕТА-ТЕКСТА.\n"
+                "Выведи ТОЛЬКО готовую реплику лиду на ЕГО языке. БЕЗ разбора, без "
+                "меток вида «**Tone:**»/«**Goal:**», без маркеров списка «* **», без "
+                "англоязычных пояснений и без своих рассуждений — только сама реплика."
+            )
+            try:
+                answer = _rpm.strip_meta_analysis(
+                    _normalize_bot_reply(await call_llm(_anti)) or ""
+                ).strip()
+            except Exception as _r2e:  # noqa: BLE001
+                log.warning(f"[{str(conversation.id)[:8]}] meta-analysis regen failed: {_r2e}")
+                answer = ""
+    except Exception as _mle:  # noqa: BLE001
+        log.debug(f"meta-analysis guard skipped: {_mle}")
+
     # ДЕТЕРМИНИРОВАННЫЙ показ слотов созвона. llama часто пишет «какое время вам
     # удобно?» вместо конкретных «завтра в 11:00 или 12:00» (игнорит [CALL_SLOTS]),
     # из-за чего лид не видит вариантов и диалог зацикливается, бронь не ставится.
     # Если предлагаем слоты, а в ответе нет КОНКРЕТНОГО времени — дописываем сами.
+    # answer.strip() — НЕ дописываем слоты к погашенному (утечка) ответу.
     try:
-        if _call_slots_human and not _booked and not _just_booked_human and not _is_postpone:
+        if answer.strip() and _call_slots_human and not _booked and not _just_booked_human and not _is_postpone:
             import re as _re_slot
             if not _re_slot.search(r"\d{1,2}\s*[:.]\s*\d{2}|\bв\s+\d{1,2}\b", answer):
                 # Склеиваем без дубля дня: «завтра в 11:00» + «завтра в 12:00»
@@ -1964,15 +1992,18 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     #    WhatsApp в режиме наблюдения/черновика «удерживает» ответ как черновик на
     #    одобрение (_wa_route_answer): не публикуем его как отправленный и не
     #    зеркалим в форум — он ждёт ✅ в карточке/Telegram. _held=True → вебхук не шлёт.
+    # Пустой answer = поймали утечку мета-анализа и не смогли восстановить реплику
+    # (см. гард выше). Не отправляем и не пишем в историю — лучше промолчать.
+    _blank = not (answer or "").strip()
     _held = False
-    if req.channel == "whatsapp":
+    if req.channel == "whatsapp" and not _blank:
         try:
             _held = await _wa_route_answer(db, conversation, answer, req)
         except Exception as _wre:  # noqa: BLE001
             log.warning(f"[{str(conversation.id)[:8]}] _wa_route_answer failed: {_wre}")
             _held = False
 
-    if not _held:
+    if not _held and not _blank:
         append_message(db, conversation.id, role="assistant", content=answer)
 
         # Mirror bot reply to operator topic with a takeover button.
@@ -2329,7 +2360,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         handoff=handoff_triggered,
         customer_id=str(customer.id),
         conversation_id=str(conversation.id),
-        suppress_send=_held,
+        suppress_send=_held or _blank,
     )
 
 
