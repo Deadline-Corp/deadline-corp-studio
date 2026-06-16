@@ -135,7 +135,7 @@ async def _worker_loop(*, tenant_config: dict, interval_sec: int) -> None:
         try:
             from services.whatsapp_sync import (
                 cleanup_wa_artifacts, dedup_wa_by_phone, dedup_wa_by_name,
-                cancel_orphan_scheduled_actions,
+                cancel_orphan_scheduled_actions, dedup_scheduled_actions,
             )
             _cl = cleanup_wa_artifacts()
             if _cl.get("phantoms") or _cl.get("echo_dupes"):
@@ -146,12 +146,12 @@ async def _worker_loop(*, tenant_config: dict, interval_sec: int) -> None:
             _dn = dedup_wa_by_name()
             if _dd.get("archived") or _dn.get("archived"):
                 logger.info("[cron] wa dedup: by_phone=%s by_name=%s", _dd, _dn)
-            # Гасим осиротевшие задачи/напоминания архивных карточек — чтобы
-            # «Мой день»/Календарь сами актуализировались под слияния (нет дублей
-            # созвонов и просрочки от уже слитых карточек).
+            # Гасим осиротевшие задачи/напоминания архивных карточек + дедуп ОДИНАКОВЫХ
+            # задач (один «Лид завис — связаться» на лида, а не 2-3) → чистый задачник/календарь.
             _orf = cancel_orphan_scheduled_actions()
-            if _orf.get("superseded"):
-                logger.info("[cron] orphan actions superseded: %s", _orf)
+            _ds = dedup_scheduled_actions()
+            if _orf.get("superseded") or _ds.get("superseded"):
+                logger.info("[cron] actions: orphan=%s dups=%s", _orf, _ds)
         except Exception as exc:  # noqa: BLE001
             logger.warning("[cron] wa cleanup/dedup failed (non-fatal): %s", exc)
         # АВТО-БЭКАП БД раз в день → владельцу в Telegram (offsite-копия на случай

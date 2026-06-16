@@ -1394,16 +1394,19 @@ async def whatsapp_dedup(
     phone_dedup = {"groups": 0, "archived": 0, "pairs": []}
     name_dedup = {"groups": 0, "archived": 0, "pairs": []}
     orphan_actions = {"superseded": 0}
+    task_dups = {"superseded": 0}
     if req.execute:
         from services.whatsapp_sync import (
             dedup_wa_by_phone, dedup_wa_by_name, cancel_orphan_scheduled_actions,
+            dedup_scheduled_actions,
         )
         phone_dedup = dedup_wa_by_phone(db)
         # + дедуп «@lid-тени» по имени (телефон не разрезолвлен у @lid-карточки).
         name_dedup = dedup_wa_by_name(db)
-        # Погасить задачи/напоминания всех архивных карточек (вкл. только что слитые)
-        # — чтобы задачник и календарь сразу актуализировались.
+        # Погасить задачи/напоминания всех архивных карточек + дедуп одинаковых задач
+        # («Лид завис — связаться» по 2-3 на лида) → чистый задачник/календарь.
         orphan_actions = cancel_orphan_scheduled_actions(db)
+        task_dups = dedup_scheduled_actions(db)
         db.commit()
 
     return {
@@ -1415,6 +1418,7 @@ async def whatsapp_dedup(
         "phone_dedup": phone_dedup,
         "name_dedup": name_dedup,
         "orphan_actions": orphan_actions,
+        "task_dups": task_dups,
     }
 
 
@@ -2023,6 +2027,10 @@ async def calendar_events(
             continue
         if a.action_type == "call_booked":
             continue  # сам созвон показываем из booked_call_at (ниже) — не дублируем
+        # JUNK: контакт без имени И без телефона И без email — мусор (WhatsApp-статусы/
+        # рассылки), не показываем как событие (кейс «!!!!!!!» без номера).
+        if not ((c.name or "").strip() or getattr(c, "phone", None) or (c.email or "").strip()):
+            continue
         text = (a.payload or {}).get("text") or (a.payload or {}).get("title") or ""
         if a.action_type == "call_reminder":
             kind, icon = "reminder", "⏰"

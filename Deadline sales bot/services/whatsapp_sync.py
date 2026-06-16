@@ -260,6 +260,43 @@ def dedup_wa_by_name(db: Optional[Session] = None) -> dict:
         return _run(_db)
 
 
+def dedup_scheduled_actions(db: Optional[Session] = None) -> dict:
+    """Дедуп задач (чисто БД): один pending/processing action на (диалог, тип, текст).
+    Бот/брейн/массовые прогоны плодили ОДИНАКОВЫЕ задачи («Лид завис — связаться лично»
+    по 2-3 на лида) → засор задачника/календаря. Оставляем САМУЮ СВЕЖУЮ, остальные →
+    'superseded'. Напоминания о созвоне (call_reminder) НЕ трогаем (их 3 штуки по дизайну)."""
+    from db.connection import session_scope
+    from db.models import ScheduledAction
+
+    def _run(_db: Session) -> dict:
+        rows = (
+            _db.query(ScheduledAction)
+            .filter(ScheduledAction.status.in_(("pending", "processing")),
+                    ScheduledAction.conversation_id.isnot(None),
+                    ScheduledAction.action_type != "call_reminder")
+            .order_by(ScheduledAction.created_at.desc().nullslast())
+            .all()
+        )
+        seen: set = set()
+        n = 0
+        for a in rows:
+            payload = a.payload or {}
+            text = (payload.get("text") or payload.get("title") or "")[:100]
+            key = (str(a.conversation_id), a.action_type, text)
+            if key in seen:
+                a.status = "superseded"  # дубль (старее свежей) → гасим
+                n += 1
+            else:
+                seen.add(key)
+        _db.flush()
+        return {"superseded": n}
+
+    if db is not None:
+        return _run(db)
+    with session_scope() as _db:
+        return _run(_db)
+
+
 def cancel_orphan_scheduled_actions(db: Optional[Session] = None) -> dict:
     """Погасить осиротевшие задачи/напоминания (чисто БД). Когда карточку
     архивируют (дедуп дублей), её pending/processing scheduled_actions остаются —
