@@ -1576,6 +1576,37 @@ async def whatsapp_drafts_status(_: None = Depends(_verify_member)):
 
 _WA_SLEEP_TEMP_PRI = {"ready": 4, "hot": 3, "warm": 2, "cold": 1}
 
+# Паттерны «это НЕ лид / отказ» по последнему сообщению лида → подсказать «в Проигран»,
+# а не дожимать (кейсы владельца: «извините за беспокойство», «напишите на другой номер»).
+_DEAD_LEAD_PATTERNS = (
+    ("извините за беспокойство", "извинился за беспокойство"),
+    ("извиняюсь за беспокойство", "извинился за беспокойство"),
+    ("прошу прощения за беспокойство", "извинился за беспокойство"),
+    ("ошибся номером", "ошибся номером"),
+    ("ошиблась номером", "ошибся номером"),
+    ("не тот номер", "не тот номер"),
+    ("напишите на другой", "дал другой номер"),
+    ("пишите на другой", "дал другой номер"),
+    ("на другой номер", "дал другой номер"),
+    ("не интересует", "отказ: не интересует"),
+    ("не интересно", "отказ: не интересно"),
+    ("уже не актуально", "уже не актуально"),
+    ("уже неактуально", "уже не актуально"),
+    ("спасибо, не нужно", "отказ"),
+    ("спасибо не нужно", "отказ"),
+    ("отписаться", "просит отписать"),
+)
+
+
+def _dead_lead_check(text: str) -> tuple:
+    """По последнему сообщению лида: похоже ли, что это НЕ лид (извинился/ошибся/
+    отказ/дал другой номер) → (True, причина). Детерминированно, без LLM."""
+    t = (text or "").lower()
+    for pat, hint in _DEAD_LEAD_PATTERNS:
+        if pat in t:
+            return True, hint
+    return False, ""
+
 
 @router.get("/whatsapp/sleeping")
 async def whatsapp_sleeping(
@@ -1602,9 +1633,30 @@ async def whatsapp_sleeping(
     now = _dt.now(_tz.utc)
     items = []
     for conv, c in rows:
-        pend = conv.pending_wa_draft or {}
         lm = conv.last_message_at
+        # «Убрали из спящих»: скрываем, если dismiss свежее последней активности лида
+        # (лид написал после — снова появится). profile_data['sleeping_dismissed_at'].
+        prof = c.profile_data or {}
+        dis = prof.get("sleeping_dismissed_at")
+        if dis and lm:
+            try:
+                _dd = _dt.fromisoformat(str(dis).replace("Z", "+00:00"))
+                if _dd.tzinfo is None:
+                    _dd = _dd.replace(tzinfo=_tz.utc)
+                if _dd >= lm:
+                    continue
+            except (ValueError, TypeError):
+                pass
+        pend = conv.pending_wa_draft or {}
         hrs = int((now - lm).total_seconds() // 3600) if lm else None
+        # Флаг «похоже, не лид» по ПОСЛЕДНЕМУ сообщению лида (извинился/ошибся/отказ) —
+        # такому не дожим, а в «Проигран» одним кликом.
+        last_user = (
+            db.query(Message.content)
+            .filter(Message.conversation_id == conv.id, Message.role == "user")
+            .order_by(Message.created_at.desc()).first()
+        )
+        sl, hint = _dead_lead_check(last_user[0] if last_user else "")
         items.append({
             "conversation_id": str(conv.id),
             "name": _wa_display_name(c, conv),
@@ -1614,13 +1666,34 @@ async def whatsapp_sleeping(
             "hours_silent": hrs,
             "draft": (pend.get("text") or "")[:600],
             "has_draft": bool(pend.get("text")),
+            "suggest_lost": sl,
+            "lost_hint": hint,
             "_pri": _WA_SLEEP_TEMP_PRI.get((c.lead_temperature or "").lower(), 0),
         })
-    items.sort(key=lambda x: (not x["has_draft"], -x["_pri"]))
+    # «не лид» — в самый верх (требуют решения), потом готовые черновики, потом по температуре
+    items.sort(key=lambda x: (not x["suggest_lost"], not x["has_draft"], -x["_pri"]))
     for it in items:
         it.pop("_pri", None)
     return {"items": items, "count": len(items),
             "ready": sum(1 for i in items if i["has_draft"])}
+
+
+@router.post("/whatsapp/sleeping/{conv_id}/dismiss")
+async def whatsapp_sleeping_dismiss(
+    conv_id: str,
+    _: None = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """Убрать лид из «спящих» (не дожимать). Стадию НЕ меняет — просто прячет из
+    списка дожима. Снова появится, если лид сам напишет (новое сообщение свежее
+    отметки). Для совсем мёртвых — кнопка «в Проигран» (меняет стадию)."""
+    from datetime import datetime as _dt2, timezone as _tz2
+    conv, cust = _get_conv_or_404(db, conv_id)
+    prof = dict(cust.profile_data or {})
+    prof["sleeping_dismissed_at"] = _dt2.now(_tz2.utc).isoformat()
+    cust.profile_data = prof
+    db.commit()
+    return {"ok": True}
 
 
 _WA_SEND_STATE: dict = {

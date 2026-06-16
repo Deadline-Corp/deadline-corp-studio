@@ -155,8 +155,8 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
         <span className="chip">🆕 Без задачи {board.summary.no_task}</span>
         <span className="chip">🤖 {board.summary.bot} · 👤 {board.summary.human}</span>
         <span style={{ flex: 1 }} />
-        <button className="btn sm" onClick={sweep} disabled={!!busy}>▶ Прогнать крон</button>
-        <Help title="Прогнать крон" text="Бот сам проверяет задачи каждые ~10 минут. Кнопка запускает проверку прямо сейчас." />
+        <button className="btn sm" onClick={sweep} disabled={!!busy}>▶ Проверить задачи сейчас</button>
+        <Help title="Проверить задачи сейчас" text="Бот сам проверяет задачи и напоминания каждые ~10 минут (дожим молчунам, напоминания о созвонах). Эта кнопка запускает проверку немедленно — на случай, если ждать не хочется." />
       </div>
 
       <SleepingPanel showToast={showToast} />
@@ -345,6 +345,20 @@ function SleepingPanel({ showToast }: { showToast: (t: string) => void }) {
     catch (e: any) { showToast(`Ошибка: ${e?.detail ?? e?.message ?? 'ошибка'}`) }
     finally { setBusy('') }
   }
+  // В «Проигран» (меняет стадию → уходит из дожима). suggest=true → причина hard_stop (отказ/ошибся).
+  const markLost = async (id: string, suggest: boolean) => {
+    setBusy(id)
+    try { await api.post(`/conversations/${id}/stage`, { to_stage: 'lost', lost_reason: suggest ? 'hard_stop' : 'delayed' }); showToast('✗ В проигран'); await load() }
+    catch (e: any) { showToast(`Ошибка: ${e?.detail ?? e?.message ?? 'ошибка'}`) }
+    finally { setBusy('') }
+  }
+  // Убрать из спящих (не дожимать) — стадию НЕ меняет, вернётся если лид напишет.
+  const dismiss = async (id: string) => {
+    setBusy(id)
+    try { await api.post(`/whatsapp/sleeping/${id}/dismiss`, {}); showToast('🚫 Убрано из спящих'); await load() }
+    catch (e: any) { showToast(`Ошибка: ${e?.detail ?? e?.message ?? 'ошибка'}`) }
+    finally { setBusy('') }
+  }
 
   const items = data?.items || []
   return (
@@ -359,9 +373,11 @@ function SleepingPanel({ showToast }: { showToast: (t: string) => void }) {
       </div>
       {open && (
         <>
-          <div className="faint" style={{ fontSize: 11.5, margin: '6px 0 8px' }}>
-            Молчат больше суток. «Подготовить» — бот напишет дожим каждому (ПОД КОНТРОЛЕМ — само не уходит).
-            Проверь и отправь точечно «✅ Отправить» или сразу «всем готовым».
+          <div className="faint" style={{ fontSize: 11.5, margin: '6px 0 8px', lineHeight: 1.5 }}>
+            <b>Спящие</b> = активные лиды, молчащие дольше суток (мы написали последними).
+            «🤖 Подготовить дожим» — бот напишет черновик каждому (ПОД КОНТРОЛЕМ — само не уходит);
+            проверь и отправь «✅» точечно или «всем готовым» (с паузами 5–7 сек — не забанит).
+            <b> «⚠️»</b> — похоже не лид (извинился/отказ/ошибся): жми «✗ Проигран». «🚫» — просто убрать из дожима.
           </div>
           {!data && <div className="faint" style={{ fontSize: 12 }}><span className="spin" /> загрузка…</div>}
           {data && items.length === 0 && <div className="faint" style={{ fontSize: 12 }}>спящих нет 🎉</div>}
@@ -373,14 +389,17 @@ function SleepingPanel({ showToast }: { showToast: (t: string) => void }) {
                     <TempDot t={l.temperature} />{l.name}
                     <StageChip s={l.stage_label} />
                     {l.hours_silent != null && <span className="faint" style={{ fontSize: 11 }}>молчит {l.hours_silent}ч</span>}
+                    {l.suggest_lost && <span className="chip warn">⚠️ {l.lost_hint || 'похоже не лид'}</span>}
                   </div>
                   {l.draft
                     ? <div className="faint" style={{ fontSize: 11.5, marginTop: 2, fontStyle: 'italic' }}>✍️ «{l.draft.slice(0, 120)}{l.draft.length > 120 ? '…' : ''}»</div>
                     : <div className="faint" style={{ fontSize: 11.5, marginTop: 2 }}>нет черновика — нажми «Подготовить»</div>}
                 </div>
                 <div className="c-meta">
-                  <div style={{ display: 'flex', gap: 5 }}>
-                    {l.has_draft && <button className="btn sm primary" disabled={!!busy} onClick={() => sendOne(l.conversation_id)}>✅ Отправить</button>}
+                  <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    {l.has_draft && !l.suggest_lost && <button className="btn sm primary" disabled={!!busy} onClick={() => sendOne(l.conversation_id)}>✅ Отправить</button>}
+                    <button className="btn sm" disabled={!!busy} style={l.suggest_lost ? { color: '#e0524f', borderColor: '#e0524f' } : undefined} onClick={() => markLost(l.conversation_id, !!l.suggest_lost)}>✗ Проигран</button>
+                    <button className="btn sm ghost" disabled={!!busy} title="Убрать из спящих (не дожимать)" onClick={() => dismiss(l.conversation_id)}>🚫</button>
                     <button className="btn sm ghost" onClick={() => openConversation(l.conversation_id)}>Открыть</button>
                   </div>
                 </div>
