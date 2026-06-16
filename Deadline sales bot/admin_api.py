@@ -1828,6 +1828,152 @@ async def calendar_events(
     return {"events": events}
 
 
+# ============================================================================
+# ЗАДАЧНИК В СТИЛЕ CRM (amoCRM/Kommo): у каждого активного лида должна быть
+# СЛЕДУЮЩАЯ задача. Лид без задачи = забытый лид → выводим отдельно. Приоритет
+# по температуре + стадии. Видно, что бот делает сам, а что — администратор.
+# ============================================================================
+
+_ACTIVE_STAGES = {"new_lead", "in_dialog", "qualified", "nda", "on_call",
+                  "tz_approved", "proposal", "prepayment", "in_work"}
+_STAGE_LABEL = {
+    "new_lead": "Новый", "in_dialog": "Диалог", "qualified": "Квалифицирован",
+    "nda": "NDA", "on_call": "Созвон назначен", "tz_approved": "ТЗ согласовано",
+    "proposal": "КП", "prepayment": "Предоплата", "in_work": "В работе",
+    "completed_won": "Выиграно", "lost": "Потеряно", "post_sale": "Постпродажа",
+}
+# Что делать дальше на каждой стадии + может ли это сделать бот сам.
+_NEXT_ACTION = {
+    "new_lead": ("Квалифицировать: выяснить задачу", True),
+    "in_dialog": ("Выяснить задачу проекта", True),
+    "qualified": ("Назначить созвон / подготовить КП", True),
+    "nda": ("Подписать NDA", False),
+    "on_call": ("Провести/подтвердить созвон", False),
+    "tz_approved": ("Подготовить КП", False),
+    "proposal": ("Дожать по КП", True),
+    "prepayment": ("Получить предоплату", False),
+    "in_work": ("Вести проект", False),
+}
+_TEMP_PRI = {"ready": 4, "hot": 3, "warm": 2, "cold": 1}
+_BOT_ACTIONS = {"followup_message", "warming_touch"}
+
+
+@router.get("/task-board")
+async def task_board(
+    _: None = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """Доска задач (CRM-логика). Бакеты по срочности с контекстом лида (стадия,
+    температура) + блок «Лиды без задачи». Не показываем задачи архивных карточек."""
+    from db.models import ConversationStatusEnum
+    now = datetime.now(timezone.utc)
+    eod = now.replace(hour=23, minute=59, second=59)
+    eod_tom = eod + timedelta(days=1)
+    eow = now + timedelta(days=7)
+
+    rows = (
+        db.query(ScheduledAction, Customer, Conversation)
+        .join(Customer, ScheduledAction.customer_id == Customer.id)
+        .outerjoin(Conversation, ScheduledAction.conversation_id == Conversation.id)
+        .filter(ScheduledAction.status.in_(("pending", "processing")))
+        .filter((Conversation.id.is_(None)) |
+                (Conversation.status != ConversationStatusEnum.ARCHIVED))
+        .order_by(ScheduledAction.due_at.asc())
+        .limit(500)
+        .all()
+    )
+
+    def pri(temp: Optional[str], stage: Optional[str]) -> int:
+        try:
+            si = _LEAD_STAGE_ORDER.index(stage or "new_lead")
+        except ValueError:
+            si = 0
+        return _TEMP_PRI.get((temp or "").lower(), 0) * 100 + si
+
+    def pack(a: ScheduledAction, c: Customer, conv: Optional[Conversation]) -> dict:
+        stage = conv.lead_stage if conv else None
+        temp = c.lead_temperature
+        return {
+            "id": str(a.id),
+            "who": "bot" if a.executor == "bot" else "human",
+            "can_bot": a.action_type in _BOT_ACTIONS,
+            "action_type": a.action_type,
+            "text": (a.payload or {}).get("text") or (a.payload or {}).get("title") or "",
+            "due_at": a.due_at.isoformat() if a.due_at else None,
+            "conversation_id": str(a.conversation_id) if a.conversation_id else None,
+            "name": c.name or c.email or "Лид",
+            "stage": stage, "stage_label": _STAGE_LABEL.get(stage or "", stage or ""),
+            "temperature": temp,
+            "channel": a.channel,
+            "priority": pri(temp, stage),
+        }
+
+    buckets = {"overdue": [], "today": [], "tomorrow": [], "week": [], "later": []}
+    convs_with_task: set = set()
+    for a, c, conv in rows:
+        if a.conversation_id:
+            convs_with_task.add(a.conversation_id)
+        due = a.due_at
+        if due and due.tzinfo is None:
+            due = due.replace(tzinfo=timezone.utc)
+        item = pack(a, c, conv)
+        if not due:
+            buckets["later"].append(item)
+        elif due < now:
+            buckets["overdue"].append(item)
+        elif due <= eod:
+            buckets["today"].append(item)
+        elif due <= eod_tom:
+            buckets["tomorrow"].append(item)
+        elif due <= eow:
+            buckets["week"].append(item)
+        else:
+            buckets["later"].append(item)
+    for k in buckets:
+        buckets[k].sort(key=lambda x: (-x["priority"], x["due_at"] or ""))
+
+    # Лиды БЕЗ задачи — активная стадия, не архив, нет pending-действия.
+    active_convs = (
+        db.query(Conversation, Customer)
+        .join(Customer, Conversation.customer_id == Customer.id)
+        .filter(Conversation.status != ConversationStatusEnum.ARCHIVED)
+        .filter(Conversation.lead_stage.in_(list(_ACTIVE_STAGES)))
+        .order_by(Conversation.last_message_at.desc().nullslast())
+        .limit(400)
+        .all()
+    )
+    no_task = []
+    for conv, c in active_convs:
+        if conv.id in convs_with_task:
+            continue
+        nxt, bot_ok = _NEXT_ACTION.get(conv.lead_stage or "new_lead", ("Решить следующий шаг", False))
+        no_task.append({
+            "conversation_id": str(conv.id),
+            "name": c.name or c.email or (("+" + c.phone) if getattr(c, "phone", None) else "Лид"),
+            "stage": conv.lead_stage,
+            "stage_label": _STAGE_LABEL.get(conv.lead_stage or "", conv.lead_stage or ""),
+            "temperature": c.lead_temperature,
+            "channel": conv.channel,
+            "last_message_at": conv.last_message_at.isoformat() if conv.last_message_at else None,
+            "next_action": nxt,
+            "bot_can": bot_ok,
+            "wa_autonomous": bool(getattr(conv, "wa_autonomous", False)),
+            "priority": pri(c.lead_temperature, conv.lead_stage),
+        })
+    no_task.sort(key=lambda x: -x["priority"])
+
+    return {
+        "summary": {
+            "overdue": len(buckets["overdue"]), "today": len(buckets["today"]),
+            "no_task": len(no_task),
+            "bot": sum(1 for b in buckets.values() for t in b if t["who"] == "bot"),
+            "human": sum(1 for b in buckets.values() for t in b if t["who"] == "human"),
+        },
+        "buckets": buckets,
+        "no_task_leads": no_task[:60],
+    }
+
+
 class TaskCreateRequest(BaseModel):
     conversation_id: str
     text: str = Field(..., min_length=1, max_length=2000)

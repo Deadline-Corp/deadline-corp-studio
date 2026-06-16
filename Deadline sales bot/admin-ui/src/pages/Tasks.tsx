@@ -1,20 +1,48 @@
 import { useState } from 'react'
 import { api } from '../api/client'
-import { ScheduledActionItem, TodayView, TodayItem } from '../api/types'
+import { ScheduledActionItem } from '../api/types'
 import { usePolling } from '../hooks/usePolling'
 import { useDrawer } from '../components/DrawerContext'
 import { CHANNEL_META, fmtTime, fmtAgo } from '../lib'
 import { HintBar } from '../components/HintBar'
 import { Help } from '../components/Help'
 
-/* Задачи: вкладка «Мой день» (просрочено → сегодня → ближайшее + созвоны —
-   паттерн HubSpot/Kommo) и «Все задачи» (полный список). */
+/* Задачи. «Мой день» = CRM-доска (как amoCRM): у каждого активного лида должна
+   быть следующая задача; лид без задачи выводится отдельно. Приоритет по
+   температуре+стадии. Видно, что бот делает сам, а что — администратор.
+   «Все задачи» = полный список с фильтрами. */
 
 const TYPE_LABELS: Record<string, string> = {
-  followup_message: '📨 Написать лиду',
-  warming_touch: '🔥 Прогрев',
-  operator_callback: '👤 Связаться / сделать',
-  escalation: '🚨 Эскалация',
+  followup_message: '📨 Написать лиду', warming_touch: '🔥 Прогрев',
+  operator_callback: '👤 Связаться / сделать', escalation: '🚨 Эскалация',
+}
+const TEMP: Record<string, { e: string; c: string }> = {
+  ready: { e: '✅', c: '#3bb4a0' }, hot: { e: '🔥', c: '#e0524f' },
+  warm: { e: '🌤', c: '#c9a23b' }, cold: { e: '❄️', c: '#5b9bd5' },
+}
+
+type BoardTask = {
+  id: string; who: 'bot' | 'human'; can_bot: boolean; action_type: string
+  text: string; due_at: string | null; conversation_id: string | null
+  name: string; stage: string | null; stage_label: string
+  temperature: string | null; channel: string
+}
+type NoTaskLead = {
+  conversation_id: string; name: string; stage: string | null; stage_label: string
+  temperature: string | null; channel: string; last_message_at: string | null
+  next_action: string; bot_can: boolean; wa_autonomous: boolean
+}
+type Board = {
+  summary: { overdue: number; today: number; no_task: number; bot: number; human: number }
+  buckets: Record<'overdue' | 'today' | 'tomorrow' | 'week' | 'later', BoardTask[]>
+  no_task_leads: NoTaskLead[]
+}
+
+const StageChip = ({ s }: { s: string }) =>
+  s ? <span className="chip" style={{ fontSize: 10.5 }}>{s}</span> : null
+const TempDot = ({ t }: { t: string | null }) => {
+  const m = TEMP[(t || '').toLowerCase()]
+  return m ? <span title={t || ''} style={{ fontSize: 12 }}>{m.e}</span> : null
 }
 
 export function Tasks() {
@@ -32,120 +60,130 @@ export function Tasks() {
         </div>
       </div>
       <HintBar id="tasks" icon="⏰">
-        «Мой день» — что требует внимания: 🔴 просрочено, 🟡 сегодня, 📅 на неделе.
-        🤖-задачи бот выполнит сам по расписанию; 👤-задачи закрываете вы кнопкой «Сделано».
-        Поставить задачу — из карточки лида (кнопка «📋 Задача»).
+        Доска как в CRM: у каждого активного лида — следующая задача. Сверху <b>«Лиды без
+        задачи»</b> (их легко забыть) — реши, ведёт ли их бот сам или ты. Ниже задачи по
+        срочности и приоритету (🔥 горячие выше). 🤖 — бот сделает сам, 👤 — за тобой.
       </HintBar>
-      {tab === 'day' ? <MyDay showToast={showToast} /> : <AllTasks showToast={showToast} />}
+      {tab === 'day' ? <CrmBoard showToast={showToast} /> : <AllTasks showToast={showToast} />}
       {toast && <div className="toast">{toast}</div>}
     </div>
   )
 }
 
-/* ---------- Мой день ---------- */
+/* ---------- CRM-доска ---------- */
 
-function MyDay({ showToast }: { showToast: (t: string) => void }) {
-  const [view, setView] = useState<TodayView | null>(null)
-  const [busy, setBusy] = useState(false)
+function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
+  const [board, setBoard] = useState<Board | null>(null)
+  const [busy, setBusy] = useState('')
   const { openConversation } = useDrawer()
 
   const load = async () => {
-    try { setView(await api.get<TodayView>('/today')) } catch { /* ignore */ }
+    try { setBoard(await api.get<Board>('/task-board')) } catch { /* */ }
   }
   usePolling(load, 20000)
 
-  const done = async (id: string) => {
-    setBusy(true)
-    try { await api.post(`/scheduled-actions/${id}/done`); showToast('✅ Сделано'); await load() }
-    catch (e: any) { showToast(`Ошибка: ${e.message}`) }
-    finally { setBusy(false) }
+  const act = async (fn: () => Promise<any>, ok: string) => {
+    setBusy('1')
+    try { await fn(); showToast(ok); await load() }
+    catch (e: any) { showToast(`Ошибка: ${e?.detail ?? e?.message ?? 'ошибка'}`) }
+    finally { setBusy('') }
   }
-  const cancel = async (id: string) => {
-    setBusy(true)
-    try { await api.post(`/scheduled-actions/${id}/cancel`); showToast('Отменено'); await load() }
-    catch (e: any) { showToast(`Ошибка: ${e.message}`) }
-    finally { setBusy(false) }
-  }
+  const done = (id: string) => act(() => api.post(`/scheduled-actions/${id}/done`), '✅ Сделано')
+  const cancel = (id: string) => act(() => api.post(`/scheduled-actions/${id}/cancel`), 'Отменено')
+  const botLead = (id: string) => act(() => api.post(`/conversations/${id}/wa-autonomous`, { on: true }), '🤖 Бот ведёт диалог')
+  const sweep = () => act(async () => {
+    const r = await api.post<any>('/cron/sweep'); showToast(`Крон: бот отправил ${r.followups?.sent ?? 0}`)
+  }, 'Крон прогнан')
 
-  const sweep = async () => {
-    setBusy(true)
-    showToast('Прогоняю крон…')
-    try {
-      const r = await api.post<any>('/cron/sweep')
-      showToast(`Готово: бот отправил ${r.followups?.sent ?? 0}`)
-      await load()
-    } catch (e: any) { showToast(`Ошибка: ${e.message}`) }
-    finally { setBusy(false) }
-  }
+  if (!board) return <div className="empty"><span className="spin" /> Загрузка…</div>
 
-  const renderItem = (it: TodayItem, zone: 'overdue' | 'today' | 'upcoming') => (
-    <div className="conv-row" key={it.id} style={{ cursor: 'default' }}>
-      <span style={{ fontSize: 18 }}>{it.executor === 'bot' ? '🤖' : '👤'}</span>
-      <div className="c-main" style={{ cursor: it.conversation_id ? 'pointer' : 'default' }}
-           onClick={() => it.conversation_id && openConversation(it.conversation_id)}>
-        <div className="c-name">
-          {it.customer.name || it.customer.email || 'Лид'}
-          <span className="chip">{TYPE_LABELS[it.action_type] ?? it.action_type}</span>
-          <span className="faint" style={{ fontWeight: 400 }}>{CHANNEL_META[it.channel]?.icon}</span>
+  const Task = (t: BoardTask) => (
+    <div className="conv-row" key={t.id} style={{ cursor: 'default' }}>
+      <span style={{ fontSize: 17 }} title={t.who === 'bot' ? 'Бот сделает сам' : 'За тобой'}>
+        {t.who === 'bot' ? '🤖' : '👤'}
+      </span>
+      <div className="c-main" style={{ cursor: t.conversation_id ? 'pointer' : 'default' }}
+           onClick={() => t.conversation_id && openConversation(t.conversation_id)}>
+        <div className="c-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <TempDot t={t.temperature} />{t.name}
+          <StageChip s={t.stage_label} />
+          <span className="chip" style={{ fontSize: 10.5 }}>{TYPE_LABELS[t.action_type] ?? t.action_type}</span>
+          <span className="faint" style={{ fontWeight: 400 }}>{CHANNEL_META[t.channel]?.icon}</span>
         </div>
-        <div className="c-preview">{it.text || '—'}</div>
+        <div className="c-preview">{t.text || '—'}</div>
       </div>
       <div className="c-meta">
-        <span className={`chip ${zone === 'overdue' ? 'danger' : zone === 'today' ? 'warn' : ''}`}>
-          {zone === 'overdue' ? `просрочено ${fmtAgo(it.due_at)}` : fmtTime(it.due_at)}
-        </span>
+        <span className="chip">{t.due_at ? fmtTime(t.due_at) : '—'}</span>
         <div style={{ display: 'flex', gap: 5 }}>
-          {it.executor === 'human' && <button className="btn sm" onClick={() => done(it.id)} disabled={busy}>✓ Сделано</button>}
-          <button className="btn sm ghost" onClick={() => cancel(it.id)} disabled={busy}>✕</button>
+          {t.who === 'human' && <button className="btn sm" onClick={() => done(t.id)} disabled={!!busy}>✓ Сделано</button>}
+          <button className="btn sm ghost" title="Снять задачу" onClick={() => cancel(t.id)} disabled={!!busy}>✕</button>
         </div>
       </div>
     </div>
   )
 
-  if (!view) return <div className="empty"><span className="spin" /> Загрузка…</div>
-
-  const Section = ({ title, items, zone, cls }: { title: string; items: TodayItem[]; zone: any; cls?: string }) => (
+  const Bucket = ({ title, items, cls }: { title: string; items: BoardTask[]; cls?: string }) =>
     items.length === 0 ? null : (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <b style={{ fontSize: 13 }} className={cls}>{title} ({items.length})</b>
-        {items.map(it => renderItem(it, zone))}
+        {items.map(Task)}
       </div>
     )
-  )
+
+  const b = board.buckets
+  const totalTasks = b.overdue.length + b.today.length + b.tomorrow.length + b.week.length + b.later.length
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <span className="muted" style={{ fontSize: 13, flex: 1 }}>
-          Бот выполняет 🤖-задачи сам по крону; 👤-задачи закрываете вы. Поставить задачу — из карточки лида (кнопка «📋 Задача»).
-        </span>
-        <button className="btn sm" onClick={sweep} disabled={busy}>▶ Прогнать крон</button>
-        <Help title="Прогнать крон" text="Бот сам проверяет правила и задачи каждые ~10 минут. Эта кнопка — «не ждать»: запустить проверку прямо сейчас (удобно при тестировании автоматизаций)." />
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <span className="chip danger">🔴 Просрочено {board.summary.overdue}</span>
+        <span className="chip warn">🟡 Сегодня {board.summary.today}</span>
+        <span className="chip">🆕 Без задачи {board.summary.no_task}</span>
+        <span className="chip">🤖 {board.summary.bot} · 👤 {board.summary.human}</span>
+        <span style={{ flex: 1 }} />
+        <button className="btn sm" onClick={sweep} disabled={!!busy}>▶ Прогнать крон</button>
+        <Help title="Прогнать крон" text="Бот сам проверяет задачи каждые ~10 минут. Кнопка запускает проверку прямо сейчас." />
       </div>
 
-      {view.calls.length > 0 && (
-        <div className="card" style={{ padding: 12 }}>
-          <b style={{ fontSize: 13 }}>📞 Созвоны на неделе ({view.calls.length})</b>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 8 }}>
-            {view.calls.map((c, i) => (
-              <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 13, cursor: 'pointer' }}
-                   onClick={() => openConversation(c.conversation_id)}>
-                <span className="chip accent">{c.call_at ? fmtTime(c.call_at) : 'время не зафиксировано'}</span>
-                <span>{c.customer.name || c.customer.email || 'Лид'}</span>
-                {c.medium && <span className="chip">{c.medium}</span>}
-                <span className="faint">{CHANNEL_META[c.channel]?.icon}</span>
+      {board.no_task_leads.length > 0 && (
+        <div className="card" style={{ padding: 12, borderColor: 'var(--accent-border)' }}>
+          <b style={{ fontSize: 13 }}>🆕 Лиды без задачи ({board.no_task_leads.length})</b>
+          <div className="faint" style={{ fontSize: 11.5, marginBottom: 8 }}>
+            активные лиды без следующего шага — реши: ведёт бот сам или берёшь ты
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+            {board.no_task_leads.map(l => (
+              <div className="conv-row" key={l.conversation_id} style={{ cursor: 'default' }}>
+                <div className="c-main" style={{ cursor: 'pointer' }} onClick={() => openConversation(l.conversation_id)}>
+                  <div className="c-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <TempDot t={l.temperature} />{l.name}
+                    <StageChip s={l.stage_label} />
+                    <span className="faint" style={{ fontWeight: 400 }}>{CHANNEL_META[l.channel]?.icon}</span>
+                  </div>
+                  <div className="c-preview">→ {l.next_action}{l.last_message_at ? ` · ${fmtAgo(l.last_message_at)}` : ''}</div>
+                </div>
+                <div className="c-meta">
+                  <div style={{ display: 'flex', gap: 5 }}>
+                    {l.bot_can && !l.wa_autonomous &&
+                      <button className="btn sm primary" onClick={() => botLead(l.conversation_id)} disabled={!!busy}>🤖 Пусть бот</button>}
+                    {l.wa_autonomous && <span className="chip accent" style={{ fontSize: 10.5 }}>🤖 ведёт</span>}
+                    <button className="btn sm ghost" onClick={() => openConversation(l.conversation_id)}>Открыть</button>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      <Section title="🔴 Просрочено" items={view.overdue} zone="overdue" />
-      <Section title="🟡 Сегодня" items={view.today} zone="today" />
-      <Section title="📅 Ближайшие 7 дней" items={view.upcoming} zone="upcoming" />
+      <Bucket title="🔴 Просрочено" items={b.overdue} cls="text-danger" />
+      <Bucket title="🟡 Сегодня" items={b.today} />
+      <Bucket title="📅 Завтра" items={b.tomorrow} />
+      <Bucket title="🗓 На неделе" items={b.week} />
+      <Bucket title="Позже" items={b.later} />
 
-      {view.overdue.length + view.today.length + view.upcoming.length === 0 && (
-        <div className="empty">На сегодня задач нет — всё чисто 🎉</div>
+      {totalTasks === 0 && board.no_task_leads.length === 0 && (
+        <div className="empty">Всё под контролем — задач нет и лидов без задачи нет 🎉</div>
       )}
     </div>
   )
@@ -164,8 +202,7 @@ function AllTasks({ showToast }: { showToast: (t: string) => void }) {
   const load = async () => {
     try {
       const r = await api.get<{ items: ScheduledActionItem[] }>(`/scheduled-actions?status=${status}`)
-      setItems(r.items)
-      setLoaded(true)
+      setItems(r.items); setLoaded(true)
     } catch { /* ignore */ }
   }
   usePolling(load, 30000, [status])
