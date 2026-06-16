@@ -309,7 +309,7 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
 
 
 async def sweep_recent(llm: Any, settings: Any, since_minutes: int = 360,
-                       limit: int = 10) -> dict:
+                       limit: int = 10, force: bool = False) -> dict:
     """Периодическая проверка актуальности: пройтись по недавно активным
     WhatsApp-диалогам и до-применить решения, если появились новые реплики
     (в т.ч. РУЧНОЙ ответ оператора с телефона, который мог не прийти вебхуком).
@@ -340,10 +340,11 @@ async def sweep_recent(llm: Any, settings: Any, since_minutes: int = 360,
             out["examined"] += 1
             if (conv.lead_stage or "new_lead") in ("lost", "completed_won"):
                 continue
-            last_seen = (cust.profile_data or {}).get("brain_last_count")
-            cur = _dialog_count(db, conv)
-            if last_seen is not None and cur <= int(last_seen):
-                continue  # новых сообщений нет — пропускаем (без LLM)
+            if not force:
+                last_seen = (cust.profile_data or {}).get("brain_last_count")
+                cur = _dialog_count(db, conv)
+                if last_seen is not None and cur <= int(last_seen):
+                    continue  # новых сообщений нет — пропускаем (без LLM)
             candidates.append(str(conv.id))
 
     # Фаза 2 — по кандидату СВОЯ короткая сессия (LLM не держит общий коннект).

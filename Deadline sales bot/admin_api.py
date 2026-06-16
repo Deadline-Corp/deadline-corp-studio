@@ -1370,14 +1370,19 @@ async def whatsapp_clean_phantoms(
 @router.post("/whatsapp/brain-sweep")
 async def whatsapp_brain_sweep(
     since_minutes: int = 1440,
+    force: bool = False,
+    limit: int = 25,
     _: None = Depends(_verify_member),
 ):
     """Умное авто-ведение: пройтись по недавним WhatsApp-диалогам СЕЙЧАС —
     подвинуть воронку и поставить созвоны из договорённостей (в т.ч. ручных).
-    Обычно крутится в кроне каждые ~10 мин; эндпоинт для ручного запуска/теста."""
+    Обычно крутится в кроне каждые ~10 мин; эндпоинт для ручного запуска/теста.
+    force=true — переанализировать ДАЖЕ диалоги без новых сообщений (например после
+    смены логики мозга — добронировать старые договорённости)."""
     import main as _main
     from services.conversation_brain import sweep_recent
-    res = await sweep_recent(_main.primary_llm, _main.settings, since_minutes=since_minutes)
+    res = await sweep_recent(_main.primary_llm, _main.settings,
+                             since_minutes=since_minutes, limit=limit, force=force)
     return {"ok": True, **res}
 
 
