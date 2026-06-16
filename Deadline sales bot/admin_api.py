@@ -1946,7 +1946,9 @@ async def task_board(
     for conv, c in active_convs:
         if conv.id in convs_with_task:
             continue
-        nxt, bot_ok = _NEXT_ACTION.get(conv.lead_stage or "new_lead", ("Решить следующий шаг", False))
+        # Умный next_action (мозг разобрал диалог) — приоритетнее статичного по стадии.
+        na = getattr(conv, "next_action", None) or {}
+        stage_nxt, bot_ok = _NEXT_ACTION.get(conv.lead_stage or "new_lead", ("Решить следующий шаг", False))
         no_task.append({
             "conversation_id": str(conv.id),
             "name": c.name or c.email or (("+" + c.phone) if getattr(c, "phone", None) else "Лид"),
@@ -1955,12 +1957,18 @@ async def task_board(
             "temperature": c.lead_temperature,
             "channel": conv.channel,
             "last_message_at": conv.last_message_at.isoformat() if conv.last_message_at else None,
-            "next_action": nxt,
+            "next_action": na.get("label") or stage_nxt,
+            "mode": na.get("mode"),          # bot_auto|needs_approval|human|reengage|wait|unclear (None = не разобран)
+            "kind": na.get("kind"),
+            "draft": (na.get("draft") or "")[:400] if na.get("draft") else "",
+            "reason": na.get("reason") or "",
+            "analyzed": bool(na),
             "bot_can": bot_ok,
             "wa_autonomous": bool(getattr(conv, "wa_autonomous", False)),
             "priority": pri(c.lead_temperature, conv.lead_stage),
         })
-    no_task.sort(key=lambda x: -x["priority"])
+    # Сначала неразобранные/срочные (по приоритету), unclear (нужна помощь) — выше.
+    no_task.sort(key=lambda x: (x["mode"] != "unclear", -x["priority"]))
 
     return {
         "summary": {
@@ -1972,6 +1980,70 @@ async def task_board(
         "buckets": buckets,
         "no_task_leads": no_task[:60],
     }
+
+
+class GenerateNextRequest(BaseModel):
+    limit: int = 8
+
+
+@router.post("/task-board/generate")
+async def task_board_generate(
+    req: GenerateNextRequest,
+    _: None = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    """Мозг разбирает лидов БЕЗ задачи и формирует умный следующий шаг (next_action)
+    по каждому: дожать молчуна / ответить / передать человеку / (если не ясно) →
+    пас администратору. Bounded (req.limit), КАЖДЫЙ лид в СВОЕЙ короткой сессии —
+    LLM не держит общий пул (анти-вис). Заодно чистит просроченные фантом-созвоны."""
+    from db.models import ConversationStatusEnum
+    from db.connection import session_scope
+    from services.next_action import generate_next_action
+    import main as _main
+
+    lim = max(1, min(req.limit, 20))
+    # 1) собрать id лидов без задачи (активные, не архив, нет pending-действия)
+    have_task = {
+        r[0] for r in db.query(ScheduledAction.conversation_id)
+        .filter(ScheduledAction.status.in_(("pending", "processing")),
+                ScheduledAction.conversation_id.isnot(None)).all()
+    }
+    rows = (
+        db.query(Conversation.id)
+        .filter(Conversation.status != ConversationStatusEnum.ARCHIVED)
+        .filter(Conversation.lead_stage.in_(list(_ACTIVE_STAGES)))
+        .order_by(Conversation.last_message_at.desc().nullslast())
+        .limit(400).all()
+    )
+    cand = [str(r[0]) for r in rows if r[0] not in have_task][:lim]
+    db.commit()  # отпустить коннект перед LLM-циклом
+
+    counts: dict = {}
+    now = datetime.now(timezone.utc)
+    for cid in cand:
+        try:
+            with session_scope() as s:
+                conv = s.get(Conversation, UUID(cid))
+                if conv is None:
+                    continue
+                cust = s.get(Customer, conv.customer_id)
+                # почистить просроченный фантом-созвон (Zaal-кейс)
+                sugg = conv.pending_call_suggestion or {}
+                if sugg.get("at"):
+                    try:
+                        sat = datetime.fromisoformat(str(sugg["at"]).replace("Z", "+00:00"))
+                        if sat.tzinfo is None:
+                            sat = sat.replace(tzinfo=timezone.utc)
+                        if sat < now:
+                            conv.pending_call_suggestion = None
+                    except (ValueError, TypeError):
+                        pass
+                na = await generate_next_action(s, conv, cust, _main.primary_llm)
+                m = (na or {}).get("mode") or "skip"
+                counts[m] = counts.get(m, 0) + 1
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"next_action gen failed {cid[:8]}: {e}")
+    return {"ok": True, "processed": len(cand), "by_mode": counts}
 
 
 class TaskCreateRequest(BaseModel):

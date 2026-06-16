@@ -31,6 +31,16 @@ type NoTaskLead = {
   conversation_id: string; name: string; stage: string | null; stage_label: string
   temperature: string | null; channel: string; last_message_at: string | null
   next_action: string; bot_can: boolean; wa_autonomous: boolean
+  mode: string | null; kind: string | null; draft: string; reason: string; analyzed: boolean
+}
+// Режимы умного шага (см. services/next_action.py).
+const MODE: Record<string, { e: string; t: string; c?: string }> = {
+  bot_auto: { e: '🤖', t: 'бот сам' },
+  needs_approval: { e: '⏳', t: 'на одобрение', c: 'var(--accent)' },
+  human: { e: '👤', t: 'за тобой' },
+  reengage: { e: '🔁', t: 'дожать' },
+  wait: { e: '⏸', t: 'ждём лида' },
+  unclear: { e: '🆘', t: 'нужна помощь', c: '#e0524f' },
 }
 type Board = {
   summary: { overdue: number; today: number; no_task: number; bot: number; human: number }
@@ -94,6 +104,10 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   const sweep = () => act(async () => {
     const r = await api.post<any>('/cron/sweep'); showToast(`Крон: бот отправил ${r.followups?.sent ?? 0}`)
   }, 'Крон прогнан')
+  const generate = () => act(async () => {
+    const r = await api.post<any>('/task-board/generate', { limit: 10 })
+    showToast(`🤖 Разобрал ${r.processed ?? 0} лидов`)
+  }, 'Готово')
 
   if (!board) return <div className="empty"><span className="spin" /> Загрузка…</div>
 
@@ -147,31 +161,43 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
 
       {board.no_task_leads.length > 0 && (
         <div className="card" style={{ padding: 12, borderColor: 'var(--accent-border)' }}>
-          <b style={{ fontSize: 13 }}>🆕 Лиды без задачи ({board.no_task_leads.length})</b>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+            <b style={{ fontSize: 13 }}>🆕 Лиды без задачи ({board.no_task_leads.length})</b>
+            <span style={{ flex: 1 }} />
+            <button className="btn sm primary" onClick={generate} disabled={!!busy}>🤖 Разобрать (бот предложит шаг)</button>
+          </div>
           <div className="faint" style={{ fontSize: 11.5, marginBottom: 8 }}>
-            активные лиды без следующего шага — реши: ведёт бот сам или берёшь ты
+            активные лиды без следующего шага. «Разобрать» — бот прочитает диалоги и предложит,
+            что делать (🔁 дожать молчуна / ⏳ ответ на одобрение / 👤 за тобой / 🆘 не понял — помоги).
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            {board.no_task_leads.map(l => (
-              <div className="conv-row" key={l.conversation_id} style={{ cursor: 'default' }}>
-                <div className="c-main" style={{ cursor: 'pointer' }} onClick={() => openConversation(l.conversation_id)}>
-                  <div className="c-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <TempDot t={l.temperature} />{l.name}
-                    <StageChip s={l.stage_label} />
-                    <span className="faint" style={{ fontWeight: 400 }}>{CHANNEL_META[l.channel]?.icon}</span>
+            {board.no_task_leads.map(l => {
+              const m = l.mode ? MODE[l.mode] : null
+              return (
+                <div className="conv-row" key={l.conversation_id} style={{ cursor: 'default' }}>
+                  <div className="c-main" style={{ cursor: 'pointer' }} onClick={() => openConversation(l.conversation_id)}>
+                    <div className="c-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <TempDot t={l.temperature} />{l.name}
+                      <StageChip s={l.stage_label} />
+                      {m && <span className="chip" style={{ fontSize: 10.5, color: m.c, borderColor: m.c }}>{m.e} {m.t}</span>}
+                      <span className="faint" style={{ fontWeight: 400 }}>{CHANNEL_META[l.channel]?.icon}</span>
+                    </div>
+                    <div className="c-preview">→ {l.next_action}{l.last_message_at ? ` · ${fmtAgo(l.last_message_at)}` : ''}</div>
+                    {l.draft && <div className="faint" style={{ fontSize: 11.5, marginTop: 2, fontStyle: 'italic' }}>✍️ «{l.draft.slice(0, 110)}{l.draft.length > 110 ? '…' : ''}»</div>}
                   </div>
-                  <div className="c-preview">→ {l.next_action}{l.last_message_at ? ` · ${fmtAgo(l.last_message_at)}` : ''}</div>
-                </div>
-                <div className="c-meta">
-                  <div style={{ display: 'flex', gap: 5 }}>
-                    {l.bot_can && !l.wa_autonomous &&
-                      <button className="btn sm primary" onClick={() => botLead(l.conversation_id)} disabled={!!busy}>🤖 Пусть бот</button>}
-                    {l.wa_autonomous && <span className="chip accent" style={{ fontSize: 10.5 }}>🤖 ведёт</span>}
-                    <button className="btn sm ghost" onClick={() => openConversation(l.conversation_id)}>Открыть</button>
+                  <div className="c-meta">
+                    <div style={{ display: 'flex', gap: 5 }}>
+                      {l.mode === 'needs_approval' &&
+                        <button className="btn sm primary" onClick={() => openConversation(l.conversation_id)} disabled={!!busy}>⏳ Одобрить</button>}
+                      {(l.mode === 'reengage' || (!l.analyzed && l.bot_can)) && !l.wa_autonomous &&
+                        <button className="btn sm" onClick={() => botLead(l.conversation_id)} disabled={!!busy}>🤖 Пусть бот</button>}
+                      {l.wa_autonomous && <span className="chip accent" style={{ fontSize: 10.5 }}>🤖 ведёт</span>}
+                      <button className="btn sm ghost" onClick={() => openConversation(l.conversation_id)}>Открыть</button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}

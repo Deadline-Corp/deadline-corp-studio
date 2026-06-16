@@ -103,6 +103,20 @@ def _dialog_count(db: Session, conv: Conversation) -> int:
     )
 
 
+def _lead_silent(db: Session, conv: Conversation) -> bool:
+    """Лид молчит = ПОСЛЕДНЯЯ реплика НЕ от лида (мы написали последними и ждём).
+    Используется, чтобы НЕ создавать «договорённость о созвоне» в одностороннем
+    порядке: молчание ≠ согласие (кейс: клиент увидел КП и пропал)."""
+    m = (
+        db.query(Message)
+        .filter(Message.conversation_id == conv.id,
+                Message.role.in_(("user", "assistant", "operator")))
+        .order_by(Message.created_at.desc())
+        .first()
+    )
+    return bool(m) and m.role in ("assistant", "operator")
+
+
 def _parse_json(raw: str) -> Optional[dict]:
     if not raw:
         return None
@@ -285,7 +299,10 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
     # Дату считаем ДЕТЕРМИНИРОВАННО из названия дня (LLM врёт: «среда»→18 вместо 17);
     # call_datetime_utc — только запасной вариант, если день не распознан.
     resolved_dt = _resolve_call_dt(now_lead, data.get("call_day"), data.get("call_time"))
-    if data.get("call_agreed") and (resolved_dt or data.get("call_datetime_utc")):
+    # СТОП ФАНТОМ-СОЗВОНАМ: если лид молчит (мы написали последними), договорённости
+    # по факту нет — не создаём призрачный созвон (кейс «увидел КП и пропал»). Такой
+    # лид попадёт в дожим через next_action, а не в календарь.
+    if data.get("call_agreed") and not _lead_silent(db, conv) and (resolved_dt or data.get("call_datetime_utc")):
         try:
             if resolved_dt is not None:
                 new_dt = resolved_dt

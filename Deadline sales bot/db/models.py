@@ -256,6 +256,10 @@ class Conversation(Base):
     # {at (ISO UTC), when_human, medium, reason}. Менеджер подтверждает в карточке →
     # создаётся событие в календаре. NULL = нет предложения. Не авто-создаём.
     pending_call_suggestion: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    # Умная СЛЕДУЮЩАЯ задача по лиду (CRM): мозг читает диалог и решает следующий шаг.
+    # {mode: bot_auto|needs_approval|human|reengage|unclear, label, draft, reason, ts}.
+    # Показывается в задачнике, когда нет конкретного scheduled_action. NULL = не считан.
+    next_action: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
     # Per-conversation: админ разрешил боту вести ЭТОТ диалог сам (override над
     # глобальным режимом наблюдения/черновика). True → бот отвечает клиенту
     # автономно. Деф. False. Кнопка «🤖 Разрешить боту вести диалог» в карточке.
