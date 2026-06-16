@@ -8,6 +8,11 @@
 > (выясни задачу → квалификация → созвон), работает на автопилоте, держит воронку,
 > задачник, календарь, сигналит владельцу. Мозг — Gemini 2.5 Flash / llama-3.3-70b.
 
+> **Конвенция названий (UI и доки):** весь продукт = **«система»**; автоматическая
+> AI-часть, которая отвечает/ведёт сама = **«бот»**; человек, работающий внутри
+> (отвечает вручную, одобряет, ведёт лида) = **«менеджер»** (он же администратор).
+> Поэтому: «задачи бота» + «задачи менеджера»; «Бот ведёт диалог», «Бот предложил».
+
 ---
 
 ## Фичи
@@ -15,7 +20,7 @@
 | Файл | О чём | Ключевые файлы кода |
 |---|---|---|
 | [whatsapp-connector.md](whatsapp-connector.md) | Подключение WhatsApp (WAHA), приём, отправка, @lid рекламные лиды, голос, ack-first вебхуки | `channels/waha.py`, `main.py` |
-| [autopilot-and-brain.md](autopilot-and-brain.md) | Режимы (наблюдение/черновик/автопилот), WA_BRAIN, умное авто-ведение (стадия+созвон+сигнал), per-conv «Ведёт система» | `services/conversation_brain.py`, `main.py` |
+| [autopilot-and-brain.md](autopilot-and-brain.md) | Режимы (наблюдение/черновик/автопилот), WA_BRAIN, умное авто-ведение (стадия+созвон+сигнал), per-conv «Бот ведёт диалог» | `services/conversation_brain.py`, `main.py` |
 | [next-action.md](next-action.md) | Умный следующий шаг: generate_next_action, режимы bot_auto/needs_approval/human/wait/unclear, task-board интеграция | `services/next_action.py` |
 | [task-board.md](task-board.md) | CRM-задачник: 4 бакета срочности, лиды без задачи, /task-board/generate, приоритизация | `admin_api.py`, `services/scheduled_actions.py` |
 | [reply-engine-drafts.md](reply-engine-drafts.md) | Генерация ответов: черновики, переформулировать, тёплое первое сообщение, тест нового лида | `services/wa_drafts.py`, `admin_api.py` |
