@@ -1733,6 +1733,43 @@ async def whatsapp_brain_sweep(
     return {"ok": True, **res}
 
 
+@router.post("/whatsapp/recheck-suggestions")
+async def whatsapp_recheck_suggestions(
+    _: None = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    """Прицельно перепроверить ВСЕ карточки С предложением созвона (а не только
+    «недавние», как brain-sweep): мозг переоценивает, есть ли реальная договорённость
+    о ЗВОНКЕ — ложные/устаревшие снимает (кейс Вячеслав). Bounded, своя сессия на лида
+    (анти-вис). Подтверждённые брони (booked_call_at) не трогает."""
+    from db.connection import session_scope
+    from services.conversation_brain import analyze_and_advance
+    import main as _main
+    ids = [
+        str(r[0]) for r in db.query(Conversation.id)
+        .filter(Conversation.pending_call_suggestion.isnot(None)).limit(80).all()
+    ]
+    db.commit()
+    out = {"checked": 0, "cleared": 0, "kept": 0}
+    for cid in ids:
+        try:
+            with session_scope() as s:
+                conv = s.get(Conversation, UUID(cid))
+                if conv is None:
+                    continue
+                cust = s.get(Customer, conv.customer_id)
+                res = await analyze_and_advance(s, conv, cust, _main.primary_llm,
+                                                _main.settings, refresh_draft=False)
+                out["checked"] += 1
+                if res.get("cleared_suggestion"):
+                    out["cleared"] += 1
+                elif res.get("suggested"):
+                    out["kept"] += 1
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"recheck-suggestion {cid[:8]}: {e}")
+    return out
+
+
 # ============================================================================
 # FUNNEL — смена стадии (operator override) + зеркало в CRM
 # ============================================================================
