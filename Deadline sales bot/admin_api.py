@@ -3635,8 +3635,13 @@ async def scheduled_action_cancel(
 
 @router.post("/cron/sweep")
 async def cron_sweep(_: None = Depends(_verify_owner)):
-    """Кнопка «прогнать сейчас» — тот же код, что /admin/cron/sweep."""
-    from services.cron import sweep_once
+    """Кнопка «Проверить сейчас» — прогоняет тот же набор задач, что фоновый крон:
+    основной sweep (температура/скоринг/автоматизации), доставку followup'ов и
+    напоминаний о созвонах, И поддержку WhatsApp-панели (чистка фантомов/эхо-дублей,
+    слияние разорванных карточек одного телефона, дедуп). Раньше последнее жило ТОЛЬКО
+    в фоновом цикле — кнопка дубли не чистила; теперь чистит немедленно."""
+    import asyncio as _asyncio
+    from services.cron import sweep_once, run_wa_maintenance, resolve_lid_backlog
     from services.scheduled_actions import run_due_followups, run_due_call_reminders
     out = {}
     try:
@@ -3651,6 +3656,17 @@ async def cron_sweep(_: None = Depends(_verify_owner)):
         out["call_reminders"] = await run_due_call_reminders(tenant_config=None)
     except Exception as e:  # noqa: BLE001
         out["call_reminders"] = {"error": str(e)}
+    # @lid-лиды: добить телефоны через WAHA (СЕТЬ, bounded 20) — ДО maintenance,
+    # чтобы merge_wa_split сразу перекеил разрезолвленные в phone-canonical.
+    try:
+        out["lid_resolve"] = await resolve_lid_backlog(limit=20)
+    except Exception as e:  # noqa: BLE001
+        out["lid_resolve"] = {"error": str(e)}
+    # WhatsApp-поддержка (только БД) — в потоке, чтобы не блокировать event loop.
+    try:
+        out["wa"] = await _asyncio.to_thread(run_wa_maintenance)
+    except Exception as e:  # noqa: BLE001
+        out["wa"] = {"error": str(e)}
     return out
 
 

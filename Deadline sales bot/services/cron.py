@@ -97,6 +97,127 @@ async def stop_cron_worker(timeout: float = 5.0) -> None:
     logger.info("[cron] worker stopped")
 
 
+def run_wa_maintenance() -> dict:
+    """Дешёвая (ТОЛЬКО БД, без WAHA/LLM) поддержка актуальности WhatsApp-панели:
+    чистка фантомов + эхо-дублей, структурное слияние разорванных карточек одного
+    телефона (@lid живой вебхук + @c.us history-sync → одна карточка, кейс Zaal),
+    дедуп @lid-теней по телефону/имени, гашение осиротевших задач/напоминаний,
+    авто-архив «Не сложилось» старше N дней. Идемпотентно и безопасно часто.
+    Вызывается из крон-цикла И из кнопки «Проверить сейчас» (/admin/api/cron/sweep).
+    Возвращает сводку по каждому шагу."""
+    summary: dict = {}
+    try:
+        from services.whatsapp_sync import (
+            cleanup_wa_artifacts, dedup_wa_by_phone, dedup_wa_by_name,
+            cancel_orphan_scheduled_actions, dedup_scheduled_actions,
+            merge_wa_split,
+        )
+        _cl = cleanup_wa_artifacts()
+        summary["cleanup"] = _cl
+        if _cl.get("phantoms") or _cl.get("echo_dupes"):
+            logger.info("[cron] wa cleanup: %s", _cl)
+        # СТРУКТУРНОЕ слияние разорванных карточек по реальному телефону: @lid
+        # (живой вебхук) + @c.us (history-sync) одного человека → ОДНА карточка с
+        # ПЕРЕНЕСЁННОЙ историей (кейс Zaal). Чисто БД, идемпотентно. ДО лёгких
+        # дедупов — он сильнее (переносит сообщения, а не только архивит).
+        _mg = merge_wa_split()
+        summary["merge_split"] = _mg
+        if _mg.get("moved_msgs") or _mg.get("archived"):
+            logger.info("[cron] wa merge-split: groups=%s convs=%s moved=%s archived=%s",
+                        _mg.get("groups"), _mg.get("merged_convs"),
+                        _mg.get("moved_msgs"), _mg.get("archived"))
+        # Дедуп @lid-дублей: по штампованному телефону + по имени (@lid-тень того
+        # же контакта, у которой телефон не разрезолвлен). Чисто БД, без сети.
+        _dd = dedup_wa_by_phone()
+        _dn = dedup_wa_by_name()
+        summary["dedup_phone"] = _dd
+        summary["dedup_name"] = _dn
+        if _dd.get("archived") or _dn.get("archived"):
+            logger.info("[cron] wa dedup: by_phone=%s by_name=%s", _dd, _dn)
+        # Гасим осиротевшие задачи/напоминания архивных карточек + дедуп ОДИНАКОВЫХ
+        # задач (один «Лид завис — связаться» на лида) → чистый задачник/календарь.
+        _orf = cancel_orphan_scheduled_actions()
+        _ds = dedup_scheduled_actions()
+        summary["orphan_actions"] = _orf
+        summary["dedup_actions"] = _ds
+        if _orf.get("superseded") or _ds.get("superseded"):
+            logger.info("[cron] actions: orphan=%s dups=%s", _orf, _ds)
+        # Авто-архивация «Не сложилось» старше N дней (если задано в настройках) —
+        # старая база не засоряет активный вид. Обратимо (status=ARCHIVED, не удаляем).
+        try:
+            from services import bot_settings as _bs2, funnel_store as _fs2
+            from db.connection import session_scope as _ss2
+            _days = _bs2.get("lost_auto_archive_days")
+            if isinstance(_days, int) and _days > 0:
+                with _ss2() as _db2:
+                    _al = _fs2.archive_lost_leads(_db2, older_than_days=_days)
+                summary["lost_archive"] = _al
+                if _al.get("archived"):
+                    logger.info("[cron] lost auto-archive (>%dд): %s", _days, _al)
+        except Exception as _ae:  # noqa: BLE001
+            logger.warning("[cron] lost auto-archive failed: %s", _ae)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[cron] wa maintenance failed (non-fatal): %s", exc)
+        summary["error"] = str(exc)
+    return summary
+
+
+async def resolve_lid_backlog(*, limit: int = 8) -> dict:
+    """Добить РЕАЛЬНЫЙ телефон у старых `@lid`-карточек (рекламные лиды), у которых он
+    ещё не разрезолвлен. Кейс Heinrich: history-synced `@lid` приходит БЕЗ телефона,
+    живой вебхук его не трогает → номер навсегда `null`, хотя это WhatsApp. Здесь
+    периодически (bounded) дёргаем WAHA LID API (`GET /lids/{id}` → {pn}) и штампуем
+    телефон. СЕТЬ — отпускаем коннект ПЕРЕД вызовами (урок висов 06-15): собираем
+    кандидатов в короткой сессии, сеть — вне сессии, апдейт — в новой короткой сессии.
+    После резолва merge_wa_split (тот же цикл) перекеит карточку в phone-canonical.
+    Идемпотентно: карточки с уже известным телефоном пропускаются."""
+    out: dict = {"resolved": [], "checked": 0}
+    try:
+        import main as _main
+        from channels.waha import resolve_lid_phone
+        from db.connection import session_scope
+        from db.models import Conversation, Customer, ConversationStatusEnum
+        st = _main.settings
+        if not getattr(st, "waha_base_url", None):
+            return out  # WAHA не настроен — нечего резолвить
+        cands: list = []
+        with session_scope() as db:  # короткая сессия — только собрать кандидатов
+            rows = (
+                db.query(Conversation, Customer)
+                .join(Customer, Conversation.customer_id == Customer.id)
+                .filter(Conversation.channel == "whatsapp",
+                        Conversation.status != ConversationStatusEnum.ARCHIVED)
+                .all()
+            )
+            for _conv, _cust in rows:
+                _cid = _conv.channel_conversation_id or ""
+                if len(_cid) >= 13 and not (_cust.phone or "").strip():
+                    cands.append((str(_cust.id), _cid))
+                if len(cands) >= max(1, min(limit, 60)):
+                    break
+        out["checked"] = len(cands)
+        for _cust_id, _cid in cands:  # СЕТЬ — строго вне сессии
+            try:
+                _pn = await resolve_lid_phone(
+                    st.waha_base_url, st.waha_api_key or "",
+                    st.waha_session or "default", _cid)
+            except Exception:  # noqa: BLE001
+                _pn = None
+            if not _pn:
+                continue
+            with session_scope() as db:  # короткая сессия на апдейт
+                _c = db.query(Customer).filter(Customer.id == _cust_id).first()
+                if _c is not None and not (_c.phone or "").strip():
+                    _c.phone = ("+" + _pn)[:50]
+                    out["resolved"].append({"customer": _cust_id, "phone": _pn})
+        if out["resolved"]:
+            logger.info("[cron] lid-resolve: %s", out["resolved"])
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[cron] lid-resolve failed (non-fatal): %s", exc)
+        out["error"] = str(exc)
+    return out
+
+
 async def _worker_loop(*, tenant_config: dict, interval_sec: int) -> None:
     """Run one sweep, sleep, repeat. Cancellation-friendly."""
     logger.info("[cron] worker loop entered")
@@ -130,53 +251,19 @@ async def _worker_loop(*, tenant_config: dict, interval_sec: int) -> None:
             raise
         except Exception as exc:  # noqa: BLE001
             logger.warning("[cron] run_due_followups/call_reminders failed (non-fatal): %s", exc)
-        # Постоянная актуальность панели = WhatsApp: дешёвая (только БД) авто-чистка
-        # фантомов + эхо-дублей каждый цикл. Без WAHA/LLM — безопасно часто.
+        # @lid-лиды (реклама): добить реальный телефон через WAHA (СЕТЬ, bounded 8) —
+        # history-synced карточки сами не резолвятся (кейс Heinrich). ДО maintenance,
+        # чтобы merge_wa_split тут же перекеил разрезолвленную карточку в phone-canonical.
         try:
-            from services.whatsapp_sync import (
-                cleanup_wa_artifacts, dedup_wa_by_phone, dedup_wa_by_name,
-                cancel_orphan_scheduled_actions, dedup_scheduled_actions,
-                merge_wa_split,
-            )
-            _cl = cleanup_wa_artifacts()
-            if _cl.get("phantoms") or _cl.get("echo_dupes"):
-                logger.info("[cron] wa cleanup: %s", _cl)
-            # СТРУКТУРНОЕ слияние разорванных карточек по реальному телефону: @lid
-            # (живой вебхук) + @c.us (history-sync) одного человека → ОДНА карточка с
-            # ПЕРЕНЕСЁННОЙ историей (кейс Zaal). Чисто БД, идемпотентно. Делаем ДО
-            # лёгких дедупов — он сильнее (переносит сообщения, а не только архивит).
-            _mg = merge_wa_split()
-            if _mg.get("moved_msgs") or _mg.get("archived"):
-                logger.info("[cron] wa merge-split: groups=%s convs=%s moved=%s archived=%s",
-                            _mg.get("groups"), _mg.get("merged_convs"),
-                            _mg.get("moved_msgs"), _mg.get("archived"))
-            # Дедуп @lid-дублей: по штампованному телефону + по имени (@lid-тень того
-            # же контакта, у которой телефон не разрезолвлен). Чисто БД, без сети.
-            _dd = dedup_wa_by_phone()
-            _dn = dedup_wa_by_name()
-            if _dd.get("archived") or _dn.get("archived"):
-                logger.info("[cron] wa dedup: by_phone=%s by_name=%s", _dd, _dn)
-            # Гасим осиротевшие задачи/напоминания архивных карточек + дедуп ОДИНАКОВЫХ
-            # задач (один «Лид завис — связаться» на лида, а не 2-3) → чистый задачник/календарь.
-            _orf = cancel_orphan_scheduled_actions()
-            _ds = dedup_scheduled_actions()
-            if _orf.get("superseded") or _ds.get("superseded"):
-                logger.info("[cron] actions: orphan=%s dups=%s", _orf, _ds)
-            # Авто-архивация «Не сложилось» старше N дней (если задано в настройках) —
-            # старая база не засоряет активный вид. Обратимо (status=ARCHIVED, не удаляем).
-            try:
-                from services import bot_settings as _bs2, funnel_store as _fs2
-                from db.connection import session_scope as _ss2
-                _days = _bs2.get("lost_auto_archive_days")
-                if isinstance(_days, int) and _days > 0:
-                    with _ss2() as _db2:
-                        _al = _fs2.archive_lost_leads(_db2, older_than_days=_days)
-                    if _al.get("archived"):
-                        logger.info("[cron] lost auto-archive (>%dд): %s", _days, _al)
-            except Exception as _ae:  # noqa: BLE001
-                logger.warning("[cron] lost auto-archive failed: %s", _ae)
+            await resolve_lid_backlog(limit=8)
+        except asyncio.CancelledError:
+            raise
         except Exception as exc:  # noqa: BLE001
-            logger.warning("[cron] wa cleanup/dedup failed (non-fatal): %s", exc)
+            logger.warning("[cron] lid-resolve loop failed (non-fatal): %s", exc)
+        # Постоянная актуальность панели = WhatsApp: дешёвая (только БД) авто-чистка
+        # фантомов/эхо-дублей + слияние разорванных карточек + дедуп каждый цикл.
+        # Тот же код доступен по кнопке «Проверить сейчас» (POST /admin/api/cron/sweep).
+        run_wa_maintenance()
         # АВТО-БЭКАП БД раз в день → владельцу в Telegram (offsite-копия на случай
         # потери системы/номера; Telegram хранит файл). Дамп в потоке — не держит loop.
         # Выключить: env DB_BACKUP_TG=0.
