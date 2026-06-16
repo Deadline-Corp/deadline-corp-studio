@@ -304,6 +304,8 @@ function SleepingPanel({ showToast }: { showToast: (t: string) => void }) {
   const [open, setOpen] = useState(false)
   const [data, setData] = useState<{ items: any[]; count: number; ready: number } | null>(null)
   const [busy, setBusy] = useState('')
+  const [massOpen, setMassOpen] = useState(false)
+  const [massText, setMassText] = useState('')
   const { openConversation } = useDrawer()
 
   const load = async () => { try { setData(await api.get('/whatsapp/sleeping?hours=24')) } catch { /* */ } }
@@ -348,7 +350,7 @@ function SleepingPanel({ showToast }: { showToast: (t: string) => void }) {
   // В «Проигран» (меняет стадию → уходит из дожима). suggest=true → причина hard_stop (отказ/ошибся).
   const markLost = async (id: string, suggest: boolean) => {
     setBusy(id)
-    try { await api.post(`/conversations/${id}/stage`, { to_stage: 'lost', lost_reason: suggest ? 'hard_stop' : 'delayed' }); showToast('✗ В проигран'); await load() }
+    try { await api.post(`/conversations/${id}/stage`, { to_stage: 'lost', lost_reason: suggest ? 'hard_stop' : 'delayed' }); showToast('✗ Не сложилось'); await load() }
     catch (e: any) { showToast(`Ошибка: ${e?.detail ?? e?.message ?? 'ошибка'}`) }
     finally { setBusy('') }
   }
@@ -357,6 +359,22 @@ function SleepingPanel({ showToast }: { showToast: (t: string) => void }) {
     setBusy(id)
     try { await api.post(`/whatsapp/sleeping/${id}/dismiss`, {}); showToast('🚫 Убрано из спящих'); await load() }
     catch (e: any) { showToast(`Ошибка: ${e?.detail ?? e?.message ?? 'ошибка'}`) }
+    finally { setBusy('') }
+  }
+  // Массовый пинок: один текст всем видимым молчунам (с подстановкой имени), троттл на бэке.
+  const sendMass = async () => {
+    const ids = (data?.items || []).map((i: any) => i.conversation_id)
+    if (!massText.trim() || ids.length === 0) { showToast('Напиши текст (и нужны молчуны)'); return }
+    if (!window.confirm(`Отправить ОДИН текст ${ids.length} молчунам? (по одному, с паузами 5–7 сек; имя подставится)`)) return
+    setBusy('mass')
+    try {
+      const r = await api.post<any>('/whatsapp/mass-nudge', { text: massText, conversation_ids: ids })
+      if (r.already_running) { showToast('Отправка уже идёт'); setBusy(''); return }
+      showToast(`📤 Массовый пинок ${r.total} (с паузами анти-бан)…`)
+      const s = await pollDone('/whatsapp/send-status')
+      if (s) showToast(`✅ Отправлено: ${s.sent ?? 0} · пропущено ${s.skipped ?? 0}`)
+      setMassOpen(false); setMassText(''); await load()
+    } catch (e: any) { showToast(`Ошибка: ${e?.detail ?? e?.message ?? 'ошибка'}`) }
     finally { setBusy('') }
   }
 
@@ -370,6 +388,7 @@ function SleepingPanel({ showToast }: { showToast: (t: string) => void }) {
         <span style={{ flex: 1 }} />
         {open && <button className="btn sm" onClick={prepare} disabled={!!busy}>{busy === 'prep' ? '…' : '🤖 Подготовить дожим'}</button>}
         {open && data && data.ready > 0 && <button className="btn sm primary" onClick={sendAll} disabled={!!busy}>{busy === 'send' ? '…' : `✅ Отправить всем готовым (${data.ready})`}</button>}
+        {open && data && data.count > 0 && <button className="btn sm" onClick={() => setMassOpen(v => !v)} disabled={!!busy}>📣 Массовый пинок</button>}
       </div>
       {open && (
         <>
@@ -377,8 +396,20 @@ function SleepingPanel({ showToast }: { showToast: (t: string) => void }) {
             <b>Спящие</b> = активные лиды, молчащие дольше суток (мы написали последними).
             «🤖 Подготовить дожим» — бот напишет черновик каждому (ПОД КОНТРОЛЕМ — само не уходит);
             проверь и отправь «✅» точечно или «всем готовым» (с паузами 5–7 сек — не забанит).
-            <b> «⚠️»</b> — похоже не лид (извинился/отказ/ошибся): жми «✗ Проигран». «🚫» — просто убрать из дожима.
+            <b> «⚠️»</b> — похоже не лид (извинился/отказ/ошибся): жми «✗ Не сложилось». «🚫» — просто убрать из дожима.
           </div>
+          {massOpen && (
+            <div style={{ border: '1px solid var(--accent-border)', borderRadius: 8, padding: 10, marginBottom: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <b style={{ fontSize: 12.5 }}>📣 Массовый пинок — один текст всем молчунам ({data?.items.length ?? 0})</b>
+              <textarea value={massText} onChange={e => setMassText(e.target.value)} rows={3}
+                placeholder="Напиши сообщение. {name} подставит имя лида. Напр.: «{name}, добрый день! Подскажите, ваш вопрос ещё актуален?»"
+                style={{ fontSize: 12.5, padding: '7px 9px', borderRadius: 7, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', resize: 'vertical' }} />
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <button className="btn sm primary" onClick={sendMass} disabled={!!busy || !massText.trim()}>{busy === 'mass' ? '…' : `📤 Отправить всем (${data?.items.length ?? 0})`}</button>
+                <span className="faint" style={{ fontSize: 11 }}>⚠️ По одному, с паузами 5–7 сек (анти-бан). Имя подставится. Лучше короткий нейтральный вопрос — не рассылка-спам.</span>
+              </div>
+            </div>
+          )}
           {!data && <div className="faint" style={{ fontSize: 12 }}><span className="spin" /> загрузка…</div>}
           {data && items.length === 0 && <div className="faint" style={{ fontSize: 12 }}>спящих нет 🎉</div>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
@@ -398,7 +429,7 @@ function SleepingPanel({ showToast }: { showToast: (t: string) => void }) {
                 <div className="c-meta">
                   <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                     {l.has_draft && !l.suggest_lost && <button className="btn sm primary" disabled={!!busy} onClick={() => sendOne(l.conversation_id)}>✅ Отправить</button>}
-                    <button className="btn sm" disabled={!!busy} style={l.suggest_lost ? { color: '#e0524f', borderColor: '#e0524f' } : undefined} onClick={() => markLost(l.conversation_id, !!l.suggest_lost)}>✗ Проигран</button>
+                    <button className="btn sm" disabled={!!busy} style={l.suggest_lost ? { color: '#e0524f', borderColor: '#e0524f' } : undefined} onClick={() => markLost(l.conversation_id, !!l.suggest_lost)}>✗ Не сложилось</button>
                     <button className="btn sm ghost" disabled={!!busy} title="Убрать из спящих (не дожимать)" onClick={() => dismiss(l.conversation_id)}>🚫</button>
                     <button className="btn sm ghost" onClick={() => openConversation(l.conversation_id)}>Открыть</button>
                   </div>

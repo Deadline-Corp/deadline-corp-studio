@@ -25,7 +25,7 @@ export const STAGES: Array<{ stage: string; label: string }> = [
   { stage: 'proposal', label: '📄 КП' },
   { stage: 'prepayment', label: '💰 Аванс' },
   { stage: 'completed_won', label: '🏁 Сдано' },
-  { stage: 'lost', label: '❌ Проигран' },
+  { stage: 'lost', label: '❌ Не сложилось' },
 ]
 
 export const LOST_REASONS: Array<{ value: string; label: string }> = [

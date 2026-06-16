@@ -26,7 +26,7 @@ BUILTIN_STAGES: list[dict] = [
     {"key": "proposal", "label": "📄 КП", "kind": "active"},
     {"key": "prepayment", "label": "💰 Аванс", "kind": "active"},
     {"key": "completed_won", "label": "🏁 Сдано", "kind": "won"},
-    {"key": "lost", "label": "❌ Проигран", "kind": "lost"},
+    {"key": "lost", "label": "❌ Не сложилось", "kind": "lost"},
 ]
 BUILTIN_KEYS = {s["key"] for s in BUILTIN_STAGES}
 

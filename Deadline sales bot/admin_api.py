@@ -1789,6 +1789,75 @@ async def whatsapp_send_status(_: None = Depends(_verify_member)):
     return _WA_SEND_STATE
 
 
+async def _run_mass_nudge_bg(conv_ids: list, template: str) -> None:
+    """Фон: разослать ОДИН шаблон пачке молчунов с подстановкой имени ({name}/{имя}) —
+    мягкая персонализация против «одинаковости». Троттл в _wa_send (анти-бан: 5–7с + кап/день),
+    DB-сессию не держим во время паузы. Использует общий _WA_SEND_STATE (прогресс)."""
+    import main as _main
+    from db.connection import session_scope
+    from services.conversations import append_message
+    from datetime import datetime as _dt, timezone as _tz
+    _WA_SEND_STATE.update({"running": True, "started_at": _dt.now(_tz.utc).isoformat(),
+                           "finished_at": None, "sent": 0, "skipped": 0, "errors": 0,
+                           "total": len(conv_ids), "error": None})
+    try:
+        for cid in conv_ids:
+            try:
+                with session_scope() as db:  # 1) собрать имя + адрес (короткая сессия)
+                    conv = db.get(Conversation, UUID(cid))
+                    if conv is None:
+                        _WA_SEND_STATE["skipped"] += 1
+                        continue
+                    cust = db.get(Customer, conv.customer_id)
+                    name = (getattr(cust, "name", None) or "").strip()
+                    to = conv.channel_conversation_id or ""
+                text = template.replace("{name}", name).replace("{имя}", name).strip()
+                if not text or not to:
+                    _WA_SEND_STATE["skipped"] += 1
+                    continue
+                delivered = await _main._wa_send(to, text, "")  # троттл, сессия НЕ держится
+                with session_scope() as db:  # 2) записать факт отправки в историю
+                    conv = db.get(Conversation, UUID(cid))
+                    if conv is not None:
+                        append_message(db, conv.id, role="assistant", content=text,
+                                       extra_meta={"approved_via": "mass-nudge", "delivered": delivered})
+                _WA_SEND_STATE["sent"] += 1
+            except Exception as e:  # noqa: BLE001
+                _WA_SEND_STATE["errors"] += 1
+                log.warning(f"[mass-nudge] {str(cid)[:8]} failed: {e}")
+    except Exception as e:  # noqa: BLE001
+        _WA_SEND_STATE["error"] = str(e)
+    finally:
+        _WA_SEND_STATE["running"] = False
+        from datetime import datetime as _dt2, timezone as _tz2
+        _WA_SEND_STATE["finished_at"] = _dt2.now(_tz2.utc).isoformat()
+
+
+class MassNudgeRequest(BaseModel):
+    text: str
+    conversation_ids: list = []  # кому слать (id видимых спящих с фронта)
+
+
+@router.post("/whatsapp/mass-nudge")
+async def whatsapp_mass_nudge(
+    req: MassNudgeRequest,
+    _: None = Depends(_verify_owner),
+):
+    """Массовый пинок: ОДИН текст всем выбранным молчунам (с подстановкой {name}).
+    Фон + троттл (анти-бан 5–7с + кап/день). Текст — после правки/одобрения оператором."""
+    import asyncio
+    text = (req.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=422, detail="Пустой текст пинка")
+    ids = [str(x) for x in (req.conversation_ids or [])][:200]
+    if not ids:
+        raise HTTPException(status_code=422, detail="Некого пинговать (нет выбранных)")
+    if _WA_SEND_STATE.get("running"):
+        return {"ok": True, "already_running": True, "state": _WA_SEND_STATE}
+    asyncio.create_task(_run_mass_nudge_bg(ids, text))
+    return {"ok": True, "started": True, "total": len(ids)}
+
+
 class CleanPhantomsRequest(BaseModel):
     execute: bool = False
 
@@ -1979,7 +2048,7 @@ async def conversation_stage(
     is_lost = (req.to_stage == "lost") or (funnel_store.stage_kind(db, req.to_stage) == "lost")
     if is_lost:
         if not req.lost_reason:
-            raise HTTPException(status_code=422, detail="Для «Проигран» нужна причина (lost_reason)")
+            raise HTTPException(status_code=422, detail="Для «Не сложилось» нужна причина (lost_reason)")
         if req.lost_reason not in LOST_REASONS:
             raise HTTPException(status_code=422, detail=f"Причина {req.lost_reason!r} не из списка {sorted(LOST_REASONS)}")
 

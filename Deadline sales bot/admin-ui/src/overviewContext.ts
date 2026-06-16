@@ -37,7 +37,7 @@ const FALLBACK: FunnelStage[] = [
   { stage: 'proposal', label: '📄 КП', kind: 'active', count: 0 },
   { stage: 'prepayment', label: '💰 Аванс', kind: 'active', count: 0 },
   { stage: 'completed_won', label: '🏁 Сдано', kind: 'won', count: 0 },
-  { stage: 'lost', label: '❌ Проигран', kind: 'lost', count: 0 },
+  { stage: 'lost', label: '❌ Не сложилось', kind: 'lost', count: 0 },
 ]
 
 export function useStages(): FunnelStage[] {
