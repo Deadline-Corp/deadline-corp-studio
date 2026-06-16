@@ -4445,6 +4445,45 @@ async def export_leads_csv(
     )
 
 
+@router.get("/export/conversations.csv")
+async def export_conversations_csv(
+    _: None = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """ВСЕ переписки (каждое сообщение строкой) в CSV — полный архив диалогов на
+    всякий случай (вкл. архивные карточки). Excel-совместимый, UTF-8 BOM, ';'."""
+    import csv
+    import io
+    from fastapi.responses import Response
+    from db.models import Message
+
+    rows = (
+        db.query(Message, Conversation, Customer)
+        .join(Conversation, Message.conversation_id == Conversation.id)
+        .join(Customer, Conversation.customer_id == Customer.id)
+        .order_by(Customer.id, Conversation.created_at.asc(), Message.created_at.asc())
+        .limit(50000)  # потолок против OOM; при росте — стриминг/пагинация
+        .all()
+    )
+    role_ru = {"user": "Лид", "assistant": "Бот", "operator": "Менеджер", "system": "Система"}
+    buf = io.StringIO()
+    w = csv.writer(buf, delimiter=";")
+    w.writerow(["Лид", "Телефон", "Канал", "Стадия", "Время", "Кто", "Сообщение"])
+    for m, conv, cust in rows:
+        w.writerow([
+            cust.name or "", cust.phone or "", conv.channel, conv.lead_stage,
+            m.created_at.strftime("%Y-%m-%d %H:%M") if m.created_at else "",
+            role_ru.get(m.role, m.role),
+            (m.content or "").replace("\r", " ").replace("\n", " ⏎ ")[:2000],
+        ])
+    csv_bytes = ("﻿" + buf.getvalue()).encode("utf-8")
+    return Response(
+        content=csv_bytes,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": "attachment; filename=conversations.csv"},
+    )
+
+
 @router.post("/digest/test")
 async def digest_test(_: None = Depends(_verify_owner)):
     """Отправить дайджест прямо сейчас (проверка/демо)."""

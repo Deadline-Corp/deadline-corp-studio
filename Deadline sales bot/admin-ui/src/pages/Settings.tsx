@@ -51,6 +51,8 @@ export function Settings() {
       <div style={{ height: 14 }} />
       <BackupCard />
       <div style={{ height: 14 }} />
+      <ExportCard />
+      <div style={{ height: 14 }} />
       <SnapshotsCard />
       <div style={{ height: 14 }} />
       <TimezoneCard />
@@ -166,6 +168,44 @@ function BackupCard() {
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <button className="btn sm primary" onClick={download} disabled={!!busy}>{busy === 'dl' ? '…' : '💾 Скачать бэкап'}</button>
         <button className="btn sm" onClick={sendTg} disabled={!!busy}>{busy === 'tg' ? '…' : '📤 В Telegram сейчас'}</button>
+        {msg && <span className="chip accent">{msg}</span>}
+      </div>
+    </div>
+  )
+}
+
+/* ---------- Экспорт в таблицу (Excel/CSV) ---------- */
+
+function ExportCard() {
+  const [busy, setBusy] = useState('')
+  const [msg, setMsg] = useState('')
+  const dl = async (path: string, fallback: string, key: string) => {
+    setBusy(key); setMsg('')
+    try {
+      const r = await fetch('/admin/api' + path, { headers: { Authorization: `Bearer ${getToken() || ''}` } })
+      if (!r.ok) throw new Error('HTTP ' + r.status)
+      const blob = await r.blob()
+      const cd = r.headers.get('Content-Disposition') || ''
+      const m = cd.match(/filename="?([^"]+)"?/)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = m ? m[1] : fallback; a.click()
+      URL.revokeObjectURL(url)
+      setMsg('✅ Скачано')
+    } catch (e: any) { setMsg('Ошибка: ' + (e?.message ?? 'не вышло')) }
+    finally { setBusy('') }
+  }
+  return (
+    <div className="card">
+      <b>📊 Экспорт в таблицу (Excel / CSV)</b>
+      <p className="faint" style={{ fontSize: 11.5, margin: '6px 0 10px' }}>
+        Выгрузка на всякий случай: <b>лиды</b> (CRM-таблица: имя, телефон, канал, стадия,
+        температура, поля) и <b>полный архив переписок</b> (каждое сообщение строкой). Открывается
+        в Excel / Google Sheets (UTF-8, разделитель «;»).
+      </p>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <button className="btn sm primary" onClick={() => dl('/export/leads.csv', 'leads.csv', 'leads')} disabled={!!busy}>{busy === 'leads' ? '…' : '👤 Лиды (CRM)'}</button>
+        <button className="btn sm" onClick={() => dl('/export/conversations.csv', 'conversations.csv', 'conv')} disabled={!!busy}>{busy === 'conv' ? '…' : '💬 Все переписки'}</button>
         {msg && <span className="chip accent">{msg}</span>}
       </div>
     </div>
