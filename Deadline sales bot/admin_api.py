@@ -1255,11 +1255,14 @@ async def _run_prepare_drafts_bg(overwrite: bool, exclude_phones: list[str] | No
                 .filter(Conversation.status != ConversationStatusEnum.ARCHIVED.value)
                 .all()
             )
-            # активные лиды: классифицированы как лид, не «проигран», есть пир
+            # активные диалоги: НЕ «проигран/сдано». Берём всех, КРОМЕ явно
+            # помеченных «не лид» (wa_classification.is_lead == False). Живые
+            # диалоги без классификации (пришли вебхуком) ВКЛЮЧАЕМ — иначе их
+            # черновики не обновляются персоной/оффером (баг: раньше требовали is_lead).
             targets = []
             for conv, cust in rows:
                 wac = conv.wa_classification or {}
-                if not wac.get("is_lead"):
+                if wac.get("is_lead") is False:  # явно не лид (триаж) — пропускаем
                     continue
                 if (conv.lead_stage or "") in ("lost", "completed_won"):
                     continue
