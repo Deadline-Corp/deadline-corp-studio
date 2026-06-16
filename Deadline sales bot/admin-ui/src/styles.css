@@ -58,6 +58,22 @@
 }
 :root[data-theme="light"] .flow-node { box-shadow: 0 6px 20px rgba(60,52,30,0.10); }
 :root[data-theme="light"] .react-flow__background { background: var(--bg); }
+/* Контролы зума React Flow (+/−/fit): по умолчанию белые — затемняем под тему. */
+.react-flow__controls {
+  box-shadow: 0 6px 20px rgba(0,0,0,.35);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.react-flow__controls-button {
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  width: 26px; height: 26px;
+}
+.react-flow__controls-button:hover { background: var(--panel); }
+.react-flow__controls-button svg { fill: var(--text-dim); }
+.react-flow__controls-button:hover svg { fill: var(--text); }
 :root[data-theme="light"] .login-wrap {
   background: radial-gradient(900px 500px at 70% -10%, rgba(124,108,255,0.08), transparent 60%), var(--bg);
 }

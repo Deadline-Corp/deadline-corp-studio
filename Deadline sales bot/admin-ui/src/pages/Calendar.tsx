@@ -6,9 +6,38 @@ import { useDrawer } from '../components/DrawerContext'
 import { CHANNEL_META, fmtTime } from '../lib'
 import { HintBar } from '../components/HintBar'
 
-/* Календарь v1: ближайшие 14 дней — созвоны (бот бронирует их сам и шлёт
-   напоминания за день/час) + задачи с дедлайном. Клик — переписка лида.
-   Слоты/Google-синк — следующая итерация (#15). */
+/* Календарь v2 — «повестка» (agenda): события сгруппированы по дням сверху вниз,
+   каждое во всю ширину (текст не режется), просроченные задачи закреплены сверху.
+   Источник — /today (созвоны + задачи). Клик по событию открывает карточку лида
+   (там перенос/отмена созвона). Кнопка «Подписаться» — ICS-фид в телефон. */
+
+type Ev = {
+  kind: 'call' | 'bot' | 'task'
+  time: string | null
+  title: string
+  detail: string
+  conv: string | null
+  ch?: string
+}
+
+const KIND_META: Record<Ev['kind'], { icon: string; tone: string }> = {
+  call: { icon: '📞', tone: 'var(--accent)' },
+  bot: { icon: '🤖', tone: '#3bb4a0' },
+  task: { icon: '📋', tone: '#c9a23b' },
+}
+const DOWS = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб']
+
+function dayKey(d: Date) {
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`
+}
+function relLabel(d: Date, now: Date) {
+  const diff = Math.round((+new Date(d.getFullYear(), d.getMonth(), d.getDate())
+    - +new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 864e5)
+  const base = `${DOWS[d.getDay()]} ${d.getDate()}.${String(d.getMonth() + 1).padStart(2, '0')}`
+  if (diff === 0) return `Сегодня · ${base}`
+  if (diff === 1) return `Завтра · ${base}`
+  return base
+}
 
 export function Calendar() {
   const [view, setView] = useState<TodayView | null>(null)
@@ -26,31 +55,79 @@ export function Calendar() {
     try { setView(await api.get<TodayView>('/today')) } catch { /* */ }
   }, 30000)
 
-  const days: Array<{ date: Date; items: Array<{ kind: string; time: string | null; label: string; conv: string | null; ch?: string }> }> = []
   const now = new Date()
-  for (let i = 0; i < 14; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i)
-    days.push({ date: d, items: [] })
-  }
-  const put = (iso: string | null, item: any) => {
+  const todayStart = +new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const overdue: Ev[] = []
+  const byDay = new Map<string, { date: Date; items: Ev[] }>()
+
+  const place = (iso: string | null, ev: Ev) => {
     if (!iso) return
     const d = new Date(iso)
-    const idx = Math.floor((new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
-      - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) / 864e5)
-    if (idx >= 0 && idx < 14) days[idx].items.push({ ...item, time: iso })
+    const dStart = +new Date(d.getFullYear(), d.getMonth(), d.getDate())
+    if (dStart < todayStart) { overdue.push({ ...ev, time: iso }); return }
+    if (dStart > todayStart + 13 * 864e5) return // окно 14 дней
+    const k = dayKey(d)
+    if (!byDay.has(k)) byDay.set(k, { date: d, items: [] })
+    byDay.get(k)!.items.push({ ...ev, time: iso })
   }
+
   if (view) {
-    view.calls.forEach(c => put(c.call_at, {
-      kind: 'call', label: `📞 ${c.customer.name || c.customer.email || 'Лид'}${c.medium ? ' · ' + c.medium : ''}`,
+    view.calls.forEach(c => place(c.call_at, {
+      kind: 'call',
+      title: c.customer.name || c.customer.email || 'Лид',
+      detail: c.medium ? `созвон · ${c.medium}` : 'созвон',
       conv: c.conversation_id, ch: c.channel,
     }))
-    ;[...view.overdue, ...view.today, ...view.upcoming].forEach(t => put(t.due_at, {
+    const asTask = (t: any): Ev => ({
       kind: t.executor === 'bot' ? 'bot' : 'task',
-      label: `${t.executor === 'bot' ? '🤖' : '📋'} ${t.customer.name || 'лид'}: ${(t.text || '').slice(0, 50)}`,
+      title: t.customer.name || 'Лид',
+      detail: (t.text || '').replace(/\s+/g, ' ').trim(),
       conv: t.conversation_id, ch: t.channel,
-    }))
+    })
+    view.overdue.forEach(t => place(t.due_at, asTask(t)))
+    view.today.forEach(t => place(t.due_at, asTask(t)))
+    view.upcoming.forEach(t => place(t.due_at, asTask(t)))
   }
-  const dows = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб']
+
+  const days = [...byDay.values()].sort((a, b) => +a.date - +b.date)
+  days.forEach(d => d.items.sort((a, b) => (a.time || '').localeCompare(b.time || '')))
+  overdue.sort((a, b) => (a.time || '').localeCompare(b.time || ''))
+
+  const callCount = (view?.calls.length) || 0
+  const taskCount = days.reduce((n, d) => n + d.items.filter(i => i.kind !== 'call').length, 0)
+  const isEmpty = view && !overdue.length && !days.length
+
+  const Row = (it: Ev, k: number) => {
+    const m = KIND_META[it.kind]
+    return (
+      <div key={k}
+           onClick={() => it.conv && openConversation(it.conv)}
+           style={{
+             display: 'flex', alignItems: 'flex-start', gap: 10,
+             padding: '9px 11px', borderRadius: 9,
+             cursor: it.conv ? 'pointer' : 'default',
+             background: 'var(--panel)',
+             border: '1px solid var(--border)',
+             borderLeft: `3px solid ${m.tone}`,
+           }}>
+        <div style={{
+          minWidth: 46, fontSize: 13, fontWeight: 700, color: 'var(--text)',
+          fontVariantNumeric: 'tabular-nums', paddingTop: 1,
+        }}>{fmtTime(it.time) || '—'}</div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+            <span style={{ marginRight: 6 }}>{m.icon}</span>{it.title}
+            {it.ch && <span style={{ marginLeft: 6 }}>{CHANNEL_META[it.ch]?.icon ?? ''}</span>}
+          </div>
+          {it.detail && (
+            <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 2, lineHeight: 1.4 }}>
+              {it.detail.length > 140 ? it.detail.slice(0, 140) + '…' : it.detail}
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="page">
@@ -59,52 +136,51 @@ export function Calendar() {
         <span className="sub">созвоны и дедлайны на 2 недели · бот сам бронирует время и напоминает за день и за час</span>
       </div>
       <HintBar id="calendar" icon="📅">
-        Созвоны, которые бот назначил с лидами, и задачи с дедлайном. Клик по событию —
-        откроется карточка лида, там же можно <b>перенести/отменить созвон</b> (📞 Созвон).
-        Бот предлагает лиду 2-3 слота, бронирует и шлёт напоминания обоим. Кнопка
-        <b>«📲 Подписаться»</b> ниже добавит эти созвоны в твой телефон/Google-календарь
-        (обновляются сами).
+        Повестка по дням: созвоны, которые бот назначил с лидами, и задачи с дедлайном.
+        Клик по событию открывает карточку лида — там можно <b>перенести/отменить созвон</b> (📞 Созвон).
+        Кнопка <b>«📲 Подписаться»</b> добавит созвоны в твой телефон/Google-календарь (обновляются сами).
       </HintBar>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
         <button className="btn sm primary" onClick={copySubscribe}>
           {copied ? '✅ Ссылка скопирована' : '📲 Подписаться в телефоне'}
         </button>
-        <span className="faint" style={{ fontSize: 12 }}>
-          вставьте ссылку в Google Календарь / iPhone «Подписка на календарь» — созвоны и
-          дедлайны появятся в телефоне и будут обновляться сами
-        </span>
+        {view && (
+          <span className="faint" style={{ fontSize: 12.5 }}>
+            📞 {callCount} {callCount === 1 ? 'созвон' : 'созвонов'} · 📋 {taskCount} {taskCount === 1 ? 'задача' : 'задач'} на 2 недели
+            {overdue.length > 0 && <span style={{ color: '#e0524f', fontWeight: 600 }}> · ⚠️ {overdue.length} просрочено</span>}
+          </span>
+        )}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8 }}>
-        {days.map((d, i) => {
-          const isToday = i === 0
-          return (
-            <div key={i} className="card" style={{
-              padding: 10, minHeight: 96,
-              borderColor: isToday ? 'var(--accent-border)' : undefined,
+
+      {overdue.length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: '#e0524f', marginBottom: 8 }}>
+            ⚠️ Просрочено ({overdue.length})
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+            {overdue.map(Row)}
+          </div>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+        {days.map((d, di) => (
+          <div key={di}>
+            <div style={{
+              fontSize: 12.5, fontWeight: 700, marginBottom: 8,
+              color: di === 0 && dayKey(d.date) === dayKey(now) ? 'var(--accent)' : 'var(--text-dim)',
             }}>
-              <div style={{ fontSize: 11.5, fontWeight: 700, color: isToday ? 'var(--accent)' : 'var(--text-faint)' }}>
-                {dows[d.date.getDay()]} {d.date.getDate()}.{String(d.date.getMonth() + 1).padStart(2, '0')}
-                {isToday && ' · сегодня'}
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 6 }}>
-                {d.items.sort((a, b) => (a.time || '').localeCompare(b.time || '')).map((it, k) => (
-                  <div key={k}
-                       onClick={() => it.conv && openConversation(it.conv)}
-                       style={{
-                         fontSize: 11, lineHeight: 1.35, padding: '4px 6px', borderRadius: 6,
-                         cursor: it.conv ? 'pointer' : 'default',
-                         background: it.kind === 'call' ? 'var(--accent-soft)' : 'var(--panel-2)',
-                         border: it.kind === 'call' ? '1px solid var(--accent-border)' : '1px solid var(--border)',
-                       }}>
-                    <b>{fmtTime(it.time)}</b> {CHANNEL_META[it.ch || '']?.icon ?? ''}<br />{it.label}
-                  </div>
-                ))}
-              </div>
+              {relLabel(d.date, now)}
             </div>
-          )
-        })}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+              {d.items.map(Row)}
+            </div>
+          </div>
+        ))}
       </div>
-      {view && days.every(d => d.items.length === 0) && (
+
+      {isEmpty && (
         <div className="empty">Пока пусто — назначенные ботом созвоны и задачи появятся здесь сами</div>
       )}
     </div>
