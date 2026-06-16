@@ -111,6 +111,30 @@ def _kb_context(query: str, k: int = 3) -> str:
         return ""
 
 
+def _corrections_context(query: str, channel: Optional[str] = None, k: int = 3) -> str:
+    """Релевантные ПРАВИЛА студии (training_corrections) под сообщение лида —
+    чтобы WhatsApp-движок СОБЛЮДАЛ правила из вкладки «Мозг» (часовые пояса,
+    воронка-воркфлоу и т.д.), а не игнорировал их. Своя короткая сессия (безопасно
+    из to_thread). Best-effort: пусто при любой ошибке."""
+    q = (query or "").strip()
+    if not q:
+        return ""
+    try:
+        from services.training import retrieve_corrections
+        from db.connection import session_scope
+        with session_scope() as _db:
+            rules = retrieve_corrections(_db, q, k=k, channel=channel)
+        return "\n".join(f"- {r['guidance']}" for r in rules if r.get("guidance"))
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _is_silent(dialog: str) -> bool:
+    """Лид молчит = ПОСЛЕДНЯЯ строка диалога от НАС («Мы:») — мы написали последними."""
+    d = (dialog or "").rstrip()
+    return bool(d) and d.rsplit("\n", 1)[-1].startswith("Мы:")
+
+
 def _active_offer() -> str:
     """Текущий оффер активной рекламы из настроек (bot_settings, кэш 60с)."""
     try:
@@ -120,10 +144,16 @@ def _active_offer() -> str:
         return ""
 
 
-def _prompt(name: str, stage: str, dialog: str, kb: str = "", offer: str = "") -> str:
+def _prompt(name: str, stage: str, dialog: str, kb: str = "", offer: str = "",
+            corrections: str = "", silent: bool = False) -> str:
     kb_block = (
-        f"\nФАКТЫ О КОМПАНИИ (опирайся на них, НЕ выдумывай сверх этого):\n{kb}\n"
+        f"\nФАКТЫ О НАШЕЙ СТУДИИ (фон — про НАС, НЕ про задачу лида; опирайся, не "
+        f"выдумывай сверх):\n{kb}\n"
         if kb else ""
+    )
+    corr_block = (
+        f"\nПРАВИЛА СТУДИИ (обязательно соблюдай в ответе):\n{corrections}\n"
+        if corrections else ""
     )
     # Первый контакт = в переписке ещё НЕ было нашего ответа («Мы:»).
     first_contact = "Мы:" not in (dialog or "")
@@ -144,6 +174,16 @@ def _prompt(name: str, stage: str, dialog: str, kb: str = "", offer: str = "") -
             "автоматизацию»), затем СРАЗУ спроси, что именно хочет реализовать. "
             "По-человечески, НЕ сухо, можно 1 эмодзи 🙂\n"
         )
+    elif silent:
+        intro_rule = (
+            "Лид ЗАМОЛЧАЛ после нашего сообщения — не ответил (возможно, оставил "
+            "заявку и «уснул»). Напиши КОРОТКОЕ (1-2 предложения) лёгкое, тёплое "
+            "сообщение-БУДИЛЬНИК, чтобы по-доброму вернуть его в диалог и мягко "
+            "позвать рассказать, что он хочет реализовать. Можно живая человеческая "
+            "нотка или уместный МЯГКИЙ юмор — БЕЗ давления, без упрёков («вы "
+            "пропали»/«вы не ответили»). Формулируй КАЖДЫЙ раз ПО-РАЗНОМУ, не шаблон. "
+            "Опирайся ТОЛЬКО на то, что он реально писал — не придумывай за него.\n"
+        )
     else:
         intro_rule = "Диалог уже идёт — без «здравствуйте», продолжай по сути.\n"
     return (
@@ -153,6 +193,11 @@ def _prompt(name: str, stage: str, dialog: str, kb: str = "", offer: str = "") -
         "запрещено, звучит как автоответчик. Напиши ОДНО следующее сообщение лиду: "
         "тёплое, на «вы», 2-4 предложения, живым человеческим языком (не шаблон).\n"
         f"{intro_rule}"
+        "❗КРИТИЧНО ПРО КОНТЕКСТ: опирайся ТОЛЬКО на то, что ЛИД РЕАЛЬНО написал в "
+        "переписке ниже. НИКОГДА не приписывай лиду проект/нишу/задачу, которую он "
+        "САМ НЕ называл. Если он написал лишь общее («можно подробнее?») — НЕ "
+        "придумывай «онлайн-курсы»/«магазин»/«платформу» и т.п., а мягко уточни, что "
+        "именно он хочет. Факты о студии ниже — это про НАС, НЕ выдавай их за запрос лида.\n"
         "Логика (цель — сначала собрать БРИФ, потом созвон): пойми задачу проекта — "
         "если неясна, задай 1 уточняющий вопрос (что за проект → цель для бизнеса → "
         "объём/интеграции → сроки); когда понятен тип — можешь назвать стартовую цену "
@@ -167,6 +212,7 @@ def _prompt(name: str, stage: str, dialog: str, kb: str = "", offer: str = "") -
         "ЯЗЫК: отвечай на ТОМ ЖЕ языке, на котором пишет лид (английский → "
         "по-английски, русский → по-русски, и т.д.). Зеркаль язык последнего "
         "сообщения лида.\n"
+        f"{corr_block}"
         f"{kb_block}\n"
         f"Лид: {name}. Стадия: {stage}.\n"
         f"Переписка:\n{dialog or '(пусто)'}\n\n"
@@ -210,7 +256,9 @@ async def generate_for_conv(
     stage = conv.lead_stage or "new_lead"
     import asyncio as _aio
     kb = await _aio.to_thread(_kb_context, last_user or dialog)
-    result = await llm.ainvoke(_prompt(name, stage, dialog, kb, _active_offer()))
+    corr = await _aio.to_thread(_corrections_context, last_user or dialog, getattr(conv, "channel", None))
+    result = await llm.ainvoke(_prompt(name, stage, dialog, kb, _active_offer(),
+                                       corrections=corr, silent=_is_silent(dialog)))
     text = _clean_draft((getattr(result, "content", None) or ""))
     if not text:
         return None
@@ -232,8 +280,10 @@ async def generate_reply_text(db: Session, conv: Any, cust: Any, llm: Any) -> Op
     stage = conv.lead_stage or "new_lead"
     import asyncio as _aio
     kb = await _aio.to_thread(_kb_context, _last or dialog)
+    corr = await _aio.to_thread(_corrections_context, _last or dialog, getattr(conv, "channel", None))
     try:
-        result = await llm.ainvoke(_prompt(name, stage, dialog, kb, _active_offer()))
+        result = await llm.ainvoke(_prompt(name, stage, dialog, kb, _active_offer(),
+                                           corrections=corr, silent=_is_silent(dialog)))
     except Exception:  # noqa: BLE001
         return None
     return _clean_draft(getattr(result, "content", None) or "") or None

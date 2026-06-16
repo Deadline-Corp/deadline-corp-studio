@@ -1,47 +1,164 @@
-# Фича: Календарь, созвоны, часовые пояса
+# Календарь, созвоны, часовые пояса
 
-## Что делает
 Бронь созвонов (ручная и авто из переписки), напоминания лиду и владельцу,
-учёт часовых поясов лида.
+учёт часовых поясов, FullCalendar-вью, ICS-фид.
 
-## Предложение созвона по ПОДТВЕРЖДЕНИЮ (не авто)
-Бот распознаёт договорённость о созвоне в переписке (чувствительно — в т.ч. вольное
-«в среду утром», и из ручной реплики менеджера) → НЕ создаёт авто, а кладёт
-`conversations.pending_call_suggestion` {at, when_human, medium, reason} (миграция 019).
-- В карточке (`ConversationDrawer`) блок «📅 Похоже, договорились о созвоне» +
-  «✅ Создать событие» / «🚫 Нет».
-- **Всплывающее уведомление** (`CallSuggestionToasts`, в `Layout`, поллит
-  `GET /whatsapp/pending-suggestions` каждые 30с): дублирует карточку. «✅ Создать»
-  → событие (убирается везде). «✕» → скрывает ТОЛЬКО всплывашку (в карточке остаётся).
-- `POST /conversations/{id}/call-suggestion {confirm|dismiss}`: confirm → `_book`
-  (бронь+напоминания); dismiss → запоминает время (бот не предложит снова).
-- Уведомление владельцу в Telegram при появлении предложения.
-- Зачем подтверждение: LLM-чтение даты неидеально — менеджер видит и правит/отклоняет.
+---
 
-## Файлы кода
-- `services/scheduling.py` — слоты, `reminder_schedule`, `lead_reminder_text`/
-  `admin_reminder_text`, **`lead_tz_from_phone`/`tz_label_from_phone`** (пояс по номеру).
-- `services/scheduled_actions.py` — `write_call_booking`, `write_call_reminder`,
-  `cancel_call_actions`, `run_due_call_reminders` (крон).
-- `admin_api.py` — `/conversations/{id}/call` (reschedule|cancel из карточки).
-- `services/conversation_brain.py::_book` — авто-бронь из договорённости в переписке.
-- ICS-фид: `/calendar.ics` (подписка в Google/телефон, односторонняя).
+## Где код
+
+| Слой | Файл |
+|---|---|
+| Слоты, часовые пояса, напоминания | `services/scheduling.py` |
+| Задачи созвонов | `services/scheduled_actions.py` → `write_call_booking`, `write_call_reminder`, `cancel_call_actions`, `run_due_call_reminders` |
+| Мозг — распознавание договорённости | `services/conversation_brain.py` → `_resolve_call_dt`, `_lead_silent`, `analyze_and_advance` |
+| API (перенос/отмена из карточки) | `admin_api.py` → `POST /conversations/{id}/call` |
+| API (подтвердить/отклонить предложение) | `admin_api.py` → `POST /conversations/{id}/call-suggestion` |
+| API (FullCalendar) | `admin_api.py` → `GET /calendar-events` |
+| ICS-фид | `main.py` → `GET /calendar.ics` |
+| Ожидающие подтверждения | `admin_api.py` → `GET /whatsapp/pending-suggestions` |
+
+---
+
+## Предложение созвона (не авто-бронь!)
+
+Бот распознаёт договорённость в переписке → кладёт `pending_call_suggestion` (JSON,
+миграция 019). НЕ создаёт событие сам — ждёт человека.
+
+**Поля `pending_call_suggestion`:**
+```json
+{
+  "at": "2026-06-18T07:00:00Z",
+  "when_human": "в среду в 14:00",
+  "medium": "WhatsApp",
+  "reason": "Лид написал «созвонимся в среду»"
+}
+```
+
+**Зачем подтверждение:** LLM читает дату приблизительно (особенно «в среду утром»);
+менеджер видит предложение и правит / отклоняет.
+
+**Как видит менеджер:**
+1. **Карточка** (`ConversationDrawer`) — блок «📅 Похоже, договорились о созвоне»
+2. **Всплывающее уведомление** (`CallSuggestionToasts`) — поллит `GET /whatsapp/pending-suggestions` каждые 30с
+   - «✅ Создать» → событие + убирается везде
+   - «✕» → скрывает ТОЛЬКО всплывашку (в карточке остаётся)
+
+**`POST /conversations/{id}/call-suggestion`:**
+- `{"action": "confirm", "at": "..."}` → `_book(...)` = бронь + напоминания + стадия → `on_call`
+- `{"action": "dismiss"}` → время dismiss записывается, бот не предложит снова по тому же эпизоду
+
+---
+
+## _resolve_call_dt — детерминированный расчёт даты
+
+```python
+def _resolve_call_dt(now_lead: datetime, call_day: str, call_time: str) -> datetime:
+    """
+    LLM возвращает НАЗВАНИЕ дня: 'today'/'tomorrow'/'mon'..'sun'.
+    Функция сама вычисляет конкретную дату. LLM-арифметика дат исключена.
+    """
+```
+
+- `call_day = 'wed'` + `call_time = '15:00'` + текущая дата → точный datetime в зоне лида
+- Защита: если день уже прошёл на этой неделе → следующая неделя
+
+---
+
+## Хранение броней
+
+- `customer.profile_data['booked_call_at']` — datetime в UTC
+- `customer.profile_data['call_medium']` — WhatsApp / Telegram / Phone
+- `conv.lead_stage = 'on_call'` при броне
+- `scheduled_actions`: `call_booked` (факт; executor=human) + `call_reminder` (авто-напоминания)
+
+---
+
+## Напоминания
+
+`run_due_call_reminders()` в кроне. Три напоминания: за 24ч / за 3ч / за 1ч:
+
+**Лиду** (в мессенджер, на его языке):
+```
+lead_reminder_text(lang, medium, when_human_local)
+# → "Добрый день! Напоминаем о нашем созвоне сегодня в 15:00"
+```
+
+**Владельцу** (в форум-топик или `TELEGRAM_OPERATOR_GROUP_ID`):
+```
+admin_reminder_text(customer_name, medium, when_admin_local, conv_link)
+```
+
+---
 
 ## Часовые пояса
-`lead_tz_from_phone`: 77→Астана UTC+5, 79/78→Москва UTC+3, 971→Дубай UTC+4,
-995/374→Тбилиси/Ереван UTC+4, иначе Пхукет UTC+7. Лиду время называется в ЕГО поясе
-(«в 12:00 (время Астаны)»), владельцу/команде — по Пхукету. 12:00 Астаны = 14:00 Пхукета.
 
-## Бронь
-Хранится в `customer.profile_data.booked_call_at` + `call_medium`, стадия → `on_call`.
-Напоминания: лиду в мессенджер + владельцу в опер-группу, за сутки/3ч/1ч (`reminder_schedule`).
-Авто-бронь (мозг): только при КОНКРЕТНОМ согласованном времени, дедуп ±10 мин.
+`lead_tz_from_phone(phone)` → pytz timezone:
+
+| Код номера | Часовой пояс |
+|---|---|
+| 77... | Астана UTC+5 |
+| 79..., 78... | Москва UTC+3 |
+| 971... | Дубай UTC+4 |
+| 995..., 374... | Тбилиси/Ереван UTC+4 |
+| иначе | Пхукет UTC+7 (дефолт) |
+
+Лиду время называется в ЕГО поясе («в 15:00 (время Астаны)»).
+Владельцу и команде — по Пхукету.
+Пример: 12:00 Астаны = 14:00 Пхукета.
+
+---
+
+## Ручное управление из карточки
+
+```
+POST /admin/api/conversations/{id}/call
+  {"action": "reschedule", "at": "2026-06-20T09:00:00Z", "medium": "WhatsApp"}
+  {"action": "cancel"}
+```
+
+`reschedule` → cancel старые `call_booked`/`call_reminder` → write_call_booking(new at).
+`cancel` → cancel_call_actions(conv.id) → `profile_data['booked_call_at'] = None`.
+
+---
+
+## FullCalendar (Admin UI)
+
+```
+GET /admin/api/calendar-events?start=2026-06-01&end=2026-06-30
+```
+
+**Виды событий (kind):**
+
+| kind | Иконка | Источник |
+|---|---|---|
+| `call` | 📞 | `scheduled_actions` action_type=call_booked OR `profile_data.booked_call_at` |
+| `reminder` | ⏰ | `scheduled_actions` action_type=call_reminder |
+| `bot` | 🤖 | `scheduled_actions` executor=bot (followup, warming) |
+| `task` | 📋 | `scheduled_actions` executor=human |
+
+**Дедуп созвонов по лиду:**
+- Если у одного лида два диалога (например, @lid + телефон до дедупа)
+- Ключ дедупа: цифры телефона → lowercase имя → id
+- Один лид = один блок в календаре
+
+---
+
+## ICS-фид
+
+```
+GET /calendar.ics
+```
+
+- Подписка в Google Calendar: Другие календари → По URL → вставить ссылку
+- Содержит: только будущие созвоны (`call_booked`) + напоминания (`call_reminder`)
+- Обновляется при каждом запросе (нет кэша)
+- Заголовок: `Content-Type: text/calendar; charset=utf-8`
+
+---
 
 ## Грабли / бэклог
-- Двусторонняя Google-синхра — НЕ сделана (нужен Google OAuth владельца); сейчас
-  односторонний ICS-фид.
-- Расписание автопилота (вкл ночью/выкл утром) — в очереди (через настройки).
 
-## Как проверить
-- Карточка → 📞 Назначить/Перенести (datetime) → появится в Календаре + напоминания.
-- Авто: написать лиду «договорились завтра в 14:00» → мозг ставит `on_call` + бронь.
+- **Двусторонняя Google-синхра** — не сделана (нужен OAuth владельца). Сейчас ICS-фид односторонний.
+- **P5b**: формат даты в напоминаниях — `format_slot_human` пока RU-шаблон даже при lang=EN/TH.
+- **Авто-пауза ночью** — расписание работы бота (off-hours) в очереди.
