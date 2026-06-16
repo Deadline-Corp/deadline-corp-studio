@@ -865,6 +865,16 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     # For website widget, channel_conversation_id == session_id (which is also external_id).
     # For TG/IG/FB, it's the channel-side thread id (chat_id, thread_id).
     conv_thread_id = req.channel_conversation_id or req.external_id
+    # WhatsApp: ОДНА личность = ОДНА карточка по РЕАЛЬНОМУ телефону. Рекламный лид
+    # приходит под скрытым @lid, но если телефон этого контакта уже известен
+    # (разрезолвлен ранее / склеен), маршрутизируем @lid-сообщение в phone-canonical
+    # карточку — иначе живой вебхук и history-sync расходятся в два фрагмента (Zaal).
+    if (req.channel or "").lower() == "whatsapp":
+        import re as _re_wa
+        _kn = _re_wa.sub(r"\D", "", (getattr(customer, "phone", None) or ""))
+        _ptp = (req.extra_meta or {}).get("wa_peer_type", "phone")
+        if _ptp == "lid" and 9 <= len(_kn) <= 13:
+            conv_thread_id = _kn
     conversation = get_or_create_conversation(
         db,
         customer_id=customer.id,
@@ -911,6 +921,32 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 if _pn:
                     customer.phone = ("+" + _pn)[:50]
                     db.flush()
+                    # СКЛЕЙКА ЛИЧНОСТИ: вешаем (whatsapp, телефон) идентичность на
+                    # этого же customer (если ничья) → будущий phone-сообщение/
+                    # history-sync резолвится в ОДНУ карточку, а не плодит вторую.
+                    # И сразу делаем эту свежую @lid-карточку phone-canonical, чтобы
+                    # следующее сообщение попало в неё (никаких фрагментов).
+                    try:
+                        from db.models import ChannelIdentity as _CI, Conversation as _Conv
+                        from sqlalchemy import select as _sel
+                        _has = db.execute(_sel(_CI).where(
+                            _CI.channel == "whatsapp", _CI.external_id == _pn,
+                        )).scalar_one_or_none()
+                        if _has is None:
+                            db.add(_CI(customer_id=customer.id, channel="whatsapp", external_id=_pn))
+                            db.flush()
+                        if (conversation.channel_conversation_id or "") != _pn:
+                            _other = db.execute(_sel(_Conv.id).where(
+                                _Conv.channel == "whatsapp",
+                                _Conv.channel_conversation_id == _pn,
+                                _Conv.status != ConversationStatusEnum.ARCHIVED.value,
+                                _Conv.id != conversation.id,
+                            )).first()
+                            if _other is None:  # нет др. активной phone-карточки → апгрейдим эту
+                                conversation.channel_conversation_id = _pn
+                                db.flush()
+                    except Exception as _rk:  # noqa: BLE001
+                        log.debug(f"wa phone-canonical relink skipped: {_rk}")
             except Exception as _lre:  # noqa: BLE001
                 log.debug(f"lid->phone resolve skipped: {_lre}")
 

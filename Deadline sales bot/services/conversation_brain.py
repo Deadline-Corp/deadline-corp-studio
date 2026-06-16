@@ -247,6 +247,27 @@ def _mentions_call(transcript: str) -> bool:
     return any(w in t for w in _CALL_WORDS)
 
 
+# Лид ОТЛОЖИЛ называние времени — конкретной договорённости НЕТ, даже если слово
+# «созвон» прозвучало (кейс Zaal: «Хорошо сообщу время» / «как найду спонсора» →
+# LLM выдумал «вторник 10:00»). Детерминированный страж против фантом-времени.
+_DEFER_TIME = (
+    "сообщу время", "сообщу когда", "сообщу позже", "сообщу как", "скажу время",
+    "скажу когда", "скажу позже", "напишу время", "напишу когда", "напишу как",
+    "напишу позже", "дам знать", "дам вам знать", "уточню время", "уточню когда",
+    "уточню позже", "определюсь", "позже скажу", "позже сообщу", "позже напишу",
+    "потом скажу", "потом напишу", "как найду", "как смогу", "как освобожусь",
+    "как определюсь", "согласую и сообщу", "выберу время", "будет время напишу",
+    "появится время", "освобожусь напишу",
+)
+
+
+def _defers_timing(transcript: str) -> bool:
+    """Лид отложил называние времени созвона → договорённости с конкретным часом
+    по факту нет. Не пересчитываем фантом-час, не держим призрачное предложение."""
+    t = (transcript or "").lower()
+    return any(p in t for p in _DEFER_TIME)
+
+
 async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
                               llm: Any, settings: Any, refresh_draft: bool = True) -> dict:
     """Проанализировать диалог и применить решения. Возвращает что сделано.
@@ -343,8 +364,9 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
     # дне (call_day) + в переписке РЕАЛЬНО упомянут звонок/созвон (_mentions_call —
     # детерминированный страж против галлюцинаций LLM) + лид НЕ молчит.
     _calls = _mentions_call(transcript)
+    _defers = _defers_timing(transcript)
     if (data.get("call_agreed") and data.get("call_day") and resolved_dt
-            and _calls and not _lead_silent(db, conv)):
+            and _calls and not _defers and not _lead_silent(db, conv)):
         try:
             new_dt = resolved_dt
             prof = cust.profile_data or {}
@@ -387,7 +409,9 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
     # звонка/созвона (детерминированно ложное — кейс Вячеслав: «отправлю инфо»). Так
     # НЕ снесём валидное (где «созвонимся» есть, но LLM в этот проход не распознал —
     # кейс Денис). Подтверждённые брони (booked_call_at) не трогаем.
-    elif getattr(conv, "pending_call_suggestion", None) and not _calls:
+    elif getattr(conv, "pending_call_suggestion", None) and (not _calls or _defers):
+        # Снимаем призрачное предложение, если звонка в переписке нет ВООБЩЕ
+        # (кейс Вячеслав) ИЛИ лид отложил время (кейс Zaal: «сообщу время»).
         conv.pending_call_suggestion = None
         db.commit()
         done["cleared_suggestion"] = True

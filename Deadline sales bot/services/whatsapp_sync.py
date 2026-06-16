@@ -27,7 +27,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from sqlalchemy import select
+from sqlalchemy import select, func as _sqlfunc, update as _sqlupdate
 from sqlalchemy.orm import Session
 
 from db.models import Conversation, Customer, Message
@@ -290,6 +290,196 @@ def dedup_scheduled_actions(db: Optional[Session] = None) -> dict:
                 seen.add(key)
         _db.flush()
         return {"superseded": n}
+
+    if db is not None:
+        return _run(db)
+    with session_scope() as _db:
+        return _run(_db)
+
+
+def _wa_msgid_suffix(wid: Any) -> Optional[str]:
+    """Истинный WhatsApp message-id из waha_id. У @lid и @c.us РАЗНЫЙ префикс
+    (`false_<lid>@lid_ABC` vs `false_<phone>@c.us_ABC`), но СУФФИКС (сам msg-id
+    `ABC`) один → дедуп пересечений @lid/@c.us-копий одного сообщения."""
+    if not wid:
+        return None
+    s = str(wid)
+    return s.rsplit("_", 1)[-1] if "_" in s else s
+
+
+def _canon_real_phone(conv: Conversation, cust: Customer) -> str:
+    """Реальный телефон карточки для группировки слияния: сперва штампованный
+    customer.phone (разрезолвленный из @lid), иначе channel_conversation_id, ЕСЛИ
+    он сам — реальный номер (@c.us, 8-12 цифр), а не скрытый @lid (≥13)."""
+    p = _norm_phone(getattr(cust, "phone", None))
+    if 9 <= len(p) <= 13 and not _is_lid_key(p):
+        return p
+    cid = _norm_phone(getattr(conv, "channel_conversation_id", None))
+    if 8 <= len(cid) <= 12:  # @c.us-стиль реальный номер (lid длиннее)
+        return cid
+    return ""
+
+
+def merge_wa_split(db: Optional[Session] = None, *, execute: bool = True) -> dict:
+    """СТРУКТУРНОЕ слияние РАЗОРВАННЫХ WhatsApp-карточек одного человека (чисто БД).
+
+    Корень рассинхрона (кейс Zaal): рекламный лид приходит И под скрытым `@lid`
+    (живой вебхук), И под реальным телефоном `@c.us` (history-sync) → ДВА customer
+    + ДВЕ conversation с РАЗБИТОЙ и частично ДУБЛИРОВАННОЙ историей. `resolve_lid_phone`
+    знает реальный номер, но раньше он только косметически штамповался. Здесь номер =
+    КАНОН, и склейка идёт ПО ДЕЛУ:
+      • группируем whatsapp-карточки (вкл. архивные) по реальному телефону;
+      • канон = самая свежеактивная; ПЕРЕНОСИМ в него все сообщения остальных
+        (дедуп по WA-msg-id — и полному, и суффиксу), фрагмент → ARCHIVED (обратимо,
+        НЕ удаляем — правило never-delete; дубль-сообщения остаются на архивной тени);
+      • перенацеливаем идентичности (@lid + телефон) и сам фрагмент на customer
+        канона → впредь ЛЮБОЙ идентификатор резолвится в ОДНУ карточку;
+      • канону ставим channel_conversation_id = телефон (phone-canonical) → живой
+        вебхук (после ingestion-фикса) попадает В НЕГО, без новых фрагментов;
+      • осиротевшие задачи фрагмента → superseded.
+
+    execute=False — СУХОЙ ПРОГОН: только считает, что слилось бы, ничего не меняет.
+    Идемпотентно: полностью слитые фрагменты (архив + тот же customer + нечего
+    переносить) пропускаются."""
+    from db.connection import session_scope
+    from db.models import ConversationStatusEnum, ChannelIdentity, ScheduledAction
+
+    _ARCH = ConversationStatusEnum.ARCHIVED.value
+
+    def _wa_ids(_db: Session, conv_id) -> tuple[set, set]:
+        full: set = set()
+        suf: set = set()
+        for meta in _db.execute(
+            select(Message.extra_meta).where(Message.conversation_id == conv_id)
+        ).scalars().all():
+            if isinstance(meta, dict):
+                w = meta.get("waha_id")
+                if w:
+                    full.add(str(w))
+                    s = _wa_msgid_suffix(w)
+                    if s:
+                        suf.add(s)
+        return full, suf
+
+    def _run(_db: Session) -> dict:
+        out: dict = {
+            "groups": 0, "merged_convs": 0, "moved_msgs": 0, "skipped_dupes": 0,
+            "archived": 0, "pairs": [], "dry": not execute,
+        }
+        rows = (
+            _db.query(Conversation, Customer)
+            .join(Customer, Conversation.customer_id == Customer.id)
+            .filter(Conversation.channel == "whatsapp")
+            .all()
+        )
+        by_phone: dict[str, list] = {}
+        for conv, cust in rows:
+            ph = _canon_real_phone(conv, cust)
+            if len(ph) < 8:
+                continue
+            by_phone.setdefault(ph, []).append((conv, cust))
+
+        _floor = datetime.min.replace(tzinfo=timezone.utc)
+        for phone, group in by_phone.items():
+            if len(group) < 2:
+                continue
+            # канон = самая свежеактивная НЕархивная (иначе самая свежая вообще)
+            active = [g for g in group if g[0].status != _ARCH]
+            pool = active or group
+            pool.sort(key=lambda gc: getattr(gc[0], "last_message_at", None) or _floor, reverse=True)
+            canon, canon_cust = pool[0]
+            frags = [g for g in group if g[0].id != canon.id]
+            if not frags:
+                continue
+
+            full, suf = _wa_ids(_db, canon.id)
+            did_something = False
+            for fconv, fcust in frags:
+                msgs = _db.execute(
+                    select(Message).where(Message.conversation_id == fconv.id)
+                ).scalars().all()
+                movable = []
+                for m in msgs:
+                    meta = m.extra_meta or {}
+                    w = meta.get("waha_id")
+                    s = _wa_msgid_suffix(w)
+                    if w and (str(w) in full or (s and s in suf)):
+                        out["skipped_dupes"] += 1
+                        continue
+                    movable.append(m)
+                already_merged = (
+                    fconv.status == _ARCH
+                    and fcust.id == canon_cust.id
+                    and not movable
+                )
+                if already_merged:
+                    continue
+                did_something = True
+                out["merged_convs"] += 1
+                out["pairs"].append({
+                    "phone": phone, "canon": str(canon.id), "frag": str(fconv.id),
+                    "move": len(movable), "dry": not execute,
+                })
+                out["moved_msgs"] += len(movable)
+                out["archived"] += 1
+                if not execute:
+                    continue
+                # перенос сообщений (raw — без ORM-каскадов)
+                for m in movable:
+                    m.conversation_id = canon.id
+                    meta = m.extra_meta or {}
+                    w = meta.get("waha_id")
+                    if w:
+                        full.add(str(w))
+                        s = _wa_msgid_suffix(w)
+                        if s:
+                            suf.add(s)
+                # перенос стадии/черновика/предложения + архивирование фрагмента
+                _carry_and_archive(canon, fconv, f"split→merge по тел. {phone}", ConversationStatusEnum)
+                # фрагмент и его идентичности → customer канона (одна личность)
+                if fcust.id != canon_cust.id:
+                    _db.execute(
+                        _sqlupdate(ChannelIdentity)
+                        .where(ChannelIdentity.customer_id == fcust.id)
+                        .values(customer_id=canon_cust.id)
+                    )
+                    fconv.customer_id = canon_cust.id
+                # осиротевшие задачи фрагмента
+                _db.execute(
+                    _sqlupdate(ScheduledAction)
+                    .where(ScheduledAction.conversation_id == fconv.id,
+                           ScheduledAction.status.in_(("pending", "processing")))
+                    .values(status="superseded")
+                )
+
+            if did_something and execute:
+                out["groups"] += 1
+                # phone-canonical: впредь живой трафик попадает В канон
+                canon.channel_conversation_id = phone
+                if not _norm_phone(getattr(canon_cust, "phone", None)):
+                    canon_cust.phone = ("+" + phone)[:50]
+                mx = _db.execute(
+                    select(_sqlfunc.max(Message.created_at)).where(Message.conversation_id == canon.id)
+                ).scalar()
+                if mx is not None:
+                    if mx.tzinfo is None:
+                        mx = mx.replace(tzinfo=timezone.utc)
+                    canon.last_message_at = mx
+                # идентичность (whatsapp, телефон) → customer канона
+                ex = _db.execute(
+                    select(ChannelIdentity).where(
+                        ChannelIdentity.channel == "whatsapp",
+                        ChannelIdentity.external_id == phone,
+                    )
+                ).scalar_one_or_none()
+                if ex is None:
+                    _db.add(ChannelIdentity(customer_id=canon_cust.id, channel="whatsapp", external_id=phone))
+                elif ex.customer_id != canon_cust.id:
+                    ex.customer_id = canon_cust.id
+            elif did_something:
+                out["groups"] += 1
+        _db.flush()
+        return out
 
     if db is not None:
         return _run(db)

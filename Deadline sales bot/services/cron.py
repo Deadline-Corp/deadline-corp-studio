@@ -136,10 +136,20 @@ async def _worker_loop(*, tenant_config: dict, interval_sec: int) -> None:
             from services.whatsapp_sync import (
                 cleanup_wa_artifacts, dedup_wa_by_phone, dedup_wa_by_name,
                 cancel_orphan_scheduled_actions, dedup_scheduled_actions,
+                merge_wa_split,
             )
             _cl = cleanup_wa_artifacts()
             if _cl.get("phantoms") or _cl.get("echo_dupes"):
                 logger.info("[cron] wa cleanup: %s", _cl)
+            # СТРУКТУРНОЕ слияние разорванных карточек по реальному телефону: @lid
+            # (живой вебхук) + @c.us (history-sync) одного человека → ОДНА карточка с
+            # ПЕРЕНЕСЁННОЙ историей (кейс Zaal). Чисто БД, идемпотентно. Делаем ДО
+            # лёгких дедупов — он сильнее (переносит сообщения, а не только архивит).
+            _mg = merge_wa_split()
+            if _mg.get("moved_msgs") or _mg.get("archived"):
+                logger.info("[cron] wa merge-split: groups=%s convs=%s moved=%s archived=%s",
+                            _mg.get("groups"), _mg.get("merged_convs"),
+                            _mg.get("moved_msgs"), _mg.get("archived"))
             # Дедуп @lid-дублей: по штампованному телефону + по имени (@lid-тень того
             # же контакта, у которой телефон не разрезолвлен). Чисто БД, без сети.
             _dd = dedup_wa_by_phone()

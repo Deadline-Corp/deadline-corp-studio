@@ -1395,6 +1395,12 @@ async def whatsapp_dedup(
     name_dedup = {"groups": 0, "archived": 0, "pairs": []}
     orphan_actions = {"superseded": 0}
     task_dups = {"superseded": 0}
+    # СТРУКТУРНОЕ слияние разорванных карточек по реальному телефону (@lid живого
+    # вебхука + @c.us history-sync одного человека → ОДНА карточка с ПЕРЕНЕСЁННОЙ
+    # историей, кейс Zaal). Гоняем и в dry-run (execute=false) — тогда только считает,
+    # ничего не меняет, показывает что слилось бы. Сильнее лёгких дедупов → ДО них.
+    from services.whatsapp_sync import merge_wa_split
+    merge_split = merge_wa_split(db, execute=req.execute)
     if req.execute:
         from services.whatsapp_sync import (
             dedup_wa_by_phone, dedup_wa_by_name, cancel_orphan_scheduled_actions,
@@ -1408,6 +1414,8 @@ async def whatsapp_dedup(
         orphan_actions = cancel_orphan_scheduled_actions(db)
         task_dups = dedup_scheduled_actions(db)
         db.commit()
+    else:
+        db.rollback()  # dry-run: ничего не фиксируем
 
     return {
         "ok": True,
@@ -1415,6 +1423,7 @@ async def whatsapp_dedup(
         "merges": merges,
         "skipped": skipped,
         "resolved_lids": resolved_lids,
+        "merge_split": merge_split,
         "phone_dedup": phone_dedup,
         "name_dedup": name_dedup,
         "orphan_actions": orphan_actions,
