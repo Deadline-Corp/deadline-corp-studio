@@ -3033,6 +3033,75 @@ async def kb_delete(
     return {"ok": True, "deleted": n}
 
 
+@router.get("/kb/{source}/chunks")
+async def kb_chunks_view(
+    source: str,
+    _: None = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """Показать ЧАНКИ документа KB — чтобы видеть, КАК система нарезала текст
+    (и убедиться, что хорошо). По порядку chunk_index."""
+    rows = (
+        db.query(KBChunk).filter(KBChunk.source == source)
+        .order_by(KBChunk.chunk_index).all()
+    )
+    return {"source": source, "chunks": [
+        {"id": str(c.id), "index": c.chunk_index, "content": c.content,
+         "chars": len(c.content or "")} for c in rows
+    ]}
+
+
+class KbChunkEditRequest(BaseModel):
+    content: str = Field(..., min_length=1, max_length=20000)
+
+
+@router.post("/kb/chunk/{chunk_id}")
+async def kb_chunk_edit(
+    chunk_id: str,
+    req: KbChunkEditRequest,
+    _: None = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    """Править ОДИН чанк KB + переэмбеддить (чтобы поиск учитывал правку). Эмбеддинг
+    в потоке — не блокирует event loop."""
+    import asyncio
+    import main as _m
+    try:
+        cid = UUID(chunk_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="chunk_id must be a UUID")
+    row = db.get(KBChunk, cid)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Чанк не найден")
+    text = (req.content or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Пустой чанк")
+    try:
+        vec = await asyncio.to_thread(lambda: _m.embeddings.embed_documents([text])[0])
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Embedding failed: {e}")
+    row.content = text
+    row.embedding = vec
+    db.commit()
+    return {"ok": True, "id": chunk_id, "chars": len(text)}
+
+
+@router.delete("/kb/chunk/{chunk_id}")
+async def kb_chunk_delete(
+    chunk_id: str,
+    _: None = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    """Удалить один чанк KB (плохо нарезанный/мусорный). Только владелец."""
+    try:
+        cid = UUID(chunk_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="chunk_id must be a UUID")
+    n = db.query(KBChunk).filter(KBChunk.id == cid).delete()
+    db.commit()
+    return {"ok": True, "deleted": n}
+
+
 class OnboardingGenerateRequest(BaseModel):
     dump: str = Field("", max_length=200_000)
     url: Optional[str] = Field(None, max_length=500)

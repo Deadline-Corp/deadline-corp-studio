@@ -139,15 +139,8 @@ export function Brain() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 12 }}>
             <b style={{ fontSize: 12.5 }}>Загруженные источники</b>
             {kbSources.map(s => (
-              <div key={s.source} className="version-item"
-                   style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                <div style={{ flex: 1 }}>
-                  <span style={{ fontSize: 13 }}>{s.source}</span>
-                  <span className="faint" style={{ fontSize: 11, marginLeft: 8 }}>{s.chunks} чанков</span>
-                </div>
-                <button className="btn sm ghost" disabled={kbBusy}
-                        onClick={() => deleteKb(s.source)} title="Удалить источник">🗑</button>
-              </div>
+              <KbSourceRow key={s.source} source={s.source} chunks={s.chunks} busy={kbBusy}
+                           onDeleteSource={() => deleteKb(s.source)} showToast={showToast} />
             ))}
           </div>
         )}
@@ -419,6 +412,78 @@ function PromptEditor({ showToast }: { showToast: (t: string, err?: boolean) => 
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+/* Источник KB с раскрытием ЧАНКОВ: видно, как система нарезала текст; каждый чанк
+   можно поправить (переэмбеддится) или удалить. */
+type KbChunk = { id: string; index: number; content: string; chars: number }
+
+function KbSourceRow({ source, chunks, busy, onDeleteSource, showToast }: {
+  source: string; chunks: number; busy: boolean
+  onDeleteSource: () => void; showToast: (t: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [list, setList] = useState<KbChunk[] | null>(null)
+  const [edits, setEdits] = useState<Record<string, string>>({})
+  const [rowBusy, setRowBusy] = useState('')
+
+  const load = async () => {
+    try {
+      const r = await api.get<{ chunks: KbChunk[] }>(`/kb/${encodeURIComponent(source)}/chunks`)
+      setList(r.chunks)
+      setEdits(Object.fromEntries(r.chunks.map(c => [c.id, c.content])))
+    } catch { showToast('Не удалось загрузить чанки') }
+  }
+  const toggle = () => { const n = !open; setOpen(n); if (n && list === null) void load() }
+  const save = async (id: string) => {
+    setRowBusy(id)
+    try { await api.post(`/kb/chunk/${id}`, { content: edits[id] }); showToast('✅ Чанк сохранён и переэмбеддён'); await load() }
+    catch (e: any) { showToast(`Ошибка: ${e?.detail ?? e?.message ?? 'ошибка'}`) }
+    finally { setRowBusy('') }
+  }
+  const del = async (id: string) => {
+    setRowBusy(id)
+    try { await api.del(`/kb/chunk/${id}`); showToast('Чанк удалён'); await load() }
+    catch (e: any) { showToast(`Ошибка: ${e?.detail ?? e?.message ?? 'ошибка'}`) }
+    finally { setRowBusy('') }
+  }
+
+  return (
+    <div className="version-item" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button className="btn sm ghost" onClick={toggle} title="Показать чанки" style={{ minWidth: 26 }}>{open ? '▾' : '▸'}</button>
+        <div style={{ flex: 1, cursor: 'pointer' }} onClick={toggle}>
+          <span style={{ fontSize: 13 }}>{source}</span>
+          <span className="faint" style={{ fontSize: 11, marginLeft: 8 }}>{chunks} чанков</span>
+        </div>
+        <button className="btn sm" onClick={toggle}>{open ? 'Скрыть' : '👁 Чанки'}</button>
+        <button className="btn sm ghost" disabled={busy} onClick={onDeleteSource} title="Удалить весь источник">🗑</button>
+      </div>
+      {open && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 8, borderLeft: '2px solid var(--accent-border)' }}>
+          {list === null && <div className="faint" style={{ fontSize: 12 }}><span className="spin" /> загрузка чанков…</div>}
+          {list?.length === 0 && <div className="faint" style={{ fontSize: 12 }}>нет чанков</div>}
+          {list?.map(c => {
+            const cur = edits[c.id] ?? ''
+            const changed = cur !== c.content
+            return (
+              <div key={c.id} style={{ background: 'var(--panel-2)', borderRadius: 8, padding: 8 }}>
+                <div className="faint" style={{ fontSize: 11, marginBottom: 4 }}>
+                  чанк #{c.index} · {cur.length} симв.{changed ? ' · есть правки' : ''}
+                </div>
+                <textarea value={cur} onChange={e => setEdits(p => ({ ...p, [c.id]: e.target.value }))}
+                          style={{ minHeight: 68, width: '100%', fontSize: 12.5, lineHeight: 1.45 }} />
+                <div style={{ display: 'flex', gap: 6, marginTop: 5 }}>
+                  <button className="btn sm primary" disabled={!!rowBusy || !changed || !cur.trim()} onClick={() => save(c.id)}>💾 Сохранить</button>
+                  <button className="btn sm ghost" disabled={!!rowBusy} onClick={() => del(c.id)} title="Удалить чанк">🗑</button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
