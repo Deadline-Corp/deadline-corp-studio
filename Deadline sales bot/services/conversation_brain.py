@@ -231,6 +231,22 @@ def _multi_tz_enabled() -> bool:
         return True
 
 
+# Слова про звонок/созвон — детерминированный страж против галлюцинаций LLM
+# (gemini ловит «договорились о созвоне» там, где звонка вообще не было).
+_CALL_WORDS = (
+    "созвон", "созвонимся", "созвонить", "созвоним", "перезвон", "позвон", "звонок",
+    "звонк", "наберу", "набер", "голосом", "по телефону", "телефон", "zoom", "зум",
+    "meet", "митинг", "встреч", "созвучи", "call", "видеозвон", "видео-звон", "вотсап звон",
+)
+
+
+def _mentions_call(transcript: str) -> bool:
+    """В переписке вообще есть упоминание звонка/созвона? Если НЕТ — «договорённость
+    о созвоне» точно галлюцинация LLM (кейс Вячеслав: «отправлю инфо» — звонка нет)."""
+    t = (transcript or "").lower()
+    return any(w in t for w in _CALL_WORDS)
+
+
 async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
                               llm: Any, settings: Any, refresh_draft: bool = True) -> dict:
     """Проанализировать диалог и применить решения. Возвращает что сделано.
@@ -324,10 +340,11 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
     # по факту нет — не создаём призрачный созвон (кейс «увидел КП и пропал»). Такой
     # лид попадёт в дожим через next_action, а не в календарь.
     # Предлагаем созвон ТОЛЬКО при: явной договорённости (call_agreed) + НАЗВАННОМ
-    # дне (call_day) + лид НЕ молчит. Без названного дня = бот «угадал» время →
-    # ложное срабатывание (кейс Вячеслав: «отправлю инфо в течение дня» ≠ созвон).
+    # дне (call_day) + в переписке РЕАЛЬНО упомянут звонок/созвон (_mentions_call —
+    # детерминированный страж против галлюцинаций LLM) + лид НЕ молчит.
+    _calls = _mentions_call(transcript)
     if (data.get("call_agreed") and data.get("call_day") and resolved_dt
-            and not _lead_silent(db, conv)):
+            and _calls and not _lead_silent(db, conv)):
         try:
             new_dt = resolved_dt
             prof = cust.profile_data or {}
@@ -366,11 +383,11 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
                 )
         except (ValueError, TypeError) as e:
             log.warning(f"[{str(conv.id)[:8]}] brain bad call_datetime: {e}")
-    # Бот пересмотрел и предложение в этот проход НЕ создаётся (нет явного согласия о
-    # ЗВОНКЕ с названным днём) → снимаем СВОЁ прежнее предложение (ложное/устаревшее,
-    # кейс Вячеслав: «отправлю инфо» ≠ созвон). Подтверждённые брони не трогаем
-    # (они в profile_data.booked_call_at, а не в pending_call_suggestion).
-    elif getattr(conv, "pending_call_suggestion", None):
+    # Снимаем СВОЁ прежнее предложение ТОЛЬКО если в переписке ВООБЩЕ нет упоминания
+    # звонка/созвона (детерминированно ложное — кейс Вячеслав: «отправлю инфо»). Так
+    # НЕ снесём валидное (где «созвонимся» есть, но LLM в этот проход не распознал —
+    # кейс Денис). Подтверждённые брони (booked_call_at) не трогаем.
+    elif getattr(conv, "pending_call_suggestion", None) and not _calls:
         conv.pending_call_suggestion = None
         db.commit()
         done["cleared_suggestion"] = True
