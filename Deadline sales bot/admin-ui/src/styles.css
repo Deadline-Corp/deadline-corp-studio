@@ -289,7 +289,11 @@ textarea { resize: vertical; }
   transform: translateY(-2px);
   box-shadow: 0 0 0 1px var(--tone), 0 0 26px -8px var(--tone), 0 14px 36px rgba(0, 0, 0, 0.5);
 }
-.flow-node.center { min-width: 236px; }
+.flow-node.center { min-width: 236px; animation: hubPulse 3.2s ease-in-out infinite; }
+@keyframes hubPulse {
+  0%, 100% { box-shadow: 0 0 0 1px var(--tone), 0 0 20px -8px var(--tone), 0 12px 32px rgba(0,0,0,.45); }
+  50%      { box-shadow: 0 0 0 1.5px var(--tone), 0 0 34px -4px var(--tone), 0 12px 32px rgba(0,0,0,.45); }
+}
 .flow-node.center::after {
   content: ""; position: absolute; inset: 0; pointer-events: none;
   background: linear-gradient(180deg, color-mix(in srgb, var(--tone) 13%, transparent), transparent 58%);

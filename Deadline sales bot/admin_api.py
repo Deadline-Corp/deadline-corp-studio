@@ -214,7 +214,7 @@ async def team_update(
 # OVERVIEW — данные для канваса
 # ============================================================================
 
-CHANNELS = ("website", "telegram", "instagram", "messenger")
+CHANNELS = ("whatsapp", "website", "telegram", "instagram", "messenger")
 
 
 @router.get("/overview")
@@ -240,6 +240,7 @@ async def overview(
     ).fetchall())
 
     configured = {
+        "whatsapp": bool(getattr(s, "waha_base_url", None) or getattr(s, "greenapi_id_instance", None)),
         "website": True,
         "telegram": bool(s.telegram_bot_token),
         "instagram": bool(s.meta_page_access_token),
@@ -1391,10 +1392,15 @@ async def whatsapp_dedup(
     # дубли с телефонными двойниками. Идёт ПОСЛЕ resolve_lids, чтобы поймать
     # только что добитые номера.
     phone_dedup = {"groups": 0, "archived": 0, "pairs": []}
+    name_dedup = {"groups": 0, "archived": 0, "pairs": []}
     orphan_actions = {"superseded": 0}
     if req.execute:
-        from services.whatsapp_sync import dedup_wa_by_phone, cancel_orphan_scheduled_actions
+        from services.whatsapp_sync import (
+            dedup_wa_by_phone, dedup_wa_by_name, cancel_orphan_scheduled_actions,
+        )
         phone_dedup = dedup_wa_by_phone(db)
+        # + дедуп «@lid-тени» по имени (телефон не разрезолвлен у @lid-карточки).
+        name_dedup = dedup_wa_by_name(db)
         # Погасить задачи/напоминания всех архивных карточек (вкл. только что слитые)
         # — чтобы задачник и календарь сразу актуализировались.
         orphan_actions = cancel_orphan_scheduled_actions(db)
@@ -1407,6 +1413,7 @@ async def whatsapp_dedup(
         "skipped": skipped,
         "resolved_lids": resolved_lids,
         "phone_dedup": phone_dedup,
+        "name_dedup": name_dedup,
         "orphan_actions": orphan_actions,
     }
 

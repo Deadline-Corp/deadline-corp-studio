@@ -117,14 +117,32 @@ def _corrections_context(query: str, channel: Optional[str] = None, k: int = 3) 
     воронка-воркфлоу и т.д.), а не игнорировал их. Своя короткая сессия (безопасно
     из to_thread). Best-effort: пусто при любой ошибке."""
     q = (query or "").strip()
-    if not q:
-        return ""
     try:
         from services.training import retrieve_corrections
         from db.connection import session_scope
+        from db.models import TrainingCorrection
+        from sqlalchemy import select
+        lines: list = []
+        seen: set = set()
         with session_scope() as _db:
-            rules = retrieve_corrections(_db, q, k=k, channel=channel)
-        return "\n".join(f"- {r['guidance']}" for r in rules if r.get("guidance"))
+            # 1) ВСЕГДА — общие быстрые правила («часовые пояса», «воронка-воркфлоу»):
+            #    их мало, это ГЛОБАЛЬНЫЕ инструкции; ретрив по близости их пропускал
+            #    (текст правила далёк от сообщения лида) → бот «не слушался».
+            quick = _db.execute(
+                select(TrainingCorrection.id, TrainingCorrection.correct_guidance)
+                .where(TrainingCorrection.is_active.is_(True),
+                       TrainingCorrection.created_by == "admin-ui-quick")
+                .limit(15)
+            ).all()
+            for rid, g in quick:
+                if g and rid not in seen:
+                    seen.add(rid); lines.append(g)
+            # 2) + релевантные ситуативные правила (тренер-цикл) по сообщению лида
+            if q:
+                for r in retrieve_corrections(_db, q, k=k, channel=channel):
+                    if r.get("guidance") and r.get("id") not in seen:
+                        seen.add(r.get("id")); lines.append(r["guidance"])
+        return "\n".join(f"- {g}" for g in lines)
     except Exception:  # noqa: BLE001
         return ""
 
@@ -209,9 +227,11 @@ def _prompt(name: str, stage: str, dialog: str, kb: str = "", offer: str = "",
         "точнее понял запрос; можем организовать звонок с человеком».\n"
         "Стартовые цены: лендинг от $300, интернет-магазин от $700, Telegram-бот "
         "от $300, Telegram Mini App от $500, AI-бот от $300.\n"
-        "ЯЗЫК: отвечай на ТОМ ЖЕ языке, на котором пишет лид (английский → "
-        "по-английски, русский → по-русски, и т.д.). Зеркаль язык последнего "
-        "сообщения лида.\n"
+        "⚠️ ЯЗЫК — СТРОГО: отвечай на языке ПОСЛЕДНЕГО сообщения ЛИДА (не оператора, "
+        "не предыдущей переписки). Грузинский → по-грузински (ქართულად), английский → "
+        "по-английски, русский → по-русски, казахский → по-казахски, турецкий → "
+        "по-турецки — НА ЛЮБОМ. Если лид пишет НЕ по-русски — НЕ переключайся на русский. "
+        "Зеркаль именно язык лида.\n"
         f"{corr_block}"
         f"{kb_block}\n"
         f"Лид: {name}. Стадия: {stage}.\n"

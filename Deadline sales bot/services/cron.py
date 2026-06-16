@@ -134,17 +134,18 @@ async def _worker_loop(*, tenant_config: dict, interval_sec: int) -> None:
         # фантомов + эхо-дублей каждый цикл. Без WAHA/LLM — безопасно часто.
         try:
             from services.whatsapp_sync import (
-                cleanup_wa_artifacts, dedup_wa_by_phone, cancel_orphan_scheduled_actions,
+                cleanup_wa_artifacts, dedup_wa_by_phone, dedup_wa_by_name,
+                cancel_orphan_scheduled_actions,
             )
             _cl = cleanup_wa_artifacts()
             if _cl.get("phantoms") or _cl.get("echo_dupes"):
                 logger.info("[cron] wa cleanup: %s", _cl)
-            # Дедуп @lid-дублей по штампованному телефону (чисто БД, без сети) —
-            # рекламные лиды не плодят вторую карточку: @lid-карточка и её
-            # телефонный двойник схлопываются в одну (старая → ARCHIVED).
+            # Дедуп @lid-дублей: по штампованному телефону + по имени (@lid-тень того
+            # же контакта, у которой телефон не разрезолвлен). Чисто БД, без сети.
             _dd = dedup_wa_by_phone()
-            if _dd.get("archived"):
-                logger.info("[cron] wa dedup-by-phone: %s", _dd)
+            _dn = dedup_wa_by_name()
+            if _dd.get("archived") or _dn.get("archived"):
+                logger.info("[cron] wa dedup: by_phone=%s by_name=%s", _dd, _dn)
             # Гасим осиротевшие задачи/напоминания архивных карточек — чтобы
             # «Мой день»/Календарь сами актуализировались под слияния (нет дублей
             # созвонов и просрочки от уже слитых карточек).

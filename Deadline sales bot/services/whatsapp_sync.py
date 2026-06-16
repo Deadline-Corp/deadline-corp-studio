@@ -184,6 +184,82 @@ def dedup_wa_by_phone(db: Optional[Session] = None) -> dict:
         return _run(_db)
 
 
+def _is_lid_key(cid: Optional[str]) -> bool:
+    """`@lid` скрытый id рекламного лида — длинная цифра 13+ знаков (НЕ телефон)."""
+    return len(_norm_phone(cid)) >= 13
+
+
+def _carry_and_archive(canon: Conversation, src: Conversation, reason: str, ConversationStatusEnum) -> None:
+    """Перенести на канон стадию(вперёд)/черновик/предложение-созвона/summary и
+    заархивировать src (обратимо). Общая логика для дедупа по телефону и по имени."""
+    try:
+        si = _STAGE_ORDER.index(getattr(src, "lead_stage", None) or "new_lead")
+        ci = _STAGE_ORDER.index(getattr(canon, "lead_stage", None) or "new_lead")
+        if si > ci:
+            canon.lead_stage = src.lead_stage
+    except ValueError:
+        pass
+    if getattr(src, "pending_wa_draft", None) and not getattr(canon, "pending_wa_draft", None):
+        canon.pending_wa_draft = src.pending_wa_draft
+    if getattr(src, "pending_call_suggestion", None) and not getattr(canon, "pending_call_suggestion", None):
+        canon.pending_call_suggestion = src.pending_call_suggestion
+    if (getattr(src, "summary", None) or "").strip() and not (getattr(canon, "summary", None) or "").strip():
+        canon.summary = (src.summary or "")[:2000]
+    src.status = ConversationStatusEnum.ARCHIVED
+    src.summary = ((src.summary or "") + f" → дубль слит в {canon.id} ({reason})").strip()[:2000]
+
+
+def dedup_wa_by_name(db: Optional[Session] = None) -> dict:
+    """Дедуп «@lid-тени» по ИМЕНИ (чисто БД). Один контакт приходит И под реальным
+    телефоном, И под скрытым `@lid` — имя WhatsApp идентично → ДВЕ карточки. Phone-
+    дедуп их не ловит (у @lid телефон не разрезолвлен). Сливаем активные whatsapp-
+    карточки с ОДИНАКОВЫМ именем, когда ключи РАЗНЫЕ и хотя бы один — `@lid` (именно
+    паттерн «телефон + тень», а не два разных лида). Имя ≥4 симв. Обратимо (ARCHIVED)."""
+    from db.connection import session_scope
+    from db.models import ConversationStatusEnum
+
+    def _run(_db: Session) -> dict:
+        out: dict = {"groups": 0, "archived": 0, "pairs": []}
+        rows = (
+            _db.query(Conversation, Customer)
+            .join(Customer, Conversation.customer_id == Customer.id)
+            .filter(Conversation.channel == "whatsapp",
+                    Conversation.status != ConversationStatusEnum.ARCHIVED)
+            .all()
+        )
+        by_name: dict[str, list] = {}
+        for conv, cust in rows:
+            name = (getattr(cust, "name", None) or "").strip().lower()
+            if len(name) < 4:  # короткие/пустые имена — не угадываем
+                continue
+            by_name.setdefault(name, []).append((conv, cust))
+
+        _floor = datetime.min.replace(tzinfo=timezone.utc)
+        for name, group in by_name.items():
+            if len(group) < 2:
+                continue
+            keys = {_norm_phone(c.channel_conversation_id) for c, _ in group}
+            has_lid = any(_is_lid_key(c.channel_conversation_id) for c, _ in group)
+            if len(keys) < 2 or not has_lid:  # одинаковый ключ или нет @lid — не наш случай
+                continue
+            out["groups"] += 1
+            group.sort(key=lambda gc: getattr(gc[0], "last_message_at", None) or _floor, reverse=True)
+            canon = group[0][0]
+            for src, _sc in group[1:]:
+                if src.id == canon.id:
+                    continue
+                _carry_and_archive(canon, src, "по имени", ConversationStatusEnum)
+                out["archived"] += 1
+                out["pairs"].append({"name": name, "archived": str(src.id), "canon": str(canon.id)})
+        _db.flush()
+        return out
+
+    if db is not None:
+        return _run(db)
+    with session_scope() as _db:
+        return _run(_db)
+
+
 def cancel_orphan_scheduled_actions(db: Optional[Session] = None) -> dict:
     """Погасить осиротевшие задачи/напоминания (чисто БД). Когда карточку
     архивируют (дедуп дублей), её pending/processing scheduled_actions остаются —

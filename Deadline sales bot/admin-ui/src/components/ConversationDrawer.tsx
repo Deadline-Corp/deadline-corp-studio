@@ -78,8 +78,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
     setBusy(true)
     try {
       await api.post(`/conversations/${convId}/suggest-reply`, {})
-      showToast('🤖 Ответ предложен — проверьте и нажмите ✅ Отправить')
-      await loadDetail()
+      await loadDetail()  // свежий черновик появится в поле — тост не нужен (закрывал кнопку «Отправить»)
     } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
     finally { setBusy(false) }
   }

@@ -102,7 +102,7 @@ export function Canvas() {
     const edges: Edge[] = []
     const edge = (id: string, source: string, target: string, tone: string, on = true): Edge => ({
       id, source, target, type: 'smoothstep', animated: on,
-      style: { stroke: tone, strokeWidth: 1.6, opacity: on ? 0.7 : 0.25 },
+      style: { stroke: tone, strokeWidth: on ? 2.2 : 1.2, opacity: on ? 0.85 : 0.25 },
     })
 
     if (kpi) {
@@ -130,7 +130,7 @@ export function Canvas() {
           { label: 'на операторе', value: ov.inbox.takeover },
           { label: 'передано', value: ov.inbox.handed_off },
         ],
-        to: '/brain',
+        to: '/inbox',
       } satisfies NodeData,
     })
 
