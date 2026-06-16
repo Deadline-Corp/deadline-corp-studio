@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
+import { useDrawer } from './DrawerContext'
 
 /* Всплывающие уведомления о договорённостях о созвоне (бот распознал в переписке).
    Дублируют то, что в карточке. «✅ Создать» — создаёт событие (и убирает везде).
@@ -12,7 +12,7 @@ export function CallSuggestionToasts() {
   const [items, setItems] = useState<Sugg[]>([])
   const [hidden, setHidden] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState('')
-  const nav = useNavigate()
+  const { openConversation } = useDrawer()
 
   const load = async () => {
     try { const r = await api.get<{ items: Sugg[] }>('/whatsapp/pending-suggestions'); setItems(r.items || []) }
@@ -20,9 +20,10 @@ export function CallSuggestionToasts() {
   }
   useEffect(() => { void load(); const t = setInterval(() => void load(), 30000); return () => clearInterval(t) }, [])
 
-  const confirm = async (id: string) => {
-    setBusy(id)
-    try { await api.post(`/conversations/${id}/call-suggestion`, { action: 'confirm' }); await load() }
+  const confirm = async (s: Sugg) => {
+    setBusy(s.id)
+    // Передаём время, которое видим — событие создастся даже если фон затёр поле.
+    try { await api.post(`/conversations/${s.id}/call-suggestion`, { action: 'confirm', at: s.at }); await load() }
     catch { /* ignore */ }
     finally { setBusy('') }
   }
@@ -36,8 +37,8 @@ export function CallSuggestionToasts() {
           <div style={{ fontSize: 12.5 }}><b>📅 Договорённость о созвоне</b></div>
           <div style={{ fontSize: 12.5, margin: '3px 0' }}>{i.name} — <b>{i.when_human}</b></div>
           <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
-            <button className="btn sm primary" disabled={busy === i.id} onClick={() => confirm(i.id)}>✅ Создать</button>
-            <button className="btn sm" onClick={() => nav(`/inbox?open=${i.id}`)}>Открыть</button>
+            <button className="btn sm primary" disabled={busy === i.id} onClick={() => confirm(i)}>✅ Создать</button>
+            <button className="btn sm" onClick={() => openConversation(i.id)}>Открыть</button>
             <button className="btn sm ghost" title="Скрыть (останется в карточке)" onClick={() => setHidden(s => new Set([...s, i.id]))}>✕</button>
           </div>
         </div>

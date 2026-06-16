@@ -515,7 +515,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
             <div style={{ display: 'flex', gap: 8 }}>
               <button className="btn sm primary" disabled={busy} onClick={async () => {
                 setBusy(true)
-                try { await api.post(`/conversations/${convId}/call-suggestion`, { action: 'confirm' }); showToast('📅 Событие создано в календаре'); await loadDetail() }
+                try { await api.post(`/conversations/${convId}/call-suggestion`, { action: 'confirm', at: detail.pending_call_suggestion?.at, medium: detail.pending_call_suggestion?.medium }); showToast('📅 Событие создано в календаре'); await loadDetail() }
                 catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
                 finally { setBusy(false) }
               }}>✅ Создать событие</button>

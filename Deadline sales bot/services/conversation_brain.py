@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from sqlalchemy.orm import Session
@@ -34,6 +34,44 @@ log = logging.getLogger(__name__)
 # Прямой порядок встроенных стадий — двигаем только вперёд.
 _FORWARD = ["new_lead", "in_dialog", "qualified", "on_call",
             "proposal", "prepayment", "completed_won"]
+
+_WEEKDAY_RU = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
+_WD_IDX = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
+
+
+def _resolve_call_dt(now_lead: datetime, call_day: Any, call_time: Any) -> Optional[datetime]:
+    """ДЕТЕРМИНИРОВАННО посчитать дату/время созвона из НАЗВАНИЯ дня (LLM путает
+    арифметику дат: «среда» → 18 вместо 17). LLM возвращает только КАКОЙ день назвали
+    (today/tomorrow/mon..sun) + время; точную дату считаем здесь от «сегодня» лида.
+
+    now_lead — текущее время в поясе ЛИДА (aware). Возвращает aware UTC или None."""
+    if not call_day:
+        return None
+    cd = str(call_day).strip().lower()[:3]
+    if cd in ("tod", "сег"):
+        target = now_lead
+    elif cd in ("tom", "зав"):
+        target = now_lead + timedelta(days=1)
+    elif cd in _WD_IDX:
+        delta = (_WD_IDX[cd] - now_lead.weekday()) % 7  # ближайшее вхождение (0=сегодня)
+        target = now_lead + timedelta(days=delta)
+    else:
+        return None
+    hh, mm = 10, 0  # дефолт — утро
+    t = str(call_time or "").strip().lower()
+    m = re.match(r"(\d{1,2})[:.\s](\d{2})", t)
+    if m:
+        hh, mm = int(m.group(1)), int(m.group(2))
+    elif t in ("morning", "утро", "утром"):
+        hh = 10
+    elif t in ("day", "afternoon", "день", "днём", "днем", "обед"):
+        hh = 14
+    elif t in ("evening", "вечер", "вечером"):
+        hh = 18
+    if not (0 <= hh <= 23 and 0 <= mm <= 59):
+        hh, mm = 10, 0
+    dt_lead = target.replace(hour=hh, minute=mm, second=0, microsecond=0)  # сохраняет пояс лида
+    return dt_lead.astimezone(timezone.utc)
 
 
 def _transcript(db: Session, conv: Conversation, limit: int = 14) -> str:
@@ -198,10 +236,15 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
         "(точный час не обязателен — «в среду утром», «завтра днём», «в пятницу» тоже "
         "считаются договорённостью; в т.ч. если ЭТО НАШ менеджер написал «договорились/"
         "поставил на среду утром»);\n"
-        '  "call_datetime_utc": ISO8601 в UTC. Если час не назван — бери разумный по части '
-        "суток (утро→10:00, день→14:00, вечер→18:00 ПО ВРЕМЕНИ ЛИДА), иначе null. "
-        f"Сейчас {now_utc.isoformat()} (UTC), у лида {now_lead.strftime('%Y-%m-%d %H:%M')} ({tz_label}). "
-        "Считай дни недели/«завтра»/«в среду утром» от времени ЛИДА, затем переведи в UTC;\n"
+        '  "call_day": НАЗВАНИЕ дня договорённости как его произнесли — одно из '
+        '"today"|"tomorrow"|"mon"|"tue"|"wed"|"thu"|"fri"|"sat"|"sun", иначе null. '
+        "НЕ вычисляй дату сам — только верни, какой день назвали («в среду»→wed, "
+        "«завтра»→tomorrow, «сегодня»→today). Дату посчитает система;\n"
+        '  "call_time": время по части суток — "HH:MM" (по времени ЛИДА), либо '
+        '"morning"|"day"|"evening", либо null;\n'
+        '  "call_datetime_utc": ISO8601 в UTC (запасной вариант, если call_day не подходит). '
+        "Если час не назван — утро→10:00, день→14:00, вечер→18:00 ПО ВРЕМЕНИ ЛИДА, иначе null. "
+        f"Сейчас у лида {now_lead.strftime('%Y-%m-%d %H:%M')} ({tz_label}), {_WEEKDAY_RU[now_lead.weekday()]};\n"
         '  "call_medium": "WhatsApp"|"Телефон"|"Zoom"|"Google Meet"|null;\n'
         '  "wants_human": true если лид ЯВНО просит позвонить/связаться с человеком/менеджером;\n'
         '  "reason": кратко почему (≤120 симв).\n\n'
@@ -239,13 +282,19 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
 
     # 2) ПРЕДЛОЖЕНИЕ созвона (НЕ авто-бронь): распознали договорённость → кладём
     #    в conv.pending_call_suggestion → менеджер подтверждает в карточке → событие.
-    if data.get("call_agreed") and data.get("call_datetime_utc"):
+    # Дату считаем ДЕТЕРМИНИРОВАННО из названия дня (LLM врёт: «среда»→18 вместо 17);
+    # call_datetime_utc — только запасной вариант, если день не распознан.
+    resolved_dt = _resolve_call_dt(now_lead, data.get("call_day"), data.get("call_time"))
+    if data.get("call_agreed") and (resolved_dt or data.get("call_datetime_utc")):
         try:
-            raw = str(data["call_datetime_utc"]).replace("Z", "+00:00")
-            new_dt = datetime.fromisoformat(raw)
-            if new_dt.tzinfo is None:
-                new_dt = new_dt.replace(tzinfo=timezone.utc)
-            new_dt = new_dt.astimezone(timezone.utc)
+            if resolved_dt is not None:
+                new_dt = resolved_dt
+            else:
+                raw = str(data["call_datetime_utc"]).replace("Z", "+00:00")
+                new_dt = datetime.fromisoformat(raw)
+                if new_dt.tzinfo is None:
+                    new_dt = new_dt.replace(tzinfo=timezone.utc)
+                new_dt = new_dt.astimezone(timezone.utc)
             prof = cust.profile_data or {}
             # не дублируем: уже забронировано ~то же время, или уже есть такое же
             # предложение, или предложение по тому же времени недавно отклоняли.

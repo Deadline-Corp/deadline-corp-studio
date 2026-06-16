@@ -827,6 +827,11 @@ async def conversation_call(
 
 class CallSuggestionRequest(BaseModel):
     action: str  # "confirm" | "dismiss"
+    # Фолбэк: время предложения, которое ВИДИТ менеджер в карточке/попапе. Если фон
+    # (брейн/дедуп) успел затереть conv.pending_call_suggestion между показом и кликом —
+    # бронируем по этому значению, чтобы кнопка «Создать событие» всегда работала.
+    at: Optional[str] = None
+    medium: Optional[str] = None
 
 
 @router.post("/conversations/{conv_id}/call-suggestion")
@@ -853,14 +858,21 @@ async def conversation_call_suggestion(
         return {"ok": True, "action": "dismiss"}
     if req.action != "confirm":
         raise HTTPException(status_code=400, detail="action: confirm | dismiss")
-    if not sugg.get("at"):
+    # Время берём из сохранённого предложения, иначе из запроса (то, что менеджер
+    # видит в карточке) — кнопка работает даже если фон затёр поле между показом и кликом.
+    at_raw = sugg.get("at") or req.at
+    medium = sugg.get("medium") or req.medium
+    if not at_raw:
         raise HTTPException(status_code=404, detail="Нет предложения созвона")
-    new_dt = datetime.fromisoformat(str(sugg["at"]).replace("Z", "+00:00"))
+    try:
+        new_dt = datetime.fromisoformat(str(at_raw).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Некорректная дата созвона")
     if new_dt.tzinfo is None:
         new_dt = new_dt.replace(tzinfo=timezone.utc)
     new_dt = new_dt.astimezone(timezone.utc)
     from services.conversation_brain import _book  # бронь+напоминания+уведомление
-    await _book(db, conv, cust, _main.settings, new_dt, sugg.get("medium"))
+    await _book(db, conv, cust, _main.settings, new_dt, medium)
     conv.pending_call_suggestion = None
     db.commit()
     return {"ok": True, "action": "confirm", "call_at": new_dt.isoformat()}

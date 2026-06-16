@@ -165,6 +165,10 @@ def dedup_wa_by_phone(db: Optional[Session] = None) -> dict:
                     pass
                 if getattr(src, "pending_wa_draft", None) and not getattr(canon, "pending_wa_draft", None):
                     canon.pending_wa_draft = src.pending_wa_draft
+                # Не теряем предложение созвона при слиянии — иначе кнопка «Создать
+                # событие» на каноне покажет «нет предложения».
+                if getattr(src, "pending_call_suggestion", None) and not getattr(canon, "pending_call_suggestion", None):
+                    canon.pending_call_suggestion = src.pending_call_suggestion
                 if (getattr(src, "summary", None) or "").strip() and not (getattr(canon, "summary", None) or "").strip():
                     canon.summary = (src.summary or "")[:2000]
                 src.status = ConversationStatusEnum.ARCHIVED
