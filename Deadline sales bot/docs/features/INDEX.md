@@ -30,6 +30,7 @@
 | [dedup-lid.md](dedup-lid.md) | @lid дедупликация: dedup_wa_by_phone, cancel_orphan_scheduled_actions, cleanup_wa_artifacts, LID API resolve | `services/whatsapp_sync.py`, `main.py` |
 | [db-backup.md](db-backup.md) | Бэкап БД: build_export (13 таблиц, gzip/JSON), GET /db-backup, авто-ежедневно в Telegram | `services/db_backup.py`, `admin_api.py` |
 | [config-snapshots.md](config-snapshots.md) | Снимки конфигурации (воронка/поля/автоматизации/настройки/промпт) — откат на любую версию; авто-снимок перед каждым изменением | `services/config_snapshot.py`, `admin_api.py`, миграция 021 |
+| [channels-connect.md](channels-connect.md) | Подключение каналов из панели БЕЗ редеплоя: токены в bot_settings → live settings (override-или-env), webhook-URL копировать, кнопка «Проверить» | `main.py` (apply_channel_settings_overrides), `admin_api.py`, `admin-ui/.../Channels.tsx` |
 | [canvas-overview.md](canvas-overview.md) | Обзор-канвас: метрики каналов (new_yesterday/hot/no_task), воронка, задачи, inbox | `admin_api.py` → `/overview` |
 | [panel-and-access.md](panel-and-access.md) | Панель (переписки/карточка/сворачивание), имена, доступ owner/менеджер | `admin-ui/src/*`, `admin_api.py` |
 | [deploy-and-ops.md](deploy-and-ops.md) | Деплой Railway, env-флаги, восстановление при висе, WAHA VPS, вотчдог | Railway, `services/cron.py`, `main.py` |
