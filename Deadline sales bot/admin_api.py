@@ -1058,6 +1058,32 @@ async def maintenance_dedup(
     return {"ok": True, "removed_dupes": removed, "merged_cards": merged, "detail": res}
 
 
+@router.get("/diagnostics")
+async def diagnostics_run(_: dict = Depends(_verify_member)):
+    """🩺 Проверка ЦЕЛОСТНОСТИ: находит рассинхроны календарь/стадия/бронь/напоминания
+    (стадия «Созвон назначен» без брони, бронь в прошлом, бронь у не-созвонной стадии,
+    напоминания-сироты). Только читает. Для раздела «Проверка системы» в настройках."""
+    import asyncio as _aio
+    from services.diagnostics import run_diagnostics
+    return await _aio.to_thread(run_diagnostics)
+
+
+@router.post("/diagnostics/heal")
+async def diagnostics_heal(_: dict = Depends(_verify_owner)):
+    """Безопасно (обратимо, без удаления) устранить найденные рассинхроны: отменить
+    напоминания-сироты, снять устаревшие брони, вернуть «пустой» on_call в «Квалифицирован»
+    (тишина >48ч). Каждое исправление — в Журнал решений (actor=automation)."""
+    import asyncio as _aio
+    from services.diagnostics import auto_heal
+    res = await _aio.to_thread(auto_heal)
+    try:
+        from services.activity_log import log_event
+        log_event("config", f"Авто-исправление целостности: {res}", level="info", actor="owner", meta=res)
+    except Exception:  # noqa: BLE001
+        pass
+    return {"ok": True, "fixed": res}
+
+
 class PinRequest(BaseModel):
     pinned: bool
 

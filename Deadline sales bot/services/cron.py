@@ -202,6 +202,17 @@ def run_wa_maintenance() -> dict:
                     logger.info("[cron] win-back (>%dд): создано задач %s", _wb_days, _wb.get("created"))
         except Exception as _we:  # noqa: BLE001
             logger.warning("[cron] win-back failed: %s", _we)
+        # 🩺 Авто-исправление целостности (само, без участия человека): отменить
+        # сироты-напоминания, снять устаревшие брони, вернуть «пустой» on_call в
+        # qualified. Чтобы рассинхроны календарь/стадия/бронь чистились сами.
+        try:
+            from services.diagnostics import auto_heal as _heal
+            _hr = _heal()
+            if any(_hr.values()):
+                summary["diagnostics_heal"] = _hr
+                logger.info("[cron] diagnostics auto-heal: %s", _hr)
+        except Exception as _he:  # noqa: BLE001
+            logger.warning("[cron] diagnostics heal failed: %s", _he)
         # Чистка таблицы идемпотентности входящих: ключи старше 3д не нужны (окно
         # ретраев платформ — минуты/часы), иначе processed_updates растёт без предела.
         try:

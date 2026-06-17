@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, getToken } from '../api/client'
 import { HintBar, hintsEnabled, setHintsEnabled } from '../components/HintBar'
 import { Help } from '../components/Help'
+import { useDrawer } from '../components/DrawerContext'
 
 /* Настройки: редактируемое поведение бота (прогрев/нудж — применяется без
    деплоя за ~минуту) + статус каналов/CRM/LLM (read-only) + состав KB. */
@@ -73,6 +74,7 @@ export function Settings() {
       <ConfigAgentCard />
       <div style={{ height: 14 }} />
       <MaintenanceCard />
+      <DiagnosticsCard />
       <div style={{ height: 14 }} />
       <BackupCard />
       <div style={{ height: 14 }} />
@@ -180,6 +182,71 @@ function MaintenanceCard() {
         {busy ? <span className="spin" /> : '🔄 Синхронизировать сейчас'}
       </button>
       {msg && <span style={{ marginLeft: 10, fontSize: 12.5 }}>{msg}</span>}
+    </div>
+  )
+}
+
+/* 🩺 Проверка целостности: находит рассинхроны (стадия «Созвон» без брони,
+   бронь в прошлом, напоминания-сироты) и безопасно их чинит. Бот делает это сам
+   каждые ~10 мин — здесь можно проверить/исправить вручную. */
+function DiagnosticsCard() {
+  const [busy, setBusy] = useState('')
+  const [data, setData] = useState<{ issues: any[]; ok: boolean; total_problems: number } | null>(null)
+  const [msg, setMsg] = useState('')
+  const { openConversation } = useDrawer()
+  const check = async () => {
+    setBusy('check'); setMsg('')
+    try { setData(await api.get('/diagnostics')) }
+    catch (e: any) { setMsg('Ошибка: ' + (e?.detail ?? e?.message ?? 'не вышло')) }
+    finally { setBusy('') }
+  }
+  const heal = async () => {
+    setBusy('heal'); setMsg('')
+    try {
+      const r = await api.post<any>('/diagnostics/heal', {})
+      const f = r.fixed || {}
+      setMsg(`✅ Исправлено: напоминаний-сирот ${f.orphan_reminders_cancelled || 0}, ` +
+             `броней снято ${f.stale_bookings_cleared || 0}, стадий откатано ${f.empty_oncall_reverted || 0}`)
+      await check()
+    } catch (e: any) { setMsg('Ошибка: ' + (e?.detail ?? e?.message ?? 'не вышло')) }
+    finally { setBusy('') }
+  }
+  return (
+    <div className="card">
+      <b>🩺 Проверка системы (целостность данных)</b>
+      <p className="faint" style={{ fontSize: 11.5, margin: '6px 0 10px' }}>
+        Находит рассинхроны: «Созвон назначен» без времени, созвон в прошлом, бронь не на той
+        стадии, напоминания без созвона. Бот чинит безопасные сам каждые ~10 минут — здесь можно
+        проверить и исправить прямо сейчас. Безопасно и обратимо: ничего не удаляется.
+      </p>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <button className="btn sm" onClick={check} disabled={!!busy}>{busy === 'check' ? <span className="spin" /> : '🔍 Проверить'}</button>
+        {data && !data.ok && <button className="btn sm primary" onClick={heal} disabled={!!busy}>{busy === 'heal' ? <span className="spin" /> : '🛠 Исправить безопасно'}</button>}
+        {msg && <span style={{ fontSize: 12.5 }}>{msg}</span>}
+      </div>
+      {data && (data.ok
+        ? <div className="chip ok" style={{ marginTop: 10, display: 'inline-block' }}>✅ Рассинхронов не найдено</div>
+        : <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {data.issues.map((it: any) => (
+              <div key={it.code} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className={`chip ${it.severity === 'high' ? 'danger' : 'warn'}`}>{it.count}</span>
+                  <b style={{ fontSize: 12.5 }}>{it.title}</b>
+                </div>
+                <div className="faint" style={{ fontSize: 11.5, marginTop: 3 }}>{it.detail}</div>
+                {it.auto_fix && <div className="faint" style={{ fontSize: 11, marginTop: 2 }}>🛠 авто: {it.auto_fix}</div>}
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 5 }}>
+                  {(it.items || []).slice(0, 10).map((x: any, i: number) => x.conversation_id ? (
+                    <button key={i} className="btn sm ghost" style={{ fontSize: 11 }}
+                            onClick={() => openConversation(x.conversation_id)}>
+                      {x.name || x.conversation_id.slice(0, 8)} →
+                    </button>
+                  ) : null)}
+                </div>
+              </div>
+            ))}
+          </div>
+      )}
     </div>
   )
 }
