@@ -775,8 +775,10 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
           />
         )}
 
-        {detail && me?.role !== 'viewer' &&
-          (detail.wa_autonomous || detail.next_action || (detail.scheduled_actions || []).some(a => !!a.due_at) || detail.nudge_paused) && (
+        {/* «План бота» — ТОЛЬКО когда лид передан боту (wa_autonomous). Если им
+            занимается человек (наблюдение/ручной ответ) — у бота нет плана, блок не
+            показываем, чтобы не путать «жду одобрения / следующий шаг» при ручном ведении. */}
+        {detail && me?.role !== 'viewer' && detail.wa_autonomous && (
           <BotPlanBlock detail={detail} convId={convId} showToast={showToast} />
         )}
 

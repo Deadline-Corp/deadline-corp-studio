@@ -501,6 +501,7 @@ async def conversations_list(
     takeover: Optional[bool] = None,
     q: Optional[str] = None,
     include_archived: bool = False,
+    include_lost: bool = False,
     limit: int = 50,
     offset: int = 0,
     _: None = Depends(_verify_member),
@@ -515,6 +516,12 @@ async def conversations_list(
         query = query.filter(Conversation.channel == channel)
     if stage:
         query = query.filter(Conversation.lead_stage == stage)
+    elif not include_lost and not q:
+        # «Переписки» по умолчанию НЕ показывают проигранных («Не сложилось») — чтобы
+        # не мешали в активной работе. Они доступны из воронки (стадия 'lost' явно) или
+        # по флагу include_lost / при поиске (q). Воронка/борд передаёт stage='lost' →
+        # эта ветка не срабатывает, проигранные там видны.
+        query = query.filter(Conversation.lead_stage != "lost")
     if status:
         query = query.filter(Conversation.status == status)
     elif not include_archived:
