@@ -11,9 +11,9 @@ export function useOverview() {
 }
 
 /* Текущий пользователь (роль из /me): owner — всё; manager — работа с лидами,
-   без Мозга/Автоматизаций/Каналов/Настроек (бэкенд это тоже форсит). */
+   без Мозга/Автоматизаций/Каналов/Настроек; viewer — только просмотр (бэкенд форсит). */
 export interface Me {
-  role: 'owner' | 'manager'
+  role: 'owner' | 'manager' | 'viewer'
   display_name: string
   member_name: string
   onboarding_done: boolean

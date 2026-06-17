@@ -366,10 +366,12 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                   </span>
                 )}
                 <div style={{ flex: 1 }} />
-                <button className="btn sm ghost" onClick={() => setActionsOpen(v => !v)}
-                        title="Действия со сделкой — свернуть/развернуть, чтобы видеть переписку">
-                  {actionsOpen ? '▾ Действия' : '⚙️ Действия'}
-                </button>
+                {me?.role === 'viewer'
+                  ? <span className="chip" title="Роль «наблюдатель» — только просмотр, без изменений">👁 только просмотр</span>
+                  : <button className="btn sm ghost" onClick={() => setActionsOpen(v => !v)}
+                            title="Действия со сделкой — свернуть/развернуть, чтобы видеть переписку">
+                      {actionsOpen ? '▾ Действия' : '⚙️ Действия'}
+                    </button>}
               </div>
               {actionsOpen && <div className="d-actions">
                 <button className="btn sm" onClick={toggleTakeover} disabled={busy}>
@@ -623,6 +625,9 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
             <div style={{ flex: 1 }} />
             <button className="btn sm ghost" onClick={() => setWaAutonomous(false)} disabled={busy}>Вернуть на одобрение</button>
           </div>
+        ) : detail && me?.role === 'viewer' ? (
+          <div style={{ borderTop: '1px solid var(--border)', padding: '10px 14px', textAlign: 'center' }}
+               className="faint">👁 Режим наблюдателя — только просмотр. Ответы и действия недоступны.</div>
         ) : detail && (
           /* ЕДИНОЕ поле ответа: предложка системы сразу в поле — измените, очистите
              или напишите своё, затем «Отправить». Второго поля ввода нет. */

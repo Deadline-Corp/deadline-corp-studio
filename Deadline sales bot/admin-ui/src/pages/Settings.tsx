@@ -439,6 +439,7 @@ function TeamCard() {
   const [newName, setNewName] = useState('')
   const [newDept, setNewDept] = useState('')
   const [newTg, setNewTg] = useState('')
+  const [newRole, setNewRole] = useState('manager')
   const [freshToken, setFreshToken] = useState<{ name: string; token: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [toast, setToast] = useState<{ text: string; err?: boolean } | null>(null)
@@ -458,9 +459,10 @@ function TeamCard() {
     try {
       const r = await api.post<{ token: string }>('/team', {
         name, department: newDept.trim() || undefined, telegram_chat_id: newTg.trim() || undefined,
+        role: newRole,
       })
       setFreshToken({ name, token: r.token })
-      setNewName(''); setNewDept(''); setNewTg('')
+      setNewName(''); setNewDept(''); setNewTg(''); setNewRole('manager')
       await load()
     } catch (e: any) { showToast(`Ошибка: ${e.message}`, true) }
     finally { setBusy(false) }
@@ -475,13 +477,18 @@ function TeamCard() {
 
   return (
     <div className="card">
-      <b>👥 Команда
-        <Help title="Менеджеры" text="Каждому менеджеру — свой токен входа. Он видит лидов, воронку, задачи и аналитику, но не может менять Мозг, Автоматизации и Настройки. Токен показывается один раз — передайте его лично." />
+      <b>👥 Команда и роли
+        <Help title="Роли и права" text="Каждому участнику — свой токен входа (показывается один раз). Роли: 👑 Владелец (вы) — полный доступ. 🧑‍💼 Менеджер — ведёт лидов: отвечает, берёт на себя, двигает стадии, ставит задачи; НО не трогает Настройки, Мозг, Автоматизации и не делает разрушительных изменений. 👁 Наблюдатель — только просмотр, ничего изменить не может (для стажёра/контроля)." />
       </b>
-      <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', maxWidth: 640 }}>
+      <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', maxWidth: 720 }}>
         <input placeholder="Имя (напр. «Николай»)"
                value={newName} onChange={e => setNewName(e.target.value)}
                onKeyDown={e => { if (e.key === 'Enter') create() }} style={{ flex: '1 1 150px' }} />
+        <select value={newRole} onChange={e => setNewRole(e.target.value)} style={{ flex: '0 0 auto' }}
+                title="Роль определяет права участника">
+          <option value="manager">🧑‍💼 Менеджер (ведёт лидов)</option>
+          <option value="viewer">👁 Наблюдатель (только просмотр)</option>
+        </select>
         <input placeholder="Отдел (клининг / ремонт)"
                value={newDept} onChange={e => setNewDept(e.target.value)} style={{ flex: '1 1 130px' }} />
         <input placeholder="Telegram chat_id (уведомления)"
@@ -512,7 +519,9 @@ function TeamCard() {
         {items.map(m => (
           <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
             <span style={{ opacity: m.active ? 1 : 0.5 }}>👤 {m.name}</span>
-            <span className="chip">{m.role}</span>
+            <span className={`chip ${m.role === 'viewer' ? '' : 'accent'}`}>
+              {m.role === 'viewer' ? '👁 наблюдатель' : '🧑‍💼 менеджер'}
+            </span>
             {m.department && <span className="chip">{m.department}</span>}
             {m.telegram_chat_id && <span className="chip" title="уведомления в Telegram">🔔</span>}
             {m.last_seen_at && <span className="faint" style={{ fontSize: 11 }}>был: {fmtTimeShort(m.last_seen_at)}</span>}

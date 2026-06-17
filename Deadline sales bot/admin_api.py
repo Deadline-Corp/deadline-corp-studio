@@ -92,7 +92,13 @@ def _verify_member(request: Request, db: Session = Depends(get_db)) -> dict:
         db.commit()
     except Exception:  # noqa: BLE001 — метка посещения не критична
         db.rollback()
-    return {"role": row.role or "manager", "name": row.name}
+    _role = row.role or "manager"
+    # Роль «наблюдатель» (viewer) — ТОЛЬКО ПРОСМОТР: блокируем любые изменяющие методы
+    # одной точкой (не гейтим 23 write-эндпоинта по отдельности). GET — разрешён.
+    if _role == "viewer" and request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        raise HTTPException(status_code=403,
+                            detail="Роль «наблюдатель» — только просмотр, без изменений")
+    return {"role": _role, "name": row.name}
 
 
 def _verify_owner(request: Request, db: Session = Depends(get_db)) -> dict:
@@ -128,6 +134,8 @@ class TeamCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=80)
     department: Optional[str] = Field(None, max_length=40)
     telegram_chat_id: Optional[str] = Field(None, max_length=40)
+    # manager — отвечает/ведёт лидов (без настроек/мозга/удалений); viewer — только просмотр.
+    role: str = Field("manager", pattern="^(manager|viewer)$")
 
 
 @router.get("/team")
@@ -159,8 +167,9 @@ async def team_create(
     import hashlib
     import secrets
     token = "mgr_" + secrets.token_urlsafe(24)
+    _role = req.role if req.role in ("manager", "viewer") else "manager"
     row = WorkspaceMember(
-        name=req.name.strip(), role="manager",
+        name=req.name.strip(), role=_role,
         token_hash=hashlib.sha256(token.encode("utf-8")).hexdigest(),
         active=True,
         department=(req.department or "").strip() or None,
@@ -168,8 +177,14 @@ async def team_create(
     )
     db.add(row)
     db.commit()
-    return {"ok": True, "id": str(row.id), "token": token,
-            "note": "Передайте токен менеджеру — он вводит его на экране входа. Повторно показать нельзя."}
+    try:
+        from services.activity_log import log_event
+        log_event("auth", f"Добавлен участник «{row.name}» с ролью {_role}", level="info",
+                  actor="admin-ui", meta={"member_id": str(row.id), "role": _role})
+    except Exception:  # noqa: BLE001
+        pass
+    return {"ok": True, "id": str(row.id), "token": token, "role": _role,
+            "note": "Передайте токен участнику — он вводит его на экране входа. Повторно показать нельзя."}
 
 
 @router.post("/team/{member_id}/toggle")
