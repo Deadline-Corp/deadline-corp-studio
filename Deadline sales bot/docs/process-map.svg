@@ -1,0 +1,145 @@
+<svg viewBox="0 0 1160 1110" xmlns="http://www.w3.org/2000/svg" role="img" font-family="'Segoe UI', system-ui, -apple-system, sans-serif">
+  <title>DEADLINE Sales Bot — карта процессов</title>
+  <desc>Слоистая схема: каналы, ядро обработки сообщения, решения и воронка, фоновый крон, витрины оператора и данные — со связями между ними.</desc>
+  <defs>
+    <marker id="arr" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#888780"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1160" height="1110" fill="#ffffff"/>
+  <text x="40" y="34" font-size="24" font-weight="700" fill="#1a1a1a">DEADLINE — как всё работает</text>
+  <text x="40" y="58" font-size="14" fill="#5F5E5A">Путь от сообщения клиента до закрытой сделки · сущности, логика процессов и связи</text>
+
+  <rect x="40" y="80" width="1080" height="92" rx="12" fill="#E6F1FB"/>
+  <text x="60" y="104" font-size="14" font-weight="700" fill="#185FA5">1 · КАНАЛЫ — откуда приходит лид</text>
+  <g font-size="12.5" font-weight="600" fill="#0C447C" text-anchor="middle">
+    <rect x="60" y="118" width="185" height="36" rx="18" fill="#fff" stroke="#85B7EB" stroke-width="1.3"/><text x="152" y="141">Сайт-виджет</text>
+    <rect x="274" y="118" width="185" height="36" rx="18" fill="#fff" stroke="#85B7EB" stroke-width="1.3"/><text x="366" y="141">Telegram</text>
+    <rect x="488" y="118" width="185" height="36" rx="18" fill="#fff" stroke="#85B7EB" stroke-width="1.3"/><text x="580" y="141">WhatsApp (WAHA)</text>
+    <rect x="702" y="118" width="185" height="36" rx="18" fill="#fff" stroke="#85B7EB" stroke-width="1.3"/><text x="794" y="141">Messenger</text>
+    <rect x="916" y="118" width="185" height="36" rx="18" fill="#fff" stroke="#85B7EB" stroke-width="1.3"/><text x="1008" y="141">Instagram</text>
+  </g>
+
+  <line x1="580" y1="172" x2="580" y2="196" stroke="#888780" stroke-width="2" marker-end="url(#arr)"/>
+  <text x="592" y="189" font-size="11.5" fill="#5F5E5A">входящее сообщение / вебхук</text>
+
+  <rect x="40" y="200" width="1080" height="132" rx="12" fill="#EEEDFE"/>
+  <text x="60" y="224" font-size="14" font-weight="700" fill="#534AB7">2 · ЯДРО — главный поток на КАЖДОЕ сообщение (_handle_message)</text>
+  <g text-anchor="middle">
+    <g>
+      <rect x="60" y="236" width="230" height="64" rx="9" fill="#fff" stroke="#AFA9EC" stroke-width="1.4"/>
+      <text x="175" y="262" font-size="13" font-weight="700" fill="#26215C">Идемпотентность</text>
+      <text x="175" y="282" font-size="11" fill="#5F5E5A">не обработать дважды</text>
+    </g>
+    <g>
+      <rect x="330" y="236" width="230" height="64" rx="9" fill="#fff" stroke="#AFA9EC" stroke-width="1.4"/>
+      <text x="445" y="262" font-size="13" font-weight="700" fill="#26215C">Идентификация</text>
+      <text x="445" y="282" font-size="11" fill="#5F5E5A">склейка по email / @username</text>
+    </g>
+    <g>
+      <rect x="600" y="236" width="230" height="64" rx="9" fill="#fff" stroke="#7F77DD" stroke-width="1.8"/>
+      <text x="715" y="261" font-size="13" font-weight="700" fill="#26215C">МОЗГ ОТВЕТА</text>
+      <text x="715" y="279" font-size="10.5" fill="#5F5E5A">диалог + база знаний + правила</text>
+      <text x="715" y="293" font-size="10.5" fill="#5F5E5A">→ 1 LLM → reply_polish</text>
+    </g>
+    <g>
+      <rect x="870" y="236" width="230" height="64" rx="9" fill="#fff" stroke="#AFA9EC" stroke-width="1.4"/>
+      <text x="985" y="261" font-size="13" font-weight="700" fill="#26215C">Маршрутизация</text>
+      <text x="985" y="279" font-size="10.5" fill="#5F5E5A">👀 наблюдение · 📝 черновик</text>
+      <text x="985" y="293" font-size="10.5" fill="#5F5E5A">🤖 автопилот (только WhatsApp)</text>
+    </g>
+  </g>
+  <g stroke="#7F77DD" stroke-width="1.6" marker-end="url(#arr)">
+    <line x1="290" y1="268" x2="326" y2="268"/>
+    <line x1="560" y1="268" x2="596" y2="268"/>
+    <line x1="830" y1="268" x2="866" y2="268"/>
+  </g>
+  <text x="60" y="320" font-size="11" fill="#534AB7">⚙ «серьёзное» (день/время/пояс созвона) считает КОД, не LLM · сайт — бот отвечает всегда</text>
+
+  <line x1="580" y1="332" x2="580" y2="356" stroke="#888780" stroke-width="2" marker-end="url(#arr)"/>
+
+  <rect x="40" y="360" width="1080" height="176" rx="12" fill="#E1F5EE"/>
+  <text x="60" y="384" font-size="14" font-weight="700" fill="#0F6E56">3 · РЕШЕНИЯ И ВОРОНКА — что бот меняет</text>
+  <g text-anchor="middle">
+    <g>
+      <rect x="60" y="396" width="300" height="58" rx="9" fill="#fff" stroke="#5DCAA5" stroke-width="1.4"/>
+      <text x="210" y="420" font-size="13" font-weight="700" fill="#04342C">Стадия воронки ↑</text>
+      <text x="210" y="439" font-size="10.5" fill="#5F5E5A">new→…→won / lost · StageTransition</text>
+    </g>
+    <g>
+      <rect x="430" y="396" width="300" height="58" rx="9" fill="#fff" stroke="#5DCAA5" stroke-width="1.4"/>
+      <text x="580" y="420" font-size="13" font-weight="700" fill="#04342C">Бронь созвона</text>
+      <text x="580" y="439" font-size="10.5" fill="#5F5E5A">+ напоминания −24ч/−3ч/−1ч</text>
+    </g>
+    <g>
+      <rect x="800" y="396" width="300" height="58" rx="9" fill="#fff" stroke="#5DCAA5" stroke-width="1.4"/>
+      <text x="950" y="420" font-size="13" font-weight="700" fill="#04342C">Хэндофф оператору</text>
+      <text x="950" y="439" font-size="10.5" fill="#5F5E5A">контакт собран + бриф → Telegram</text>
+    </g>
+  </g>
+  <g stroke="#1D9E75" stroke-width="1.5" marker-end="url(#arr)">
+    <line x1="210" y1="454" x2="430" y2="486"/>
+    <line x1="580" y1="454" x2="580" y2="486"/>
+    <line x1="950" y1="454" x2="730" y2="486"/>
+  </g>
+  <rect x="290" y="488" width="580" height="40" rx="9" fill="#0F6E56"/>
+  <text x="580" y="513" font-size="13" font-weight="700" fill="#fff" text-anchor="middle">🤖 ЖУРНАЛ РЕШЕНИЙ (BotDecision) — что и ПОЧЕМУ, простым языком</text>
+
+  <line x1="580" y1="536" x2="580" y2="560" stroke="#888780" stroke-width="2" marker-end="url(#arr)"/>
+
+  <rect x="40" y="564" width="1080" height="150" rx="12" fill="#FAEEDA"/>
+  <text x="60" y="588" font-size="14" font-weight="700" fill="#854F0B">4 · ФОН — крон каждые ~10 мин (сам, без оператора)</text>
+  <g font-size="12" font-weight="600" fill="#633806" text-anchor="middle">
+    <rect x="60" y="600" width="320" height="40" rx="9" fill="#fff" stroke="#EF9F27" stroke-width="1.3"/><text x="220" y="625">Остывание t° · авто-проигрыш</text>
+    <rect x="420" y="600" width="320" height="40" rx="9" fill="#fff" stroke="#EF9F27" stroke-width="1.3"/><text x="580" y="625">Дожим-каденция (молчуны)</text>
+    <rect x="780" y="600" width="320" height="40" rx="9" fill="#fff" stroke="#EF9F27" stroke-width="1.3"/><text x="940" y="625">Win-back (вернуть проигранных)</text>
+    <rect x="60" y="648" width="320" height="40" rx="9" fill="#fff" stroke="#EF9F27" stroke-width="1.3"/><text x="220" y="673">Диагностика + авто-лечение</text>
+    <rect x="420" y="648" width="320" height="40" rx="9" fill="#fff" stroke="#EF9F27" stroke-width="1.3"/><text x="580" y="673">Дедуп карточек / сообщений</text>
+    <rect x="780" y="648" width="320" height="40" rx="9" fill="#fff" stroke="#EF9F27" stroke-width="1.3"/><text x="940" y="673">Отправка bot-followup</text>
+  </g>
+  <text x="60" y="704" font-size="11" fill="#854F0B">🛡 всё исходящее — троттл (≥5с + случайная задержка) + дневной потолок (антибан, неофиц. WhatsApp)</text>
+
+  <line x1="580" y1="714" x2="580" y2="738" stroke="#888780" stroke-width="2" marker-end="url(#arr)"/>
+
+  <rect x="40" y="742" width="1080" height="158" rx="12" fill="#F1EFE8"/>
+  <text x="60" y="766" font-size="14" font-weight="700" fill="#444441">5 · ВИТРИНЫ ОПЕРАТОРА — где работает человек</text>
+  <g text-anchor="middle">
+    <g>
+      <rect x="60" y="778" width="300" height="62" rx="9" fill="#fff" stroke="#B4B2A9" stroke-width="1.4"/>
+      <text x="210" y="801" font-size="13" font-weight="700" fill="#2C2C2A">ЗАДАЧНИК (зоны)</text>
+      <text x="210" y="819" font-size="10" fill="#5F5E5A">Одобри · Твой ход · Бот ведёт</text>
+      <text x="210" y="832" font-size="10" fill="#993C1D">⚠ Затыки — лид без движения</text>
+    </g>
+    <g>
+      <rect x="430" y="778" width="300" height="62" rx="9" fill="#fff" stroke="#B4B2A9" stroke-width="1.4"/>
+      <text x="580" y="805" font-size="13" font-weight="700" fill="#2C2C2A">Аналитика</text>
+      <text x="580" y="824" font-size="10.5" fill="#5F5E5A">выручка · воронка · каналы</text>
+    </g>
+    <g>
+      <rect x="800" y="778" width="300" height="62" rx="9" fill="#fff" stroke="#B4B2A9" stroke-width="1.4"/>
+      <text x="950" y="805" font-size="13" font-weight="700" fill="#2C2C2A">Telegram-бриф</text>
+      <text x="950" y="824" font-size="10.5" fill="#5F5E5A">карточка лида менеджеру</text>
+    </g>
+  </g>
+  <line x1="210" y1="840" x2="210" y2="862" stroke="#888780" stroke-width="2" marker-end="url(#arr)"/>
+  <rect x="330" y="856" width="500" height="36" rx="9" fill="#1D9E75"/>
+  <text x="580" y="879" font-size="13" font-weight="700" fill="#fff" text-anchor="middle">✅ Человек закрывает сделку → deal_value (выручка)</text>
+
+  <rect x="40" y="912" width="1080" height="150" rx="12" fill="#FBEAF0"/>
+  <text x="60" y="936" font-size="14" font-weight="700" fill="#993556">ДАННЫЕ — что все процессы читают и пишут</text>
+  <g font-size="11.5" font-weight="600" fill="#72243E" text-anchor="middle">
+    <rect x="60" y="948" width="196" height="34" rx="8" fill="#fff" stroke="#ED93B1" stroke-width="1.2"/><text x="158" y="970">Customer</text>
+    <rect x="271" y="948" width="196" height="34" rx="8" fill="#fff" stroke="#ED93B1" stroke-width="1.2"/><text x="369" y="970">Conversation</text>
+    <rect x="482" y="948" width="196" height="34" rx="8" fill="#fff" stroke="#ED93B1" stroke-width="1.2"/><text x="580" y="970">Message</text>
+    <rect x="693" y="948" width="196" height="34" rx="8" fill="#fff" stroke="#ED93B1" stroke-width="1.2"/><text x="791" y="970">ScheduledAction</text>
+    <rect x="904" y="948" width="196" height="34" rx="8" fill="#fff" stroke="#ED93B1" stroke-width="1.2"/><text x="1002" y="970">StageTransition</text>
+    <rect x="60" y="990" width="250" height="34" rx="8" fill="#fff" stroke="#ED93B1" stroke-width="1.2"/><text x="185" y="1012">BotDecision</text>
+    <rect x="323" y="990" width="250" height="34" rx="8" fill="#fff" stroke="#ED93B1" stroke-width="1.2"/><text x="448" y="1012">KBChunk (база знаний)</text>
+    <rect x="586" y="990" width="250" height="34" rx="8" fill="#fff" stroke="#ED93B1" stroke-width="1.2"/><text x="711" y="1012">TrainingCorrection</text>
+    <rect x="849" y="990" width="251" height="34" rx="8" fill="#fff" stroke="#ED93B1" stroke-width="1.2"/><text x="974" y="1012">bot_settings</text>
+  </g>
+  <text x="60" y="1046" font-size="11" fill="#993556">🔗 связь: Customer 1—∞ Conversation 1—∞ Message · задачи и решения привязаны к диалогу · один человек в разных каналах = один Customer</text>
+
+  <text x="40" y="1086" font-size="11.5" fill="#5F5E5A"><tspan font-weight="700" fill="#1a1a1a">Легенда: </tspan><tspan fill="#185FA5">■</tspan> каналы  <tspan fill="#534AB7">■</tspan> ядро  <tspan fill="#0F6E56">■</tspan> решения/воронка  <tspan fill="#854F0B">■</tspan> фон/крон  <tspan fill="#444441">■</tspan> витрины  <tspan fill="#993556">■</tspan> данные   ·   серые стрелки = поток сверху вниз</text>
+</svg>
