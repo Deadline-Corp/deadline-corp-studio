@@ -41,6 +41,8 @@ export function Settings() {
       <div style={{ height: 14 }} />
       <PresetsCard />
       <div style={{ height: 14 }} />
+      <FeatureFlagsCard />
+      <div style={{ height: 14 }} />
       <ConfigAgentCard />
       <div style={{ height: 14 }} />
       <LanguagesCard />
@@ -598,6 +600,64 @@ function PresetsCard() {
 }
 
 /* ---------- Поля лида (редактор определений) ---------- */
+
+const HIDEABLE_SECTIONS = [
+  { k: 'funnel', label: '📊 Воронка' },
+  { k: 'inbox', label: '💬 Переписки' },
+  { k: 'tasks', label: '⏰ Задачи' },
+  { k: 'calendar', label: '📅 Календарь' },
+  { k: 'automations', label: '⚡ Автоматизации' },
+  { k: 'analytics', label: '📈 Аналитика' },
+  { k: 'brain', label: '🧠 Мозг' },
+  { k: 'channels', label: '🔌 Каналы' },
+]
+
+function FeatureFlagsCard() {
+  const [hidden, setHidden] = useState<string[]>([])
+  const [msg, setMsg] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    void api.get<any>('/behavior').then(r => {
+      const h = String(r.overrides?.hidden_sections || '').split(',').map((x: string) => x.trim()).filter(Boolean)
+      setHidden(h)
+    }).catch(() => { /* */ })
+  }, [])
+  const toggle = async (k: string) => {
+    if (busy) return
+    const next = hidden.includes(k) ? hidden.filter(x => x !== k) : [...hidden, k]
+    setHidden(next); setBusy(true)
+    try {
+      await api.post('/behavior', { values: { hidden_sections: next.join(',') } })
+      setMsg('✅ Сохранено — меню обновится в течение 30 секунд')
+    } catch (e: any) {
+      setMsg(`Ошибка: ${e.detail ?? e.message}`); setHidden(hidden)  // откат
+    } finally { setBusy(false) }
+  }
+  return (
+    <div className="card">
+      <h3 style={{ marginTop: 0 }}>🧩 Разделы под нишу</h3>
+      <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+        Скрыть лишние разделы под ваш бизнес — интерфейс станет проще. Напр. салону красоты
+        не нужны Автоматизации/Аналитика/Мозг: оставьте Переписки, Задачи, Календарь и Воронку.
+        Снятая галочка = раздел скрыт из меню. Канвас и Настройки скрыть нельзя.
+      </p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
+        {HIDEABLE_SECTIONS.map(s => {
+          const on = !hidden.includes(s.k)
+          return (
+            <label key={s.k} className={`chip ${on ? 'accent' : ''}`}
+                   style={{ cursor: 'pointer', padding: '6px 11px', opacity: on ? 1 : 0.55 }}>
+              <input type="checkbox" checked={on} onChange={() => toggle(s.k)}
+                     style={{ marginRight: 6, verticalAlign: 'middle' }} />
+              {s.label}
+            </label>
+          )
+        })}
+      </div>
+      {msg && <div className="faint" style={{ marginTop: 8, fontSize: 12 }}>{msg}</div>}
+    </div>
+  )
+}
 
 function FieldsCard() {
   const [items, setItems] = useState<any[] | null>(null)

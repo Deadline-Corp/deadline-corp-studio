@@ -51,6 +51,7 @@ export interface TodayView {
 }
 
 export interface Overview {
+  hidden_sections?: string[]
   bot: {
     model: string
     fallback_model: string

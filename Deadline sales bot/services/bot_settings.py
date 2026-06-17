@@ -36,6 +36,10 @@ KNOWN_KEYS: dict[str, type] = {
     "niche_key": str,
     "logo_url": str,
     "accent_color": str,
+    # Feature-flags: какие разделы панели СКРЫТЬ под нишу (через запятую, по nav-пути:
+    # funnel,inbox,tasks,calendar,automations,analytics,brain,channels). Пусто = всё видно.
+    # Напр. салон-реснички: "automations,analytics,brain" → останется расписание+база+воронка.
+    "hidden_sections": str,
     # Цель бота: call (созвон, дефолт) | collect_lead | consult | sale —
     # overlay-блок в системный промпт (prompts.GOAL_OVERLAYS)
     "bot_goal": str,

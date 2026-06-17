@@ -359,7 +359,14 @@ async def overview(
     except Exception:  # noqa: BLE001
         pass
 
+    # Feature-flags: какие разделы панели скрыть под нишу (Layout прячет nav-пункты).
+    try:
+        from services import bot_settings as _bs_ov
+        _hidden_sections = [x.strip() for x in (_bs_ov.get("hidden_sections") or "").split(",") if x.strip()]
+    except Exception:  # noqa: BLE001
+        _hidden_sections = []
     return {
+        "hidden_sections": _hidden_sections,
         "bot": {
             "model": _main._LLM_PRIMARY_MODEL,
             "fallback_model": _main._LLM_FALLBACK_MODEL,

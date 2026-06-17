@@ -74,7 +74,15 @@ export function Layout() {
   }
 
   const brand = me?.display_name || null
-  const visibleNav = NAV.filter(n => !(n as any).owner || me?.role !== 'manager')
+  // Скрытие разделов под нишу (feature-flags из настроек) — кроме Канваса и Настроек,
+  // которые нельзя спрятать (через них всё управляется/возвращается).
+  const hidden = overview?.hidden_sections || []
+  const isHidden = (to: string) => {
+    const k = to.replace(/^\//, '')
+    return !!k && k !== 'settings' && hidden.includes(k)
+  }
+  const visibleNav = NAV.filter(n =>
+    (!(n as any).owner || me?.role !== 'manager') && !isHidden(n.to))
 
   return (
     <MeCtx.Provider value={me}>
