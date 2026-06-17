@@ -638,6 +638,7 @@ async def conversation_messages(
     after: Optional[str] = None,
     after_id: Optional[str] = None,
     before: Optional[str] = None,
+    before_id: Optional[str] = None,
     limit: int = 50,
     _: None = Depends(_verify_member),
     db: Session = Depends(get_db),
@@ -667,7 +668,20 @@ async def conversation_messages(
             query = query.filter(Message.created_at > _aft)
         rows = query.order_by(Message.created_at.asc(), Message.id.asc()).limit(limit).all()
     elif before:
-        query = query.filter(Message.created_at < _parse_iso(before))
+        _bef = _parse_iso(before)
+        _bid = None
+        if before_id:
+            try:
+                _bid = UUID(before_id)
+            except (ValueError, AttributeError, TypeError):
+                _bid = None
+        if _bid is not None:
+            query = query.filter(or_(
+                Message.created_at < _bef,
+                and_(Message.created_at == _bef, Message.id < _bid),
+            ))
+        else:
+            query = query.filter(Message.created_at < _bef)
         rows = list(reversed(
             query.order_by(Message.created_at.desc(), Message.id.desc()).limit(limit).all()))
     else:

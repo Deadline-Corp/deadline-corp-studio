@@ -34,7 +34,11 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
   const [actionsOpen, setActionsOpen] = useState(false) // панель действий сверху — по умолчанию свёрнута (видно переписку)
   const msgsRef = useRef<HTMLDivElement>(null)
   const lastTsRef = useRef<string | null>(null)
-  const lastIdRef = useRef<string | null>(null)  // keyset-курсор: вторичный ключ по id
+  const lastIdRef = useRef<string | null>(null)  // keyset-курсор вниз (новые): вторичный ключ по id
+  const firstTsRef = useRef<string | null>(null)  // keyset-курсор вверх (старые): для «показать ранее»
+  const firstIdRef = useRef<string | null>(null)
+  const [hasMore, setHasMore] = useState(true)
+  const [loadingOlder, setLoadingOlder] = useState(false)
 
   const stages = useStages()
   const stageLabel = useStageLabel()
@@ -96,6 +100,10 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
         const last = r.items.length ? r.items[r.items.length - 1] : null
         lastTsRef.current = last ? last.created_at : null
         lastIdRef.current = last ? last.id : null
+        const first = r.items.length ? r.items[0] : null
+        firstTsRef.current = first ? first.created_at : null
+        firstIdRef.current = first ? first.id : null
+        setHasMore(r.items.length >= 80)  // полная страница → возможно есть ещё ранее
         scrollDown()
       } else {
         // keyset-курсор (created_at + id) — не теряем сообщения с одинаковым timestamp.
@@ -119,9 +127,35 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
     })
   }
 
+  // «Показать более ранние» — подгрузка истории вверх (keyset before+before_id), чтобы
+  // длинная переписка в панели = переписка в мессенджере. Сохраняем позицию прокрутки.
+  const loadOlder = async () => {
+    if (loadingOlder || !firstTsRef.current) return
+    setLoadingOlder(true)
+    try {
+      const qs = `before=${encodeURIComponent(firstTsRef.current)}`
+        + (firstIdRef.current ? `&before_id=${encodeURIComponent(firstIdRef.current)}` : '')
+        + '&limit=60'
+      const r = await api.get<{ items: Msg[] }>(`/conversations/${convId}/messages?${qs}`)
+      if (r.items.length) {
+        const box = msgsRef.current
+        const prevH = box ? box.scrollHeight : 0
+        setMsgs(prev => [...r.items, ...prev])
+        firstTsRef.current = r.items[0].created_at
+        firstIdRef.current = r.items[0].id
+        requestAnimationFrame(() => { if (box) box.scrollTop = box.scrollHeight - prevH })
+      }
+      if (r.items.length < 60) setHasMore(false)
+    } catch { /* разовый сбой переживём */ }
+    finally { setLoadingOlder(false) }
+  }
+
   useEffect(() => {
     lastTsRef.current = null
     lastIdRef.current = null
+    firstTsRef.current = null
+    firstIdRef.current = null
+    setHasMore(true)
     setMsgs([])
     setDetail(null)
     void loadDetail()
@@ -500,6 +534,12 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
         </div>
 
         <div className="d-msgs" ref={msgsRef}>
+          {hasMore && msgs.length > 0 && (
+            <button className="btn sm ghost load-older" onClick={loadOlder} disabled={loadingOlder}
+                    style={{ alignSelf: 'center', marginBottom: 8 }}>
+              {loadingOlder ? '…' : '↑ Показать более ранние'}
+            </button>
+          )}
           {msgs.length === 0 && <div className="empty">Сообщений пока нет</div>}
           {msgs.map(m => (
             <div key={m.id} className={`msg ${m.role}`}>
