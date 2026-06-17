@@ -3053,6 +3053,12 @@ async def config_snapshot_create(
     from services import config_snapshot as _cs
     snap = _cs.capture(db, req.label or "Ручной чекпойнт", created_by="admin-ui", reason="manual")
     db.commit()
+    try:
+        from services.activity_log import log_event
+        log_event("config", f"Создан чекпойнт конфигурации: {req.label or 'Ручной чекпойнт'}",
+                  level="info", actor="admin-ui", meta={"snapshot_id": str(snap.id), "manual": True})
+    except Exception:  # noqa: BLE001
+        pass
     return {"ok": True, "id": str(snap.id)}
 
 

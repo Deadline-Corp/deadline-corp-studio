@@ -4790,6 +4790,15 @@ async def startup():
     log.info("Watchdog: running (force-restart if loop wedged >120s)")
     log.info(f"Origins:  {settings.allowed_origins}")
     log.info("=" * 60)
+    # Журнал активности: отметка запуска/деплоя — видно в панели «Логи», когда было
+    # обновление/рестарт (полезно при разборе «что изменилось / когда сломалось»).
+    try:
+        from services.activity_log import log_event
+        log_event("system", f"Система запущена · v{app.version} · модель {_LLM_PRIMARY_MODEL}",
+                  level="info", actor="system",
+                  meta={"version": app.version, "model": _LLM_PRIMARY_MODEL, "provider": _LLM_PROVIDER})
+    except Exception:  # noqa: BLE001
+        pass
 
 
 @app.on_event("shutdown")
