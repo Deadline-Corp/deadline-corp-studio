@@ -165,6 +165,10 @@ async def parse_whatsapp_webhook(
 
                 mtype = msg.get("type")
                 extra = {"phone_number_id": phone_number_id} if phone_number_id else {}
+                # wamid — нативный id сообщения WhatsApp Cloud, для идемпотентности
+                # (ретрай Meta не должен дублировать сообщение/ответ).
+                if msg.get("id"):
+                    extra["wamid"] = str(msg["id"])
                 uname = name_by_waid.get(wa_from)
 
                 # ---- text ----

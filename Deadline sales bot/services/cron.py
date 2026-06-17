@@ -156,6 +156,20 @@ def run_wa_maintenance() -> dict:
                     logger.info("[cron] lost auto-archive (>%dд): %s", _days, _al)
         except Exception as _ae:  # noqa: BLE001
             logger.warning("[cron] lost auto-archive failed: %s", _ae)
+        # Чистка таблицы идемпотентности входящих: ключи старше 3д не нужны (окно
+        # ретраев платформ — минуты/часы), иначе processed_updates растёт без предела.
+        try:
+            from db.connection import session_scope as _ss3
+            from sqlalchemy import text as _txt
+            with _ss3() as _db3:
+                _pr = _db3.execute(_txt(
+                    "DELETE FROM processed_updates "
+                    "WHERE created_at < now() - interval '3 days'"))
+                if _pr.rowcount:
+                    summary["pruned_dedup"] = _pr.rowcount
+                    logger.info("[cron] pruned %s old processed_updates", _pr.rowcount)
+        except Exception as _pe:  # noqa: BLE001
+            logger.warning("[cron] processed_updates prune failed: %s", _pe)
     except Exception as exc:  # noqa: BLE001
         logger.warning("[cron] wa maintenance failed (non-fatal): %s", exc)
         summary["error"] = str(exc)

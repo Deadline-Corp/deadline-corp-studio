@@ -84,6 +84,8 @@ def parse_instagram_webhook(payload: dict) -> Optional[NormalizedMessage]:
                 content=text,
                 channel_conversation_id=str(igsid),
                 message_type="dm",
+                # mid — нативный id для идемпотентности (ретрай Meta не дублирует).
+                extra_meta=({"mid": str(msg.get("mid"))} if msg.get("mid") else None),
             )
 
     return None

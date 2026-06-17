@@ -2733,6 +2733,34 @@ def _seen_update_db(event_key: str) -> bool:
         return (res.rowcount or 0) == 0  # 0 строк вставлено = был конфликт = видели
 
 
+def _inbound_msg_id(extra_meta: Optional[dict]) -> Optional[str]:
+    """Нативный message-id входящего из разных каналов (WAHA/Green-API/WhatsApp Cloud/
+    Meta IG+Messenger) — для идемпотентности. Ключи разные у разных парсеров."""
+    em = extra_meta or {}
+    for k in ("waha_id", "greenapi_msg_id", "wamid", "mid", "comment_id"):
+        v = em.get(k)
+        if v:
+            return str(v)
+    return None
+
+
+def _seen_inbound(channel_key: str, msg_id: Optional[str]) -> bool:
+    """Идемпотентность входящих НЕ-Telegram каналов: дедуп по нативному message-id
+    через ту же таблицу processed_updates, что и Telegram (_seen_update_db). Платформа
+    ретраит вебхук, пока не получит 200 ВОВРЕМЯ → второй раз НЕ обрабатываем: ни дубля
+    сообщения лида в панели, ни повторного ответа бота. Telegram уже защищён своим
+    _seen_update; здесь закрываем WAHA/Green-API/Cloud/Meta (Инцидент: дубли/двойные
+    ответы при ретраях). msg_id пустой → False (нечем защищаться, обрабатываем). При
+    сбое БД → False (лучше редкий дубль, чем потерять сообщение)."""
+    if not msg_id:
+        return False
+    try:
+        return _seen_update_db(f"{channel_key}:{msg_id}")
+    except Exception as exc:  # noqa: BLE001
+        log.warning("[dedup] inbound dedup failed (%s) — обрабатываем без защиты", exc)
+        return False
+
+
 def _seen_update(update_id: Optional[int]) -> bool:
     """Видели ли уже этот update_id. Сначала персистентный БД-дедуп (переживает
     рестарт); при сбое БД — fallback на in-memory. update_id=None → False, не пишем.
@@ -3047,6 +3075,10 @@ async def messenger_webhook(request: Request, db: Session = Depends(get_db)):
     if normalized is None:
         return {"ok": True}
 
+    # ИДЕМПОТЕНТНОСТЬ: ретрай Meta того же mid/comment_id → не обрабатываем повторно.
+    if _seen_inbound("messenger", _inbound_msg_id(normalized.extra_meta)):
+        return {"ok": True}
+
     msg_req = MessageRequest(
         channel=normalized.channel,
         external_id=normalized.external_id,
@@ -3103,6 +3135,10 @@ async def instagram_webhook(request: Request, db: Session = Depends(get_db)):
 
     normalized = parse_instagram_webhook(payload) or parse_instagram_comment_webhook(payload)
     if normalized is None:
+        return {"ok": True}
+
+    # ИДЕМПОТЕНТНОСТЬ: ретрай Meta того же mid/comment_id → не обрабатываем повторно.
+    if _seen_inbound("instagram", _inbound_msg_id(normalized.extra_meta)):
         return {"ok": True}
 
     msg_req = MessageRequest(
@@ -3567,6 +3603,11 @@ async def _process_wa_payload(payload: dict, engine: str) -> None:
                 )
             if normalized is None:
                 return
+            # ИДЕМПОТЕНТНОСТЬ: ретрай WAHA/Green-API того же сообщения → не обрабатываем
+            # повторно (иначе дубль в панели + второй ответ бота). Дедуп по нативному
+            # message-id (waha_id / greenapi_msg_id) через processed_updates.
+            if _seen_inbound(engine, _inbound_msg_id(normalized.extra_meta)):
+                return
             # Ручной ответ команды (fromMe) — сохраняем в карточку, бота не гоняем.
             if (normalized.extra_meta or {}).get("role_hint") == "operator":
                 with session_scope() as db:
@@ -3647,6 +3688,10 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
         groq_api_key=settings.groq_api_key,
     )
     if normalized is None:
+        return {"ok": True}
+
+    # ИДЕМПОТЕНТНОСТЬ: ретрай Meta того же wamid → не обрабатываем повторно.
+    if _seen_inbound("whatsapp_cloud", _inbound_msg_id(normalized.extra_meta)):
         return {"ok": True}
 
     msg_req = MessageRequest(

@@ -85,6 +85,8 @@ def parse_messenger_webhook(payload: dict) -> Optional[NormalizedMessage]:
                 content=text,
                 channel_conversation_id=str(psid),
                 message_type="dm",
+                # mid — нативный id для идемпотентности (ретрай Meta не дублирует).
+                extra_meta=({"mid": str(msg.get("mid"))} if msg.get("mid") else None),
             )
 
     return None
