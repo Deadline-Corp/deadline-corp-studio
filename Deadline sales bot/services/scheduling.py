@@ -469,15 +469,63 @@ def detect_call_medium(text: str) -> Optional[str]:
     return None
 
 
+# Токены интервалов напоминаний (настраиваются в панели, ключ call_reminder_offsets).
+_REMINDER_TOKENS: dict[str, tuple[timedelta, str]] = {
+    "30m": (timedelta(minutes=30), "через 30 минут"),
+    "1h": (timedelta(hours=1), "через час"),
+    "2h": (timedelta(hours=2), "через 2 часа"),
+    "3h": (timedelta(hours=3), "через 3 часа"),
+    "1d": (timedelta(hours=24), "за день"),
+}
+
+
+def _configured_reminder_tokens() -> list[str]:
+    """Какие напоминания о созвоне ставить — из настроек (call_reminder_offsets, CSV).
+    Пусто/не задано → дефолт «за день + за 3 часа + за час» (прежнее поведение)."""
+    raw = None
+    try:
+        from services import bot_settings as _bs
+        raw = _bs.get("call_reminder_offsets")
+    except Exception:  # noqa: BLE001
+        raw = None
+    toks = [t.strip().lower() for t in (raw or "1d,3h,1h").split(",") if t.strip()]
+    return toks or ["1h"]
+
+
 def reminder_schedule(call_at_utc: datetime, now_utc: datetime) -> list[tuple[datetime, str]]:
-    """Список (когда_напомнить_UTC, метка) для созвона. Прошедшие — отбрасываем."""
+    """Список (когда_напомнить_UTC, метка) для созвона по НАСТРОЙКЕ call_reminder_offsets.
+    Токены: 30m/1h/2h/3h/1d (за столько до) и morning (утром, 09:00 локального дня
+    созвона). Прошедшие и попадающие ПОСЛЕ созвона — отбрасываем; дубли по минуте схлопываем."""
     if call_at_utc.tzinfo is None:
         call_at_utc = call_at_utc.replace(tzinfo=timezone.utc)
+    tz_off = 7
+    try:
+        from services import bot_settings as _bs
+        tz_off = int(_bs.get("digest_tz_offset") or 7)
+    except Exception:  # noqa: BLE001
+        pass
     out: list[tuple[datetime, str]] = []
-    for delta, label in REMINDERS:
-        fire_at = call_at_utc - delta
-        if fire_at > now_utc:
-            out.append((fire_at, label))
+    seen: set = set()
+    for tok in _configured_reminder_tokens():
+        if tok in _REMINDER_TOKENS:
+            delta, label = _REMINDER_TOKENS[tok]
+            fire_at = call_at_utc - delta
+        elif tok == "morning":
+            # 09:00 ЛОКАЛЬНОГО дня созвона → обратно в UTC
+            local_call = call_at_utc + timedelta(hours=tz_off)
+            local_morning = local_call.replace(hour=9, minute=0, second=0, microsecond=0)
+            fire_at = local_morning - timedelta(hours=tz_off)
+            label = "утром"
+        else:
+            continue
+        if not (now_utc < fire_at < call_at_utc):
+            continue
+        key = fire_at.replace(second=0, microsecond=0)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append((fire_at, label))
+    out.sort(key=lambda x: x[0])
     return out
 
 

@@ -2319,6 +2319,17 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 conversation.lead_stage = new_stage
                 if new_stage == "lost":
                     conversation.lost_reason = decision.lost_reason
+                    # Лид ушёл в «Не сложилось» → снять будущий созвон/напоминания (из
+                    # календаря) + очистить бронь в профиле. Обратимо. История сохраняется.
+                    try:
+                        _pf = dict(customer.profile_data or {})
+                        _pf.pop("booked_call_at", None)
+                        _pf.pop("call_medium", None)
+                        customer.profile_data = _pf
+                        from services.scheduled_actions import cancel_future_actions
+                        await asyncio.to_thread(cancel_future_actions, str(conversation.id))
+                    except Exception as _le:  # noqa: BLE001
+                        log.warning(f"[{str(conversation.id)[:8]}] lost cleanup failed: {_le}")
                 log.info(
                     f"[{str(conversation.id)[:8]}] funnel: {current_stage} → {new_stage} "
                     f"({decision.reason})"

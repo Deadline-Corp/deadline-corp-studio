@@ -2212,6 +2212,14 @@ async def conversation_stage(
 
     conv.lead_stage = req.to_stage
     conv.lost_reason = req.lost_reason if is_lost else None
+    if is_lost:
+        # Лид ушёл в «Не сложилось» → очистить бронь в профиле, чтобы карточка не висела
+        # «Созвон назначен» и созвон не маячил в календаре впредь (сами действия снимем
+        # ниже, после commit). Прошлые события истории сохраняются.
+        _pf = dict(cust.profile_data or {})
+        _pf.pop("booked_call_at", None)
+        _pf.pop("call_medium", None)
+        cust.profile_data = _pf
     # История воронки (для конверсионной аналитики) + аудит в самом диалоге.
     db.add(StageTransition(
         conversation_id=conv.id, customer_id=conv.customer_id,
@@ -2223,6 +2231,20 @@ async def conversation_stage(
                 + (f" (причина: {req.lost_reason})" if req.lost_reason else ""),
     )
     db.commit()
+
+    if is_lost:
+        # Снять ВСЕ будущие отложенные действия (созвон, напоминания, followup) — лид
+        # ушёл, не маячит в календаре/задачнике впредь. Обратимо (cancelled). Своя сессия.
+        try:
+            import asyncio as _aio
+            from services.scheduled_actions import cancel_future_actions
+            _nc = await _aio.to_thread(cancel_future_actions, str(conv.id))
+            if _nc:
+                from services.activity_log import log_event
+                log_event("stage", f"«Не сложилось» — снято {_nc} будущих действий (созвон/напоминания)",
+                          level="info", actor="operator", conversation_id=str(conv.id))
+        except Exception as _ce:  # noqa: BLE001
+            log.warning(f"[stage] cancel_future_actions on lost failed: {_ce}")
 
     # Зеркало в HubSpot через durable-очередь — только для встроенных ключей
     # (кастомные стадии живут в нашей воронке, у HubSpot их нет).

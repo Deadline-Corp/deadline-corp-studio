@@ -330,6 +330,34 @@ def cancel_call_actions(conversation_id: str) -> int:
     return n
 
 
+def cancel_future_actions(conversation_id: str) -> int:
+    """Снять ВСЕ будущие отложенные действия диалога (созвон, напоминания, followup,
+    задачи) — для лида, ушедшего в «Не сложилось». Его не нужно показывать в календаре/
+    задачнике впредь: лид ушёл. История (done/sent) сохраняется — трогаем только
+    pending/processing. Обратимо (status='cancelled', НЕ удаляем). Sync — звать через
+    to_thread."""
+    from db.connection import session_scope
+    from db.models import ScheduledAction
+    n = 0
+    try:
+        with session_scope() as s:
+            rows = (
+                s.query(ScheduledAction)
+                .filter(ScheduledAction.conversation_id == conversation_id)
+                .filter(ScheduledAction.status.in_(("pending", "processing")))
+                .all()
+            )
+            for r in rows:
+                r.status = "cancelled"
+                n += 1
+        if n:
+            logger.info("[scheduled_actions] cancelled %d future actions for lost conv=%s",
+                        n, conversation_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[scheduled_actions] cancel_future_actions failed: %s", exc)
+    return n
+
+
 def get_taken_call_slots(now_utc: datetime) -> list[datetime]:
     """Времена будущих назначенных созвонов (для анти-дабл-брони)."""
     from db.connection import session_scope

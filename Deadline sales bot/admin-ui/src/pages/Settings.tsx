@@ -57,6 +57,8 @@ export function Settings() {
       <div style={{ height: 14 }} />
       <SnapshotsCard />
       <div style={{ height: 14 }} />
+      <CallRemindersCard />
+      <div style={{ height: 14 }} />
       <TimezoneCard />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 14, marginTop: 14 }}>
@@ -609,6 +611,62 @@ function PresetsCard() {
 }
 
 /* ---------- Поля лида (редактор определений) ---------- */
+
+const REMINDER_OPTS = [
+  { k: '1d', label: '🗓 За день' },
+  { k: '3h', label: '⏰ За 3 часа' },
+  { k: '1h', label: '🔔 За час' },
+  { k: 'morning', label: '🌅 Утром в день созвона' },
+]
+
+function CallRemindersCard() {
+  const [sel, setSel] = useState<string[]>([])
+  const [msg, setMsg] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    void api.get<any>('/behavior').then(r => {
+      const raw = String(r.overrides?.call_reminder_offsets || '1d,3h,1h')
+      setSel(raw.split(',').map((x: string) => x.trim()).filter(Boolean))
+    }).catch(() => { /* */ })
+  }, [])
+  const toggle = async (k: string) => {
+    if (busy) return
+    const next = sel.includes(k) ? sel.filter(x => x !== k) : [...sel, k]
+    if (next.length === 0) { setMsg('Оставьте хотя бы одно напоминание'); return }
+    const prev = sel
+    setSel(next); setBusy(true)
+    try {
+      const order = ['1d', '3h', '2h', '1h', '30m', 'morning']  // от дальнего к ближнему
+      await api.post('/behavior', { values: { call_reminder_offsets: order.filter(o => next.includes(o)).join(',') } })
+      setMsg('✅ Сохранено — применится к новым созвонам')
+    } catch (e: any) { setMsg(`Ошибка: ${e.detail ?? e.message}`); setSel(prev) }
+    finally { setBusy(false) }
+  }
+  return (
+    <div className="card">
+      <h3 style={{ marginTop: 0 }}>🔔 Напоминания о созвоне</h3>
+      <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+        Когда система напомнит лиду и вам о назначенном созвоне. Выберите удобные интервалы —
+        напр. только «за час», или «утром + за час». Применяется к новым созвонам; каждый
+        интервал — напоминание и лиду, и вам.
+      </p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
+        {REMINDER_OPTS.map(o => {
+          const on = sel.includes(o.k)
+          return (
+            <label key={o.k} className={`chip ${on ? 'accent' : ''}`}
+                   style={{ cursor: 'pointer', padding: '6px 11px', opacity: on ? 1 : 0.6 }}>
+              <input type="checkbox" checked={on} onChange={() => toggle(o.k)}
+                     style={{ marginRight: 6, verticalAlign: 'middle' }} />
+              {o.label}
+            </label>
+          )
+        })}
+      </div>
+      {msg && <div className="faint" style={{ marginTop: 8, fontSize: 12 }}>{msg}</div>}
+    </div>
+  )
+}
 
 const HIDEABLE_SECTIONS = [
   { k: 'funnel', label: '📊 Воронка' },
