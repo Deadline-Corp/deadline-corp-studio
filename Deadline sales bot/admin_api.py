@@ -4293,6 +4293,67 @@ async def activity_logs(
     }
 
 
+@router.get("/_diag/lead/{needle}")
+async def _diag_lead(
+    needle: str,
+    _: dict = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """READ-ONLY диагностика рассинхрона созвона по телефону/ключу (owner). Ничего не
+    меняет — возвращает бронь + напоминания + последние сообщения + решения бота, чтобы
+    разобрать «тупняк в календаре» по реальным данным. Временный инструмент."""
+    from db.models import Message as _Msg, ScheduledAction as _SA, BotDecision as _BD
+    nd = "".join(ch for ch in needle if ch.isdigit()) or needle
+    convs = (
+        db.query(Conversation)
+        .join(Customer, Conversation.customer_id == Customer.id)
+        .filter((Conversation.channel_conversation_id.ilike(f"%{nd}%"))
+                | (Customer.phone.ilike(f"%{nd}%")))
+        .all()
+    )
+    out = []
+    for c in convs:
+        cust = db.get(Customer, c.customer_id)
+        prof = (cust.profile_data or {}) if cust else {}
+        sas = (db.query(_SA).filter(_SA.conversation_id == c.id)
+               .order_by(_SA.due_at).all())
+        msgs = (db.query(_Msg).filter(_Msg.conversation_id == c.id)
+                .order_by(_Msg.created_at.desc()).limit(16).all())
+        bds = (db.query(_BD).filter(_BD.conversation_id == c.id)
+               .order_by(_BD.created_at.desc()).limit(14).all())
+        out.append({
+            "conv_id": str(c.id),
+            "channel": c.channel,
+            "key": c.channel_conversation_id,
+            "stage": c.lead_stage,
+            "status": c.status.value if hasattr(c.status, "value") else c.status,
+            "booked_call_at": prof.get("booked_call_at"),
+            "call_medium": prof.get("call_medium"),
+            "lang": prof.get("lang"),
+            "pending_call_suggestion": getattr(c, "pending_call_suggestion", None),
+            "phone": getattr(cust, "phone", None),
+            "name": getattr(cust, "name", None),
+            "scheduled_actions": [
+                {"type": a.action_type, "exec": a.executor, "status": a.status,
+                 "due_at": a.due_at.isoformat() if a.due_at else None,
+                 "payload": a.payload}
+                for a in sas
+            ],
+            "messages": [
+                {"at": m.created_at.isoformat() if m.created_at else None,
+                 "role": m.role.value if hasattr(m.role, "value") else m.role,
+                 "content": (m.content or "")[:220]}
+                for m in msgs
+            ],
+            "bot_decisions": [
+                {"at": b.created_at.isoformat() if b.created_at else None,
+                 "type": b.decision_type, "actor": b.actor, "reason": b.reason}
+                for b in bds
+            ],
+        })
+    return {"now": datetime.now(timezone.utc).isoformat(), "found": len(out), "conversations": out}
+
+
 @router.get("/bot-decisions")
 async def bot_decisions_feed(
     conversation_id: Optional[str] = None,
