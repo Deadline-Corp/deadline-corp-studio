@@ -651,6 +651,11 @@ async def conversation_detail(
         "booked_call_at": (cust.profile_data or {}).get("booked_call_at"),
         "call_medium": (cust.profile_data or {}).get("call_medium"),
         "nudge_paused": bool((cust.profile_data or {}).get("nudge_paused")),
+        # Revenue: сумма сделки + валюта (для «сколько денег принёс бот»). Вводится вручную в карточке.
+        "deal_value": (float(conv.deal_value) if getattr(conv, "deal_value", None) is not None else None),
+        "deal_currency": getattr(conv, "deal_currency", None),
+        # План бота: что он понял про лида и какой следующий шаг (для прозрачности в карточке).
+        "next_action": getattr(conv, "next_action", None) or None,
         "hubspot": hubspot,
         "utm": {
             "source": cust.utm_source, "campaign": cust.utm_campaign,
@@ -948,6 +953,37 @@ async def conversation_nudge_pause(
     cust.profile_data = prof
     db.commit()
     return {"ok": True, "paused": bool(req.paused)}
+
+
+@router.post("/conversations/{conv_id}/next-reply-preview")
+async def conversation_next_reply_preview(
+    conv_id: str,
+    _: dict = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """Сгенерировать ТЕКСТ следующего ответа бота БЕЗ отправки и БЕЗ записи — для блока
+    «🤖 Что бот напишет дальше» (прозрачность плана, можно подстроить). LLM в своей
+    короткой сессии (не держим коннект запроса)."""
+    import main as _main
+    conv, _c = _get_conv_or_404(db, conv_id)
+    _cid = conv.id
+    db.commit()  # отпустить коннект ПЕРЕД LLM
+    from services.wa_drafts import generate_reply_text
+    from db.connection import session_scope
+    try:
+        with session_scope() as s:
+            row = (
+                s.query(Conversation, Customer)
+                .join(Customer, Conversation.customer_id == Customer.id)
+                .filter(Conversation.id == _cid).first()
+            )
+            if not row:
+                return {"reply": None}
+            _conv, _cust = row
+            txt = await generate_reply_text(s, _conv, _cust, _main.primary_llm)
+        return {"reply": txt}
+    except Exception as e:  # noqa: BLE001
+        return {"reply": None, "error": str(e)[:120]}
 
 
 @router.post("/conversations/{conv_id}/extract-fields")
@@ -3863,16 +3899,20 @@ class SimulateLeadRequest(BaseModel):
     message: str = Field(..., min_length=1, max_length=2000)
 
 
+@router.post("/simulate-lead")
 @router.post("/whatsapp/simulate-lead")
 async def whatsapp_simulate_lead(
     req: SimulateLeadRequest,
     _: None = Depends(_verify_member),
 ):
-    """Симуляция: «если НОВЫЙ лид сейчас напишет это в WhatsApp — что предложит
-    бот и куда поведёт». Использует ТОТ ЖЕ генератор, что и предлагаемые ответы в
-    карточке (services.wa_drafts: цель проекта → «от $X» → созвон), поэтому
-    показывает ровно то, что вы одобряете в режиме наблюдения. Один LLM-вызов по
-    запросу владельца — ничего не отправляет и не пишет в БД."""
+    """Симуляция: «если НОВЫЙ лид сейчас напишет это — что предложит бот и куда
+    поведёт». КАНАЛО-НЕЗАВИСИМО (один и тот же мозг для WhatsApp/Telegram/любого
+    канала) — используется и в онбординге («тест первого лида»), и на странице
+    Каналы. Использует ТОТ ЖЕ генератор, что и предлагаемые ответы в карточке
+    (services.wa_drafts: цель проекта → «от $X» → созвон), поэтому показывает ровно
+    то, что вы одобряете в режиме наблюдения. Один LLM-вызов по запросу владельца —
+    ничего не отправляет и не пишет в БД. Пути: /simulate-lead (общий) и
+    /whatsapp/simulate-lead (старый, для совместимости)."""
     import main as _main
     from services import bot_settings as _bs
     from services import wa_drafts
@@ -4358,8 +4398,8 @@ async def onboarding_apply(
         if preset.get("nudge_text"):
             try:
                 bot_settings.set_many({"nudge_text": preset["nudge_text"]})
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as _e:  # noqa: BLE001
+                log.warning("[preset] не применил nudge_text пресета %s: %s", req.preset_key, _e)
 
     # 4. Цель бота
     if req.bot_goal in ("call", "collect_lead", "consult", "sale"):
@@ -4597,6 +4637,35 @@ async def conversation_fields_save(
     return {"ok": True, "fields": fields}
 
 
+class DealValueRequest(BaseModel):
+    value: Optional[float] = None
+    currency: Optional[str] = None
+
+
+@router.post("/conversations/{conv_id}/deal-value")
+async def conversation_deal_value_save(
+    conv_id: str,
+    req: DealValueRequest,
+    _: None = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """Сумма сделки на разговоре (revenue-аналитика «сколько денег принёс бот»).
+    value пусто/≤0 → очистить. Валюта — короткий код (₽/USD/KZT/THB и т.п.)."""
+    conv, _cust = _get_conv_or_404(db, conv_id)
+    if req.value is None or req.value <= 0:
+        conv.deal_value = None
+        conv.deal_currency = None
+    else:
+        conv.deal_value = round(float(req.value), 2)
+        conv.deal_currency = (req.currency or "").strip()[:8] or None
+    db.commit()
+    return {
+        "ok": True,
+        "deal_value": (float(conv.deal_value) if conv.deal_value is not None else None),
+        "deal_currency": conv.deal_currency,
+    }
+
+
 # ============================================================================
 # ANALYTICS — цифры воронки и каналов
 # ============================================================================
@@ -4662,8 +4731,48 @@ async def analytics(
         .where(AutomationRun.fired_at >= since)
     ).scalar() or 0
 
+    # Revenue («сколько денег принёс бот»): агрегаты по разговорам с проставленной
+    # суммой сделки (deal_value). Все-время (как воронка/причины потерь), не за период.
+    rev_by_stage = db.execute(
+        sql_select(Conversation.lead_stage, sql_func.sum(Conversation.deal_value), sql_func.count())
+        .where(Conversation.deal_value.isnot(None))
+        .group_by(Conversation.lead_stage)
+    ).fetchall()
+    rev_by_channel = db.execute(
+        sql_select(Conversation.channel, sql_func.sum(Conversation.deal_value))
+        .where(Conversation.deal_value.isnot(None))
+        .group_by(Conversation.channel)
+    ).fetchall()
+    cur_rows = db.execute(
+        sql_select(Conversation.deal_currency, sql_func.count())
+        .where(Conversation.deal_currency.isnot(None))
+        .group_by(Conversation.deal_currency).order_by(sql_func.count().desc())
+    ).fetchall()
+
     from services import funnel_store
     stages = funnel_store.get_stages(db)
+
+    # Доход разложен: выигранные (kind=won) / в работе (pipeline) / потерянные.
+    won_keys = {s["key"] for s in stages if s.get("kind") == "won"}
+    _stage_rev = {k: float(v or 0) for k, v, _c in rev_by_stage}
+    _stage_cnt = {k: int(c) for k, _v, c in rev_by_stage}
+    _won_value = sum(v for k, v in _stage_rev.items() if k in won_keys)
+    _won_deals = sum(c for k, c in _stage_cnt.items() if k in won_keys)
+    _lost_value = float(_stage_rev.get("lost", 0.0))
+    _total_value = sum(_stage_rev.values())
+    revenue = {
+        # доминирующая валюта (для подписи итогов) + распределение по валютам
+        "currency": (cur_rows[0][0] if cur_rows else None),
+        "currencies": {str(k): int(c) for k, c in cur_rows},
+        "won_value": round(_won_value, 2),
+        "won_deals": _won_deals,
+        "avg_deal": round(_won_value / _won_deals, 2) if _won_deals else 0.0,
+        "pipeline_value": round(_total_value - _won_value - _lost_value, 2),
+        "lost_value": round(_lost_value, 2),
+        "deals_with_value": sum(_stage_cnt.values()),
+        "by_stage": {k: round(v, 2) for k, v in _stage_rev.items()},
+        "by_channel": {str(k): round(float(v or 0), 2) for k, v in rev_by_channel},
+    }
 
     return {
         "days": days,
@@ -4688,6 +4797,7 @@ async def analytics(
         "stage_flows": [
             {"from": r[0], "to": r[1], "by": r[2], "count": int(r[3])} for r in flows
         ],
+        "revenue": revenue,
     }
 
 

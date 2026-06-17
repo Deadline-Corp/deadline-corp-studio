@@ -80,6 +80,38 @@ def _collect_data() -> dict:
             s.query(AutomationRun).filter(AutomationRun.fired_at >= day_ago).count()
         )
 
+        # Неделя-к-неделе (тренд): лиды за 7 дней vs прошлые 7 дней (без демо) +
+        # выручка закрытых сделок за неделю — чтобы владелец видел динамику, не только сутки.
+        week_ago = now - timedelta(days=7)
+        two_weeks_ago = now - timedelta(days=14)
+
+        def _real_count(rows):
+            return sum(1 for c in rows if not (c.profile_data or {}).get("demo"))
+
+        out["week_leads"] = _real_count(
+            s.query(Customer).filter(Customer.created_at >= week_ago).all()
+        )
+        out["prev_week_leads"] = _real_count(
+            s.query(Customer).filter(Customer.created_at >= two_weeks_ago,
+                                     Customer.created_at < week_ago).all()
+        )
+        try:
+            from sqlalchemy import func as _f
+            from services import funnel_store as _fs
+            _won = [st["key"] for st in _fs.get_stages(s) if st.get("kind") == "won"] \
+                or ["completed_won", "post_sale"]
+            _wv = (
+                s.query(_f.coalesce(_f.sum(Conversation.deal_value), 0))
+                .filter(Conversation.deal_value.isnot(None),
+                        Conversation.lead_stage.in_(_won),
+                        Conversation.last_message_at >= week_ago)
+                .scalar()
+            )
+            out["week_won_value"] = float(_wv or 0)
+        except Exception as _re:  # noqa: BLE001
+            logger.debug("digest: weekly revenue skipped: %s", _re)
+            out["week_won_value"] = 0.0
+
         # Зависшие тёплые: скор ≥40, открытый диалог, молчат 48ч+ (не демо).
         stuck_rows = (
             s.query(Conversation, Customer)
@@ -127,6 +159,19 @@ def _format_message(d: dict, advice: str | None) -> str:
         f"За сутки: 🆕 {d['new_leads']} новых лидов ({ch_str}) · "
         f"🤝 {d['handoffs_24h']} передано команде · ⚡ {d['automation_fires_24h']} автоматизаций",
     ]
+    # Тренд неделя-к-неделе + выручка за 7 дней.
+    wl, pl = int(d.get("week_leads", 0)), int(d.get("prev_week_leads", 0))
+    if wl or pl:
+        if pl > 0:
+            pct = round((wl - pl) / pl * 100)
+            arrow = "▲" if pct > 0 else ("▼" if pct < 0 else "■")
+            delta = f"{arrow} {abs(pct)}% к прошлой неделе"
+        else:
+            delta = "на прошлой неделе лидов не было"
+        lines.append(f"📊 За 7 дней: {wl} лидов ({delta})")
+    wv = float(d.get("week_won_value", 0) or 0)
+    if wv:
+        lines.append(f"💰 Выручка за 7 дней (закрыто): {('{:,.0f}'.format(wv)).replace(',', ' ')}")
     if d["stuck"]:
         lines.append("")
         lines.append("🔥 Дожать сегодня (тёплые молчат):")

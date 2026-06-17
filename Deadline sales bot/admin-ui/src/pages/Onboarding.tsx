@@ -23,6 +23,10 @@ export function Onboarding() {
   const [url, setUrl] = useState('')
   const [draft, setDraft] = useState<any>(null)
   const [cfgApplied, setCfgApplied] = useState(false)
+  // «Тест первого лида»: проверить, что бот реально отвечает под настроенной нишей/мозгом
+  const [testMsg, setTestMsg] = useState('')
+  const [testReply, setTestReply] = useState<{ reply: string; goal_label?: string } | null>(null)
+  const [testing, setTesting] = useState(false)
   const navigate = useNavigate()
 
   const STEPS = 5
@@ -76,9 +80,12 @@ export function Onboarding() {
     setBusy(true)
     setErr('')
     try {
+      // Гард: AI иногда возвращает несуществующий preset_key (опечатку) → apply падал 422/404.
+      // Берём ключ только если он есть среди реальных пресетов, иначе применяем без него.
+      const _pk = draft.preset_key && presets.some(p => p.key === draft.preset_key) ? draft.preset_key : undefined
       await api.post('/onboarding/apply', {
         system_prompt: draft.system_prompt, kb_md: draft.kb_md,
-        preset_key: draft.preset_key || undefined, bot_goal: draft.bot_goal || undefined,
+        preset_key: _pk, bot_goal: draft.bot_goal || undefined,
       })
       setCfgApplied(true)
       setStep(3)
@@ -86,6 +93,19 @@ export function Onboarding() {
     finally { setBusy(false) }
   }
   const updDraft = (k: string, v: any) => setDraft({ ...draft, [k]: v })
+
+  // «Тест первого лида» — прогоняем сообщение через тот же мозг бота (канало-независимо),
+  // владелец сразу видит, что бот реально отвечает под его настройкой. Ничего не шлёт/не пишет.
+  const testLead = async () => {
+    if (!testMsg.trim()) return
+    setTesting(true)
+    setErr('')
+    try {
+      const r = await api.post<{ reply: string; goal_label?: string }>('/simulate-lead', { message: testMsg.trim() })
+      setTestReply(r)
+    } catch (e: any) { setErr(`Бот не ответил: ${e.detail ?? e.message}`) }
+    finally { setTesting(false) }
+  }
 
   const seedDemo = async () => {
     setBusy(true)
@@ -218,11 +238,31 @@ export function Onboarding() {
 
         {step === 3 && (
           <>
-            <h2 style={{ margin: 0, fontSize: 18 }}>Откуда приходят клиенты?</h2>
+            <h2 style={{ margin: 0, fontSize: 18 }}>Проверьте бота и подключите каналы</h2>
             {cfgApplied && <span className="chip ok" style={{ alignSelf: 'flex-start' }}>✅ Бот настроен под вашу компанию</span>}
+
+            {/* ТЕСТ ПЕРВОГО ЛИДА — сразу видно, что бот реально отвечает под настройкой */}
+            <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <b style={{ fontSize: 13.5 }}>🧪 Напишите боту как клиент — посмотрите ответ</b>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input value={testMsg} onChange={e => setTestMsg(e.target.value)} style={{ flex: 1 }}
+                       placeholder="Например: Здравствуйте, сколько стоит?"
+                       onKeyDown={e => { if (e.key === 'Enter' && testMsg.trim()) testLead() }} />
+                <button className="btn primary" onClick={testLead} disabled={testing || !testMsg.trim()}>
+                  {testing ? <span className="spin" /> : 'Спросить бота'}
+                </button>
+              </div>
+              {testReply && (
+                <div style={{ background: 'var(--panel-2)', borderRadius: 8, padding: '10px 12px', fontSize: 13.5, whiteSpace: 'pre-wrap' }}>
+                  <span className="muted" style={{ fontSize: 11.5 }}>🤖 Ответ бота{testReply.goal_label ? ` · цель: ${testReply.goal_label}` : ''}:</span>
+                  <div style={{ marginTop: 4 }}>{testReply.reply}</div>
+                </div>
+              )}
+            </div>
+
             <p className="muted" style={{ margin: 0, fontSize: 13.5 }}>
-              Сейчас подключено вот что. Новые каналы (Telegram, Instagram, WhatsApp)
-              подключаются во вкладке «Каналы» — там пошаговые инструкции для каждого.
+              Откуда приходят клиенты. Каналы подключаются во вкладке «Каналы» — там
+              пошаговые инструкции для каждого (Telegram — за минуту).
             </p>
             {channels && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -230,11 +270,14 @@ export function Onboarding() {
                   ['🌐 Сайт-виджет', true],
                   ['✈️ Telegram', channels.telegram_configured],
                   ['📸 Instagram + Messenger', channels.meta_configured],
-                  ['🟢 WhatsApp', false],
+                  ['🟢 WhatsApp', !!(channels.waha_configured ?? channels.whatsapp_configured)],
                 ].map(([label, ok], i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13.5 }}>
                     <span style={{ flex: 1 }}>{label as string}</span>
-                    <span className={`chip ${ok ? 'ok' : ''}`}>{ok ? 'подключён' : 'подключим позже'}</span>
+                    {ok
+                      ? <span className="chip ok">подключён</span>
+                      : <button className="btn ghost" style={{ padding: '2px 10px', fontSize: 12 }}
+                                onClick={() => navigate('/channels')}>Подключить →</button>}
                   </div>
                 ))}
               </div>

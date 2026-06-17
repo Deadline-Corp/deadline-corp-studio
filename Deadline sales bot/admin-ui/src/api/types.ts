@@ -120,6 +120,19 @@ export interface AutomationRuleItem {
   created_at: string | null
 }
 
+export interface RevenueView {
+  currency: string | null
+  currencies: Record<string, number>
+  won_value: number
+  won_deals: number
+  avg_deal: number
+  pipeline_value: number
+  lost_value: number
+  deals_with_value: number
+  by_stage: Record<string, number>
+  by_channel: Record<string, number>
+}
+
 export interface AnalyticsView {
   days: number
   totals: { new_leads: number; handoffs: number; booked_calls: number; automation_fires: number }
@@ -131,6 +144,7 @@ export interface AnalyticsView {
   messages_by_role: Record<string, number>
   stage_moves: Record<string, number>
   stage_flows: Array<{ from: string | null; to: string; by: string; count: number }>
+  revenue?: RevenueView
 }
 
 export interface PresetInfo {
@@ -153,6 +167,9 @@ export interface ConvDetail extends ConvSummary {
   pending_call_suggestion?: { at?: string; when_human?: string; medium?: string | null; reason?: string; ts?: string } | null
   wa_autonomous: boolean
   nudge_paused?: boolean
+  deal_value?: number | null
+  deal_currency?: string | null
+  next_action?: { label?: string; mode?: string; kind?: string } | null
   hubspot: { contact_url?: string; deal_url?: string }
   utm: { source: string | null; campaign: string | null; medium: string | null; content: string | null }
   scheduled_actions: Array<{

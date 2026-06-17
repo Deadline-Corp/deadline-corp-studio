@@ -38,6 +38,36 @@ _FORWARD = ["new_lead", "in_dialog", "qualified", "on_call",
 _WEEKDAY_RU = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота", "воскресенье"]
 _WD_IDX = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
 
+# ДЕТЕРМИНИРОВАННЫЙ разбор дня из РУ-текста — НЕ доверяем LLM (путал «среду»→четверг,
+# кейс Денис: «на среду» забронировал на четверг). Берём ПОСЛЕДНЕЕ упоминание дня в
+# переписке (самая свежая договорённость). Возвращает LLM-совместимое call_day или None.
+_CALL_DAY_WORDS = [
+    ("сегодня", "today"), ("завтра", "tomorrow"),
+    ("понедельник", "mon"), ("вторник", "tue"),
+    ("среду", "wed"), ("среда", "wed"), ("среды", "wed"),
+    ("четверг", "thu"),
+    ("пятницу", "fri"), ("пятница", "fri"), ("пятницы", "fri"),
+    ("субботу", "sat"), ("суббота", "sat"), ("субботы", "sat"),
+    ("воскресенье", "sun"), ("воскресение", "sun"), ("воскресенья", "sun"),
+]
+
+
+def _parse_call_day_ru(text: str) -> Optional[str]:
+    """Найти ПОСЛЕДНИЙ названный день недели/относительный день в тексте (детерминированно,
+    без LLM). rfind → берёт самое позднее упоминание (свежая договорённость)."""
+    t = (text or "").lower()
+    cands: list = []
+    # «послезавтра» обрабатываем ПЕРВЫМ и вырезаем (оно содержит «завтра» — иначе «завтра»
+    # перебьёт). Замена на пробелы той же длины — чтобы позиции остальных слов не съехали.
+    for m in re.finditer(r"послезавтра|после\s*завтра", t):
+        cands.append((m.start(), "posle"))
+    t = re.sub(r"послезавтра|после\s*завтра", lambda mm: " " * len(mm.group()), t)
+    for word, day in _CALL_DAY_WORDS:
+        p = t.rfind(word)
+        if p >= 0:
+            cands.append((p, day))
+    return max(cands, key=lambda x: x[0])[1] if cands else None
+
 
 def _resolve_call_dt(now_lead: datetime, call_day: Any, call_time: Any) -> Optional[datetime]:
     """ДЕТЕРМИНИРОВАННО посчитать дату/время созвона из НАЗВАНИЯ дня (LLM путает
@@ -52,6 +82,8 @@ def _resolve_call_dt(now_lead: datetime, call_day: Any, call_time: Any) -> Optio
         target = now_lead
     elif cd in ("tom", "зав"):
         target = now_lead + timedelta(days=1)
+    elif cd in ("pos", "пос"):  # послезавтра
+        target = now_lead + timedelta(days=2)
     elif cd in _WD_IDX:
         delta = (_WD_IDX[cd] - now_lead.weekday()) % 7  # ближайшее вхождение (0=сегодня)
         target = now_lead + timedelta(days=delta)
@@ -486,7 +518,10 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
     #    в conv.pending_call_suggestion → менеджер подтверждает в карточке → событие.
     # Дату считаем ДЕТЕРМИНИРОВАННО из названия дня (LLM врёт: «среда»→18 вместо 17);
     # call_datetime_utc — только запасной вариант, если день не распознан.
-    resolved_dt = _resolve_call_dt(now_lead, data.get("call_day"), data.get("call_time"))
+    # День — ДЕТЕРМИНИРОВАННО из текста (надёжнее LLM, который путал «среду»→четверг,
+    # кейс Денис); LLM-call_day остаётся запасным, если в тексте явного дня нет.
+    _call_day = _parse_call_day_ru(transcript) or data.get("call_day")
+    resolved_dt = _resolve_call_dt(now_lead, _call_day, data.get("call_time"))
     # СТОП ФАНТОМ-СОЗВОНАМ: если лид молчит (мы написали последними), договорённости
     # по факту нет — не создаём призрачный созвон (кейс «увидел КП и пропал»). Такой
     # лид попадёт в дожим через next_action, а не в календарь.
@@ -495,7 +530,7 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
     # детерминированный страж против галлюцинаций LLM) + лид НЕ молчит.
     _calls = _mentions_call(transcript)
     _defers = _defers_timing(transcript)
-    if (data.get("call_agreed") and data.get("call_day") and resolved_dt
+    if (data.get("call_agreed") and _call_day and resolved_dt
             and _calls and not _defers and not _lead_silent(db, conv)):
         try:
             new_dt = resolved_dt

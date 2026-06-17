@@ -19,6 +19,7 @@ from sqlalchemy import (
     String,
     Text,
     Integer,
+    Numeric,
     Boolean,
     DateTime,
     ForeignKey,
@@ -290,6 +291,12 @@ class Conversation(Base):
     last_warmed_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Revenue-аналитика (2026-06-17): сумма сделки + валюта на разговоре — чтобы
+    # считать «сколько денег принёс бот» (выручка по воронке/каналам, средний чек,
+    # потери в деньгах). Оба nullable → существующие строки валидны без бэкфилла.
+    # Заполняется вручную в карточке лида; сводки — в /analytics/detailed.
+    deal_value: Mapped[Optional[float]] = mapped_column(Numeric(14, 2), nullable=True)
+    deal_currency: Mapped[Optional[str]] = mapped_column(String(8), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

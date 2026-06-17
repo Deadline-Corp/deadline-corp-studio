@@ -190,6 +190,18 @@ def run_wa_maintenance() -> dict:
                     logger.info("[cron] lost auto-archive (>%dд): %s", _days, _al)
         except Exception as _ae:  # noqa: BLE001
             logger.warning("[cron] lost auto-archive failed: %s", _ae)
+        # Восстановление проигранных (win-back): задача оператору по восстановимым
+        # причинам старше N дней (если включено в настройках). DB-only, безопасно.
+        try:
+            from services import bot_settings as _bsw
+            _wb_days = _bsw.get("winback_after_days")
+            if isinstance(_wb_days, int) and _wb_days > 0:
+                _wb = plan_winback_tasks(_wb_days)
+                summary["winback"] = _wb
+                if _wb.get("created"):
+                    logger.info("[cron] win-back (>%dд): создано задач %s", _wb_days, _wb.get("created"))
+        except Exception as _we:  # noqa: BLE001
+            logger.warning("[cron] win-back failed: %s", _we)
         # Чистка таблицы идемпотентности входящих: ключи старше 3д не нужны (окно
         # ретраев платформ — минуты/часы), иначе processed_updates растёт без предела.
         try:
@@ -216,6 +228,72 @@ def run_wa_maintenance() -> dict:
         logger.warning("[cron] wa maintenance failed (non-fatal): %s", exc)
         summary["error"] = str(exc)
     return summary
+
+
+# Восстановимые причины проигрыша → подсказка оператору под причину. ЖЁСТКИЙ ОТКАЗ
+# (hard_stop), КОНКУРЕНТ (competitor) и НЕ-НАШ-ФОРМАТ (not_our_format) НЕ трогаем —
+# их возвращать бессмысленно/вредно (могли явно попросить не писать).
+_WINBACK_REASONS = {
+    "price": "цена — предложите рассрочку, пакет дешевле или бонус (интерес был, отказ по цене)",
+    "delayed": "просил вернуться позже — самое время напомнить о себе с новым поводом",
+    "no_budget": "не было бюджета — возможно, появился; мягкий пинг с актуальным оффером",
+}
+
+
+def plan_winback_tasks(after_days: int, limit: int = 25) -> dict:
+    """Восстановление проигранных: для лидов в стадии 'lost' старше after_days с
+    ВОССТАНОВИМОЙ причиной (price/delayed/no_budget) создаёт ОДНУ задачу оператору
+    с подсказкой под причину. Одна попытка на лида (флаг winback_attempted_at в
+    profile_data) — анти-спам. Только активные (не архивные) карточки. DB-only,
+    без LLM/сети — задача на ОДОБРЕНИЕ, не авто-отправка (анти-бан/безопасность)."""
+    out: dict = {"created": 0, "scanned": 0}
+    if not (isinstance(after_days, int) and after_days > 0):
+        return out
+    from datetime import datetime as _dt, timezone as _tz, timedelta as _td
+    from db.connection import session_scope
+    from db.models import (
+        Conversation as _Conv, Customer as _Cu, ScheduledAction as _SA,
+        ConversationStatusEnum as _CS,
+    )
+    now = _dt.now(_tz.utc)
+    cutoff = now - _td(days=after_days)
+    with session_scope() as db:
+        rows = (
+            db.query(_Conv, _Cu).join(_Cu, _Conv.customer_id == _Cu.id)
+            .filter(
+                _Conv.lead_stage == "lost",
+                _Conv.lost_reason.in_(list(_WINBACK_REASONS.keys())),
+                _Conv.status == _CS.OPEN,
+                _Conv.last_message_at.isnot(None),
+                _Conv.last_message_at < cutoff,
+            )
+            .order_by(_Conv.last_message_at.asc())
+            .limit(200).all()
+        )
+        for conv, cust in rows:
+            out["scanned"] += 1
+            pd = dict(cust.profile_data or {})
+            if pd.get("winback_attempted_at"):
+                continue  # уже пытались вернуть — не спамим
+            reason = conv.lost_reason or ""
+            hint = _WINBACK_REASONS.get(reason, "")
+            name = cust.name or cust.email or (cust.phone or str(cust.id)[:8])
+            db.add(_SA(
+                customer_id=cust.id, conversation_id=conv.id,
+                channel=conv.channel, chat_id=conv.channel_conversation_id,
+                action_type="operator_callback", executor="human",
+                due_at=now, status="pending",
+                payload={
+                    "text": f"♻️ Вернуть проигранного — {name}. Причина: {hint}.",
+                    "by": "winback", "winback_reason": reason,
+                },
+            ))
+            pd["winback_attempted_at"] = now.isoformat()
+            cust.profile_data = pd
+            out["created"] += 1
+            if out["created"] >= limit:
+                break
+    return out
 
 
 async def resolve_lid_backlog(*, limit: int = 8) -> dict:

@@ -990,6 +990,14 @@ function BehaviorCard() {
           <input type="number" min={1} step={1} value={overrides.silence_lost_days}
                  onChange={e => upd('silence_lost_days', e.target.value)} style={{ width: 90 }} />
         </div>
+        <div style={row}>
+          <span className="muted" style={{ width: 280 }}>♻️ Возвращать проигранного через (дней, 0 = выкл):</span>
+          <input type="number" min={0} step={1} value={overrides.winback_after_days ?? 0}
+                 onChange={e => upd('winback_after_days', e.target.value)} style={{ width: 90 }} />
+          <span className="faint" style={{ fontSize: 11, marginLeft: 8 }}>
+            ставит задачу оператору по восстановимым причинам (цена/отложил/нет бюджета — не жёсткий отказ), одна попытка на лида
+          </span>
+        </div>
         <div style={{ ...row, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
             <input type="checkbox" checked={!!overrides.digest_enabled}

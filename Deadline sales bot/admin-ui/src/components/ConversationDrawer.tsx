@@ -26,6 +26,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
   const [fieldEdits, setFieldEdits] = useState<Record<string, any>>({})
   const [fieldsOpen, setFieldsOpen] = useState(false)
   const [callDt, setCallDt] = useState('')  // ручной перенос/назначение созвона
+  const [dealInput, setDealInput] = useState('')  // ввод суммы сделки (revenue-аналитика)
   const [advice, setAdvice] = useState('')
   const [team, setTeam] = useState<any[]>([])
   const [draftText, setDraftText] = useState('')  // редактируемый предложенный ботом ответ (WhatsApp)
@@ -406,6 +407,23 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
     finally { setBusy(false) }
   }
 
+  // Сумма сделки (revenue-аналитика «сколько денег принёс бот»). Пусто → очистить.
+  const saveDeal = async () => {
+    if (busy) return
+    const raw = dealInput.replace(/[^\d.,]/g, '').replace(',', '.')
+    const val = raw ? parseFloat(raw) : 0
+    setBusy(true)
+    try {
+      await api.post(`/conversations/${convId}/deal-value`, {
+        value: val, currency: detail?.deal_currency || 'RUB',
+      })
+      showToast(val > 0 ? `💰 Сумма сделки: ${val}` : 'Сумма очищена')
+      setDealInput('')
+      await loadDetail()
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
   const createTask = async () => {
     if (!taskText.trim() || !taskDue || busy) return
     setBusy(true)
@@ -598,6 +616,22 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                   )}
                 </div>
               )}
+              {me?.role !== 'viewer' && (
+                <div style={{ background: 'var(--panel)', borderRadius: 8, padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <b style={{ fontSize: 12.5 }}>💰 Сумма сделки</b>
+                  {detail.deal_value != null && (
+                    <span className="chip ok">{detail.deal_value} {detail.deal_currency || ''}</span>
+                  )}
+                  <div style={{ flex: 1, minWidth: 8 }} />
+                  <input value={dealInput} onChange={e => setDealInput(e.target.value)}
+                         onKeyDown={e => { if (e.key === 'Enter') saveDeal() }}
+                         placeholder={detail.deal_value != null ? 'изменить…' : 'напр. 50000'}
+                         style={{ width: 110, fontSize: 12, padding: '4px 8px' }} />
+                  <button className="btn sm primary" onClick={saveDeal}
+                          disabled={busy || (!dealInput.trim() && detail.deal_value == null)}
+                          title="Сумма закрытой/потенциальной сделки — для отчёта «сколько денег принёс бот»">💾</button>
+                </div>
+              )}
               {detail.fields && detail.fields.length > 0 && (
                 <div style={{ background: 'var(--panel)', borderRadius: 8, padding: '8px 10px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', fontSize: 12.5 }}
@@ -701,6 +735,13 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
               {loadingOlder ? '…' : '↑ Показать более ранние'}
             </button>
           )}
+          {/* Маркер начала: видно, что переписка полная (выше ничего не обрезано). */}
+          {!hasMore && msgs.length > 0 && (
+            <div className="faint" style={{ alignSelf: 'center', fontSize: 10.5, opacity: 0.6,
+                                            marginBottom: 10, textAlign: 'center', letterSpacing: 0.2 }}>
+              ⌃ начало переписки · {msgs.length} сообщ. · ✓ как в WhatsApp
+            </div>
+          )}
           {msgs.length === 0 && <div className="empty">Сообщений пока нет</div>}
           {msgs.map(m => (
             <div key={m.id} className={`msg ${m.role}`}>
@@ -732,6 +773,11 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
             showToast={showToast}
             reload={loadDetail}
           />
+        )}
+
+        {detail && me?.role !== 'viewer' &&
+          (detail.wa_autonomous || detail.next_action || (detail.scheduled_actions || []).some(a => !!a.due_at) || detail.nudge_paused) && (
+          <BotPlanBlock detail={detail} convId={convId} showToast={showToast} />
         )}
 
         {detail?.wa_autonomous ? (
@@ -844,6 +890,68 @@ function CallSuggestionBlock({ convId, suggestion, showToast, reload }: {
         </button>
         <button className="btn sm ghost" disabled={busy} onClick={dismiss}>🚫 Нет</button>
       </div>
+    </div>
+  )
+}
+
+// Блок «🤖 План бота»: что бот понял про лида + следующий запланированный шаг +
+// развернуть «что напишет дальше» (прозрачность — видно, что у бота есть план, и
+// можно подстроить). Просьба владельца: не просто «бот ведёт», а ЧТО он планирует.
+function BotPlanBlock({ detail, convId, showToast }: {
+  detail: ConvDetail
+  convId: string
+  showToast: (t: string, err?: boolean) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [preview, setPreview] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const MODE: Record<string, string> = {
+    bot_auto: 'веду диалог сам', reengage: 'дожимаю молчуна', wait: 'жду ответа лида',
+    needs_approval: 'жду твоего одобрения', human: 'передал тебе', unclear: 'не понял — нужна помощь',
+  }
+  const TYPE: Record<string, string> = {
+    followup_message: '🔁 дожим молчуну', call_reminder: '🔔 напоминание о созвоне', call_booked: '📞 созвон',
+  }
+  const na = detail.next_action
+  const acts = (detail.scheduled_actions || []).filter(a => !!a.due_at)
+    .sort((a, b) => (String(a.due_at) < String(b.due_at) ? -1 : 1))
+  const nextSched = acts.find(a => TYPE[a.action_type])
+  const statusTxt = na?.mode ? (MODE[na.mode] || na.label || '—')
+    : (detail.wa_autonomous ? 'веду диалог сам' : (na?.label || 'веду по логике'))
+
+  const showPreview = async () => {
+    if (preview !== null) { setOpen(o => !o); return }
+    setBusy(true); setOpen(true)
+    try {
+      const r = await api.post<{ reply: string | null }>(`/conversations/${convId}/next-reply-preview`, {})
+      setPreview(r.reply || '(бот пока не сформулировал следующий ответ — мало контекста)')
+    } catch (e: any) { setPreview(null); setOpen(false); showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div style={{ borderTop: '1px solid var(--border)', background: 'var(--panel-2)', padding: '8px 14px', fontSize: 12.5 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <b>🤖 План бота</b>
+        <span className="chip" style={{ fontSize: 10.5 }}>{statusTxt}</span>
+        {detail.nudge_paused && <span className="chip warn" style={{ fontSize: 10.5 }}>⏸ дожим на паузе</span>}
+      </div>
+      <div className="faint" style={{ fontSize: 11.5, marginTop: 3 }}>
+        {nextSched
+          ? <>Следующий шаг: <b>{TYPE[nextSched.action_type]}</b>{nextSched.due_at ? <> · {fmtTime(nextSched.due_at)}</> : null}</>
+          : (detail.nudge_paused
+              ? 'Дожим на паузе — бот не пишет сам, пока не возобновишь.'
+              : 'Жду ответа лида. Замолчит — дожму по каденции (Настройки → «Каденция дожима»).')}
+      </div>
+      <button className="btn sm ghost" style={{ marginTop: 6, fontSize: 11.5 }} onClick={showPreview} disabled={busy}>
+        {busy ? <span className="spin" /> : (open && preview !== null ? '▾ Что бот напишет дальше' : '▸ Что бот напишет дальше')}
+      </button>
+      {open && preview !== null && (
+        <div style={{ marginTop: 6, padding: '8px 10px', background: 'var(--panel)', borderRadius: 8,
+                      fontSize: 12.5, lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>
+          {preview}
+        </div>
+      )}
     </div>
   )
 }

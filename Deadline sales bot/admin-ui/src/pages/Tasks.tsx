@@ -85,6 +85,8 @@ export function Tasks() {
 function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   const [board, setBoard] = useState<Board | null>(null)
   const [busy, setBusy] = useState('')
+  // Фильтр-фокус: клик по счётчику вверху → показать только эту группу (убрать лишнее).
+  const [filter, setFilter] = useState<'overdue' | 'today' | 'no_task' | null>(null)
   const { openConversation } = useDrawer()
 
   const load = async () => {
@@ -150,18 +152,25 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <span className="chip danger">🔴 Просрочено {board.summary.overdue}</span>
-        <span className="chip warn">🟡 Сегодня {board.summary.today}</span>
-        <span className="chip">🆕 Без задачи {board.summary.no_task}</span>
+        <span className="chip danger" title="Показать только просроченные"
+              style={{ cursor: 'pointer', boxShadow: filter === 'overdue' ? '0 0 0 2px var(--danger)' : 'none' }}
+              onClick={() => setFilter(filter === 'overdue' ? null : 'overdue')}>🔴 Просрочено {board.summary.overdue}</span>
+        <span className="chip warn" title="Показать только сегодняшние"
+              style={{ cursor: 'pointer', boxShadow: filter === 'today' ? '0 0 0 2px var(--warn, #e0a400)' : 'none' }}
+              onClick={() => setFilter(filter === 'today' ? null : 'today')}>🟡 Сегодня {board.summary.today}</span>
+        <span className="chip" title="Показать только лидов без задачи"
+              style={{ cursor: 'pointer', boxShadow: filter === 'no_task' ? '0 0 0 2px var(--accent)' : 'none' }}
+              onClick={() => setFilter(filter === 'no_task' ? null : 'no_task')}>🆕 Без задачи {board.summary.no_task}</span>
         <span className="chip">🤖 {board.summary.bot} · 👤 {board.summary.human}</span>
+        {filter && <button className="btn sm ghost" onClick={() => setFilter(null)} title="Сбросить фильтр">✕ показать всё</button>}
         <span style={{ flex: 1 }} />
         <button className="btn sm" onClick={sweep} disabled={!!busy}>▶ Проверить задачи сейчас</button>
         <Help title="Проверить задачи сейчас" text="Бот сам проверяет задачи и напоминания каждые ~10 минут (дожим молчунам, напоминания о созвонах). Эта кнопка запускает проверку немедленно — на случай, если ждать не хочется." />
       </div>
 
-      <SleepingPanel showToast={showToast} />
+      {!filter && <SleepingPanel showToast={showToast} />}
 
-      {board.no_task_leads.length > 0 && (
+      {board.no_task_leads.length > 0 && (!filter || filter === 'no_task') && (
         <div className="card" style={{ padding: 12, borderColor: 'var(--accent-border)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
             <b style={{ fontSize: 13 }}>🆕 Лиды без задачи ({board.no_task_leads.length})</b>
@@ -204,11 +213,11 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
         </div>
       )}
 
-      <Bucket title="🔴 Просрочено" items={b.overdue} cls="text-danger" />
-      <Bucket title="🟡 Сегодня" items={b.today} />
-      <Bucket title="📅 Завтра" items={b.tomorrow} />
-      <Bucket title="🗓 На неделе" items={b.week} />
-      <Bucket title="Позже" items={b.later} />
+      {(!filter || filter === 'overdue') && <Bucket title="🔴 Просрочено" items={b.overdue} cls="text-danger" />}
+      {(!filter || filter === 'today') && <Bucket title="🟡 Сегодня" items={b.today} />}
+      {!filter && <Bucket title="📅 Завтра" items={b.tomorrow} />}
+      {!filter && <Bucket title="🗓 На неделе" items={b.week} />}
+      {!filter && <Bucket title="Позже" items={b.later} />}
 
       {totalTasks === 0 && board.no_task_leads.length === 0 && (
         <div className="empty">Всё под контролем — задач нет и лидов без задачи нет 🎉</div>

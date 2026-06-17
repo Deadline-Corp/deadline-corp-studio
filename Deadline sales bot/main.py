@@ -354,8 +354,8 @@ async def _log_unhandled_exception(request, exc: Exception):
         log_event("error", f"{type(exc).__name__}: {str(exc)[:240]}", level="error",
                   actor="system",
                   meta={"path": str(getattr(request, "url", "")), "method": getattr(request, "method", "")})
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as _le:  # noqa: BLE001 — зеркало в БД-журнал best-effort
+        log.debug("activity_log mirror failed (unhandled handler): %s", _le)
     log.error("unhandled %s on %s: %s", type(exc).__name__,
               getattr(getattr(request, "url", None), "path", "?"), exc)
     return JSONResponse(status_code=500, content={"detail": "internal error"})
@@ -909,8 +909,8 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
             if _nm:
                 customer.name = _nm[:200]
                 db.flush()
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as _e:  # noqa: BLE001
+            log.warning("[lead-name] не сохранил имя лида из реплики: %s", _e)
 
     # WhatsApp: подтянуть номер и имя ИЗ САМОГО мессенджера, иначе живые входящие
     # висят без номера/имени и «не совпадают» с тем, что видно в WhatsApp. Имя —
@@ -1131,8 +1131,8 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                     import uuid as _uuid
                     try:
                         prior_conv_for_b = db.get(ConvRow, _uuid.UUID(prior_conv_id_str))
-                    except Exception:
-                        pass
+                    except Exception as _ue:  # noqa: BLE001
+                        log.debug("[recall] битый prior_conv_id %s: %s", prior_conv_id_str, _ue)
 
                 prior_summary = (prior_conv_for_b.summary or "") if prior_conv_for_b else ""
                 result = classify_topic_decision(
@@ -1396,8 +1396,8 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 if _bn:
                     customer.name = _bn[:200]
                     db.flush()
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as _e:  # noqa: BLE001
+            log.warning("[lead-name] не сохранил имя лида (bare-name ответ): %s", _e)
 
     # 5b. Per-turn lead signals (Phase 9, 2026-05-27) — update interaction_type
     # (set once on first touch), lead_score (incremental + content keywords),
@@ -1493,8 +1493,8 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
             for _x in (_profile.get("offered_call_slots") or []):
                 try:
                     _offered.append(_dtm.fromisoformat(_x))
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as _se:  # noqa: BLE001
+                    log.debug("[call-slots] пропускаю битый слот %r: %s", _x, _se)
             # Анти-стале: если лид назвал ДЕНЬ, которого нет среди предложенных
             # слотов (предлагали «завтра», а он просит «в пятницу») — старые слоты
             # протухли, НЕ бронируем по ним. Сбрасываем → ниже пересчитаем под день.
@@ -1988,8 +1988,8 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 if _r == "user" and _rp.lead_going_to_tg(_m.content or ""):
                     _lead_agreed_tg = True
                     break
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as _e:  # noqa: BLE001
+            log.debug("[tg-intent] скан согласия лида на Telegram не удался: %s", _e)
         answer = _rp.polish(
             answer,
             lead_message=req.content,
@@ -2247,8 +2247,8 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 if phone and not (customer.phone or "").strip():
                     try:
                         customer.phone = phone[:50]
-                    except Exception:  # noqa: BLE001
-                        pass
+                    except Exception as _e:  # noqa: BLE001
+                        log.warning("[handoff] не сохранил телефон лида: %s", _e)
                 # Persist telegram @username в identity_keys — чтобы потом склеить
                 # с этим же человеком, когда он напишет из своего Telegram
                 # (кросс-канальный мёрж: сайт @username ↔ telegram from_user).
@@ -2259,15 +2259,15 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                         if _ik.get("tg_handle") != _h:
                             _ik["tg_handle"] = _h
                             customer.identity_keys = _ik
-                    except Exception:  # noqa: BLE001
-                        pass
+                    except Exception as _e:  # noqa: BLE001
+                        log.warning("[handoff] не сохранил tg_handle (кросс-канал мёрж): %s", _e)
                 # Имя в карточку/задачу.
                 _ln = (handoff_data.get("lead_name") or "").strip()
                 if _ln and not (customer.name or "").strip():
                     try:
                         customer.name = _ln[:200]
-                    except Exception:  # noqa: BLE001
-                        pass
+                    except Exception as _e:  # noqa: BLE001
+                        log.warning("[handoff] не сохранил имя лида: %s", _e)
 
                 await send_telegram_brief(str(conversation.id), handoff_data, history_dicts)
                 mark_handoff_done(db, conversation.id)
@@ -2833,6 +2833,11 @@ def _seen_inbound(channel_key: str, msg_id: Optional[str]) -> bool:
     ответы при ретраях). msg_id пустой → False (нечем защищаться, обрабатываем). При
     сбое БД → False (лучше редкий дубль, чем потерять сообщение)."""
     if not msg_id:
+        # BUG-3 наблюдаемость: парсер канала не дал нативный message-id → дедуп
+        # ОБХОДИТСЯ (при ретрае вебхука будет дубль). Логируем, чтобы видеть в «Логах»,
+        # какой канал теряет id (раньше обход был молчаливым).
+        log.warning("[dedup] %s: нет message-id во входящем — дедуп обойдён "
+                    "(parser-bypass, возможен дубль при ретрае)", channel_key)
         return False
     try:
         return _seen_update_db(f"{channel_key}:{msg_id}")
@@ -3460,16 +3465,19 @@ def _resolve_wa_chat_id(to_peer: str) -> str:
 
 
 async def _wa_send(to_peer: str, text: str, phone_number_id: str = "") -> bool:
-    """Единая отправка в WhatsApp: через Green-API (неофиц., linked-device) если
-    он настроен, иначе через Meta Cloud API. `to_peer` — номер клиента (цифры) /
-    wa_id. Так все точки отправки (автоответ, одобрение черновика, ручной ответ
-    оператора) работают независимо от транспорта."""
+    """Единая отправка в WhatsApp с FAILOVER-цепочкой. `to_peer` — номер клиента
+    (цифры) / wa_id. Пробуем провайдеров по порядку, пока один не доставит:
+    WAHA → Green-API → Meta Cloud API. Первый можно переопределить в настройках
+    (bot_settings 'wa_provider' = waha|greenapi|cloud) — runtime, без редеплоя
+    (план Б при бане WAHA). BUG-1: раньше при сбое настроенного провайдера
+    сообщение терялось молча (только warning) — теперь падает к следующему."""
     if _wa_over_daily_cap():  # антибан: дневной потолок исходящих достигнут
         log.warning("[wa-send] дневной лимит исходящих (WA_DAILY_SEND_CAP) достигнут "
                     "— отправка пропущена (антибан)")
         return False
     await _wa_throttle()  # антибан: разносим отправки во времени, без бурстов
-    if settings.waha_base_url:
+
+    async def _try_waha() -> bool:
         from channels.waha import send_waha_reply, resolve_lid_phone
         chat_id = _resolve_wa_chat_id(to_peer)  # @lid для рекламных лидов
         # Рекламный лид под @lid: отправка на @lid через NOWEB нестабильна. Пробуем
@@ -3490,17 +3498,59 @@ async def _wa_send(to_peer: str, text: str, phone_number_id: str = "") -> bool:
             settings.waha_base_url, settings.waha_api_key or "",
             settings.waha_session or "default", chat_id, text,
         )
-    if settings.greenapi_id_instance and settings.greenapi_api_token:
+
+    async def _try_greenapi() -> bool:
         from channels.greenapi import send_greenapi_reply
         return await send_greenapi_reply(
             settings.greenapi_api_url or "https://api.green-api.com",
             settings.greenapi_id_instance, settings.greenapi_api_token, to_peer, text,
         )
-    return await send_whatsapp_reply(
-        settings.whatsapp_token,
-        phone_number_id or settings.whatsapp_phone_number_id or "",
-        to_peer, text,
-    )
+
+    async def _try_cloud() -> bool:
+        return await send_whatsapp_reply(
+            settings.whatsapp_token,
+            phone_number_id or settings.whatsapp_phone_number_id or "",
+            to_peer, text,
+        )
+
+    configured = {
+        "waha": bool(settings.waha_base_url),
+        "greenapi": bool(settings.greenapi_id_instance and settings.greenapi_api_token),
+        "cloud": bool(settings.whatsapp_token),
+    }
+    senders = {"waha": _try_waha, "greenapi": _try_greenapi, "cloud": _try_cloud}
+    order = ["waha", "greenapi", "cloud"]
+    # runtime-переопределение основного провайдера (план Б при бане), без редеплоя
+    try:
+        from services import bot_settings as _bs
+        _pref = (_bs.get("wa_provider") or "").strip().lower()
+        if _pref in senders:
+            order = [_pref] + [p for p in order if p != _pref]
+    except Exception:  # noqa: BLE001
+        pass
+
+    active = [p for p in order if configured[p]]
+    if not active:
+        log.error("[wa-send] нет настроенного WhatsApp-провайдера (WAHA/Green-API/Cloud) "
+                  "— отправка невозможна")
+        return False
+
+    for i, _name in enumerate(active):
+        _more = i + 1 < len(active)
+        try:
+            ok = await senders[_name]()
+        except Exception as _e:  # noqa: BLE001
+            log.warning(f"[wa-send] провайдер {_name} упал: {_e}"
+                        + (" — пробуем следующий" if _more else ""))
+            continue
+        if ok:
+            if i > 0:
+                log.info(f"[wa-send] доставлено через {_name} (failover после {active[:i]})")
+            return True
+        log.warning(f"[wa-send] провайдер {_name} не доставил (False)"
+                    + (" — пробуем следующий" if _more else ""))
+    log.error(f"[wa-send] ВСЕ провайдеры не доставили — потеря исходящего (to={to_peer[:24]})")
+    return False
 
 
 async def _record_wa_operator_message(db: Session, normalized) -> None:
@@ -3721,8 +3771,8 @@ async def _process_wa_payload(payload: dict, engine: str) -> None:
                 from services.activity_log import log_event
                 log_event("error", f"Сбой обработки входящего {engine}: {type(e).__name__}: {str(e)[:200]}",
                           level="error", actor="system", meta={"engine": engine})
-            except Exception:  # noqa: BLE001
-                pass
+            except Exception as _le:  # noqa: BLE001 — зеркало в БД-журнал best-effort
+                log.debug("activity_log mirror failed (%s inbound): %s", engine, _le)
 
 
 @app.post("/webhooks/greenapi")
@@ -4818,8 +4868,8 @@ async def startup():
         log_event("system", f"Система запущена · v{app.version} · модель {_LLM_PRIMARY_MODEL}",
                   level="info", actor="system",
                   meta={"version": app.version, "model": _LLM_PRIMARY_MODEL, "provider": _LLM_PROVIDER})
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as _le:  # noqa: BLE001 — журнал старта best-effort
+        log.debug("activity_log mirror failed (startup): %s", _le)
 
 
 @app.on_event("shutdown")

@@ -29,6 +29,12 @@ const LOST_LABELS: Record<string, string> = {
   delayed: 'Пропал/отложил', no_budget: 'Нет бюджета', hard_stop: 'Жёсткий отказ',
 }
 
+/* Формат суммы для revenue-блока: разряды + код валюты. */
+function fmtMoney(n: number, cur: string | null): string {
+  const v = Math.round(n || 0).toLocaleString('ru-RU')
+  return cur ? `${v} ${cur}` : v
+}
+
 function Bar({ label, value, max, color }: { label: string; value: number; max: number; color?: string }) {
   const w = max > 0 ? Math.max(2, (value / max) * 100) : 0
   return (
@@ -149,6 +155,36 @@ export function Analytics() {
         </div>
       </div>
 
+      {/* Revenue — «сколько денег принёс бот». Появляется, когда в карточках проставлены суммы сделок. */}
+      {data.revenue && (data.revenue.deals_with_value > 0 ? (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 14 }}>
+          <div className="card" style={kpi}>
+            <span style={{ fontSize: 23, fontWeight: 700, color: 'var(--ok)' }}>{fmtMoney(data.revenue.won_value, data.revenue.currency)}</span>
+            <span className="muted" style={{ fontSize: 12 }}>выручка (закрыто) · {data.revenue.won_deals} сделок</span>
+          </div>
+          <div className="card" style={kpi}>
+            <span style={{ fontSize: 23, fontWeight: 700 }}>{fmtMoney(data.revenue.avg_deal, data.revenue.currency)}</span>
+            <span className="muted" style={{ fontSize: 12 }}>средний чек</span>
+          </div>
+          <div className="card" style={kpi}>
+            <span style={{ fontSize: 23, fontWeight: 700, color: 'var(--info)' }}>{fmtMoney(data.revenue.pipeline_value, data.revenue.currency)}</span>
+            <span className="muted" style={{ fontSize: 12 }}>в работе (воронка)</span>
+          </div>
+          <div className="card" style={kpi}>
+            <span style={{ fontSize: 23, fontWeight: 700, color: 'var(--danger)' }}>{fmtMoney(data.revenue.lost_value, data.revenue.currency)}</span>
+            <span className="muted" style={{ fontSize: 12 }}>потеряно (проигранные)</span>
+          </div>
+        </div>
+      ) : (
+        <div className="card" style={{ marginBottom: 14, padding: '12px 14px' }}>
+          <b>💰 Выручка — «сколько денег принёс бот»</b>
+          <p className="muted" style={{ fontSize: 12.5, margin: '4px 0 0' }}>
+            Проставляйте сумму сделки в карточке лида (💰 Сумма сделки) — здесь появится выручка
+            по воронке/каналам, средний чек и потери в деньгах.
+          </p>
+        </div>
+      ))}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))', gap: 14 }}>
         <div className="card">
           <b>📊 Воронка сейчас</b>
@@ -159,6 +195,29 @@ export function Analytics() {
             ))}
           </div>
         </div>
+
+        {data.revenue && data.revenue.deals_with_value > 0 && (
+          <div className="card">
+            <b>💰 Выручка по стадиям</b>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 12 }}>
+              {(() => {
+                const ent = Object.entries(data.revenue!.by_stage).sort((a, b) => b[1] - a[1])
+                const m = Math.max(1, ...ent.map(([, v]) => v))
+                return ent.length === 0
+                  ? <div className="empty" style={{ padding: '14px 0' }}>—</div>
+                  : ent.map(([s, v]) => (
+                    <div key={s} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5 }}>
+                      <span className="muted" style={{ width: 140, flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{stageLabel(s)}</span>
+                      <div style={{ flex: 1, height: 18, background: 'var(--bg-soft)', borderRadius: 5, overflow: 'hidden' }}>
+                        <div style={{ width: `${Math.max(2, (v / m) * 100)}%`, height: '100%', background: s === 'lost' ? 'var(--danger)' : 'var(--ok)', borderRadius: 5 }} />
+                      </div>
+                      <b style={{ minWidth: 72, textAlign: 'right' }}>{fmtMoney(v, data.revenue!.currency)}</b>
+                    </div>
+                  ))
+              })()}
+            </div>
+          </div>
+        )}
 
         <div className="card">
           <b>📈 Новые лиды по дням</b>

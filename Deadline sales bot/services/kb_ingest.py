@@ -38,6 +38,20 @@ def ingest_text(source: str, content: str, *, replace: bool = True) -> int:
     if not chunks:
         return 0
 
+    # Дедуп одинаковых чанков (повторы в исходнике → дубли в выдаче ретрива + лишние
+    # эмбеддинги). Сохраняем порядок, сравниваем по нормализованному тексту.
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for c in chunks:
+        key = " ".join(c.split()).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append(c)
+    if len(uniq) < len(chunks):
+        logger.info("[kb_ingest] source=%r: убрал %d дублей чанков", source, len(chunks) - len(uniq))
+    chunks = uniq
+
     vectors = _m.embeddings.embed_documents(chunks)
 
     with session_scope() as db:

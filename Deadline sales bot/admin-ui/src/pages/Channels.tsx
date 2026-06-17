@@ -338,6 +338,26 @@ export function Channels() {
         новый — раскройте «Как подключить» на карточке, там пошаговая инструкция без айтишных сложностей.
       </HintBar>
 
+      {ov?.channels && ov.channels.length > 0 && (() => {
+        const CH_LABEL: Record<string, string> = {
+          website: '🌐 Сайт', telegram: '✈️ Telegram', instagram: '📸 Instagram',
+          messenger: '💬 Messenger', whatsapp: '🟢 WhatsApp',
+        }
+        const done = ov.channels.filter(c => c.configured).length
+        return (
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', padding: '10px 14px', border: '1px solid var(--border)', borderRadius: 10, background: 'var(--panel-2)' }}>
+            <b style={{ fontSize: 13 }}>Подключено каналов: {done}/{ov.channels.length}</b>
+            <span className="muted" style={{ fontSize: 12 }}>— все клиенты в одном окне</span>
+            <div style={{ flex: 1, minWidth: 12 }} />
+            {ov.channels.map(c => (
+              <span key={c.id} className={`chip ${c.configured ? 'ok' : ''}`}>
+                {CH_LABEL[c.id] || c.id} {c.configured ? '✓' : '—'}
+              </span>
+            ))}
+          </div>
+        )
+      })()}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(380px, 1fr))', gap: 14 }}>
 
         <Card icon="🌐" title="Сайт-виджет" {...{ status: statusOf('website').s, statusCls: statusOf('website').cls }} footer={counts('website')}>
