@@ -155,6 +155,7 @@ export interface ConvDetail extends ConvSummary {
   scheduled_actions: Array<{
     id: string; action_type: string; executor: string; due_at: string | null; payload: any
   }>
+  stage_history?: Array<{ from: string | null; to: string; by: string; at: string | null }>
 }
 
 export interface Msg {

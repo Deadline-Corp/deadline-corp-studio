@@ -569,6 +569,16 @@ async def conversation_detail(
         .all()
     )
 
+    # История переходов по воронке — «почему лид на этой стадии»: кто и когда двигал
+    # (бот/оператор/автоматизация). Делает решения бота прозрачными (Фаза 8).
+    stage_hist = (
+        db.query(StageTransition)
+        .filter(StageTransition.conversation_id == conv.id)
+        .order_by(StageTransition.created_at.desc())
+        .limit(20)
+        .all()
+    )
+
     # Кастомные поля: определения + значения из profile_data['fields'].
     field_defs = (
         db.query(CustomFieldDef)
@@ -627,6 +637,13 @@ async def conversation_detail(
                 "payload": a.payload,
             }
             for a in pending_actions
+        ],
+        "stage_history": [
+            {
+                "from": t.from_stage, "to": t.to_stage, "by": t.by,
+                "at": t.created_at.isoformat() if t.created_at else None,
+            }
+            for t in stage_hist
         ],
     })
     return out

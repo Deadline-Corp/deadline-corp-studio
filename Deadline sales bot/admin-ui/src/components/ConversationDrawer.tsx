@@ -32,6 +32,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
   const [draftOpen, setDraftOpen] = useState(true)  // свернуть блок «система предлагает», чтобы видеть переписку
   const [replyOpen, setReplyOpen] = useState(false) // окно ручного ответа оператора — по умолчанию свёрнуто
   const [actionsOpen, setActionsOpen] = useState(false) // панель действий сверху — по умолчанию свёрнута (видно переписку)
+  const [historyOpen, setHistoryOpen] = useState(false) // «почему лид на этой стадии» — история переходов
   const msgsRef = useRef<HTMLDivElement>(null)
   const lastTsRef = useRef<string | null>(null)
   const lastIdRef = useRef<string | null>(null)  // keyset-курсор вниз (новые): вторичный ключ по id
@@ -353,6 +354,8 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                 <span className={`chip ${ch?.cls ?? ''}`}>{ch?.icon} {ch?.label ?? detail.channel}</span>
                 <span className="chip accent">{stageLabel(detail.lead_stage)}</span>
                 {temp && <span className={`chip ${temp.cls}`}>{temp.label}</span>}
+                {temp && <Help title="Температура лида — считается сама"
+                  text="Насколько лид «горячий», бот определяет АВТОМАТИЧЕСКИ по поведению: 🧊 cold (нет вовлечения) → 🌤 warm (2+ ответа по делу) → 🔥 hot (спросил цену/сроки/портфолио) → 🚀 ready (готов начинать) → 🤝 client (внёс предоплату). ❄️ frozen — молчит 21+ день. Остывание: 14 дней тишины → на уровень ниже, 21 день → frozen; клиент не остывает. Влияет на ПРИОРИТЕТ дожима и скоринг (кого пинать первым), но НЕ на текст ответов бота." />}
                 <span className="chip">скор {detail.customer.lead_score}</span>
                 {detail.operator_takeover && <span className="chip ok">👤 на операторе</span>}
                 {detail.customer.email && <span className="chip mono">{detail.customer.email}</span>}
@@ -532,6 +535,32 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
             </>
           )}
         </div>
+
+        {detail && (detail.stage_history?.length ?? 0) > 0 && (
+          <div style={{ padding: '0 14px 8px' }}>
+            <button className="btn sm ghost" onClick={() => setHistoryOpen(v => !v)}
+                    title="Кто и когда двигал лида по воронке — решения бота прозрачны">
+              {historyOpen ? '▾' : '▸'} 📋 Почему лид на этой стадии
+            </button>
+            {historyOpen && (
+              <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4,
+                            fontSize: 12, color: 'var(--text-dim)' }}>
+                {detail.stage_history!.map((h, i) => {
+                  const by = /admin|manual|ui/i.test(h.by) ? '👤 вручную'
+                    : /bot/i.test(h.by) ? '🤖 бот'
+                    : '⚙️ авто'
+                  return (
+                    <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'baseline' }}>
+                      <span className="faint" style={{ minWidth: 96 }}>{h.at ? fmtTime(h.at) : ''}</span>
+                      <span>{h.from ? `${stageLabel(h.from)} → ` : ''}<b>{stageLabel(h.to)}</b></span>
+                      <span className="faint">· {by}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="d-msgs" ref={msgsRef}>
           {hasMore && msgs.length > 0 && (
