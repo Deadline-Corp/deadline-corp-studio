@@ -60,7 +60,14 @@ def cleanup_wa_artifacts() -> dict:
        (без совпадающего assistant) НЕ трогаем.
     """
     from db.connection import session_scope
+    from datetime import timedelta as _td
     out = {"phantoms": 0, "echo_dupes": 0}
+    _floor = datetime.min.replace(tzinfo=timezone.utc)
+    # СВЕЖИЕ авто-ответы (<15 мин) НЕ трогаем: бот отправил, но fromMe-эхо (придёт с
+    # waha_id) ещё не дошло — преждевременное удаление даёт мигание «пропало-вернулось»
+    # в панели, а при редком «эхо не пришло вовсе» — потерю реально отправленного.
+    # Старше 15 мин без признаков доставки = настоящий фантом (бот сгенерил, но не послал).
+    _phantom_cutoff = datetime.now(timezone.utc) - _td(minutes=15)
     with session_scope() as db:
         # 1) фантомы
         rows = (
@@ -69,16 +76,21 @@ def cleanup_wa_artifacts() -> dict:
         )
         for m in rows:
             meta = m.extra_meta or {}
-            if not (meta.get("waha_id") or meta.get("approved_via") or meta.get("delivered")):
-                db.delete(m)
-                out["phantoms"] += 1
+            if meta.get("waha_id") or meta.get("approved_via") or meta.get("delivered"):
+                continue
+            _ts = m.created_at or _floor
+            if _ts.tzinfo is None:
+                _ts = _ts.replace(tzinfo=timezone.utc)
+            if _ts > _phantom_cutoff:
+                continue  # свежий — ждём его эхо
+            db.delete(m)
+            out["phantoms"] += 1
         db.flush()
         # 2) ЭХО-ДУБЛИ: одно сообщение хранится ДВАЖДЫ — assistant (наша запись отправки,
         #    approved_via/delivered) И operator (то же самое, затянутое обратно из WhatsApp
         #    как fromMe-эхо, source=waha_history_sync/webhook). Кейс T-Group. Оставляем ОДНУ
         #    копию: предпочитаем ту, у которой есть waha_id (реальная запись WhatsApp) — иначе
         #    history-sync переимпортирует её снова (бесконечный цикл). Удаляем дубль без waha_id.
-        _floor = datetime.min.replace(tzinfo=timezone.utc)
         wa_msgs = (
             db.query(Message).join(Conversation, Message.conversation_id == Conversation.id)
             .filter(Conversation.channel == "whatsapp",
