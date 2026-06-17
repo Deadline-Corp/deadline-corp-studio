@@ -410,6 +410,114 @@ async def extract_fields_now(db: Session, conv: Conversation, cust: Customer, ll
     return {"ok": True, "filled": changed}
 
 
+async def apply_operator_reschedule(db: Session, conv: Conversation, cust: Customer,
+                                    operator_text: str, settings: Any) -> Optional[str]:
+    """КОРЕНЬ #2: оператор написал в чате новое время созвона («завтра в 14:00 по Астане»,
+    «перенесём на пятницу в 15») → ДЕТЕРМИНИРОВАННО распознаём день+время и ПЕРЕБРОНИРУЕМ
+    существующий созвон, чтобы календарь не отставал от договорённости. Перебронируем ТОЛЬКО
+    если созвон уже актуален (стадия on_call ИЛИ есть бронь ИЛИ есть предложение) — не создаём
+    созвон из случайной фразы оператора. Возвращает новый ISO-время или None.
+
+    День/время — теми же детерминированными парсерами, что и мозг (не LLM)."""
+    text = (operator_text or "").strip()
+    if not text:
+        return None
+    # созвон должен быть в контексте — иначе «я завтра в 14 занят» не должно бронировать
+    prof = dict(cust.profile_data or {})
+    call_relevant = (conv.lead_stage == "on_call" or prof.get("booked_call_at")
+                     or getattr(conv, "pending_call_suggestion", None))
+    if not call_relevant:
+        return None
+    # пояс лида (как в analyze_and_advance) + явная приписка в тексте оператора
+    _phone_for_tz = (getattr(cust, "phone", None) or conv.channel_conversation_id or "")
+    _multi = _multi_tz_enabled()
+    tz = _sched.lead_tz_from_phone(_phone_for_tz) if _multi else _sched.BANGKOK
+    tz_label = _sched.tz_label_from_phone(_phone_for_tz) if _multi else "время Пхукета"
+    if _multi:
+        _ex = _sched.explicit_tz_from_text(text)
+        if _ex:
+            tz, tz_label = _ex
+    now_utc = datetime.now(timezone.utc)
+    now_lead = now_utc.astimezone(tz)
+    _day = _parse_call_day_ru(text)
+    if not _day:
+        return None  # нет названного дня — не перенос
+    # время вытаскиваем из текста простым поиском «ЧЧ[:ММ]» / «в ЧЧ»
+    import re as _re
+    _tm = _re.search(r"(\d{1,2})[:.\s](\d{2})", text)
+    _hh = None
+    if _tm:
+        _hh = f"{_tm.group(1)}:{_tm.group(2)}"
+    else:
+        _tm2 = _re.search(r"\bв\s+(\d{1,2})\b", text)
+        if _tm2:
+            _hh = _tm2.group(1)
+    if not _hh:
+        return None  # день есть, а времени нет — не однозначный перенос
+    new_dt = _resolve_call_dt(now_lead, _day, _hh)
+    if not new_dt or new_dt <= now_utc:
+        return None
+    # уже на это время? не дёргаем
+    _cur = prof.get("booked_call_at")
+    if _cur:
+        try:
+            _curdt = datetime.fromisoformat(str(_cur).replace("Z", "+00:00"))
+            if _curdt.tzinfo is None:
+                _curdt = _curdt.replace(tzinfo=timezone.utc)
+            if abs((_curdt - new_dt).total_seconds()) < 600:
+                return None
+        except (ValueError, TypeError):
+            pass
+    # ПЕРЕБРОНЬ — те же helpers, что ручной перенос из карточки
+    import asyncio as _aio
+    from services.scheduled_actions import cancel_call_actions, write_call_booking, write_call_reminder
+    await _aio.to_thread(cancel_call_actions, str(conv.id))
+    prof["booked_call_at"] = new_dt.isoformat()
+    cust.profile_data = prof
+    _from = conv.lead_stage
+    conv.lead_stage = "on_call"
+    if _from != "on_call":
+        db.add(StageTransition(conversation_id=conv.id, customer_id=conv.customer_id,
+                               from_stage=_from, to_stage="on_call", by="operator"))
+    db.commit()
+    when_h = _sched.format_call_when(new_dt, tz, tz_label)
+    _chat = conv.channel_conversation_id
+    _is_msgr = (conv.channel or "website").lower() != "website"
+    _medium = prof.get("call_medium")
+    try:
+        await _aio.to_thread(write_call_booking, customer_id=str(cust.id),
+                             conversation_id=str(conv.id), channel=conv.channel,
+                             chat_id=str(_chat) if _chat else None, call_at=new_dt, medium=_medium)
+        for _fire, _label in _sched.reminder_schedule(new_dt, now_utc):
+            if settings and getattr(settings, "telegram_operator_group_id", None):
+                await _aio.to_thread(write_call_reminder, customer_id=str(cust.id),
+                                     conversation_id=str(conv.id), channel=conv.channel,
+                                     chat_id=str(settings.telegram_operator_group_id), due_at=_fire,
+                                     text=_sched.admin_reminder_text(new_dt, cust.name or "лид", _label,
+                                                                     _medium, cust.email or ""),
+                                     audience="admin")
+            if _chat and _is_msgr:
+                await _aio.to_thread(write_call_reminder, customer_id=str(cust.id),
+                                     conversation_id=str(conv.id), channel=conv.channel,
+                                     chat_id=str(_chat), due_at=_fire,
+                                     text=_sched.lead_reminder_text(new_dt, _label, _medium,
+                                                                    lang=prof.get("lang") or "ru",
+                                                                    phone=str(_chat) if _chat else None),
+                                     audience="lead")
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"[{str(conv.id)[:8]}] operator-reschedule reminders failed: {e}")
+    try:
+        from services.bot_decisions import log_decision
+        log_decision("call_rescheduled",
+                     f"Оператор перенёс созвон сообщением в чате на {when_h} — обновил бронь и календарь",
+                     conversation_id=conv.id, customer_id=cust.id, actor="operator",
+                     detail={"at": new_dt.isoformat(), "when_human": when_h}, db=db)
+    except Exception:  # noqa: BLE001
+        pass
+    log.info(f"[{str(conv.id)[:8]}] operator reschedule → {new_dt.isoformat()}")
+    return new_dt.isoformat()
+
+
 async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
                               llm: Any, settings: Any, refresh_draft: bool = True) -> dict:
     """Проанализировать диалог и применить решения. Возвращает что сделано.

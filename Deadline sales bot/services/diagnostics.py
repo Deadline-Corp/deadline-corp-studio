@@ -130,8 +130,54 @@ def run_diagnostics() -> dict:
                 "auto_fix": "отменить сироты-напоминания",
             })
 
+        # --- НЕАКТУАЛЬНЫЕ задачи «связаться лично / лид завис»: их создаёт
+        #     автоматизация при «зависании» лида, но НЕ снимает, когда бот ВЗЯЛ диалог
+        #     сам (wa_autonomous) ИЛИ лид снова активен → лишние события в календаре/задачнике.
+        stale_cb = [x for x in _stale_callbacks(db, CS)]
+        if stale_cb:
+            issues.append({
+                "code": "stale_callback", "severity": "high",
+                "title": "Задача «связаться лично», которая больше не нужна",
+                "detail": "Висит задача «лид завис — связаться лично», но бот уже ведёт этот диалог "
+                          "сам ИЛИ лид снова активен. В календаре/задачнике это лишний шум.",
+                "items": [{"action_id": a, "conversation_id": cid, "name": nm} for a, cid, nm in stale_cb],
+                "count": len(stale_cb),
+                "auto_fix": "снять неактуальную задачу",
+            })
+
     return {"issues": issues, "checked": checked, "ok": len(issues) == 0,
             "total_problems": sum(i["count"] for i in issues)}
+
+
+def _stale_callbacks(db, CS) -> list:
+    """Список (action_id, conv_id, name) задач operator_callback, ставших неактуальными:
+    бот ведёт диалог сам (wa_autonomous) ИЛИ лид снова активен после создания задачи
+    (только «лид завис/связаться»-задачи, чтобы не трогать осознанные ручные)."""
+    from db.models import Conversation as Conv, Customer as Cu, ScheduledAction as SA
+    now = datetime.now(timezone.utc)  # noqa: F841 — для единообразия
+    out = []
+    rows = (
+        db.query(SA, Conv, Cu)
+        .join(Conv, SA.conversation_id == Conv.id)
+        .join(Cu, Conv.customer_id == Cu.id)
+        .filter(SA.status.in_(("pending", "processing")),
+                SA.action_type == "operator_callback",
+                Conv.status != CS.ARCHIVED)
+        .limit(1000).all()
+    )
+    for a, conv, c in rows:
+        txt = ((a.payload or {}).get("text") or "").lower()
+        is_stuck = ("завис" in txt or "связаться" in txt)
+        created = a.created_at
+        if created and created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        lm = conv.last_message_at
+        if lm and lm.tzinfo is None:
+            lm = lm.replace(tzinfo=timezone.utc)
+        newer_activity = bool(created and lm and lm > created + timedelta(minutes=10))
+        if conv.wa_autonomous or (is_stuck and newer_activity):
+            out.append((str(a.id), str(conv.id), c.name or c.email or "Лид"))
+    return out
 
 
 def auto_heal(*, move_empty_oncall_after_h: int = 48) -> dict:
@@ -147,7 +193,8 @@ def auto_heal(*, move_empty_oncall_after_h: int = 48) -> dict:
     )
     from services.bot_decisions import log_decision
     now = datetime.now(timezone.utc)
-    out = {"orphan_reminders_cancelled": 0, "stale_bookings_cleared": 0, "empty_oncall_reverted": 0}
+    out = {"orphan_reminders_cancelled": 0, "stale_bookings_cleared": 0,
+           "empty_oncall_reverted": 0, "stale_callbacks_cancelled": 0}
     with session_scope() as db:
         # 1) сироты-напоминания
         rem_rows = (
@@ -212,4 +259,28 @@ def auto_heal(*, move_empty_oncall_after_h: int = 48) -> dict:
                              "Авто-исправление: вернул «Квалифицирован» — стояла стадия «Созвон назначен», "
                              f"но конкретной брони так и не появилось, тишина {silent_h:.0f}ч",
                              conversation_id=conv.id, customer_id=c.id, actor="automation", db=db)
+
+        # 4) неактуальные задачи «связаться лично / лид завис» — бот ведёт сам или лид активен
+        cb_rows = (
+            db.query(SA, Conv, Cu)
+            .join(Conv, SA.conversation_id == Conv.id)
+            .join(Cu, Conv.customer_id == Cu.id)
+            .filter(SA.status.in_(("pending", "processing")),
+                    SA.action_type == "operator_callback",
+                    Conv.status != CS.ARCHIVED)
+            .limit(1000).all()
+        )
+        for a, conv, c in cb_rows:
+            txt = ((a.payload or {}).get("text") or "").lower()
+            is_stuck = ("завис" in txt or "связаться" in txt)
+            created = a.created_at
+            if created and created.tzinfo is None:
+                created = created.replace(tzinfo=timezone.utc)
+            lm = conv.last_message_at
+            if lm and lm.tzinfo is None:
+                lm = lm.replace(tzinfo=timezone.utc)
+            newer_activity = bool(created and lm and lm > created + timedelta(minutes=10))
+            if conv.wa_autonomous or (is_stuck and newer_activity):
+                a.status = "cancelled"
+                out["stale_callbacks_cancelled"] += 1
     return out

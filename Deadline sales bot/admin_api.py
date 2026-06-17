@@ -804,10 +804,19 @@ async def conversation_reply(
     )
     db.commit()
 
+    # КОРЕНЬ #2: оператор написал новое время созвона («завтра в 14:00») → авто-перебронь,
+    # чтобы календарь не отставал от договорённости (раньше двигали бронь только реплики ЛИДА).
+    rescheduled = None
+    try:
+        from services.conversation_brain import apply_operator_reschedule
+        rescheduled = await apply_operator_reschedule(db, conv, _cust, text, _main.settings)
+    except Exception as _rxe:  # noqa: BLE001
+        log.warning("operator reschedule detect failed: %s", _rxe)
+
     # Анти-рассинхрон: операторы в Telegram-форуме видят, что из UI уже ответили.
     await mirror_to_forum(conv, f"💻 [Admin UI → лиду] {text}", _main.settings)
 
-    return {"ok": True, "delivered": delivered, "channel": conv.channel}
+    return {"ok": True, "delivered": delivered, "channel": conv.channel, "rescheduled": rescheduled}
 
 
 class TakeoverRequest(BaseModel):

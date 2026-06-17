@@ -206,7 +206,8 @@ function DiagnosticsCard() {
       const r = await api.post<any>('/diagnostics/heal', {})
       const f = r.fixed || {}
       setMsg(`✅ Исправлено: напоминаний-сирот ${f.orphan_reminders_cancelled || 0}, ` +
-             `броней снято ${f.stale_bookings_cleared || 0}, стадий откатано ${f.empty_oncall_reverted || 0}`)
+             `броней снято ${f.stale_bookings_cleared || 0}, стадий откатано ${f.empty_oncall_reverted || 0}, ` +
+             `лишних задач снято ${f.stale_callbacks_cancelled || 0}`)
       await check()
     } catch (e: any) { setMsg('Ошибка: ' + (e?.detail ?? e?.message ?? 'не вышло')) }
     finally { setBusy('') }

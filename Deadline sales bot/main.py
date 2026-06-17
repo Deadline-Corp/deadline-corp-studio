@@ -3659,6 +3659,13 @@ async def _record_wa_operator_message(db: Session, normalized) -> None:
         _cid = conv.channel_conversation_id
         db.commit()
         log.info(f"[{str(conv.id)[:8]}] manual operator WA reply recorded")
+        # КОРЕНЬ #2: оператор с телефона написал новое время созвона («завтра в 14:00»)
+        # → авто-перебронь, чтобы календарь не отставал от договорённости.
+        try:
+            from services.conversation_brain import apply_operator_reschedule
+            await apply_operator_reschedule(db, conv, customer, normalized.content, settings)
+        except Exception as _rxe:  # noqa: BLE001
+            log.warning(f"operator reschedule (wa echo) failed: {_rxe}")
         # Умное авто-ведение по ручной реплике («договорились на среду в 15») —
         # в ФОНЕ со своей сессией, не держим коннект во время LLM.
         import asyncio as _aio
