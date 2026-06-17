@@ -40,6 +40,8 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
   const firstIdRef = useRef<string | null>(null)
   const [hasMore, setHasMore] = useState(true)
   const [loadingOlder, setLoadingOlder] = useState(false)
+  const resyncedRef = useRef<string | null>(null)  // фон-сверка с WhatsApp один раз на открытие
+  const [resyncing, setResyncing] = useState(false)
 
   const stages = useStages()
   const stageLabel = useStageLabel()
@@ -151,6 +153,23 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
     finally { setLoadingOlder(false) }
   }
 
+  // Сверка с WhatsApp (источник правды): подтянуть пропущенные живым вебхуком сообщения,
+  // чтобы окно панели = окно WhatsApp. Авто в фоне при открытии + кнопка-форс.
+  const resyncWa = async (silent = false) => {
+    if (resyncing) return
+    setResyncing(true)
+    try {
+      const r = await api.post<{ added: number; reason?: string }>(`/conversations/${convId}/wa-resync`, {})
+      if (r.added > 0) {
+        await loadMessages(true)  // перезагрузить — подтянулись недостающие
+        if (!silent) showToast(`🔄 Подтянуто ${r.added} сообщений из WhatsApp`)
+      } else if (!silent) {
+        showToast(r.reason ? `WhatsApp: ${r.reason}` : '✅ Уже синхронизировано с WhatsApp')
+      }
+    } catch (e: any) { if (!silent) showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setResyncing(false) }
+  }
+
   useEffect(() => {
     lastTsRef.current = null
     lastIdRef.current = null
@@ -170,6 +189,15 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
   // открыта (раньше detail грузился один раз → данные протухали; напр. одобрение
   // черновика из Telegram или смена стадии ботом не отражались до переоткрытия).
   usePolling(loadDetail, 8000, [convId])
+  // Фоновая сверка с WhatsApp при открытии WhatsApp-карточки (один раз на открытие):
+  // окно панели сразу подтягивает реальные сообщения чата (пропущенные вебхуком).
+  useEffect(() => {
+    if (detail?.channel === 'whatsapp' && resyncedRef.current !== convId) {
+      resyncedRef.current = convId
+      void resyncWa(true)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail?.channel, convId])
 
   // Подставляем предложенный ботом ответ в редактируемое поле, когда он появляется/меняется.
   useEffect(() => {
@@ -380,6 +408,12 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                 <Help title="Взять на себя" text="Бот замолкает в этом диалоге — отвечаете только вы. Лид ничего не заметит. Когда закончите, верните боту — он продолжит сам с того же места." />
                 {detail.channel === 'whatsapp' && !detail.pending_wa_draft && (
                   <button className="btn sm" onClick={suggestReply} disabled={busy} title="Система прочитает всю переписку и предложит ответ">🔄 Предложить ответ</button>
+                )}
+                {detail.channel === 'whatsapp' && (
+                  <button className="btn sm" onClick={() => resyncWa(false)} disabled={resyncing}
+                          title="Подтянуть актуальные сообщения прямо из WhatsApp — заполнить пропуски, чтобы карточка совпадала с реальным чатом">
+                    {resyncing ? <span className="spin" /> : '🔄 Из WhatsApp'}
+                  </button>
                 )}
                 <Help title="Стадия" text="Где лид в вашей воронке. Бот двигает сделку сам по мере прогресса; вы можете перевести вручную здесь или перетащив карточку в Воронке. Изменение уходит и в CRM." />
                 <select value={stagePick} onChange={e => setStagePick(e.target.value)} style={{ padding: '4px 8px', fontSize: 12 }}>

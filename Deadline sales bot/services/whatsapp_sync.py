@@ -36,6 +36,7 @@ from channels.waha import (
     fetch_waha_chat_messages,
     fetch_waha_session_status,
     normalize_waha_history_message,
+    chat_id_from_waha_id,
     _digits,
     _is_group,
     WahaHistoryUnavailable,
@@ -632,6 +633,105 @@ def _build_transcript(items: list[dict]) -> str:
         who = "Я" if it.get("from_me") else "Клиент"
         lines.append(f"{who}: {it.get('content', '')}")
     return "\n".join(lines)
+
+
+async def reconcile_wa_conversation(settings: Any, conv_id: Any, *, limit: int = 60) -> dict:
+    """Сверить ОДНУ WhatsApp-карточку с реальным чатом в WhatsApp (WAHA = источник правды).
+
+    КОРЕНЬ рассинхрона «панель ≠ WhatsApp»: живой вебхук WAHA NOWEB ловит НЕ 100%
+    сообщений (даунтайм, сообщения с телефона напрямую, потери NOWEB) → история в
+    панели со временем расходится с реальной перепиской. Здесь тянем последние
+    сообщения чата НАПРЯМУЮ (fetch_waha_chat_messages работает по запросу даже когда
+    history-store пуст) и ДОБАВЛЯЕМ недостающие — дедуп по waha_id (полному И суффиксу,
+    чтобы @lid/@c.us-копии одного сообщения не задвоить). Карточка становится = WhatsApp.
+
+    СЕССИЮ НЕ держим во время сети (урок висов 06-15): короткая сессия на сбор данных →
+    сеть вне сессии → короткая сессия на запись. Возвращает {ok, added, fetched, chat_id}."""
+    from db.connection import session_scope
+    out: dict = {"ok": False, "added": 0, "fetched": 0, "chat_id": None}
+    base = getattr(settings, "waha_base_url", None)
+    key = getattr(settings, "waha_api_key", None) or ""
+    session = getattr(settings, "waha_session", None) or "default"
+    if not base:
+        out["reason"] = "WAHA не настроен"
+        return out
+
+    # 1) короткая сессия: определить chatId (JID) + снимок существующих waha_id
+    chat_id = None
+    existing_full: set = set()
+    with session_scope() as db:
+        conv = db.get(Conversation, conv_id)
+        if conv is None or conv.channel != "whatsapp":
+            out["reason"] = "карточка не WhatsApp"
+            return out
+        # JID точнее всего — из waha_id последних сообщений (реальный @lid/@c.us)
+        metas = db.execute(
+            select(Message.extra_meta).where(Message.conversation_id == conv_id)
+            .order_by(Message.created_at.desc().nullslast()).limit(40)
+        ).scalars().all()
+        for meta in metas:
+            if isinstance(meta, dict):
+                jid = chat_id_from_waha_id(meta.get("waha_id"))
+                if jid and "@" in jid:
+                    chat_id = jid
+                    break
+        if not chat_id:  # фолбэк: из ключа карточки (телефон @c.us / скрытый @lid)
+            d = _norm_phone(getattr(conv, "channel_conversation_id", None))
+            if d:
+                chat_id = (d + "@lid") if len(d) >= 13 else (d + "@c.us")
+        existing_full = _existing_waha_ids(db, conv_id)
+    if not chat_id:
+        out["reason"] = "не определить chat id"
+        return out
+    out["chat_id"] = chat_id
+
+    # 2) СЕТЬ — строго вне сессии
+    try:
+        sess = await fetch_waha_session_status(base, key, session)
+        self_id = _digits(str((sess.get("me") or {}).get("id") or ""))
+        raw = await fetch_waha_chat_messages(base, key, session, chat_id, limit=limit)
+    except Exception as e:  # noqa: BLE001
+        out["reason"] = f"WAHA: {e}"
+        return out
+    items = [m for m in (normalize_waha_history_message(x, self_id) for x in raw) if m]
+    items.sort(key=lambda x: x.get("ts") or 0)
+    out["fetched"] = len(items)
+
+    # 3) короткая сессия: дописать недостающие (перечитываем актуальный набор —
+    # мог пополниться живым вебхуком между фазами)
+    with session_scope() as db:
+        cur_full = _existing_waha_ids(db, conv_id)
+        cur_suf = {s for s in (_wa_msgid_suffix(w) for w in cur_full) if s}
+        last_ts = None
+        for it in items:
+            wid = it.get("waha_id")
+            if wid:
+                if wid in cur_full:
+                    continue
+                suf = _wa_msgid_suffix(wid)
+                if suf and suf in cur_suf:
+                    continue
+            created = _ts_to_dt(it.get("ts")) or datetime.now(timezone.utc)
+            db.add(Message(
+                conversation_id=conv_id, role=it["role"], content=it["content"],
+                extra_meta={"waha_id": wid, "source": "wa_resync", "wa_type": it.get("type")},
+                created_at=created,
+            ))
+            if wid:
+                cur_full.add(wid)
+                suf = _wa_msgid_suffix(wid)
+                if suf:
+                    cur_suf.add(suf)
+            out["added"] += 1
+            if last_ts is None or created > last_ts:
+                last_ts = created
+        if out["added"]:
+            conv = db.get(Conversation, conv_id)
+            if conv is not None and last_ts is not None:
+                if not conv.last_message_at or last_ts > conv.last_message_at:
+                    conv.last_message_at = last_ts
+    out["ok"] = True
+    return out
 
 
 async def sync_waha_history(

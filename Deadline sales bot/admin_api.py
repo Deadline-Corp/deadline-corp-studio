@@ -802,6 +802,36 @@ async def conversation_takeover(
     return {"ok": True, "operator_takeover": req.on}
 
 
+@router.post("/conversations/{conv_id}/wa-resync")
+async def conversation_wa_resync(
+    conv_id: str,
+    _: dict = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """Подтянуть актуальные сообщения этой WhatsApp-карточки ПРЯМО из WhatsApp
+    (WAHA = источник правды) — заполнить пробелы, которые пропустил живой вебхук, чтобы
+    окно панели = окно WhatsApp. Сверка идёт по КОНКРЕТНОМУ чату (работает даже когда
+    общий history-store WAHA пуст). Сессию запроса отпускаем перед сетью."""
+    import main as _main
+    from services.whatsapp_sync import reconcile_wa_conversation
+    conv, _cust = _get_conv_or_404(db, conv_id)
+    if conv.channel != "whatsapp":
+        return {"ok": False, "added": 0, "reason": "не WhatsApp-карточка"}
+    _cid = conv.id
+    db.commit()  # отпустить коннект запроса ПЕРЕД сетевой сверкой (reconcile — свои сессии)
+    res = await reconcile_wa_conversation(_main.settings, _cid)
+    if res.get("added"):
+        try:
+            from services.activity_log import log_event
+            log_event("bot", f"Сверка с WhatsApp: подтянуто {res['added']} пропущенных сообщений",
+                      level="info", actor="system", conversation_id=str(_cid),
+                      meta={k: res.get(k) for k in ("added", "fetched", "chat_id")})
+        except Exception:  # noqa: BLE001
+            pass
+    return {"ok": res.get("ok", False), "added": res.get("added", 0),
+            "fetched": res.get("fetched", 0), "reason": res.get("reason")}
+
+
 class PinRequest(BaseModel):
     pinned: bool
 
