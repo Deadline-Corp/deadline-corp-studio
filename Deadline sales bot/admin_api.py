@@ -415,6 +415,22 @@ def _wa_display_name(cust: Customer, conv: Conversation) -> str:
     return "Без имени"
 
 
+def _wa_hidden_phone(cust: Customer, conv: Conversation) -> bool:
+    """True, если это WhatsApp-лид из РЕКЛАМЫ под скрытым `@lid`, чей телефон WhatsApp
+    прячет (приватность рекламных переходов) и WAHA не может разрезолвить. В UI вместо
+    пустого телефона показываем честную пометку «номер скрыт (реклама)» — чтобы юзер
+    понимал: это не баг синхронизации, а ограничение WhatsApp. Как только WAHA узнает
+    номер (синк контактов / повторный диалог), фоновый resolve_lid_backlog его проставит
+    и пометка исчезнет сама."""
+    import re as _re
+    if conv.channel != "whatsapp":
+        return False
+    if (cust.phone or "").strip():
+        return False
+    digits = _re.sub(r"\D", "", conv.channel_conversation_id or "")
+    return len(digits) >= 13  # скрытый @lid, а не реальный @c.us
+
+
 def _conv_summary_row(conv: Conversation, cust: Customer, preview: Optional[str]) -> dict:
     return {
         "id": str(conv.id),
@@ -435,6 +451,8 @@ def _conv_summary_row(conv: Conversation, cust: Customer, preview: Optional[str]
         "channel_conversation_id": conv.channel_conversation_id,
         # WhatsApp-триаж: лид/не-лид + причина (NULL если не классифицирован).
         "wa_classification": getattr(conv, "wa_classification", None),
+        # Рекламный @lid со скрытым WhatsApp-номером → честная пометка в UI вместо пустоты.
+        "wa_hidden_phone": _wa_hidden_phone(cust, conv),
         "customer": {
             "id": str(cust.id),
             "name": cust.name,

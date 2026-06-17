@@ -211,6 +211,39 @@ async def resolve_lid_phone(
         return None
 
 
+async def fetch_lid_map(
+    base_url: str, api_key: str, session: str,
+) -> dict:
+    """Снять ВСЮ карту известных WAHA соответствий `@lid → телефон` ОДНИМ запросом
+    (GET /api/{session}/lids → [{lid, pn}]). Возвращает {lid_digits: pn_digits} только
+    по записям с непустым pn. Эффективнее точечных resolve_lid_phone и ловит ВСЕ
+    карточки разом (resolve_lid_backlog), не тратя вызов на каждый @lid. WAHA знает
+    номер не для всех @lid: рекламные лиды с приватным номером в карту не попадают —
+    это НЕ ошибка, а приватность WhatsApp (их помечаем «номер скрыт» в UI)."""
+    out: dict = {}
+    if not base_url:
+        return out
+    url = f"{base_url.rstrip('/')}/api/{session or 'default'}/lids"
+    headers = {"X-Api-Key": api_key} if api_key else {}
+    try:
+        async with httpx.AsyncClient(timeout=12) as client:
+            r = await client.get(url, headers=headers, params={"limit": 2000})
+        if r.status_code >= 400:
+            return out
+        data = r.json()
+        if isinstance(data, list):
+            for it in data:
+                if not isinstance(it, dict):
+                    continue
+                lid = _digits(str(it.get("lid") or ""))
+                pn = _digits(str(it.get("pn") or ""))
+                if lid and pn:
+                    out[lid] = pn
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"waha fetch_lid_map: {e}")
+    return out
+
+
 async def send_waha_reply(
     base_url: str, api_key: str, session: str, to_peer: str, text: str,
 ) -> bool:

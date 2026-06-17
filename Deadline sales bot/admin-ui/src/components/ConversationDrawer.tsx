@@ -311,6 +311,11 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                 {detail.operator_takeover && <span className="chip ok">👤 на операторе</span>}
                 {detail.customer.email && <span className="chip mono">{detail.customer.email}</span>}
                 {detail.customer.phone && <span className="chip mono">{detail.customer.phone}</span>}
+                {!detail.customer.phone && detail.wa_hidden_phone && (
+                  <span className="chip mono dim" title="Лид пришёл из рекламы WhatsApp под скрытым ID (@lid). WhatsApp прячет номер таких переходов ради приватности — это не сбой синхронизации. Как только WhatsApp раскроет номер (контакт синкнётся / лид напишет ещё), бот подставит его автоматически.">
+                    📵 номер скрыт (реклама)
+                  </span>
+                )}
                 <div style={{ flex: 1 }} />
                 <button className="btn sm ghost" onClick={() => setActionsOpen(v => !v)}
                         title="Действия со сделкой — свернуть/развернуть, чтобы видеть переписку">

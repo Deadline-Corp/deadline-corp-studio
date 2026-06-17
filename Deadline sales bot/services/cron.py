@@ -163,25 +163,35 @@ def run_wa_maintenance() -> dict:
 
 
 async def resolve_lid_backlog(*, limit: int = 8) -> dict:
-    """Добить РЕАЛЬНЫЙ телефон у старых `@lid`-карточек (рекламные лиды), у которых он
-    ещё не разрезолвлен. Кейс Heinrich: history-synced `@lid` приходит БЕЗ телефона,
-    живой вебхук его не трогает → номер навсегда `null`, хотя это WhatsApp. Здесь
-    периодически (bounded) дёргаем WAHA LID API (`GET /lids/{id}` → {pn}) и штампуем
-    телефон. СЕТЬ — отпускаем коннект ПЕРЕД вызовами (урок висов 06-15): собираем
-    кандидатов в короткой сессии, сеть — вне сессии, апдейт — в новой короткой сессии.
+    """Добить РЕАЛЬНЫЙ телефон у `@lid`-карточек (рекламные лиды), у которых он ещё не
+    разрезолвлен. Кейс Heinrich: history-synced `@lid` приходит БЕЗ телефона, живой
+    вебхук его не трогает → номер `null`, хотя это WhatsApp. Берём ВСЮ карту
+    `@lid → телефон` у WAHA ОДНИМ запросом (fetch_lid_map) и сопоставляем со ВСЕМИ
+    нашими нерешёнными карточками — вместо точечных вызовов по одной (быстрее, без
+    лимита, ловит всё знаемое разом). СЕТЬ — вне сессии (урок висов 06-15): сначала
+    карта, потом сбор кандидатов в короткой сессии, апдейт — в коротких сессиях.
     После резолва merge_wa_split (тот же цикл) перекеит карточку в phone-canonical.
-    Идемпотентно: карточки с уже известным телефоном пропускаются."""
-    out: dict = {"resolved": [], "checked": 0}
+    `hidden` = карточки, чей номер WhatsApp прячет (приватность рекламы) — это норма,
+    в UI помечаются «номер скрыт». Идемпотентно. `limit` оставлен для совместимости."""
+    out: dict = {"resolved": [], "checked": 0, "hidden": 0, "known_map": 0}
     try:
+        import re as _re
         import main as _main
-        from channels.waha import resolve_lid_phone
+        from channels.waha import fetch_lid_map
         from db.connection import session_scope
         from db.models import Conversation, Customer, ConversationStatusEnum
         st = _main.settings
         if not getattr(st, "waha_base_url", None):
             return out  # WAHA не настроен — нечего резолвить
+        # ОДИН сетевой вызов: вся карта @lid→телефон, что знает WAHA.
+        lid_map = await fetch_lid_map(
+            st.waha_base_url, st.waha_api_key or "", st.waha_session or "default")
+        out["known_map"] = len(lid_map)
+        if not lid_map:
+            return out
+        # Кандидаты: активные whatsapp-карточки под @lid без телефона.
         cands: list = []
-        with session_scope() as db:  # короткая сессия — только собрать кандидатов
+        with session_scope() as db:
             rows = (
                 db.query(Conversation, Customer)
                 .join(Customer, Conversation.customer_id == Customer.id)
@@ -190,28 +200,29 @@ async def resolve_lid_backlog(*, limit: int = 8) -> dict:
                 .all()
             )
             for _conv, _cust in rows:
-                _cid = _conv.channel_conversation_id or ""
-                if len(_cid) >= 13 and not (_cust.phone or "").strip():
-                    cands.append((str(_cust.id), _cid))
-                if len(cands) >= max(1, min(limit, 60)):
-                    break
+                if (_cust.phone or "").strip():
+                    continue
+                d = _re.sub(r"\D", "", _conv.channel_conversation_id or "")
+                if len(d) >= 13:
+                    cands.append((str(_cust.id), d))
         out["checked"] = len(cands)
-        for _cust_id, _cid in cands:  # СЕТЬ — строго вне сессии
-            try:
-                _pn = await resolve_lid_phone(
-                    st.waha_base_url, st.waha_api_key or "",
-                    st.waha_session or "default", _cid)
-            except Exception:  # noqa: BLE001
-                _pn = None
-            if not _pn:
-                continue
-            with session_scope() as db:  # короткая сессия на апдейт
+        # Сопоставляем с картой; чего WAHA не знает — «скрытый» (норма для рекламы).
+        to_set: list = []
+        for _cust_id, d in cands:
+            pn = lid_map.get(d)
+            if pn:
+                to_set.append((_cust_id, pn))
+            else:
+                out["hidden"] += 1
+        for _cust_id, pn in to_set:  # апдейт короткими сессиями
+            with session_scope() as db:
                 _c = db.query(Customer).filter(Customer.id == _cust_id).first()
                 if _c is not None and not (_c.phone or "").strip():
-                    _c.phone = ("+" + _pn)[:50]
-                    out["resolved"].append({"customer": _cust_id, "phone": _pn})
-        if out["resolved"]:
-            logger.info("[cron] lid-resolve: %s", out["resolved"])
+                    _c.phone = ("+" + pn)[:50]
+                    out["resolved"].append({"customer": _cust_id, "phone": pn})
+        if out["resolved"] or out["hidden"]:
+            logger.info("[cron] lid-resolve: map=%s resolved=%s hidden=%s",
+                        out["known_map"], len(out["resolved"]), out["hidden"])
     except Exception as exc:  # noqa: BLE001
         logger.warning("[cron] lid-resolve failed (non-fatal): %s", exc)
         out["error"] = str(exc)

@@ -92,6 +92,8 @@ export interface ConvSummary {
   handoff_done: boolean
   last_message_at: string | null
   created_at: string | null
+  channel_conversation_id?: string | null
+  wa_hidden_phone?: boolean
   customer: CustomerBrief
   preview: string | null
 }

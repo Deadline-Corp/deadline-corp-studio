@@ -250,6 +250,7 @@ textarea { resize: vertical; }
 .chip.danger { background: var(--danger-soft); color: var(--danger); }
 .chip.info { background: var(--info-soft); color: var(--info); }
 .chip.accent { background: var(--accent-soft); color: var(--accent); }
+.chip.dim { background: var(--panel-2); color: var(--text-faint); cursor: help; opacity: 0.85; }
 
 .muted { color: var(--text-dim); }
 .faint { color: var(--text-faint); }
@@ -323,9 +324,17 @@ textarea { resize: vertical; }
 .flow-node .n-metric .mv { font-size: 17px; font-weight: 700; line-height: 1.1; margin-top: 1px; }
 .flow-node .n-bars { display: flex; align-items: flex-end; gap: 3px; height: 30px; margin: 4px 0 2px; }
 .flow-node .n-bars i { flex: 1; background: color-mix(in srgb, var(--tone) 55%, transparent); border-radius: 2px; min-height: 2px; }
-.flow-node .n-go { margin-top: 9px; font-size: 11.5px; color: var(--tone); font-weight: 600;
-  display: flex; align-items: center; gap: 4px; transition: gap 0.15s ease; }
-.flow-node:hover .n-go { gap: 8px; }
+.flow-node .n-go { margin-top: 10px; font-size: 11.5px; color: var(--tone); font-weight: 600;
+  display: inline-flex; align-items: center; gap: 4px; transition: gap 0.15s ease, background 0.15s ease;
+  background: color-mix(in srgb, var(--tone) 12%, transparent); border: 1px solid transparent;
+  border-radius: 7px; padding: 5px 10px; cursor: pointer; font-family: inherit; }
+.flow-node .n-go:hover { gap: 8px; background: color-mix(in srgb, var(--tone) 22%, transparent);
+  border-color: color-mix(in srgb, var(--tone) 40%, transparent); }
+.flow-node .n-cap { font-size: 9.5px; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--text-faint); margin: 8px 0 4px; }
+.flow-node .n-chevron { margin-left: 6px; font-size: 11px; color: var(--text-faint); flex-shrink: 0; }
+.flow-node .n-hint { margin-top: 7px; font-size: 10.5px; color: var(--text-faint); font-style: italic; }
+.flow-node.expandable { cursor: pointer; }
 
 .react-flow__attribution { display: none; }
 .react-flow__edge-path { stroke: rgba(124, 108, 255, 0.4) !important; }
