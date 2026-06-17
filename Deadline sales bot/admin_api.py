@@ -1745,13 +1745,20 @@ async def _run_send_sleeping_bg(conv_ids: list) -> None:
                     _WA_SEND_STATE["skipped"] += 1
                     continue
                 delivered = await _main._wa_send(to, text, pend.get("phone_number_id") or "")  # троттл, сессия НЕ держится
-                with session_scope() as db:  # 3) записать факт + снять черновик
-                    conv = db.get(Conversation, UUID(cid))
-                    if conv is not None:
-                        append_message(db, conv.id, role="assistant", content=text,
-                                       extra_meta={"approved_via": "mass-sleeping", "delivered": delivered})
-                        conv.pending_wa_draft = None
-                _WA_SEND_STATE["sent"] += 1
+                if delivered:
+                    with session_scope() as db:  # 3) записать факт + снять черновик ТОЛЬКО при успехе
+                        conv = db.get(Conversation, UUID(cid))
+                        if conv is not None:
+                            append_message(db, conv.id, role="assistant", content=text,
+                                           extra_meta={"approved_via": "mass-sleeping", "delivered": True})
+                            conv.pending_wa_draft = None
+                    _WA_SEND_STATE["sent"] += 1
+                else:
+                    # Доставка не удалась (дневной кап / ошибка WAHA): НЕ теряем одобренный
+                    # черновик (останется в карточке для повторной отправки) и НЕ врём
+                    # «отправлено» в статистике — считаем ошибкой.
+                    _WA_SEND_STATE["errors"] += 1
+                    log.warning(f"[send-sleeping] {str(cid)[:8]} не доставлено — черновик сохранён для повтора")
             except Exception as e:  # noqa: BLE001
                 _WA_SEND_STATE["errors"] += 1
                 log.warning(f"[send-sleeping] {str(cid)[:8]} failed: {e}")
@@ -1834,12 +1841,17 @@ async def _run_mass_nudge_bg(conv_ids: list, template: str) -> None:
                     _WA_SEND_STATE["skipped"] += 1
                     continue
                 delivered = await _main._wa_send(to, text, "")  # троттл, сессия НЕ держится
-                with session_scope() as db:  # 2) записать факт отправки в историю
-                    conv = db.get(Conversation, UUID(cid))
-                    if conv is not None:
-                        append_message(db, conv.id, role="assistant", content=text,
-                                       extra_meta={"approved_via": "mass-nudge", "delivered": delivered})
-                _WA_SEND_STATE["sent"] += 1
+                if delivered:
+                    with session_scope() as db:  # 2) записать факт отправки ТОЛЬКО при успехе
+                        conv = db.get(Conversation, UUID(cid))
+                        if conv is not None:
+                            append_message(db, conv.id, role="assistant", content=text,
+                                           extra_meta={"approved_via": "mass-nudge", "delivered": True})
+                    _WA_SEND_STATE["sent"] += 1
+                else:
+                    # Кап/ошибка: не пишем в панель «отправлено» того, что лид не получил.
+                    _WA_SEND_STATE["errors"] += 1
+                    log.warning(f"[mass-nudge] {str(cid)[:8]} не доставлено (кап/ошибка)")
             except Exception as e:  # noqa: BLE001
                 _WA_SEND_STATE["errors"] += 1
                 log.warning(f"[mass-nudge] {str(cid)[:8]} failed: {e}")

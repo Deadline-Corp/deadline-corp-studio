@@ -137,7 +137,25 @@ async def run_due_followups(*, tenant_config: Optional[dict] = None) -> dict:
             .with_for_update(skip_locked=True)
             .all()
         )
+        from db.models import Message as _Msg
         for r in rows:
+            # Лид уже НЕ молчит? Если после постановки этого дожима в диалоге появилось
+            # сообщение лида (role=user) — дожим устарел: гасим (superseded), не шлём
+            # вдогонку. Иначе бот пишет «вы просили напомнить» тому, кто уже ответил
+            # или забронировал созвон. (Аудит, измерение «отложенные действия».)
+            if r.conversation_id is not None and r.created_at is not None:
+                _replied = (
+                    s.query(_Msg.id)
+                    .filter(_Msg.conversation_id == r.conversation_id,
+                            _Msg.role == "user",
+                            _Msg.created_at > r.created_at)
+                    .first()
+                )
+                if _replied is not None:
+                    r.status = "superseded"
+                    r.claimed_at = None
+                    stats["skipped_replied"] = stats.get("skipped_replied", 0) + 1
+                    continue
             r.status = "processing"
             r.claimed_at = now
             stats["due"] += 1
