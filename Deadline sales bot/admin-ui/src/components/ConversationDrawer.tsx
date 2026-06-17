@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
 import { ConvDetail, Msg } from '../api/types'
 import { usePolling } from '../hooks/usePolling'
-import { useStages, useStageLabel, useMe } from '../overviewContext'
+import { useStages, useStageLabel, useMe, useOverview } from '../overviewContext'
 import { CHANNEL_META, LOST_REASONS, TEMP_META, fmtTime, initials } from '../lib'
 import { Help } from './Help'
 
@@ -46,6 +46,8 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
   const stages = useStages()
   const stageLabel = useStageLabel()
   const me = useMe()
+  const ov = useOverview()
+  const hiddenActions = ov?.hidden_actions || []  // действия, скрытые под нишу
   const [learned, setLearned] = useState<Set<string>>(new Set())
 
   const learnFrom = async (messageId: string) => {
@@ -434,6 +436,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                 <Help title="Задача" text="Напоминалка по этому лиду: «👤 сам» — появится в вашем «Моём дне»; «🤖 бот» — бот сам напишет лиду в указанное время (пока только Telegram)." />
                 <button className="btn sm" onClick={advise} disabled={busy}>🧭 Что делать</button>
                 <Help title="Что делать (AI-копилот)" text="Агент смотрит стадию, score и переписку → советует лучшее следующее действие и кладёт готовый черновик ответа в поле. Ничего не отправляет — решаете вы." />
+                {!hiddenActions.includes('recurring') && (<>
                 <button className="btn sm" disabled={busy} onClick={async () => {
                   const d = window.prompt('Регулярный клиент: визит каждые N дней (пусто или 0 — снять):', '')
                   if (d === null) return
@@ -446,14 +449,17 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                   finally { setBusy(false) }
                 }}>🔁 Регулярный</button>
                 <Help title="Регулярный клиент" text="Постоянный клининг / ТО: бот сам шлёт плановое напоминание каждые N дней («подтвердите время — команда приедет»). Снять — введите 0." />
+                </>)}
+                {!hiddenActions.includes('call_schedule') && (
                 <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
                   {(detail as any).booked_call_at && <span className="chip accent">📞 {fmtTime((detail as any).booked_call_at)}</span>}
                   <input type="datetime-local" value={callDt} onChange={e => setCallDt(e.target.value)} style={{ fontSize: 12, padding: '3px 6px' }} title="Дата и время созвона" />
                   <button className="btn sm" onClick={() => setCall('reschedule')} disabled={busy}>📞 {(detail as any).booked_call_at ? 'Перенести' : 'Назначить'}</button>
                   {(detail as any).booked_call_at && <button className="btn sm ghost" onClick={() => setCall('cancel')} disabled={busy}>Отменить созвон</button>}
-                  <Help title="Созвон" text="Назначить или перенести время созвона прямо из карточки. Бот пересоздаст напоминания (лиду в мессенджер и вам в опер-группу за сутки / 3 ч / 1 ч). Раньше это можно было только если лид сам напишет." />
+                  <Help title="Созвон" text="Назначить или перенести время созвона прямо из карточки. Бот пересоздаст напоминания (лиду в мессенджер и вам в опер-группу — интервалы в Настройках → Напоминания)." />
                 </span>
-                {team.filter((m: any) => m.active).length > 0 && (
+                )}
+                {!hiddenActions.includes('assign') && team.filter((m: any) => m.active).length > 0 && (
                   <select value="" disabled={busy} style={{ fontSize: 12 }}
                           onChange={async e => {
                             const v = e.target.value

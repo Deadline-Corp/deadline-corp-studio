@@ -679,16 +679,34 @@ const HIDEABLE_SECTIONS = [
   { k: 'channels', label: '🔌 Каналы' },
 ]
 
+const HIDEABLE_ACTIONS = [
+  { k: 'recurring', label: '🔁 Регулярный клиент' },
+  { k: 'call_schedule', label: '📞 Назначить созвон' },
+  { k: 'assign', label: '📋 Назначить на оператора' },
+]
+
 function FeatureFlagsCard() {
   const [hidden, setHidden] = useState<string[]>([])
+  const [hiddenAct, setHiddenAct] = useState<string[]>([])
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
   useEffect(() => {
     void api.get<any>('/behavior').then(r => {
-      const h = String(r.overrides?.hidden_sections || '').split(',').map((x: string) => x.trim()).filter(Boolean)
-      setHidden(h)
+      setHidden(String(r.overrides?.hidden_sections || '').split(',').map((x: string) => x.trim()).filter(Boolean))
+      setHiddenAct(String(r.overrides?.hidden_actions || '').split(',').map((x: string) => x.trim()).filter(Boolean))
     }).catch(() => { /* */ })
   }, [])
+  const toggleAct = async (k: string) => {
+    if (busy) return
+    const next = hiddenAct.includes(k) ? hiddenAct.filter(x => x !== k) : [...hiddenAct, k]
+    const prev = hiddenAct
+    setHiddenAct(next); setBusy(true)
+    try {
+      await api.post('/behavior', { values: { hidden_actions: next.join(',') } })
+      setMsg('✅ Сохранено — обновите карточку лида')
+    } catch (e: any) { setMsg(`Ошибка: ${e.detail ?? e.message}`); setHiddenAct(prev) }
+    finally { setBusy(false) }
+  }
   const toggle = async (k: string) => {
     if (busy) return
     const next = hidden.includes(k) ? hidden.filter(x => x !== k) : [...hidden, k]
@@ -717,6 +735,23 @@ function FeatureFlagsCard() {
               <input type="checkbox" checked={on} onChange={() => toggle(s.k)}
                      style={{ marginRight: 6, verticalAlign: 'middle' }} />
               {s.label}
+            </label>
+          )
+        })}
+      </div>
+      <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.5, marginTop: 14 }}>
+        Действия в карточке лида под нишу — скрыть лишние кнопки. Напр. если нет постоянных
+        клиентов и команды операторов: уберите «Регулярный» и «Назначить на».
+      </p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+        {HIDEABLE_ACTIONS.map(a => {
+          const on = !hiddenAct.includes(a.k)
+          return (
+            <label key={a.k} className={`chip ${on ? 'accent' : ''}`}
+                   style={{ cursor: 'pointer', padding: '6px 11px', opacity: on ? 1 : 0.55 }}>
+              <input type="checkbox" checked={on} onChange={() => toggleAct(a.k)}
+                     style={{ marginRight: 6, verticalAlign: 'middle' }} />
+              {a.label}
             </label>
           )
         })}

@@ -374,14 +374,17 @@ async def overview(
     except Exception:  # noqa: BLE001
         pass
 
-    # Feature-flags: какие разделы панели скрыть под нишу (Layout прячет nav-пункты).
+    # Feature-flags: какие разделы/действия скрыть под нишу (Layout/карточка прячут).
     try:
         from services import bot_settings as _bs_ov
         _hidden_sections = [x.strip() for x in (_bs_ov.get("hidden_sections") or "").split(",") if x.strip()]
+        _hidden_actions = [x.strip() for x in (_bs_ov.get("hidden_actions") or "").split(",") if x.strip()]
     except Exception:  # noqa: BLE001
         _hidden_sections = []
+        _hidden_actions = []
     return {
         "hidden_sections": _hidden_sections,
+        "hidden_actions": _hidden_actions,
         "bot": {
             "model": _main._LLM_PRIMARY_MODEL,
             "fallback_model": _main._LLM_FALLBACK_MODEL,

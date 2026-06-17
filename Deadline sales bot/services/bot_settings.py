@@ -40,6 +40,10 @@ KNOWN_KEYS: dict[str, type] = {
     # funnel,inbox,tasks,calendar,automations,analytics,brain,channels). Пусто = всё видно.
     # Напр. салон-реснички: "automations,analytics,brain" → останется расписание+база+воронка.
     "hidden_sections": str,
+    # Какие ДЕЙСТВИЯ в карточке лида скрыть под нишу (CSV): recurring (🔁 Регулярный),
+    # assign (📋 Назначить на оператора), call_schedule (📞 Назначить/Перенести созвон).
+    # Пусто = все видны. Напр. для DEADLINE «recurring,assign» (постоянники/команда не нужны).
+    "hidden_actions": str,
     # Цель бота: call (созвон, дефолт) | collect_lead | consult | sale —
     # overlay-блок в системный промпт (prompts.GOAL_OVERLAYS)
     "bot_goal": str,
