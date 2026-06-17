@@ -443,6 +443,9 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
     finally { setBusy(false) }
   }
 
+  // Сумму сделки в карточке показываем только в расширенном режиме (тот же флаг,
+  // что и «расширенные настройки») — чтобы не громоздить интерфейс по умолчанию.
+  const advMode = localStorage.getItem('deadline_adv_settings') === '1'
   const ch = detail ? CHANNEL_META[detail.channel] : null
   const temp = detail ? TEMP_META[detail.customer.lead_temperature] : null
 
@@ -616,7 +619,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                   )}
                 </div>
               )}
-              {me?.role !== 'viewer' && (
+              {me?.role !== 'viewer' && advMode && (
                 <div style={{ background: 'var(--panel)', borderRadius: 8, padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   <b style={{ fontSize: 12.5 }}>💰 Сумма сделки</b>
                   {detail.deal_value != null && (

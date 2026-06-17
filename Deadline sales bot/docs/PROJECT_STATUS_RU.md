@@ -66,13 +66,31 @@ Postgres (pgvector) + опц. HubSpot, Railway. Мозг: OpenRouter (llama-3.3-
 - `conversations.wa_autonomous` (миграция 017): per-conv «Бот ведёт сам»
 - `conversations.wa_classification` (миграция 018): классификация при импорте
 
+### 2.4 SaaS-доводка 2026-06-17 — ЗАДЕПЛОЕНО на DEADLINE prod
+
+Путь «работает у нас» → «можно продавать». План: `~/.claude/plans/quizzical-wiggling-bachman.md`.
+
+- **Надёжность WhatsApp:** `_wa_send` — failover-цепочка WAHA→Green-API→Cloud (падение провайдера не теряет сообщение); runtime-переключатель `bot_settings.wa_provider` без редеплоя.
+- **Наблюдаемость:** 12 молчаливых `except:pass` залогированы (потеря данных карточки → warning; best-effort зеркала/парсинг → debug); лог parser-bypass идемпотентности `_seen_inbound`.
+- **Telegram / одно окно:** `/simulate-lead` сделан канало-независимым (алиас `/whatsapp/simulate-lead`); онбординг-шаг каналов ведёт в /channels; баннер «подключено N/M каналов».
+- **Онбординг до «бот ответил»:** гард preset_key (не 404); виджет «🧪 тест первого лида» в визарде.
+- **Revenue-аналитика:** миграция **023** `conversations.deal_value`/`deal_currency`; `POST /conversations/{id}/deal-value`; revenue в `/analytics` (won/pipeline/lost по стадиям/каналам, средний чек); ввод суммы в карточке (под расширенным режимом) + revenue-блок в Аналитике.
+- **База знаний:** дедуп одинаковых чанков при ингесте (`kb_ingest`).
+- **Win-back (восстановление проигранных):** `cron.plan_winback_tasks` — задача оператору по восстановимым причинам (price/delayed/no_budget, НЕ hard_stop) старше N дней, анти-спам флаг; настройка `winback_after_days` (деф. 0=выкл).
+- **Отчёты:** в утренний дайджест — дельта неделя-к-неделе + выручка за 7 дней.
+- **UX-правки:** «План бота» в карточке показывается ТОЛЬКО при передаче боту (`wa_autonomous`); проигранные («Не сложилось») скрыты из «Переписок» (видны в «Воронке» / по фильтру стадии; параметр `include_lost`); «Сумма сделки» в карточке — под расширенным режимом.
+
+Теги отката: `approved-2026-06-17-saas-blocks-1-7`, `approved-2026-06-17-inbox-botplan-fixes`.
+
+**Ещё НЕ строим (PLAN-ONLY, ждут решений владельца):** биллинг (зависит от юрлица сбора денег), настоящий мульти-тенант (общая БД + `tenant_id` + RLS — при 4–10 клиентах), автопровижининг, исходящий голос (TTS). Ресёрч и рекомендации — в плане.
+
 ---
 
-## 3. ДЕПЛОЙ-СОСТОЯНИЕ (на 2026-06-16)
+## 3. ДЕПЛОЙ-СОСТОЯНИЕ (на 2026-06-17)
 
 | Инстанс | URL | Что задеплоено | Статус |
 |---|---|---|---|
-| **DEADLINE prod** | deadline-sales-bot.up.railway.app | 7 волн до P0–P6; ветка до feature/call-booking | Живой ✅ |
+| **DEADLINE prod** | deadline-sales-bot.up.railway.app | 7 волн + call-booking + фокус-спринт багов + **SaaS-доводка §2.4** (миграция 023, bundle index-CRtSXsbK.js+) | Живой ✅ health 200 |
 | **Кирил** | deadline-kiril-production.up.railway.app | Серия P0–P6 + call-booking | Развёрнут, обкатывается |
 | ~~deadline-sales-kiril~~ | workspace A1exxx | OOM (512 МБ < bge-m3) | ❌ К удалению (с разрешения) |
 
@@ -141,4 +159,4 @@ railway link -p 0a9a93a3-... -e production -s deadline-sales-bot
 
 ---
 
-*Снимок обновлён: 2026-06-16. При деплое новых волн — обновить разделы 2 и 3.*
+*Снимок обновлён: 2026-06-17 (добавлен §2.4 SaaS-доводка). При деплое новых волн — обновить разделы 2 и 3.*
