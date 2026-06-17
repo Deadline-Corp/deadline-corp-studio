@@ -486,10 +486,15 @@ async def run_due_recurring() -> dict:
     stats["due"] = len(due)
     for d in due:
         try:
-            write_scheduled_action(
+            _rid, _ = write_scheduled_action(
                 customer_id=d["cid"], conversation_id=d["conv_id"], channel=d["channel"],
                 chat_id=str(d["chat"]) if d["chat"] else None, due_at=now, text=d["text"],
             )
+            if not _rid:
+                # Постановка напоминания НЕ удалась — НЕ сдвигаем next_at, иначе цикл
+                # постоянного клиента молча пропустится. Повторим в следующий проход.
+                stats["errors"] += 1
+                continue
             d["rec"]["next_at"] = (now + timedelta(days=d["every"])).isoformat()
             d["prof"]["recurrence"] = d["rec"]
             with session_scope() as s2:

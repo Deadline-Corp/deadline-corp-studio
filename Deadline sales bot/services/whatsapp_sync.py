@@ -172,6 +172,8 @@ def dedup_wa_by_phone(db: Optional[Session] = None) -> dict:
                 reverse=True,
             )
             canon = group[0][0]
+            canon_cust = group[0][1]
+            from db.models import ScheduledAction as _SA
             for src, _scust in group[1:]:
                 if src.id == canon.id:
                     continue
@@ -191,6 +193,22 @@ def dedup_wa_by_phone(db: Optional[Session] = None) -> dict:
                     canon.pending_call_suggestion = src.pending_call_suggestion
                 if (getattr(src, "summary", None) or "").strip() and not (getattr(canon, "summary", None) or "").strip():
                     canon.summary = (src.summary or "")[:2000]
+                # Не теряем созвон: бронь+напоминания дубля → канон ДО архива (иначе
+                # cancel_orphan_scheduled_actions погасит их у архивной карточки).
+                _db.execute(
+                    _sqlupdate(_SA)
+                    .where(_SA.conversation_id == src.id,
+                           _SA.status.in_(("pending", "processing")),
+                           _SA.action_type.in_(("call_booked", "call_reminder")))
+                    .values(conversation_id=canon.id, customer_id=canon_cust.id)
+                )
+                _sp = _scust.profile_data or {}
+                if _sp.get("booked_call_at") and not (canon_cust.profile_data or {}).get("booked_call_at"):
+                    _cp = dict(canon_cust.profile_data or {})
+                    _cp["booked_call_at"] = _sp["booked_call_at"]
+                    if _sp.get("call_medium"):
+                        _cp["call_medium"] = _sp["call_medium"]
+                    canon_cust.profile_data = _cp
                 src.status = ConversationStatusEnum.ARCHIVED
                 src.summary = ((src.summary or "") + f" → дубль слит в {canon.id} (по тел. {phone})").strip()[:2000]
                 out["archived"] += 1
@@ -482,13 +500,34 @@ def merge_wa_split(db: Optional[Session] = None, *, execute: bool = True) -> dic
                 _carry_and_archive(canon, fconv, f"split→merge по тел. {phone}", ConversationStatusEnum)
                 # фрагмент и его идентичности → customer канона (одна личность)
                 if fcust.id != canon_cust.id:
+                    # Бронь созвона хранится в profile_data клиента — переносим на канон,
+                    # если у него её ещё нет (иначе перенесённый call_booked-таск и стадия
+                    # on_call разойдутся с пустым чипом «созвон» в карточке).
+                    _fp = fcust.profile_data or {}
+                    if _fp.get("booked_call_at") and not (canon_cust.profile_data or {}).get("booked_call_at"):
+                        _cp = dict(canon_cust.profile_data or {})
+                        _cp["booked_call_at"] = _fp["booked_call_at"]
+                        if _fp.get("call_medium"):
+                            _cp["call_medium"] = _fp["call_medium"]
+                        canon_cust.profile_data = _cp
                     _db.execute(
                         _sqlupdate(ChannelIdentity)
                         .where(ChannelIdentity.customer_id == fcust.id)
                         .values(customer_id=canon_cust.id)
                     )
                     fconv.customer_id = canon_cust.id
-                # осиротевшие задачи фрагмента
+                # Созвон и его напоминания НЕ гасим — ПЕРЕНОСИМ на канон (иначе бронь
+                # пропадает из задачника/календаря и никто не напомнит — кейс слияния
+                # разорванной карточки с уже забронированным созвоном).
+                _db.execute(
+                    _sqlupdate(ScheduledAction)
+                    .where(ScheduledAction.conversation_id == fconv.id,
+                           ScheduledAction.status.in_(("pending", "processing")),
+                           ScheduledAction.action_type.in_(("call_booked", "call_reminder")))
+                    .values(conversation_id=canon.id, customer_id=canon_cust.id)
+                )
+                # Остальные осиротевшие задачи фрагмента (followup/прочее, привязаны к
+                # архив-карточке) — гасим. Созвон уже унесён выше, под этот UPDATE не попадёт.
                 _db.execute(
                     _sqlupdate(ScheduledAction)
                     .where(ScheduledAction.conversation_id == fconv.id,

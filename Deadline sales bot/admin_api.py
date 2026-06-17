@@ -23,7 +23,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import func as sql_func, select as sql_select, or_
+from sqlalchemy import func as sql_func, select as sql_select, or_, and_
 from sqlalchemy.orm import Session
 
 from db.connection import get_db
@@ -636,6 +636,7 @@ async def conversation_detail(
 async def conversation_messages(
     conv_id: str,
     after: Optional[str] = None,
+    after_id: Optional[str] = None,
     before: Optional[str] = None,
     limit: int = 50,
     _: None = Depends(_verify_member),
@@ -644,15 +645,34 @@ async def conversation_messages(
     conv, _cust = _get_conv_or_404(db, conv_id)
     limit = max(1, min(limit, 200))
 
+    # KEYSET-пагинация по (created_at, id): id вторичным ключом — детерминированный
+    # порядок (одинаковые created_at не «прыгают» местами между опросами) И курсор
+    # `after`+`after_id` НЕ теряет сообщения с тем же timestamp, что и граница страницы
+    # (строгое `>` по одному created_at их роняло — кейс «бот+эхо в одну секунду»).
     query = db.query(Message).filter(Message.conversation_id == conv.id)
     if after:
-        query = query.filter(Message.created_at > _parse_iso(after))
-        rows = query.order_by(Message.created_at.asc()).limit(limit).all()
+        _aft = _parse_iso(after)
+        _aid = None
+        if after_id:
+            try:
+                _aid = UUID(after_id)
+            except (ValueError, AttributeError, TypeError):
+                _aid = None
+        if _aid is not None:
+            query = query.filter(or_(
+                Message.created_at > _aft,
+                and_(Message.created_at == _aft, Message.id > _aid),
+            ))
+        else:
+            query = query.filter(Message.created_at > _aft)
+        rows = query.order_by(Message.created_at.asc(), Message.id.asc()).limit(limit).all()
     elif before:
         query = query.filter(Message.created_at < _parse_iso(before))
-        rows = list(reversed(query.order_by(Message.created_at.desc()).limit(limit).all()))
+        rows = list(reversed(
+            query.order_by(Message.created_at.desc(), Message.id.desc()).limit(limit).all()))
     else:
-        rows = list(reversed(query.order_by(Message.created_at.desc()).limit(limit).all()))
+        rows = list(reversed(
+            query.order_by(Message.created_at.desc(), Message.id.desc()).limit(limit).all()))
 
     return {
         "items": [

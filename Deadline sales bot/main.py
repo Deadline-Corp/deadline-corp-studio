@@ -1527,7 +1527,58 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 r"свяж\w+\s+(со\s+мной\s+)?(позже|потом)|перезвон\w+\s+(позже|потом)",
                 (req.content or "").lower(),
             ))
-            if _booked and _wants_cancel:
+            if _booked and _wants_cancel and _chosen is not None:
+                # --- ПЕРЕНОС С НОВЫМ ВРЕМЕНЕМ --- лид сразу назвал, КОГДА перенести
+                # («перенесём на пятницу в 15:00»). Раньше это попадало в чистую отмену
+                # и время ТЕРЯЛОСЬ → лид называл его второй раз. Теперь: снимаем старую
+                # бронь+напоминания и бронируем ЗАНОВО на _chosen (как обычная бронь).
+                try:
+                    from services.scheduled_actions import cancel_call_actions
+                    await asyncio.to_thread(cancel_call_actions, str(conversation.id))
+                except Exception as _rce:  # noqa: BLE001
+                    log.warning(f"[{str(conversation.id)[:8]}] rebook: cancel-old failed: {_rce}")
+                _medium = _sched.detect_call_medium(req.content) or _profile.get("call_medium")
+                _profile["booked_call_at"] = _chosen.isoformat()
+                if _medium:
+                    _profile["call_medium"] = _medium
+                _profile.pop("offered_call_slots", None)
+                _lead_lang = (_profile.get("lang") or _sched.detect_lang(req.content or "") or "ru")
+                _profile["lang"] = _lead_lang
+                customer.profile_data = _profile
+                conversation.lead_stage = "on_call"
+                _just_booked_human = _sched.format_slot_human(_chosen, _now)
+                _call_medium = _medium
+                _call_booked_at = _chosen  # сделку двинет dispatch_on_message_turn
+                try:
+                    from services.scheduled_actions import write_call_booking, write_call_reminder
+                    _chat = getattr(conversation, "channel_conversation_id", None)
+                    _is_msgr = (req.channel or "website").lower() != "website"
+                    _lead_name = (customer.name or customer.email or "лид")
+                    _contact = customer.email or (customer.identity_keys or {}).get("tg_handle") or ""
+                    await asyncio.to_thread(
+                        write_call_booking, customer_id=str(customer.id),
+                        conversation_id=str(conversation.id), channel=req.channel,
+                        chat_id=str(_chat) if _chat else None, call_at=_chosen, medium=_medium)
+                    for _fire, _label in _sched.reminder_schedule(_chosen, _now):
+                        if _chat and _is_msgr:
+                            await asyncio.to_thread(
+                                write_call_reminder, customer_id=str(customer.id),
+                                conversation_id=str(conversation.id), channel=req.channel,
+                                chat_id=str(_chat), due_at=_fire,
+                                text=_sched.lead_reminder_text(_chosen, _label, _medium, lang=_lead_lang,
+                                                              phone=str(_chat) if _chat else None),
+                                audience="lead")
+                        if settings.telegram_operator_group_id:
+                            await asyncio.to_thread(
+                                write_call_reminder, customer_id=str(customer.id),
+                                conversation_id=str(conversation.id), channel=req.channel,
+                                chat_id=str(settings.telegram_operator_group_id), due_at=_fire,
+                                text=_sched.admin_reminder_text(_chosen, _lead_name, _label, _medium, _contact),
+                                audience="admin")
+                except Exception as _re2:  # noqa: BLE001
+                    log.warning(f"[{str(conversation.id)[:8]}] rebook reminders failed: {_re2}")
+                log.info(f"[{str(conversation.id)[:8]}] call REBOOKED to {_chosen.isoformat()}")
+            elif _booked and _wants_cancel:
                 # --- ОТМЕНА / ПЕРЕНОС --- лид отказался: снимаем бронь, гасим напоминания,
                 # откатываем стадию CRM. НЕ настаиваем (фикс «уже записан» по кругу).
                 _profile.pop("booked_call_at", None)

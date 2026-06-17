@@ -34,6 +34,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
   const [actionsOpen, setActionsOpen] = useState(false) // панель действий сверху — по умолчанию свёрнута (видно переписку)
   const msgsRef = useRef<HTMLDivElement>(null)
   const lastTsRef = useRef<string | null>(null)
+  const lastIdRef = useRef<string | null>(null)  // keyset-курсор: вторичный ключ по id
 
   const stages = useStages()
   const stageLabel = useStageLabel()
@@ -92,14 +93,20 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
       if (initial || !lastTsRef.current) {
         const r = await api.get<{ items: Msg[] }>(`/conversations/${convId}/messages?limit=80`)
         setMsgs(r.items)
-        lastTsRef.current = r.items.length ? r.items[r.items.length - 1].created_at : null
+        const last = r.items.length ? r.items[r.items.length - 1] : null
+        lastTsRef.current = last ? last.created_at : null
+        lastIdRef.current = last ? last.id : null
         scrollDown()
       } else {
-        const r = await api.get<{ items: Msg[] }>(
-          `/conversations/${convId}/messages?after=${encodeURIComponent(lastTsRef.current)}`)
+        // keyset-курсор (created_at + id) — не теряем сообщения с одинаковым timestamp.
+        const qs = `after=${encodeURIComponent(lastTsRef.current)}`
+          + (lastIdRef.current ? `&after_id=${encodeURIComponent(lastIdRef.current)}` : '')
+        const r = await api.get<{ items: Msg[] }>(`/conversations/${convId}/messages?${qs}`)
         if (r.items.length) {
           setMsgs(prev => [...prev, ...r.items])
-          lastTsRef.current = r.items[r.items.length - 1].created_at
+          const last = r.items[r.items.length - 1]
+          lastTsRef.current = last.created_at
+          lastIdRef.current = last.id
           scrollDown()
         }
       }
@@ -114,6 +121,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
 
   useEffect(() => {
     lastTsRef.current = null
+    lastIdRef.current = null
     setMsgs([])
     setDetail(null)
     void loadDetail()
@@ -123,6 +131,10 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
   }, [convId])
 
   usePolling(() => loadMessages(false), 5000, [convId])
+  // Шапка тоже живая: стадия/телефон/такеовер/черновик обновляются, пока карточка
+  // открыта (раньше detail грузился один раз → данные протухали; напр. одобрение
+  // черновика из Telegram или смена стадии ботом не отражались до переоткрытия).
+  usePolling(loadDetail, 8000, [convId])
 
   // Подставляем предложенный ботом ответ в редактируемое поле, когда он появляется/меняется.
   useEffect(() => {
