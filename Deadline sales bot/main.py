@@ -1086,8 +1086,10 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                         days_ago=days_ago,
                         user_message=req.content,
                     )
-                    recall_greeting_text = handoff_llm.invoke(
-                        [_HumanMessage(content=greeting_prompt)]
+                    recall_greeting_text = (
+                        await handoff_llm.ainvoke(
+                            [_HumanMessage(content=greeting_prompt)]
+                        )
                     ).content.strip()
 
                     append_message(
@@ -3224,6 +3226,11 @@ async def messenger_webhook(request: Request, db: Session = Depends(get_db)):
         log.error(f"messenger_webhook: _handle_message failed — {e}")
         return {"ok": True}
 
+    # suppress_send → ответ удержан (наблюдение/черновик на одобрение): клиенту не
+    # шлём. Пусто → takeover (оператор ведёт сам). Зеркалит WhatsApp-путь (3912).
+    if resp.suppress_send or not resp.answer:
+        return {"ok": True}
+
     # Dispatch reply through the right Graph API surface.
     if normalized.message_type == "comment":
         comment_id = (normalized.extra_meta or {}).get("comment_id", "")
@@ -3284,6 +3291,11 @@ async def instagram_webhook(request: Request, db: Session = Depends(get_db)):
         resp = await _handle_message(msg_req, db)
     except Exception as e:
         log.error(f"instagram_webhook: _handle_message failed — {e}")
+        return {"ok": True}
+
+    # suppress_send → ответ удержан (наблюдение/черновик на одобрение): клиенту не
+    # шлём. Пусто → takeover (оператор ведёт сам). Зеркалит WhatsApp-путь (3912).
+    if resp.suppress_send or not resp.answer:
         return {"ok": True}
 
     if normalized.message_type == "comment":
@@ -3690,7 +3702,7 @@ async def _brain_bg(channel_conversation_id: str) -> None:
         return
     if not channel_conversation_id:
         return
-    if _BRAIN_SEMA._value <= 0:
+    if _BRAIN_SEMA.locked():
         return  # уже заняты все слоты — пропускаем, периодический sweep догонит
     async with _BRAIN_SEMA:
         try:

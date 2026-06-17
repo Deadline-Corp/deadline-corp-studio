@@ -167,6 +167,7 @@ export interface ConvDetail extends ConvSummary {
   pending_call_suggestion?: { at?: string; when_human?: string; medium?: string | null; reason?: string; ts?: string } | null
   wa_autonomous: boolean
   nudge_paused?: boolean
+  booked_call_at?: string | null
   deal_value?: number | null
   deal_currency?: string | null
   next_action?: { label?: string; mode?: string; kind?: string } | null

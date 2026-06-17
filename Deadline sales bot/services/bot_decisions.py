@@ -96,7 +96,10 @@ def recent(conversation_id: Any = None, *, limit: int = 50,
             if before:
                 from datetime import datetime as _dt
                 try:
-                    q = q.where(BotDecision.created_at < _dt.fromisoformat(before))
+                    # 'Z'-суффикс ломает fromisoformat на Python ≤3.10 → курсор молча
+                    # отбрасывался → пагинация возвращала ту же первую страницу.
+                    q = q.where(BotDecision.created_at < _dt.fromisoformat(
+                        before.replace("Z", "+00:00")))
                 except (ValueError, TypeError):
                     pass
             q = q.order_by(desc(BotDecision.created_at)).limit(max(1, min(int(limit), 500)))

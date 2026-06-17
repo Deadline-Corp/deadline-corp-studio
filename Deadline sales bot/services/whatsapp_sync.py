@@ -31,7 +31,7 @@ from typing import Any, Optional
 from sqlalchemy import select, func as _sqlfunc, update as _sqlupdate
 from sqlalchemy.orm import Session
 
-from db.models import Conversation, Customer, Message
+from db.models import Conversation, ConversationStatusEnum, Customer, Message
 from channels.waha import (
     fetch_waha_chats,
     fetch_waha_chat_messages,
@@ -306,7 +306,7 @@ def _is_lid_key(cid: Optional[str]) -> bool:
     return len(_norm_phone(cid)) >= 13
 
 
-def _carry_and_archive(canon: Conversation, src: Conversation, reason: str, ConversationStatusEnum) -> None:
+def _carry_and_archive(canon: Conversation, src: Conversation, reason: str) -> None:
     """Перенести на канон стадию(вперёд)/черновик/предложение-созвона/summary и
     заархивировать src (обратимо). Общая логика для дедупа по телефону и по имени."""
     try:
@@ -365,7 +365,7 @@ def dedup_wa_by_name(db: Optional[Session] = None) -> dict:
             for src, _sc in group[1:]:
                 if src.id == canon.id:
                     continue
-                _carry_and_archive(canon, src, "по имени", ConversationStatusEnum)
+                _carry_and_archive(canon, src, "по имени")
                 out["archived"] += 1
                 out["pairs"].append({"name": name, "archived": str(src.id), "canon": str(canon.id)})
         _db.flush()
@@ -576,7 +576,7 @@ def merge_wa_split(db: Optional[Session] = None, *, execute: bool = True) -> dic
                         if s:
                             suf.add(s)
                 # перенос стадии/черновика/предложения + архивирование фрагмента
-                _carry_and_archive(canon, fconv, f"split→merge по тел. {phone}", ConversationStatusEnum)
+                _carry_and_archive(canon, fconv, f"split→merge по тел. {phone}")
                 # фрагмент и его идентичности → customer канона (одна личность)
                 if fcust.id != canon_cust.id:
                     # Бронь созвона хранится в profile_data клиента — переносим на канон,

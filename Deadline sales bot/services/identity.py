@@ -299,9 +299,10 @@ def update_email(db: Session, customer_id: UUID, email: str) -> Customer:
     without email → customer A. Same lead writes from website with email →
     customer B. Later TG-customer A gets the same email → merge A+B.
 
-    Returns the surviving Customer (always the one identified by `customer_id`
-    when the email is new; if a merge happens, the surviving customer is the
-    one that already had the email — i.e. `customer_id` may be deleted).
+    Returns the surviving Customer. The customer identified by `customer_id`
+    (the target) ALWAYS survives and gets the email; if a merge happens, the
+    pre-existing customer that already had this email (`other`) has its
+    identities re-pointed to the target and is then deleted.
     """
     if not email:
         raise ValueError("email is required")

@@ -575,10 +575,10 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                 </>)}
                 {!hiddenActions.includes('call_schedule') && (
                 <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-                  {(detail as any).booked_call_at && <span className="chip accent">📞 {fmtTime((detail as any).booked_call_at)}</span>}
+                  {detail.booked_call_at && <span className="chip accent">📞 {fmtTime(detail.booked_call_at)}</span>}
                   <input type="datetime-local" value={callDt} onChange={e => setCallDt(e.target.value)} style={{ fontSize: 12, padding: '3px 6px' }} title="Дата и время созвона" />
-                  <button className="btn sm" onClick={() => setCall('reschedule')} disabled={busy}>📞 {(detail as any).booked_call_at ? 'Перенести' : 'Назначить'}</button>
-                  {(detail as any).booked_call_at && <button className="btn sm ghost" onClick={() => setCall('cancel')} disabled={busy}>Отменить созвон</button>}
+                  <button className="btn sm" onClick={() => setCall('reschedule')} disabled={busy}>📞 {detail.booked_call_at ? 'Перенести' : 'Назначить'}</button>
+                  {detail.booked_call_at && <button className="btn sm ghost" onClick={() => setCall('cancel')} disabled={busy}>Отменить созвон</button>}
                   <Help title="Созвон" text="Назначить или перенести время созвона прямо из карточки. Бот пересоздаст напоминания (лиду в мессенджер и вам в опер-группу — интервалы в Настройках → Напоминания)." />
                 </span>
                 )}

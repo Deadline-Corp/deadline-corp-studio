@@ -1228,6 +1228,12 @@ async def conversation_call(
     )
     from services import scheduling as _sched
 
+    # Валидируем ДО любых сайд-эффектов: иначе опечатка в action снимала бы
+    # старую бронь (cancel_call_actions коммитит свою сессию), а потом падала 400 —
+    # лид молча терял слот без новой брони.
+    if req.action not in ("cancel", "reschedule"):
+        raise HTTPException(status_code=400, detail="action: reschedule | cancel")
+
     conv, cust = _get_conv_or_404(db, conv_id)
     prof = dict(cust.profile_data or {})
 
@@ -2647,7 +2653,7 @@ async def today_view(
 ):
     from db.models import ConversationStatusEnum
     now = datetime.now(timezone.utc)
-    eod = now.replace(hour=23, minute=59, second=59)
+    eod = now.replace(hour=23, minute=59, second=59, microsecond=999999)
     week = now + timedelta(days=7)
 
     # Исключаем задачи АРХИВНЫХ карточек (дубли, слитые дедупом) — иначе осиротевшие
@@ -3078,8 +3084,10 @@ async def task_board(
         },
         "buckets": buckets,
         "no_task_leads": no_task[:60],
-        "zones": {k: v[:60] for k, v in zones.items()},
-        "stuck": stuck[:40],
+        "zones": {k: v[:120] for k, v in zones.items()},
+        # «Затыки» — зона-стоп-сигнал: не прячем лиды, показываем все (счётчик в
+        # summary = реальный total). Кап высокий, чтобы ничего не потерялось из виду.
+        "stuck": stuck[:300],
     }
 
 
