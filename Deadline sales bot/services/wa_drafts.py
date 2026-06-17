@@ -202,7 +202,8 @@ def _lang_directive(last_user: str) -> str:
 
 
 def _prompt(name: str, stage: str, dialog: str, kb: str = "", offer: str = "",
-            corrections: str = "", silent: bool = False, last_user_text: str = "") -> str:
+            corrections: str = "", silent: bool = False, last_user_text: str = "",
+            fields_card: str = "") -> str:
     kb_block = (
         f"\nФАКТЫ О НАШЕЙ СТУДИИ (фон — про НАС, НЕ про задачу лида; опирайся, не "
         f"выдумывай сверх):\n{kb}\n"
@@ -211,6 +212,12 @@ def _prompt(name: str, stage: str, dialog: str, kb: str = "", offer: str = "",
     corr_block = (
         f"\nПРАВИЛА СТУДИИ (обязательно соблюдай в ответе):\n{corrections}\n"
         if corrections else ""
+    )
+    # Известные поля клиента (тип проекта/бюджет/срок и пр., заполненные оператором/ботом)
+    # — чтобы бот учитывал их и НЕ переспрашивал то, что уже знает.
+    fields_block = (
+        f"\nИЗВЕСТНО О КЛИЕНТЕ (учитывай, НЕ переспрашивай уже известное):\n{fields_card}\n"
+        if fields_card else ""
     )
     # Первый контакт = в переписке ещё НЕ было нашего ответа («Мы:»).
     first_contact = "Мы:" not in (dialog or "")
@@ -276,7 +283,8 @@ def _prompt(name: str, stage: str, dialog: str, kb: str = "", offer: str = "",
         "по-турецки — НА ЛЮБОМ. Если лид пишет НЕ по-русски — НЕ переключайся на русский. "
         "Зеркаль именно язык лида.\n"
         f"{corr_block}"
-        f"{kb_block}\n"
+        f"{kb_block}"
+        f"{fields_block}\n"
         f"Лид: {name}. Стадия: {stage}.\n"
         f"Переписка:\n{dialog or '(пусто)'}\n\n"
         "Ответь ТОЛЬКО готовым текстом сообщения лиду — на ЯЗЫКЕ ЛИДА, без кавычек, "
@@ -304,6 +312,31 @@ def make_payload(
     }
 
 
+def _client_card(db: Session, cust: Any) -> str:
+    """Заполненные поля клиента (label: value) одной строкой — для подмешивания в промпт,
+    чтобы бот учитывал известное (тип проекта/бюджет/срок) и не переспрашивал. Только
+    непустые значения; пусто, если полей нет / не заполнены."""
+    try:
+        from db.models import CustomFieldDef
+        vals = ((getattr(cust, "profile_data", None) or {}).get("fields") or {})
+        if not isinstance(vals, dict) or not vals:
+            return ""
+        defs = (
+            db.query(CustomFieldDef)
+            .filter(CustomFieldDef.active == True)  # noqa: E712
+            .order_by(CustomFieldDef.position.asc())
+            .all()
+        )
+        parts = []
+        for f in defs:
+            v = vals.get(f.key)
+            if v not in (None, "", []):
+                parts.append(f"{f.label}: {v}")
+        return "; ".join(parts)
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 async def generate_for_conv(
     db: Session,
     conv: Any,
@@ -320,9 +353,10 @@ async def generate_for_conv(
     import asyncio as _aio
     kb = await _aio.to_thread(_kb_context, last_user or dialog)
     corr = await _aio.to_thread(_corrections_context, last_user or dialog, getattr(conv, "channel", None))
+    fcard = await _aio.to_thread(_client_card, db, cust)
     result = await llm.ainvoke(_prompt(name, stage, dialog, kb, _active_offer(),
                                        corrections=corr, silent=_is_silent(dialog),
-                                       last_user_text=last_user or dialog))
+                                       last_user_text=last_user or dialog, fields_card=fcard))
     text = _clean_draft((getattr(result, "content", None) or ""))
     if not text:
         return None
@@ -345,10 +379,11 @@ async def generate_reply_text(db: Session, conv: Any, cust: Any, llm: Any) -> Op
     import asyncio as _aio
     kb = await _aio.to_thread(_kb_context, _last or dialog)
     corr = await _aio.to_thread(_corrections_context, _last or dialog, getattr(conv, "channel", None))
+    fcard = await _aio.to_thread(_client_card, db, cust)
     try:
         result = await llm.ainvoke(_prompt(name, stage, dialog, kb, _active_offer(),
                                            corrections=corr, silent=_is_silent(dialog),
-                                           last_user_text=_last or dialog))
+                                           last_user_text=_last or dialog, fields_card=fcard))
     except Exception:  # noqa: BLE001
         return None
     return _clean_draft(getattr(result, "content", None) or "") or None
