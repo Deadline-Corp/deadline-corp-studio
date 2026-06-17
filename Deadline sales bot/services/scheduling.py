@@ -107,6 +107,47 @@ def tz_label_from_phone(phone: str) -> str:
     return "время Пхукета"
 
 
+def format_call_when(dt_utc: datetime, lead_tz: timezone, tz_label: str) -> str:
+    """Человеческое «когда» с ОБОИМИ поясами для админа (Пхукет), чтобы не путать:
+    «<время лида> (<город лида>) = <ЧЧ:ММ> (Пхукет)». Кейс: лид из Астаны (UTC+5)
+    пишет «в 14:00», админ в Пхукете (UTC+7) — событие должно читаться однозначно.
+    Если пояс лида совпадает с Пхукетом — без дубля."""
+    if dt_utc.tzinfo is None:
+        dt_utc = dt_utc.replace(tzinfo=timezone.utc)
+    when_lead = format_slot_human(dt_utc, tz=lead_tz)
+    base = f"{when_lead} ({tz_label.replace('время ', '')})"
+    lead = dt_utc.astimezone(lead_tz)
+    bkk = dt_utc.astimezone(BANGKOK)
+    if lead.utcoffset() == bkk.utcoffset():
+        return base
+    return f"{base} = {bkk.strftime('%H:%M')} (Пхукет)"
+
+
+# Явная приписка часового пояса в сообщении лида («по Астане», «по Москве», «по Мск»)
+# — переопределяет пояс, определённый по номеру (кейс: номер +7-Москва, но лид пишет
+# «давай по Астане»). Возвращает (timezone, подпись) или None.
+_TZ_PHRASES = (
+    # Включены родительный падеж + форма «время <город>а» (кейс «по времени Астаны»).
+    (("по астане", "астанскому", "астаны", "по алматы", "алматы", "нур-султан", "по казахстан"), timezone(timedelta(hours=5)), "время Астаны"),
+    (("по москве", "московско", "москвы", "по мск", "по msk"), timezone(timedelta(hours=3)), "время Москвы"),
+    (("по дубаю", "дубая", "по оаэ", "эмират"), timezone(timedelta(hours=4)), "время Дубая"),
+    (("по тбилиси", "тбилиси", "грузи"), timezone(timedelta(hours=4)), "время Тбилиси"),
+    (("по еревану", "еревана", "армени", "армянско"), timezone(timedelta(hours=4)), "время Еревана"),
+    (("по пхукету", "пхукет", "бангкок", "таиланд", "тайланд"), BANGKOK, "время Пхукета"),
+    (("по киеву", "киева", "украин"), timezone(timedelta(hours=2)), "время Киева"),
+)
+
+
+def explicit_tz_from_text(text: str):
+    """Если в тексте ЯВНО указан пояс («в 14:00 по Астане») — вернуть (tz, подпись),
+    иначе None. Переопределяет пояс по телефону."""
+    t = (text or "").lower()
+    for phrases, tz, label in _TZ_PHRASES:
+        if any(p in t for p in phrases):
+            return tz, label
+    return None
+
+
 def _to_local(dt_utc: datetime) -> datetime:
     """UTC-aware → локальное (Бангкок) время."""
     if dt_utc.tzinfo is None:
@@ -548,6 +589,7 @@ _LEAD_REMINDER_TMPL = {
     "ru": "Напоминаю про визит {label} — {when}{via}. Команда на связи 🙂 Если планы поменялись — просто напишите.",
     "en": "Reminder about your appointment {label} — {when}{via}. We're here 🙂 If plans changed, just message us.",
     "th": "แจ้งเตือนนัดหมายของคุณ {label} — {when}{via} ทีมงานพร้อมแล้ว 🙂 หากมีการเปลี่ยนแปลง โปรดแจ้งเรา",
+    "my": "သင့်ချိန်းဆိုမှု {label} အတွက် သတိပေးချက် — {when}{via}။ ကျွန်ုပ်တို့ အသင့်ရှိပါသည် 🙂 အစီအစဉ်ပြောင်းလဲပါက ကျွန်ုပ်တို့ထံ စာပို့ပါ။",
 }
 
 

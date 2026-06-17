@@ -26,6 +26,7 @@
 | [reply-engine-drafts.md](reply-engine-drafts.md) | Генерация ответов: черновики, переформулировать, тёплое первое сообщение, тест нового лида | `services/wa_drafts.py`, `admin_api.py` |
 | [knowledge-base.md](knowledge-base.md) | База знаний (кейсы/услуги/цены) + RAG в ответах, /kb/upload, pgvector | `services/kb_ingest.py`, `db/vector.py`, `admin_api.py` |
 | [funnel-stages.md](funnel-stages.md) | Воронка, кастомные стадии, авто-движение, классификатор лид/не-лид, StageTransition | `services/funnel_store.py`, `services/funnel.py` |
+| [custom-fields.md](custom-fields.md) | Кастом-поля под нишу (пресеты) + авто-заполнение ботом из переписки с защитой ручных правок (fields_auto), `auto_fill_fields` | `services/conversation_brain.py`, `admin_api.py` (NICHE_PRESETS, /custom-fields) |
 | [calendar-scheduling.md](calendar-scheduling.md) | Созвоны: pending_call_suggestion, _resolve_call_dt, напоминания, часовые пояса, FullCalendar, ICS-фид | `services/scheduling.py`, `services/scheduled_actions.py`, `main.py` |
 | [dedup-lid.md](dedup-lid.md) | @lid дедупликация: dedup_wa_by_phone, cancel_orphan_scheduled_actions, cleanup_wa_artifacts, LID API resolve | `services/whatsapp_sync.py`, `main.py` |
 | [db-backup.md](db-backup.md) | Бэкап БД: build_export (13 таблиц, gzip/JSON), GET /db-backup, авто-ежедневно в Telegram | `services/db_backup.py`, `admin_api.py` |

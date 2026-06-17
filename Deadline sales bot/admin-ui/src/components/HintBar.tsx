@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 
-/* Контекстное обучение: подсказка-плашка вверху каждой страницы — коротко
-   объясняет, что это за окно и как с ним работать. Глобальный вкл/выкл
-   (Настройки или «не показывать больше» прямо на плашке) + скрытие разово.
-   Хранение в localStorage — не мешает опытному, всегда включается обратно. */
+/* Контекстное обучение ПО ЗАПРОСУ: вместо всегда-висящей плашки — маленькая
+   кнопка «📚 Обучение разделу» в шапке каждой страницы. Нажал → развернулось
+   объяснение этого раздела; свернул → снова кнопка. Не мешает опытному, но всегда
+   под рукой. Общий тур по всему интерфейсу — отдельно (Настройки → «Запустить
+   обучение», Tour.tsx). Глобальный выкл (Настройки → Подсказки) прячет кнопки совсем. */
 
 const HINTS_KEY = 'deadline_hints_enabled'
 
@@ -21,7 +22,7 @@ export function HintBar({ id, icon, children }: {
   icon?: string
   children: React.ReactNode
 }) {
-  const [closed, setClosed] = useState(false)
+  const [open, setOpen] = useState(false)
   const [enabled, setEnabled] = useState(hintsEnabled())
 
   // Реагируем на переключатель в Настройках без перезагрузки.
@@ -31,8 +32,24 @@ export function HintBar({ id, icon, children }: {
     return () => window.removeEventListener('hints-changed', onChange)
   }, [])
 
-  if (!enabled || closed) return null
+  if (!enabled) return null
 
+  // Свёрнуто (по умолчанию) — маленькая кнопка, не мешает.
+  if (!open) {
+    return (
+      <button
+        className="btn sm ghost"
+        onClick={() => setOpen(true)}
+        title="Как работает этот раздел — короткое обучение"
+        data-hint={id}
+        style={{ marginBottom: 12, fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+      >
+        {icon ?? '📚'} Обучение разделу
+      </button>
+    )
+  }
+
+  // Развёрнуто — объяснение раздела.
   return (
     <div style={{
       display: 'flex', alignItems: 'flex-start', gap: 10,
@@ -42,12 +59,7 @@ export function HintBar({ id, icon, children }: {
     }}>
       <span style={{ fontSize: 16, lineHeight: 1.3 }}>{icon ?? '💡'}</span>
       <div style={{ flex: 1 }}>{children}</div>
-      <button className="btn sm ghost" title="Скрыть подсказку" onClick={() => setClosed(true)}>✕</button>
-      <button className="btn sm ghost" style={{ whiteSpace: 'nowrap', fontSize: 11 }}
-              title="Выключить все подсказки (вернуть: Настройки → Подсказки)"
-              onClick={() => setHintsEnabled(false)}>
-        больше не показывать
-      </button>
+      <button className="btn sm ghost" title="Свернуть" onClick={() => setOpen(false)}>✕</button>
     </div>
   )
 }

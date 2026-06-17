@@ -650,6 +650,7 @@ async def conversation_detail(
         # Текущий назначенный созвон (для ручного переноса/отмены из карточки).
         "booked_call_at": (cust.profile_data or {}).get("booked_call_at"),
         "call_medium": (cust.profile_data or {}).get("call_medium"),
+        "nudge_paused": bool((cust.profile_data or {}).get("nudge_paused")),
         "hubspot": hubspot,
         "utm": {
             "source": cust.utm_source, "campaign": cust.utm_campaign,
@@ -823,16 +824,177 @@ async def conversation_wa_resync(
     _cid = conv.id
     db.commit()  # отпустить коннект запроса ПЕРЕД сетевой сверкой (reconcile — свои сессии)
     res = await reconcile_wa_conversation(_main.settings, _cid)
-    if res.get("added"):
+    if res.get("added") or res.get("restamped") or res.get("deduped"):
         try:
             from services.activity_log import log_event
-            log_event("bot", f"Сверка с WhatsApp: подтянуто {res['added']} пропущенных сообщений",
+            _a, _r, _d = res.get("added", 0), res.get("restamped", 0), res.get("deduped", 0)
+            _parts = []
+            if _a:
+                _parts.append(f"подтянуто {_a} пропущенных")
+            if _r:
+                _parts.append(f"выровнен порядок {_r}")
+            if _d:
+                _parts.append(f"убрано дублей {_d}")
+            log_event("bot", f"Сверка с WhatsApp: {', '.join(_parts)}",
                       level="info", actor="system", conversation_id=str(_cid),
-                      meta={k: res.get(k) for k in ("added", "fetched", "chat_id")})
+                      meta={k: res.get(k) for k in ("added", "restamped", "deduped", "fetched", "chat_id")})
         except Exception:  # noqa: BLE001
             pass
     return {"ok": res.get("ok", False), "added": res.get("added", 0),
+            "restamped": res.get("restamped", 0), "deduped": res.get("deduped", 0),
             "fetched": res.get("fetched", 0), "reason": res.get("reason")}
+
+
+class SetPhoneRequest(BaseModel):
+    phone: str
+
+
+@router.post("/conversations/{conv_id}/set-phone")
+async def conversation_set_phone(
+    conv_id: str,
+    req: SetPhoneRequest,
+    _: dict = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    """Ручной ввод реального номера для рекламной @lid-карточки, где WhatsApp ПРЯЧЕТ
+    номер (WAHA отдаёт pn:null), а владелец видит его в приложении. Проставляем
+    customer.phone → «номер скрыт» исчезает + сливаем с параллельной @c.us-карточкой
+    (тот же человек под двумя ключами). Чисто БД, без сети."""
+    import asyncio as _aio
+    digits = "".join(ch for ch in (req.phone or "") if ch.isdigit())
+    if not (8 <= len(digits) <= 15):
+        raise HTTPException(status_code=422, detail="Номер: ожидаю 8–15 цифр")
+    conv, cust = _get_conv_or_404(db, conv_id)
+    cust.phone = ("+" + digits)[:50]
+    db.commit()  # отпустить коннект перед слиянием (свои сессии)
+    merged: dict = {}
+    try:
+        from services.whatsapp_sync import merge_wa_split, dedup_wa_by_phone
+        merged["merge"] = await _aio.to_thread(merge_wa_split)
+        merged["dedup"] = await _aio.to_thread(dedup_wa_by_phone)
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"set-phone merge failed: {e}")
+    try:
+        from services.activity_log import log_event
+        log_event("config", f"Указан номер вручную: +{digits}", level="info",
+                  actor="owner", conversation_id=str(conv_id), meta={"phone": "+" + digits})
+    except Exception:  # noqa: BLE001
+        pass
+    return {"ok": True, "phone": "+" + digits, "merged": merged}
+
+
+@router.post("/conversations/{conv_id}/resolve-phone")
+async def conversation_resolve_phone(
+    conv_id: str,
+    _: dict = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """Перепроверить скрытый номер @lid через WAHA (вдруг WhatsApp уже раскрыл — лид
+    написал ещё раз / контакт синкнулся). Сеть — ВНЕ сессии. Резолвнулся → ставим +
+    склеиваем дубли. Не резолвнулся → возвращаем resolved:false (WhatsApp всё ещё прячет —
+    это норма для рекламных лидов, не сбой)."""
+    import main as _main
+    import asyncio as _aio
+    from channels.waha import resolve_lid_phone
+    conv, cust = _get_conv_or_404(db, conv_id)
+    if conv.channel != "whatsapp":
+        return {"resolved": False, "reason": "не WhatsApp"}
+    if (cust.phone or "").strip():
+        return {"resolved": True, "phone": cust.phone}
+    cid = conv.channel_conversation_id or ""
+    st = _main.settings
+    if not (getattr(st, "waha_base_url", None) and len(cid) >= 13):
+        return {"resolved": False, "reason": "нет данных для авто-резолва"}
+    _cust_id = str(cust.id)
+    db.commit()  # отпустить коннект ПЕРЕД сетью (урок висов 06-15)
+    try:
+        pn = await resolve_lid_phone(st.waha_base_url, st.waha_api_key or "",
+                                     st.waha_session or "default", cid)
+    except Exception as e:  # noqa: BLE001
+        return {"resolved": False, "reason": str(e)[:120]}
+    if not pn:
+        return {"resolved": False}  # WhatsApp всё ещё прячет номер
+    c = db.query(Customer).filter(Customer.id == _cust_id).first()
+    if c is not None and not (c.phone or "").strip():
+        c.phone = ("+" + pn)[:50]
+        db.commit()
+    try:
+        from services.whatsapp_sync import merge_wa_split, dedup_wa_by_phone
+        await _aio.to_thread(merge_wa_split)
+        await _aio.to_thread(dedup_wa_by_phone)
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"resolve-phone merge failed: {e}")
+    return {"resolved": True, "phone": "+" + pn}
+
+
+class NudgePauseRequest(BaseModel):
+    paused: bool
+
+
+@router.post("/conversations/{conv_id}/nudge-pause")
+async def conversation_nudge_pause(
+    conv_id: str,
+    req: NudgePauseRequest,
+    _: dict = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """Пауза/возобновление авто-дожима для КОНКРЕТНОГО лида (ручной стоп/продолжить)."""
+    conv, cust = _get_conv_or_404(db, conv_id)
+    prof = dict(cust.profile_data or {})
+    if req.paused:
+        prof["nudge_paused"] = True
+    else:
+        prof.pop("nudge_paused", None)
+    cust.profile_data = prof
+    db.commit()
+    return {"ok": True, "paused": bool(req.paused)}
+
+
+@router.post("/conversations/{conv_id}/extract-fields")
+async def conversation_extract_fields(
+    conv_id: str,
+    _: dict = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """Бэкфилл полей по истории переписки — для старых карточек, где авто-заполнение
+    ещё не срабатывало (показывают 0/N). Один LLM-вызов, без побочных эффектов."""
+    import main as _main
+    conv, cust = _get_conv_or_404(db, conv_id)
+    from services.conversation_brain import extract_fields_now
+    res = await extract_fields_now(db, conv, cust, _main.primary_llm)
+    return res
+
+
+@router.post("/maintenance/dedup")
+async def maintenance_dedup(
+    _: dict = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    """Кнопка «Синхронизировать и почистить дубли» — глобально: дедуп сообщений во ВСЕХ
+    каналах (по нативному message-id) + чистка фантомов/эхо + склейка разорванных
+    WhatsApp-карточек. Чисто БД, без сети/LLM — безопасно. Под видение «одно окно»:
+    владелец может в любой момент гарантированно убрать дубли, без сюрпризов."""
+    import asyncio as _aio
+    db.commit()  # отпустить коннект перед обслуживанием (свои сессии)
+    from services.whatsapp_sync import (
+        cleanup_wa_artifacts, dedup_messages_global, merge_wa_split, dedup_wa_by_phone,
+    )
+    res: dict = {}
+    res["cleanup"] = await _aio.to_thread(cleanup_wa_artifacts)
+    res["global_dedup"] = await _aio.to_thread(dedup_messages_global)
+    res["merge"] = await _aio.to_thread(merge_wa_split)
+    res["dedup_phone"] = await _aio.to_thread(dedup_wa_by_phone)
+    cl = res["cleanup"]
+    removed = (cl.get("phantoms", 0) + cl.get("echo_dupes", 0) + cl.get("sfx_dupes", 0)
+               + res["global_dedup"].get("removed", 0))
+    merged = res["merge"].get("archived", 0) + res["dedup_phone"].get("archived", 0)
+    try:
+        from services.activity_log import log_event
+        log_event("config", f"Ручная синхронизация: убрано дублей {removed}, склеено карточек {merged}",
+                  level="info", actor="owner", meta=res)
+    except Exception:  # noqa: BLE001
+        pass
+    return {"ok": True, "removed_dupes": removed, "merged_cards": merged, "detail": res}
 
 
 class PinRequest(BaseModel):
@@ -1067,10 +1229,10 @@ async def conversation_call_suggestion(
         return {"ok": True, "action": "dismiss"}
     if req.action != "confirm":
         raise HTTPException(status_code=400, detail="action: confirm | dismiss")
-    # Время берём из сохранённого предложения, иначе из запроса (то, что менеджер
-    # видит в карточке) — кнопка работает даже если фон затёр поле между показом и кликом.
-    at_raw = sugg.get("at") or req.at
-    medium = sugg.get("medium") or req.medium
+    # Время/канал: ПРИОРИТЕТ запросу (менеджер мог ПОДПРАВИТЬ время в карточке перед
+    # подтверждением), иначе — из сохранённого предложения (фолбэк, если фон затёр поле).
+    at_raw = req.at or sugg.get("at")
+    medium = req.medium or sugg.get("medium")
     if not at_raw:
         raise HTTPException(status_code=404, detail="Нет предложения созвона")
     try:
@@ -4419,12 +4581,17 @@ async def conversation_fields_save(
         raise HTTPException(status_code=422, detail=f"Неизвестные поля: {bad}")
     pd = dict(cust.profile_data or {})
     fields = dict(pd.get("fields") or {})
+    auto = set(pd.get("fields_auto") or [])
     for k, v in req.values.items():
+        # Оператор правит поле ВРУЧНУЮ → снимаем «авто»-метку: бот больше НЕ
+        # перезапишет это значение (защита ручных правок, Слой 2 авто-заполнения).
+        auto.discard(k)
         if v is None or v == "":
             fields.pop(k, None)
         else:
             fields[k] = v
     pd["fields"] = fields
+    pd["fields_auto"] = sorted(auto)
     cust.profile_data = pd
     db.commit()
     return {"ok": True, "fields": fields}

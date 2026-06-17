@@ -9,6 +9,8 @@ import { Help } from '../components/Help'
 export function Settings() {
   const [s, setS] = useState<any>(null)
   const [kb, setKb] = useState<Array<{ source: string; chunks: number }>>([])
+  const [adv, setAdv] = useState(() => localStorage.getItem('deadline_adv_settings') === '1')
+  const toggleAdv = () => { const n = !adv; setAdv(n); localStorage.setItem('deadline_adv_settings', n ? '1' : '0') }
 
   useEffect(() => {
     void (async () => {
@@ -35,31 +37,48 @@ export function Settings() {
         (когда напоминать молчунам), демо-данные для тренировки. Подсказки и обучение
         включаются/выключаются здесь же.
       </HintBar>
+      {/* ── ПРОСТЫЕ настройки (для всех, не программиста) ── */}
       <WorkspaceCard />
-      <div style={{ height: 14 }} />
-      <TeamCard />
-      <div style={{ height: 14 }} />
-      <PresetsCard />
-      <div style={{ height: 14 }} />
-      <FeatureFlagsCard />
-      <div style={{ height: 14 }} />
-      <ConfigAgentCard />
       <div style={{ height: 14 }} />
       <LanguagesCard />
       <div style={{ height: 14 }} />
       <BehaviorCard />
       <div style={{ height: 14 }} />
+      <CallRemindersCard />
+      <div style={{ height: 14 }} />
+      <TimezoneCard />
+      <div style={{ height: 14 }} />
       <FieldsCard />
+      <div style={{ height: 14 }} />
+      <FeatureFlagsCard />
+
+      {/* ── Переход в РАСШИРЕННЫЕ (технические / разработческие) ── */}
+      <div style={{ marginTop: 20, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+        <button className="btn ghost" onClick={toggleAdv}>
+          {adv ? '▾ Скрыть расширенные настройки' : '🔧 Расширенные настройки (для разработчика) →'}
+        </button>
+        <p className="faint" style={{ fontSize: 11.5, margin: '6px 0 0' }}>
+          Технические и редко-используемые: команда и доступы, смена ниши/пресета, авто-настройка,
+          синхронизация/дедуп, бэкап и экспорт, версии конфигурации, LLM, каналы, CRM-зеркало,
+          база знаний, логи системы. Обычному пользователю сюда заходить не нужно.
+        </p>
+      </div>
+
+      {adv && (<>
+      <div style={{ height: 14 }} />
+      <TeamCard />
+      <div style={{ height: 14 }} />
+      <PresetsCard />
+      <div style={{ height: 14 }} />
+      <ConfigAgentCard />
+      <div style={{ height: 14 }} />
+      <MaintenanceCard />
       <div style={{ height: 14 }} />
       <BackupCard />
       <div style={{ height: 14 }} />
       <ExportCard />
       <div style={{ height: 14 }} />
       <SnapshotsCard />
-      <div style={{ height: 14 }} />
-      <CallRemindersCard />
-      <div style={{ height: 14 }} />
-      <TimezoneCard />
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 14, marginTop: 14 }}>
         <div className="card">
@@ -131,11 +150,39 @@ export function Settings() {
         Серые карточки читаются из env/конфига на сервере — секреты живут в Railway.
         Тон и правила бота — во вкладке «Мозг»; стадии воронки — в «Воронке» (⚙ Настроить стадии).
       </p>
+      </>)}
     </div>
   )
 }
 
 /* ---------- Бэкап базы ---------- */
+
+function MaintenanceCard() {
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+  const run = async () => {
+    setBusy(true); setMsg('')
+    try {
+      const r = await api.post<{ removed_dupes: number; merged_cards: number }>('/maintenance/dedup', {})
+      setMsg(`✅ Готово: убрано дублей ${r.removed_dupes}, склеено карточек ${r.merged_cards}`)
+    } catch (e: any) { setMsg('Ошибка: ' + (e?.detail ?? e?.message ?? 'не вышло')) }
+    finally { setBusy(false) }
+  }
+  return (
+    <div className="card">
+      <b>🔄 Синхронизация и чистка дублей</b>
+      <p className="faint" style={{ fontSize: 11.5, margin: '6px 0 10px' }}>
+        Разово пройтись по ВСЕМ каналам и убрать задвоенные сообщения + склеить разорванные
+        карточки одного человека. Бот делает это сам каждые ~10 минут — кнопка нужна, если
+        хотите почистить прямо сейчас, без сюрпризов. Безопасно: только база, ничего не теряется.
+      </p>
+      <button className="btn sm primary" onClick={run} disabled={busy}>
+        {busy ? <span className="spin" /> : '🔄 Синхронизировать сейчас'}
+      </button>
+      {msg && <span style={{ marginLeft: 10, fontSize: 12.5 }}>{msg}</span>}
+    </div>
+  )
+}
 
 function BackupCard() {
   const [busy, setBusy] = useState('')
@@ -912,10 +959,18 @@ function BehaviorCard() {
         <label style={row}>
           <input type="checkbox" checked={!!overrides.nudge_enabled}
                  onChange={e => upd('nudge_enabled', e.target.checked)} />
-          Пинговать вовлечённого лида, если он замолчал (один раз за диалог)
+          Дожимать вовлечённого лида, если он замолчал (по шагам ниже; ответил — дожим прекращается сам)
         </label>
         <div style={row}>
-          <span className="muted" style={{ width: 280 }}>Пинговать через (часов тишины):</span>
+          <span className="muted" style={{ width: 280 }}>Каденция дожима (через сколько тишины):</span>
+          <input type="text" value={overrides.nudge_sequence ?? ''} placeholder="1h,1d,3d"
+                 onChange={e => upd('nudge_sequence', e.target.value || null)} style={{ width: 130 }} />
+          <span className="faint" style={{ fontSize: 11, marginLeft: 8 }}>
+            напр. <b>1h,1d,3d</b> — пинг через 1ч, потом через 1 день, потом через 3 дня. Пусто = один пинг.
+          </span>
+        </div>
+        <div style={row}>
+          <span className="muted" style={{ width: 280 }}>Первый пинг через (часов тишины, если каденция пуста):</span>
           <input type="number" min={0.5} step={0.5} value={overrides.nudge_after_hours}
                  onChange={e => upd('nudge_after_hours', e.target.value)} style={{ width: 90 }} />
         </div>

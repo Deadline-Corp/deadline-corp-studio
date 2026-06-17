@@ -207,13 +207,15 @@ async def _book(db: Session, conv: Conversation, cust: Customer,
     # СРАЗУ уведомить владельца/менеджера: «поймал договорённость и поставил в
     # календарь» (просьба владельца — видеть, что бот распознал ручную договорённость).
     try:
-        when_lead = _sched.format_slot_human(new_dt, tz=_sched.lead_tz_from_phone(str(chat or "")))
-        tzlbl = _sched.tz_label_from_phone(str(chat or ""))
+        # пояс по РЕАЛЬНОМУ телефону (cust.phone), не из @lid; дуальное время для Пхукета
+        _ph = getattr(cust, "phone", None) or str(chat or "")
+        when_lead = _sched.format_call_when(
+            new_dt, _sched.lead_tz_from_phone(_ph), _sched.tz_label_from_phone(_ph))
         await _signal_owner(
             settings,
             f"📅 Поставил созвон в календарь из переписки:\n"
             f"Лид: {lead_name} ({chat})\n"
-            f"Когда: {when_lead} ({tzlbl}){(' · ' + medium) if medium else ''}\n"
+            f"Когда: {when_lead}{(' · ' + medium) if medium else ''}\n"
             f"Стадия → 📞 Созвон назначен. Если время не то — поправьте в карточке.",
         )
     except Exception as e:  # noqa: BLE001
@@ -268,6 +270,114 @@ def _defers_timing(transcript: str) -> bool:
     return any(p in t for p in _DEFER_TIME)
 
 
+# ── Слой 2: авто-заполнение кастом-полей под нишу из переписки ───────────────
+# Поля (тип проекта/бюджет/срок/услуга…) задаёт ПРЕСЕТ ниши (NICHE_PRESETS), их
+# можно править в Настройках. Здесь мозг ЗАОДНО (в том же LLM-вызове, без второго)
+# извлекает их значения из того, что лид УЖЕ сказал, и пишет в profile_data['fields']
+# — НЕ затирая ручные правки оператора (fields_auto). Если в переписке про поле
+# ничего нет — не выдумываем; бот соберёт это естественно по ходу брифа.
+
+def _auto_fill_enabled() -> bool:
+    """Авто-заполнение полей ботом (деф. ВКЛ). Выкл в настройках: auto_fill_fields=false."""
+    try:
+        from services import bot_settings as _bs
+        v = _bs.get("auto_fill_fields")
+        return True if v is None else bool(v)
+    except Exception:  # noqa: BLE001
+        return True
+
+
+def _field_specs(db: Session) -> list[dict]:
+    """Активные кастом-поля для извлечения: key/label/type/options (select)."""
+    try:
+        from db.models import CustomFieldDef
+        defs = (
+            db.query(CustomFieldDef)
+            .filter(CustomFieldDef.active == True)  # noqa: E712
+            .order_by(CustomFieldDef.position.asc()).all()
+        )
+        return [
+            {"key": f.key, "label": f.label,
+             "options": list(f.options or []) if f.field_type == "select" else None}
+            for f in defs
+        ]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def _fields_spec_block(specs: list[dict]) -> str:
+    """Текст для промпта: список полей ниши + инструкция извлечь их значения."""
+    if not specs:
+        return ""
+    lines = []
+    for f in specs:
+        opt = f"; выбери из: {', '.join(f['options'])}" if f.get("options") else ""
+        lines.append(f"    - {f['key']} ({f['label']}{opt})")
+    return (
+        '  "extracted_fields": словарь {ключ_поля: значение} — заполни ТОЛЬКО тем, что лид '
+        "ЯВНО назвал в переписке; про что не сказано — НЕ включай ключ (не выдумывай). "
+        "Поля ниши:\n" + "\n".join(lines) + "\n"
+    )
+
+
+def _merge_auto_fields(cust: Customer, extracted: Any, allowed: set) -> bool:
+    """Записать авто-извлечённые ботом значения в profile_data['fields'], НЕ затирая
+    ручные правки (пишем только в пустые ИЛИ ранее-авто поля; ключ→fields_auto).
+    Возвращает True, если что-то изменилось."""
+    if not isinstance(extracted, dict) or not extracted:
+        return False
+    prof = dict(cust.profile_data or {})
+    fields = dict(prof.get("fields") or {})
+    auto = set(prof.get("fields_auto") or [])
+    changed = False
+    for key, val in extracted.items():
+        if key not in allowed or val in (None, "", []):
+            continue
+        sval = str(val).strip()[:200]
+        if not sval:
+            continue
+        cur = fields.get(key)
+        if cur in (None, "", []) or key in auto:  # пусто ИЛИ заполнял сам бот
+            if cur != sval:
+                fields[key] = sval
+                auto.add(key)
+                changed = True
+    if changed:
+        prof["fields"] = fields
+        prof["fields_auto"] = sorted(auto)
+        cust.profile_data = prof
+    return changed
+
+
+async def extract_fields_now(db: Session, conv: Conversation, cust: Customer, llm: Any) -> dict:
+    """Разовый БЭКФИЛЛ значений полей из ВСЕЙ переписки — для старых карточек, где
+    авто-заполнение (Слой 2) ещё не срабатывало (показывают 0/N). Один LLM-вызов, БЕЗ
+    побочных эффектов (стадию/созвон не трогает). Ручные правки защищены _merge_auto_fields."""
+    specs = _field_specs(db)
+    if not specs:
+        return {"ok": True, "filled": False, "reason": "нет активных полей"}
+    transcript = _transcript(db, conv, limit=40)
+    if not transcript.strip():
+        return {"ok": True, "filled": False, "reason": "пустая переписка"}
+    prompt = (
+        "Из переписки извлеки значения полей клиента и верни СТРОГО JSON (без пояснений) "
+        'вида {"extracted_fields": {ключ: значение}}.\n'
+        + _fields_spec_block(specs)
+        + f"\nПереписка:\n{transcript}"
+    )
+    try:
+        result = await llm.ainvoke(prompt)
+        data = _parse_json(getattr(result, "content", None) or "")
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "filled": False, "reason": str(e)[:120]}
+    if not data:
+        return {"ok": True, "filled": False}
+    changed = _merge_auto_fields(cust, data.get("extracted_fields"), {f["key"] for f in specs})
+    if changed:
+        db.commit()
+    return {"ok": True, "filled": changed}
+
+
 async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
                               llm: Any, settings: Any, refresh_draft: bool = True) -> dict:
     """Проанализировать диалог и применить решения. Возвращает что сделано.
@@ -288,8 +398,16 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
     _multi = _multi_tz_enabled()
     tz = _sched.lead_tz_from_phone(_phone_for_tz) if _multi else _sched.BANGKOK
     tz_label = _sched.tz_label_from_phone(_phone_for_tz) if _multi else "время Пхукета"
+    # Явная приписка пояса в переписке («в 14:00 по Астане») ПЕРЕОПРЕДЕЛЯЕТ пояс по
+    # номеру — лид прямо сказал, в каком времени; это важнее догадки по префиксу.
+    if _multi:
+        _ex_tz = _sched.explicit_tz_from_text(transcript)
+        if _ex_tz:
+            tz, tz_label = _ex_tz
     now_utc = datetime.now(timezone.utc)
     now_lead = now_utc.astimezone(tz)
+    # Слой 2: поля ниши — мозг заодно извлечёт их значения из переписки (если вкл).
+    field_specs = _field_specs(db) if _auto_fill_enabled() else []
     prompt = (
         "Проанализируй переписку веб-студии с лидом и верни СТРОГО JSON (без пояснений). "
         "Поля:\n"
@@ -319,8 +437,9 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
         f"Сейчас у лида {now_lead.strftime('%Y-%m-%d %H:%M')} ({tz_label}), {_WEEKDAY_RU[now_lead.weekday()]};\n"
         '  "call_medium": "WhatsApp"|"Телефон"|"Zoom"|"Google Meet"|null;\n'
         '  "wants_human": true если лид ЯВНО просит позвонить/связаться с человеком/менеджером;\n'
-        '  "reason": кратко почему (≤120 симв).\n\n'
-        f"Переписка:\n{transcript}"
+        '  "reason": кратко почему (≤120 симв).\n'
+        + _fields_spec_block(field_specs)
+        + f"\nПереписка:\n{transcript}"
     )
     try:
         result = await llm.ainvoke(prompt)
@@ -330,6 +449,17 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
         return done
     if not data:
         return done
+
+    # Слой 2: авто-заполнение полей ниши из переписки (защита ручных правок).
+    if field_specs:
+        try:
+            if _merge_auto_fields(cust, data.get("extracted_fields"),
+                                  {f["key"] for f in field_specs}):
+                db.commit()
+                done["fields_filled"] = True
+        except Exception as e:  # noqa: BLE001
+            db.rollback()
+            log.warning(f"[{str(conv.id)[:8]}] brain auto-fields failed: {e}")
 
     # 1) стадия вперёд
     new_stage = _stage_forward(conv.lead_stage or "new_lead", str(data.get("stage") or ""))
@@ -384,12 +514,13 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
             dup = _close(prof.get("booked_call_at")) or _close(existing_sugg.get("at")) \
                 or _close(prof.get("call_suggest_dismissed_at_val"))
             if new_dt > now_utc and not dup:
-                # ВЕРНЫЙ пояс — из cust.phone + мультипояс (см. выше), НЕ из @lid
-                tzlbl = tz_label
-                when_h = _sched.format_slot_human(new_dt, tz=tz)
+                # ВЕРНЫЙ пояс — из cust.phone + мультипояс (см. выше), НЕ из @lid.
+                # Дуальное время: «<время лида> (город) = <ЧЧ:ММ> (Пхукет)» — админ в
+                # Пхукете видит ОБА времени и не путается (кейс «14:00 по Астане»).
+                when_h = _sched.format_call_when(new_dt, tz, tz_label)
                 conv.pending_call_suggestion = {
                     "at": new_dt.isoformat(),
-                    "when_human": f"{when_h} ({tzlbl})",
+                    "when_human": when_h,
                     "medium": data.get("call_medium"),
                     "reason": str(data.get("reason") or "")[:200],
                     "ts": now_utc.isoformat(),
@@ -400,7 +531,7 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
                 await _signal_owner(
                     settings,
                     f"📅 Похоже, договорились о созвоне:\nЛид: {name}\n"
-                    f"Когда: {when_h} ({tzlbl})\n"
+                    f"Когда: {when_h}\n"
                     f"Откройте карточку в панели → «Создать событие», если верно.",
                 )
         except (ValueError, TypeError) as e:

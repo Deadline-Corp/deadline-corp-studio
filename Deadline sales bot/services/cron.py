@@ -60,6 +60,34 @@ _running: bool = False
 _CRON_CYCLE = [0]   # счётчик циклов (для разреженных задач — авто-сверки раз в ~час)
 _LAST_BACKUP_DATE = [None]   # дата последнего авто-бэкапа БД в Telegram (раз в день)
 
+# Тексты дожима по шагам — РАЗНЫЕ, чтобы не выглядело шаблонным спамом.
+_NUDGE_TEXTS = [
+    "Здравствуйте! Вы недавно интересовались — подскажите, актуально ещё? "
+    "С радостью помогу с проектом 🙂 Если сейчас неудобно, просто скажите, когда вам написать.",
+    "Добрый день! Не хочу потеряться 🙂 Если вопрос ещё актуален — давайте продолжим, "
+    "я на связи и готов(а) ответить на любые вопросы по проекту.",
+    "Здравствуйте! Понимаю, что бывает не до этого. Оставлю за собой возможность помочь — "
+    "напишите в любой момент, когда будет удобно вернуться к задаче 🙂",
+]
+
+
+def _parse_nudge_seq(raw, default_after: float) -> list:
+    """CSV «1h,1d,3d» → отсортированный список ПОРОГОВ тишины (в часах) для шагов дожима.
+    Каждый порог — сколько часов тишины (с последней активности) до следующего нуджа.
+    Пусто/мусор → [default_after] (один нудж, как раньше — обратная совместимость).
+    Поддержка единиц: m(мин)/h(час)/d(день), голое число = часы."""
+    import re as _re
+    out: list = []
+    for tok in str(raw or "").split(","):
+        tok = tok.strip().lower()
+        m = _re.match(r"^(\d+(?:\.\d+)?)\s*([mhd]?)$", tok)
+        if not m:
+            continue
+        n = float(m.group(1)); u = m.group(2) or "h"
+        out.append(n / 60.0 if u == "m" else n * 24.0 if u == "d" else n)
+    out = sorted(h for h in out if h > 0)
+    return out or [float(default_after)]
+
 
 def is_running() -> bool:
     return _worker_task is not None and not _worker_task.done()
@@ -110,12 +138,18 @@ def run_wa_maintenance() -> dict:
         from services.whatsapp_sync import (
             cleanup_wa_artifacts, dedup_wa_by_phone, dedup_wa_by_name,
             cancel_orphan_scheduled_actions, dedup_scheduled_actions,
-            merge_wa_split,
+            merge_wa_split, dedup_messages_global,
         )
         _cl = cleanup_wa_artifacts()
         summary["cleanup"] = _cl
-        if _cl.get("phantoms") or _cl.get("echo_dupes"):
+        if _cl.get("phantoms") or _cl.get("echo_dupes") or _cl.get("sfx_dupes"):
             logger.info("[cron] wa cleanup: %s", _cl)
+        # КАНАЛ-НЕЗАВИСИМЫЙ дедуп по нативному message-id (ВСЕ каналы) — страховка под
+        # «одно окно»: ретрай вебхука / история+живой не оставят дубль ни в одном канале.
+        _gd = dedup_messages_global()
+        summary["dedup_global"] = _gd
+        if _gd.get("removed"):
+            logger.info("[cron] global msg-id dedup removed: %s", _gd.get("removed"))
         # СТРУКТУРНОЕ слияние разорванных карточек по реальному телефону: @lid
         # (живой вебхук) + @c.us (history-sync) одного человека → ОДНА карточка с
         # ПЕРЕНЕСЁННОЙ историей (кейс Zaal). Чисто БД, идемпотентно. ДО лёгких
@@ -304,20 +338,33 @@ async def _worker_loop(*, tenant_config: dict, interval_sec: int) -> None:
             import os as _osb
             if _osb.getenv("DB_BACKUP_TG", "1").strip() in ("1", "true", "yes"):
                 _today = datetime.now(timezone.utc).date().isoformat()
+                from services import bot_settings as _bs
+                # Дедуп ПЕРЕЖИВАЕТ рестарт/редеплой: дата последнего бэкапа хранится в
+                # bot_settings (как digest_last_date), а НЕ только в памяти процесса.
+                # Раньше флаг был лишь in-memory (_LAST_BACKUP_DATE) → каждый редеплой
+                # его обнулял → бэкап слался заново. При активной разработке это
+                # десятки дублей в день. Теперь in-memory — лишь быстрый кэш, а
+                # источник правды — БД (переживает любой рестарт).
                 if _LAST_BACKUP_DATE[0] != _today:
-                    import main as _mb
-                    from services import bot_settings as _bs
-                    _chat = (_bs.get("manager_chat_id") or "").strip() \
-                        or (getattr(_mb.settings, "telegram_chat_id", None) or "")
-                    _token = getattr(_mb.settings, "telegram_bot_token", None)
-                    if _token and _chat:
-                        from services.db_backup import build_export
-                        from channels.telegram import send_telegram_document
-                        _fn, _blob = await asyncio.to_thread(build_export)
-                        if await send_telegram_document(_token, str(_chat), _fn, _blob,
-                                                        caption="💾 Авто-бэкап базы DEADLINE"):
-                            _LAST_BACKUP_DATE[0] = _today
-                            logger.info("[cron] db backup → telegram: %s (%d КБ)", _fn, len(_blob) // 1024)
+                    if _bs.get("db_backup_last_date") == _today:
+                        _LAST_BACKUP_DATE[0] = _today  # уже слали сегодня (до рестарта)
+                    else:
+                        import main as _mb
+                        _chat = (_bs.get("manager_chat_id") or "").strip() \
+                            or (getattr(_mb.settings, "telegram_chat_id", None) or "")
+                        _token = getattr(_mb.settings, "telegram_bot_token", None)
+                        if _token and _chat:
+                            from services.db_backup import build_export
+                            from channels.telegram import send_telegram_document
+                            _fn, _blob = await asyncio.to_thread(build_export)
+                            if await send_telegram_document(_token, str(_chat), _fn, _blob,
+                                                            caption="💾 Авто-бэкап базы DEADLINE"):
+                                _LAST_BACKUP_DATE[0] = _today
+                                try:
+                                    _bs.set_many({"db_backup_last_date": _today})
+                                except Exception:  # noqa: BLE001
+                                    pass  # не слать — лишь дедуп; не критично
+                                logger.info("[cron] db backup → telegram: %s (%d КБ)", _fn, len(_blob) // 1024)
         except Exception as exc:  # noqa: BLE001
             logger.warning("[cron] db backup failed (non-fatal): %s", exc)
         # ПОЛНАЯ авто-сверка с WhatsApp раз в ~час (каждый 6-й цикл): WAHA = источник
@@ -404,7 +451,7 @@ async def sweep_once(*, tenant_config: dict) -> dict:
         _ui_overrides = {}
     if _ui_overrides:
         warming_cfg = dict(warming_cfg)
-        for _k in ("nudge_after_hours", "nudge_max_hours"):
+        for _k in ("nudge_after_hours", "nudge_max_hours", "nudge_sequence"):
             if _k in _ui_overrides:
                 warming_cfg[_k] = _ui_overrides[_k]
         if "silence_lost_days" in _ui_overrides:
@@ -576,38 +623,55 @@ async def sweep_once(*, tenant_config: dict) -> dict:
             try:
                 _nudge_after = float(warming_cfg.get("nudge_after_hours", 1))
                 _nudge_max = float(warming_cfg.get("nudge_max_hours", 36))
+                _seq = _parse_nudge_seq(warming_cfg.get("nudge_sequence"), _nudge_after)
                 _chan = (conversation.channel or "").lower()
                 _chat = conversation.channel_conversation_id
                 _booked = bool((customer.profile_data or {}).get("booked_call_at"))
                 _engaged = int(customer.lead_score or 0) >= 40
-                if (_nudge_enabled
+                _ceiling = max(_nudge_max, _seq[-1] + 24)
+                # КАДЕНЦИЯ дожима: молчун получает несколько нуджей по шагам _seq (пороги
+                # тишины между шагами). Стоп сам собой: лид ответил (silent сбрасывается +
+                # счётчик считаем ПОСЛЕ его последнего сообщения → обнуляется), бронь, лид
+                # остыл (score<40), шаги кончились, или тишина дольше потолка.
+                _paused = bool((customer.profile_data or {}).get("nudge_paused"))
+                if (_nudge_enabled and not _paused
                         and _chat and _chan in ("telegram", "whatsapp", "instagram", "messenger")
                         and _engaged and not _booked
-                        and _nudge_after <= silent_hours <= _nudge_max):
-                    from db.models import ScheduledAction
-                    _exists = (
+                        and silent_hours <= _ceiling):
+                    from db.models import ScheduledAction, Message as _Msg
+                    _lastu = (
+                        s.query(_Msg.created_at)
+                        .filter(_Msg.conversation_id == conversation.id, _Msg.role == "user")
+                        .order_by(_Msg.created_at.desc()).first()
+                    )
+                    _ref = (_lastu[0] if _lastu else conversation.created_at) or now
+                    if getattr(_ref, "tzinfo", None) is None:
+                        _ref = _ref.replace(tzinfo=timezone.utc)
+                    # нуджи, СОЗДАННЫЕ в текущем эпизоде тишины (после ответа лида) — счётчик
+                    # сам обнуляется, когда лид пишет (его сообщение сдвигает _ref вперёд).
+                    _sent = (
                         s.query(ScheduledAction.id)
                         .filter(ScheduledAction.conversation_id == conversation.id,
                                 ScheduledAction.action_type == "followup_message",
-                                ScheduledAction.executor == "bot")
-                        .first()
+                                ScheduledAction.executor == "bot",
+                                ScheduledAction.created_at > _ref)
+                        .count()
                     )
-                    if not _exists:
+                    if _sent < len(_seq) and silent_hours >= _seq[_sent]:
                         from services.scheduled_actions import write_scheduled_action
+                        _txt = _nudge_text_override or _NUDGE_TEXTS[min(_sent, len(_NUDGE_TEXTS) - 1)]
                         write_scheduled_action(
                             customer_id=str(customer.id),
                             conversation_id=str(conversation.id),
                             channel=conversation.channel,
                             chat_id=str(_chat),
                             due_at=now,
-                            text=(_nudge_text_override or
-                                  "Здравствуйте! Вы недавно интересовались — подскажите, "
-                                  "актуально ещё? С радостью помогу с проектом 🙂 Если сейчас "
-                                  "неудобно, просто скажите, когда вам написать."),
+                            text=_txt,
                         )
                         stats["bot_nudges"] = stats.get("bot_nudges", 0) + 1
-                        logger.info("[cron] bot-nudge → silent %s lead conv=%s (%.1fh)",
-                                    customer.lead_temperature, str(conversation.id)[:8], silent_hours)
+                        logger.info("[cron] bot-nudge step %d/%d → %s conv=%s (%.1fh)",
+                                    _sent + 1, len(_seq), customer.lead_temperature,
+                                    str(conversation.id)[:8], silent_hours)
             except Exception as _ne:  # noqa: BLE001
                 logger.warning("[cron] bot-nudge skipped: %s", _ne)
 

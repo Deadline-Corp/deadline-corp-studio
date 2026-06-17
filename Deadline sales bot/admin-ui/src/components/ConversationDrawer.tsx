@@ -161,15 +161,49 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
     if (resyncing) return
     setResyncing(true)
     try {
-      const r = await api.post<{ added: number; reason?: string }>(`/conversations/${convId}/wa-resync`, {})
-      if (r.added > 0) {
-        await loadMessages(true)  // перезагрузить — подтянулись недостающие
-        if (!silent) showToast(`🔄 Подтянуто ${r.added} сообщений из WhatsApp`)
+      const r = await api.post<{ added: number; restamped?: number; deduped?: number; reason?: string }>(`/conversations/${convId}/wa-resync`, {})
+      const restamped = r.restamped ?? 0
+      const deduped = r.deduped ?? 0
+      if (r.added > 0 || restamped > 0 || deduped > 0) {
+        await loadMessages(true)  // перезагрузить — подтянулись недостающие / выровнялся порядок / убраны дубли
+        if (!silent) {
+          const bits: string[] = []
+          if (r.added > 0) bits.push(`подтянуто ${r.added}`)
+          if (restamped > 0) bits.push(`выровнен порядок ${restamped}`)
+          if (deduped > 0) bits.push(`убрано дублей ${deduped}`)
+          showToast(`🔄 Сверено с WhatsApp: ${bits.join(', ')}`)
+        }
       } else if (!silent) {
-        showToast(r.reason ? `WhatsApp: ${r.reason}` : '✅ Уже синхронизировано с WhatsApp')
+        showToast(r.reason ? `WhatsApp: ${r.reason}` : '✅ Уже совпадает с WhatsApp')
       }
     } catch (e: any) { if (!silent) showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
     finally { setResyncing(false) }
+  }
+
+  // Ручной ввод номера для рекламной @lid-карточки, где WhatsApp прячет номер,
+  // а владелец видит его в приложении. Проставляет phone + сливает дубль @lid/@c.us.
+  const setPhoneManual = async () => {
+    const cur = window.prompt('Впишите реальный номер (как в WhatsApp), напр. +374 93 096577:')
+    if (!cur || !cur.trim()) return
+    try {
+      const r = await api.post<{ phone: string }>(`/conversations/${convId}/set-phone`, { phone: cur.trim() })
+      showToast(`✅ Номер сохранён: ${r.phone}`)
+      await loadDetail()
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+  }
+
+  // Перепроверить скрытый @lid-номер через WAHA (вдруг WhatsApp уже раскрыл).
+  // silent=true — авто-попытка при открытии карточки (без тостов).
+  const recheckPhone = async (silent = false) => {
+    try {
+      const r = await api.post<{ resolved: boolean; phone?: string }>(`/conversations/${convId}/resolve-phone`, {})
+      if (r.resolved && r.phone) {
+        if (!silent) showToast(`✅ Номер определился: ${r.phone}`)
+        await loadDetail()
+      } else if (!silent) {
+        showToast('WhatsApp пока прячет номер — впишите вручную или подождите, пока лид напишет ещё раз')
+      }
+    } catch (e: any) { if (!silent) showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
   }
 
   useEffect(() => {
@@ -197,6 +231,9 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
     if (detail?.channel === 'whatsapp' && resyncedRef.current !== convId) {
       resyncedRef.current = convId
       void resyncWa(true)
+      // Скрытый @lid-номер — тихо перепроверяем через WAHA (вдруг WhatsApp уже раскрыл,
+      // напр. лид написал ещё раз). Резолвнётся — номер появится сам, без ручного ввода.
+      if (detail?.wa_hidden_phone && !detail?.customer.phone) void recheckPhone(true)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail?.channel, convId])
@@ -344,6 +381,31 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
     finally { setBusy(false) }
   }
 
+  // Бэкфилл полей по истории (для старых карточек, где авто-заполнение ещё не сработало).
+  const extractFields = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      const r = await api.post<{ filled: boolean; reason?: string }>(`/conversations/${convId}/extract-fields`, {})
+      showToast(r.filled ? '✅ Поля заполнены по переписке' : `Нечего заполнять${r.reason ? ` (${r.reason})` : ' — в переписке нет явных данных'}`)
+      if (r.filled) await loadDetail()
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  // Пауза/возобновление авто-дожима для этого лида (ручной стоп/продолжить).
+  const toggleNudgePause = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      const next = !detail?.nudge_paused
+      await api.post(`/conversations/${convId}/nudge-pause`, { paused: next })
+      showToast(next ? '⏸ Дожим на паузе для этого лида' : '▶️ Дожим возобновлён')
+      await loadDetail()
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
   const createTask = async () => {
     if (!taskText.trim() || !taskDue || busy) return
     setBusy(true)
@@ -389,13 +451,36 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                 <span className="chip">скор {detail.customer.lead_score}</span>
                 {detail.operator_takeover && <span className="chip ok">👤 на операторе</span>}
                 {detail.customer.email && <span className="chip mono">{detail.customer.email}</span>}
-                {detail.customer.phone && <span className="chip mono">{detail.customer.phone}</span>}
+                {/* Телефон-чип показываем ТОЛЬКО если его ещё нет в заголовке (иначе дубль). */}
+                {(() => {
+                  const t = (detail.customer.display_name || detail.customer.name || '')
+                  const pd = (detail.customer.phone || '').replace(/\D/g, '')
+                  const inTitle = pd.length >= 6 && t.replace(/\D/g, '').includes(pd)
+                  return detail.customer.phone && !inTitle
+                    ? <span className="chip mono">{detail.customer.phone}</span> : null
+                })()}
                 {!detail.customer.phone && detail.wa_hidden_phone && (
-                  <span className="chip mono dim" title="Лид пришёл из рекламы WhatsApp под скрытым ID (@lid). WhatsApp прячет номер таких переходов ради приватности — это не сбой синхронизации. Как только WhatsApp раскроет номер (контакт синкнётся / лид напишет ещё), бот подставит его автоматически.">
-                    📵 номер скрыт (реклама)
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <span className="chip mono dim" onClick={me?.role === 'viewer' ? undefined : setPhoneManual}
+                          style={me?.role === 'viewer' ? undefined : { cursor: 'pointer' }}
+                          title={me?.role === 'viewer' ? undefined : 'Нажмите, чтобы вписать номер вручную (как видите в WhatsApp)'}>
+                      📵 номер скрыт{me?.role === 'viewer' ? ' (реклама)' : ' — указать'}
+                    </span>
+                    <Help title="Почему номер скрыт" text="WhatsApp намеренно прячет номер рекламных лидов (пришедших по объявлению «Написать в WhatsApp») от внешнего доступа — ради приватности. В самом приложении WhatsApp вы номер видите, а боту он приходит скрытым: это ограничение WhatsApp, НЕ сбой системы. Система перепроверяет номер автоматически — при открытии карточки и периодически в фоне; часто он раскрывается, когда лид пишет ещё раз. Видите номер в WhatsApp — нажмите чип «указать» и впишите вручную: карточка сразу свяжется по номеру и склеит дубли." />
+                    {me?.role !== 'viewer' && (
+                      <button className="btn sm ghost" style={{ fontSize: 11, padding: '1px 6px' }}
+                              title="Перепроверить номер через WhatsApp сейчас" onClick={() => recheckPhone(false)}>🔄</button>
+                    )}
                   </span>
                 )}
                 <div style={{ flex: 1 }} />
+                {/* «Из WhatsApp» — наверху (а не в Действиях): выровнять карточку под реальный чат. */}
+                {detail.channel === 'whatsapp' && me?.role !== 'viewer' && (
+                  <button className="btn sm ghost" onClick={() => resyncWa(false)} disabled={resyncing}
+                          title="Подтянуть сообщения прямо из WhatsApp и выровнять карточку под реальный чат — порядок и пропуски (WhatsApp = источник правды)">
+                    {resyncing ? <span className="spin" /> : '🔄 Из WhatsApp'}
+                  </button>
+                )}
                 {me?.role === 'viewer'
                   ? <span className="chip" title="Роль «наблюдатель» — только просмотр, без изменений">👁 только просмотр</span>
                   : <button className="btn sm ghost" onClick={() => setActionsOpen(v => !v)}
@@ -408,14 +493,12 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                   {detail.operator_takeover ? '🤖 Вернуть боту' : '👤 Взять на себя'}
                 </button>
                 <Help title="Взять на себя" text="Бот замолкает в этом диалоге — отвечаете только вы. Лид ничего не заметит. Когда закончите, верните боту — он продолжит сам с того же места." />
+                <button className="btn sm" onClick={toggleNudgePause} disabled={busy}
+                        title="Авто-дожим: бот сам пишет молчуну по расписанию (Настройки → Каденция дожима). Пауза — для ЭТОГО лида бот дожимать не будет, пока не возобновите.">
+                  {detail.nudge_paused ? '▶️ Возобновить дожим' : '⏸ Пауза дожима'}
+                </button>
                 {detail.channel === 'whatsapp' && !detail.pending_wa_draft && (
                   <button className="btn sm" onClick={suggestReply} disabled={busy} title="Система прочитает всю переписку и предложит ответ">🔄 Предложить ответ</button>
-                )}
-                {detail.channel === 'whatsapp' && (
-                  <button className="btn sm" onClick={() => resyncWa(false)} disabled={resyncing}
-                          title="Подтянуть актуальные сообщения прямо из WhatsApp — заполнить пропуски, чтобы карточка совпадала с реальным чатом">
-                    {resyncing ? <span className="spin" /> : '🔄 Из WhatsApp'}
-                  </button>
                 )}
                 <Help title="Стадия" text="Где лид в вашей воронке. Бот двигает сделку сам по мере прогресса; вы можете перевести вручную здесь или перетащив карточку в Воронке. Изменение уходит и в CRM." />
                 <select value={stagePick} onChange={e => setStagePick(e.target.value)} style={{ padding: '4px 8px', fontSize: 12 }}>
@@ -547,10 +630,17 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                           </div>
                         )
                       })}
-                      {Object.keys(fieldEdits).length > 0 && (
-                        <button className="btn sm primary" style={{ alignSelf: 'flex-end' }}
-                                onClick={saveFields} disabled={busy}>💾 Сохранить поля</button>
-                      )}
+                      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 2 }}>
+                        {me?.role !== 'viewer' && (
+                          <button className="btn sm ghost" onClick={extractFields} disabled={busy}
+                                  title="Заполнить поля автоматически по истории переписки (бот прочитает диалог и подставит явно названное)">
+                            🪄 Заполнить по переписке
+                          </button>
+                        )}
+                        {Object.keys(fieldEdits).length > 0 && (
+                          <button className="btn sm primary" onClick={saveFields} disabled={busy}>💾 Сохранить поля</button>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -636,27 +726,12 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
         </div>
 
         {detail?.pending_call_suggestion?.at && (
-          <div style={{ borderTop: '1px solid var(--accent-border)', background: 'var(--accent-soft)', padding: '10px 14px' }}>
-            <div style={{ fontSize: 13, marginBottom: 6 }}>
-              <b>📅 Похоже, договорились о созвоне</b>
-              <div style={{ marginTop: 3 }}>Когда: <b>{detail.pending_call_suggestion.when_human}</b>{detail.pending_call_suggestion.medium ? ` · ${detail.pending_call_suggestion.medium}` : ''}</div>
-              {detail.pending_call_suggestion.reason && <div className="faint" style={{ fontSize: 11.5 }}>{detail.pending_call_suggestion.reason}</div>}
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn sm primary" disabled={busy} onClick={async () => {
-                setBusy(true)
-                try { await api.post(`/conversations/${convId}/call-suggestion`, { action: 'confirm', at: detail.pending_call_suggestion?.at, medium: detail.pending_call_suggestion?.medium }); showToast('📅 Событие создано в календаре'); await loadDetail() }
-                catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
-                finally { setBusy(false) }
-              }}>✅ Создать событие</button>
-              <button className="btn sm ghost" disabled={busy} onClick={async () => {
-                setBusy(true)
-                try { await api.post(`/conversations/${convId}/call-suggestion`, { action: 'dismiss' }); showToast('Предложение отклонено'); await loadDetail() }
-                catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
-                finally { setBusy(false) }
-              }}>🚫 Нет</button>
-            </div>
-          </div>
+          <CallSuggestionBlock
+            convId={convId}
+            suggestion={detail.pending_call_suggestion}
+            showToast={showToast}
+            reload={loadDetail}
+          />
         )}
 
         {detail?.wa_autonomous ? (
@@ -699,5 +774,76 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
         {toast && <div className={`toast ${toast.err ? 'err' : ''}`}>{toast.text}</div>}
       </div>
     </>
+  )
+}
+
+// Блок «договорились о созвоне»: дуальное время + ПРАВКА времени/канала перед
+// подтверждением (просьба владельца — «человек мог подправить вручную и подтвердить»).
+function CallSuggestionBlock({ convId, suggestion, showToast, reload }: {
+  convId: string
+  suggestion: { at?: string; when_human?: string; medium?: string | null; reason?: string }
+  showToast: (t: string, err?: boolean) => void
+  reload: () => Promise<void> | void
+}) {
+  const [busy, setBusy] = useState(false)
+  const [edit, setEdit] = useState(false)
+  const toLocal = (iso?: string) => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    const p = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
+  }
+  const [at, setAt] = useState(toLocal(suggestion.at))
+  const [medium, setMedium] = useState(suggestion.medium || '')
+
+  const confirm = async () => {
+    setBusy(true)
+    try {
+      const iso = edit && at ? new Date(at).toISOString() : suggestion.at
+      await api.post(`/conversations/${convId}/call-suggestion`, { action: 'confirm', at: iso, medium: medium || null })
+      showToast('📅 Событие создано в календаре')
+      await reload()
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+  const dismiss = async () => {
+    setBusy(true)
+    try {
+      await api.post(`/conversations/${convId}/call-suggestion`, { action: 'dismiss' })
+      showToast('Предложение отклонено')
+      await reload()
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div style={{ borderTop: '1px solid var(--accent-border)', background: 'var(--accent-soft)', padding: '10px 14px' }}>
+      <div style={{ fontSize: 13, marginBottom: 6 }}>
+        <b>📅 Похоже, договорились о созвоне</b>
+        <div style={{ marginTop: 3 }}>Когда: <b>{suggestion.when_human}</b>{suggestion.medium ? ` · ${suggestion.medium}` : ''}</div>
+        {suggestion.reason && <div className="faint" style={{ fontSize: 11.5 }}>{suggestion.reason}</div>}
+      </div>
+      {edit && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8, flexWrap: 'wrap' }}>
+          <input type="datetime-local" value={at} onChange={e => setAt(e.target.value)}
+                 style={{ fontSize: 12, padding: '3px 6px' }} />
+          <select value={medium} onChange={e => setMedium(e.target.value)} style={{ fontSize: 12, padding: '3px 6px' }}>
+            <option value="">Канал…</option>
+            <option value="WhatsApp">WhatsApp</option>
+            <option value="Телефон">Телефон</option>
+            <option value="Zoom">Zoom</option>
+            <option value="Google Meet">Google Meet</option>
+          </select>
+          <span className="faint" style={{ fontSize: 11 }}>время — в вашем поясе (браузера)</span>
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button className="btn sm primary" disabled={busy} onClick={confirm}>✅ Создать событие</button>
+        <button className="btn sm ghost" disabled={busy} onClick={() => setEdit(v => !v)}>
+          {edit ? '↩ Как есть' : '✏️ Изменить время'}
+        </button>
+        <button className="btn sm ghost" disabled={busy} onClick={dismiss}>🚫 Нет</button>
+      </div>
+    </div>
   )
 }

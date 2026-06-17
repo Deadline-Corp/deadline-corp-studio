@@ -3536,12 +3536,22 @@ async def _record_wa_operator_message(db: Session, normalized) -> None:
             _recent = (
                 db.query(MessageRow)
                 .filter(MessageRow.conversation_id == conv.id)
-                .order_by(MessageRow.created_at.desc()).limit(8).all()
+                .order_by(MessageRow.created_at.desc()).limit(20).all()
             )
             for _rm in _recent:
                 _role = _rm.role.value if hasattr(_rm.role, "value") else str(_rm.role)
                 if _role in ("assistant", "operator") and (_rm.content or "").strip() == _norm:
-                    log.info(f"[{str(conv.id)[:8]}] skip fromMe echo (наш исходящий) — без дубля")
+                    # ЭХО нашего же исходящего. КОРЕНЬ ДУБЛЕЙ: исходящая строка бота
+                    # сохранялась БЕЗ waha_id → reconcile/история позже не узнавали её и
+                    # добавляли эхо как новую строку. Фикс: заштамповать waha_id+delivered
+                    # на исходящую строку СЕЙЧАС — тогда дедуп по waha_id её узнает.
+                    if waha_id and not (_rm.extra_meta or {}).get("waha_id"):
+                        _mm = dict(_rm.extra_meta or {})
+                        _mm["waha_id"] = str(waha_id)
+                        _mm["delivered"] = True
+                        _rm.extra_meta = _mm
+                        db.commit()
+                    log.info(f"[{str(conv.id)[:8]}] skip fromMe echo — заштамповал waha_id на исходящий")
                     return
         # имя из notifyName, если ещё нет
         if normalized.username and not (customer.name or "").strip():

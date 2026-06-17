@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -62,7 +63,7 @@ def cleanup_wa_artifacts() -> dict:
     """
     from db.connection import session_scope
     from datetime import timedelta as _td
-    out = {"phantoms": 0, "echo_dupes": 0}
+    out = {"phantoms": 0, "echo_dupes": 0, "sfx_dupes": 0}
     _floor = datetime.min.replace(tzinfo=timezone.utc)
     # СВЕЖИЕ авто-ответы (<15 мин) НЕ трогаем: бот отправил, но fromMe-эхо (придёт с
     # waha_id) ещё не дошло — преждевременное удаление даёт мигание «пропало-вернулось»
@@ -97,17 +98,23 @@ def cleanup_wa_artifacts() -> dict:
             .filter(Conversation.channel == "whatsapp",
                     Message.role.in_(["assistant", "operator"])).all()
         )
+        def _rs(m):
+            return m.role.value if hasattr(m.role, "value") else str(m.role)
         by_key: dict = {}
         for m in wa_msgs:
-            content = (m.content or "").strip()
+            content = re.sub(r"\s+", " ", (m.content or "")).strip().lower()
             if content:
                 by_key.setdefault((m.conversation_id, content), []).append(m)
-        for group in by_key.values():
+        for (cid, content), group in by_key.items():
             if len(group) < 2:
                 continue
-            # эхо = есть И assistant, И operator с одинаковым текстом (наша же отправка
-            # вернулась из WhatsApp). Два operator («Хорошо» дважды от команды) — НЕ трогаем.
-            if not ({"assistant", "operator"} <= {m.role for m in group}):
+            # Дубль нашей же отправки: смешанная пара assistant+operator (эхо, любой длины)
+            # ЛИБО все «наши» с содержательным текстом (≥15 симв — длинное сообщение мы
+            # дважды не шлём; короткие «Хорошо»/«Да» могут законно повторяться → не трогаем).
+            roles = {_rs(m) for m in group}
+            mixed_echo = {"assistant", "operator"} <= roles
+            our_side = roles <= {"assistant", "operator"}
+            if not (mixed_echo or (our_side and len(content) >= 15)):
                 continue
             group.sort(key=lambda m: (
                 0 if (m.extra_meta or {}).get("waha_id") else 1,
@@ -116,7 +123,78 @@ def cleanup_wa_artifacts() -> dict:
             for dup in group[1:]:  # оставляем первый (с waha_id), остальные — дубли
                 db.delete(dup)
                 out["echo_dupes"] += 1
+        db.flush()
+        # 3) ДЕДУП по СУФФИКСУ message-id (любые роли): одно и то же сообщение WhatsApp,
+        #    сохранённое дважды — operator+operator (ручное+история), user+user (@lid/@c.us,
+        #    вебхук+история) и т.п. Суффикс message-id глобально уникален → одинаковый
+        #    суффикс = ОДНО сообщение. Эхо-дедуп выше берёт лишь assistant+operator по тексту;
+        #    здесь — всё остальное. Оставляем самую раннюю запись.
+        sfx_rows = (
+            db.query(Message).join(Conversation, Message.conversation_id == Conversation.id)
+            .filter(Conversation.channel == "whatsapp").all()
+        )
+        by_sfx: dict = {}
+        for m in sfx_rows:
+            meta = m.extra_meta or {}
+            sfx = _wa_msgid_suffix(meta.get("waha_id"))
+            if sfx:
+                by_sfx.setdefault((m.conversation_id, sfx), []).append(m)
+        for grp in by_sfx.values():
+            if len(grp) < 2:
+                continue
+            grp.sort(key=lambda m: (m.created_at or _floor))
+            for dup in grp[1:]:
+                db.delete(dup)
+                out["sfx_dupes"] += 1
     return out
+
+
+def _msg_id_key(meta: Any) -> Optional[str]:
+    """Канонический id входящего сообщения — для КАНАЛ-НЕЗАВИСИМОГО дедупа. У каждого
+    канала свой нативный message-id; берём его (WhatsApp — по суффиксу, чтобы @lid/@c.us
+    копии одного сообщения схлопнулись)."""
+    if not isinstance(meta, dict):
+        return None
+    w = meta.get("waha_id")
+    if w:
+        return "wa:" + (_wa_msgid_suffix(w) or str(w))
+    for k in ("telegram_msg_id", "wamid", "mid", "greenapi_msg_id", "comment_id"):
+        v = meta.get(k)
+        if v:
+            return f"{k}:{v}"
+    return None
+
+
+def dedup_messages_global(db: Optional[Session] = None) -> dict:
+    """КАНАЛ-НЕЗАВИСИМЫЙ дедуп: одно и то же сообщение, сохранённое дважды (ретрай
+    вебхука, история+живой приём, @lid/@c.us-копии), по нативному message-id. Покрывает
+    ВСЕ каналы (WhatsApp/Telegram/Instagram/Messenger) — под видение «одно окно»: новый
+    канал НЕ принесёт дубль-хаос. Чисто БД, безопасно в кроне. Оставляем самую раннюю."""
+    from db.connection import session_scope
+    out = {"removed": 0}
+    _floor = datetime.min.replace(tzinfo=timezone.utc)
+
+    def _run(s: Session) -> dict:
+        rows = s.execute(select(Message)).scalars().all()
+        groups: dict = {}
+        for m in rows:
+            key = _msg_id_key(m.extra_meta)
+            if key:
+                groups.setdefault((m.conversation_id, key), []).append(m)
+        for grp in groups.values():
+            if len(grp) < 2:
+                continue
+            grp.sort(key=lambda m: (m.created_at or _floor))
+            for dup in grp[1:]:
+                s.delete(dup)
+                out["removed"] += 1
+        s.flush()
+        return out
+
+    if db is not None:
+        return _run(db)
+    with session_scope() as s:
+        return _run(s)
 
 
 # Порядок стадий воронки — для слияния «только вперёд» (не откатываем стадию).
@@ -648,7 +726,7 @@ async def reconcile_wa_conversation(settings: Any, conv_id: Any, *, limit: int =
     СЕССИЮ НЕ держим во время сети (урок висов 06-15): короткая сессия на сбор данных →
     сеть вне сессии → короткая сессия на запись. Возвращает {ok, added, fetched, chat_id}."""
     from db.connection import session_scope
-    out: dict = {"ok": False, "added": 0, "fetched": 0, "chat_id": None}
+    out: dict = {"ok": False, "added": 0, "restamped": 0, "deduped": 0, "fetched": 0, "chat_id": None}
     base = getattr(settings, "waha_base_url", None)
     key = getattr(settings, "waha_api_key", None) or ""
     session = getattr(settings, "waha_session", None) or "default"
@@ -697,39 +775,161 @@ async def reconcile_wa_conversation(settings: Any, conv_id: Any, *, limit: int =
     items.sort(key=lambda x: x.get("ts") or 0)
     out["fetched"] = len(items)
 
-    # 3) короткая сессия: дописать недостающие (перечитываем актуальный набор —
-    # мог пополниться живым вебхуком между фазами)
+    # 3) короткая сессия: СВЕРКА (WAHA = источник правды). Делаем ДВА:
+    #    (а) дописать недостающие сообщения;
+    #    (б) ПЕРЕШТАМПОВАТЬ время существующих под РЕАЛЬНЫЙ порядок WhatsApp.
+    # КОРЕНЬ рассинхрона «панель ≠ WhatsApp» оказался НЕ в потере сообщений (они на
+    # месте), а в КРИВОМ created_at: живой вебхук и ручной ответ с телефона штампуют
+    # now() (время прихода эха), а НЕ время сообщения в WhatsApp; плюс реплики в одну
+    # секунду сортировались произвольно. Итог — те же реплики, но В ДРУГОМ ПОРЯДКЕ.
+    # Здесь выравниваем время по WAHA-порядку: монотонно возрастающее, реальное там,
+    # где известно (max(real_ts, пред+1мс) — одинаковые секунды не схлопываются и не
+    # переворачиваются). Идемпотентно: повторный проход даёт те же времена → без чурна.
+    from datetime import timedelta as _td
+    import re as _re
+
+    def _norm_txt(s: Any) -> str:
+        return _re.sub(r"\s+", " ", (s or "")).strip().lower()
+
+    def _role_str(m: Any) -> str:
+        return m.role.value if hasattr(m.role, "value") else str(m.role)
+
     with session_scope() as db:
-        cur_full = _existing_waha_ids(db, conv_id)
-        cur_suf = {s for s in (_wa_msgid_suffix(w) for w in cur_full) if s}
+        rows = db.execute(
+            select(Message).where(Message.conversation_id == conv_id)
+        ).scalars().all()
+        by_full: dict = {}
+        by_suf: dict = {}
+        # Строки БЕЗ waha_id (исходящие бота/ручные) по нормализованному тексту — чтобы
+        # эхо из WAHA «ЗАБРАЛО» их (проставило waha_id), а не плодило дубль. КОРЕНЬ
+        # ДУБЛЕЙ: бот-отправка сохранялась без waha_id → reconcile матчил только по
+        # waha_id → добавлял эхо как новую строку.
+        nowid_by_text: dict = {}
+        for r in rows:
+            meta = r.extra_meta if isinstance(r.extra_meta, dict) else {}
+            wid = meta.get("waha_id")
+            if wid:
+                by_full[str(wid)] = r
+                suf = _wa_msgid_suffix(wid)
+                if suf:
+                    by_suf.setdefault(suf, r)
+            else:
+                nowid_by_text.setdefault(_norm_txt(r.content), []).append(r)
+        prev_dt = None
         last_ts = None
         for it in items:
             wid = it.get("waha_id")
-            if wid:
-                if wid in cur_full:
-                    continue
-                suf = _wa_msgid_suffix(wid)
-                if suf and suf in cur_suf:
-                    continue
-            created = _ts_to_dt(it.get("ts")) or datetime.now(timezone.utc)
-            db.add(Message(
-                conversation_id=conv_id, role=it["role"], content=it["content"],
-                extra_meta={"waha_id": wid, "source": "wa_resync", "wa_type": it.get("type")},
-                created_at=created,
+            real = _ts_to_dt(it.get("ts"))
+            if real is None:
+                real = (prev_dt + _td(milliseconds=1)) if prev_dt else datetime.now(timezone.utc)
+            # строго возрастающее в порядке WhatsApp, сохраняя реальные интервалы
+            assigned = real if (prev_dt is None or real > prev_dt) else prev_dt + _td(milliseconds=1)
+            prev_dt = assigned
+            existing = by_full.get(str(wid)) if wid else None
+            if existing is None and wid:
+                existing = by_suf.get(_wa_msgid_suffix(wid))
+            if existing is None and wid:
+                # нет совпадения по waha_id → возможно это ЭХО нашей же отправки,
+                # сохранённой БЕЗ waha_id. Забрать её (проставить waha_id), НЕ плодить дубль.
+                cands = nowid_by_text.get(_norm_txt(it["content"]))
+                if cands:
+                    for r in list(cands):
+                        rc = r.created_at
+                        if rc is not None and rc.tzinfo is None:
+                            rc = rc.replace(tzinfo=timezone.utc)
+                        if rc is None or abs((rc - assigned).total_seconds()) <= 180:
+                            mm = dict(r.extra_meta or {})
+                            mm["waha_id"] = str(wid)
+                            mm["delivered"] = True
+                            r.extra_meta = mm
+                            by_full[str(wid)] = r
+                            _s = _wa_msgid_suffix(wid)
+                            if _s:
+                                by_suf.setdefault(_s, r)
+                            cands.remove(r)
+                            existing = r
+                            break
+            if existing is not None:
+                cur = existing.created_at
+                if cur is not None and cur.tzinfo is None:
+                    cur = cur.replace(tzinfo=timezone.utc)
+                if cur is None or abs((cur - assigned).total_seconds()) >= 0.001:
+                    existing.created_at = assigned  # выровнять под порядок WhatsApp
+                    out["restamped"] += 1
+            else:
+                m = Message(
+                    conversation_id=conv_id, role=it["role"], content=it["content"],
+                    extra_meta={"waha_id": wid, "source": "wa_resync", "wa_type": it.get("type")},
+                    created_at=assigned,
+                )
+                db.add(m)
+                if wid:
+                    by_full[str(wid)] = m
+                    suf = _wa_msgid_suffix(wid)
+                    if suf:
+                        by_suf.setdefault(suf, m)
+                out["added"] += 1
+            if last_ts is None or assigned > last_ts:
+                last_ts = assigned
+        db.flush()
+        _floor = datetime.min.replace(tzinfo=timezone.utc)
+        # ДЕДУП-1 (по СУФФИКСУ message-id): одно и то же сообщение WhatsApp, сохранённое
+        # дважды (разные префиксы waha_id @lid/@c.us, или ручное+история, или
+        # operator+operator) — суффикс message-id одинаков → это буквально ОДНО
+        # сообщение. Ловит дубли, которые text+role-дедуп не берёт (operator+operator,
+        # user+user). Суффикс message-id глобально уникален → безопасно.
+        all_msgs = db.execute(
+            select(Message).where(Message.conversation_id == conv_id)
+        ).scalars().all()
+        by_sfx: dict = {}
+        for r in all_msgs:
+            meta = r.extra_meta if isinstance(r.extra_meta, dict) else {}
+            sfx = _wa_msgid_suffix(meta.get("waha_id"))
+            if sfx:
+                by_sfx.setdefault(sfx, []).append(r)
+        for sgrp in by_sfx.values():
+            if len(sgrp) < 2:
+                continue
+            sgrp.sort(key=lambda m: (m.created_at or _floor))  # оставляем самую раннюю
+            for dup in sgrp[1:]:
+                db.delete(dup)
+                out["deduped"] += 1
+        db.flush()
+        # ДЕДУП-2 (по ТЕКСТУ, assistant+operator): эхо нашей же отправки, где у одной из
+        # строк НЕТ waha_id (бот-отправка ещё не «заклеймлена») → суффикс не сматчить.
+        # Одинаковый текст у assistant И operator → оставить ОДНУ (с waha_id).
+        fresh = db.execute(
+            select(Message).where(Message.conversation_id == conv_id,
+                                  Message.role.in_(["assistant", "operator"]))
+        ).scalars().all()
+        groups: dict = {}
+        for r in fresh:
+            t = _norm_txt(r.content)
+            if t:
+                groups.setdefault(t, []).append(r)
+        for t, grp in groups.items():
+            if len(grp) < 2:
+                continue
+            roles = {_role_str(m) for m in grp}
+            # Дубль нашей же отправки: либо смешанная пара assistant+operator (эхо, любой
+            # длины), либо все «наши» (assistant/operator) с СОДЕРЖАТЕЛЬНЫМ текстом (≥15
+            # симв — одно и то же длинное сообщение мы дважды не шлём; короткие «Хорошо»/
+            # «Да» могут законно повторяться → их не трогаем).
+            mixed_echo = {"assistant", "operator"} <= roles
+            our_side = roles <= {"assistant", "operator"}
+            if not (mixed_echo or (our_side and len(t) >= 15)):
+                continue
+            grp.sort(key=lambda m: (
+                0 if (m.extra_meta or {}).get("waha_id") else 1,
+                (m.created_at or _floor),
             ))
-            if wid:
-                cur_full.add(wid)
-                suf = _wa_msgid_suffix(wid)
-                if suf:
-                    cur_suf.add(suf)
-            out["added"] += 1
-            if last_ts is None or created > last_ts:
-                last_ts = created
-        if out["added"]:
+            for dup in grp[1:]:
+                db.delete(dup)
+                out["deduped"] += 1
+        if last_ts is not None:
             conv = db.get(Conversation, conv_id)
-            if conv is not None and last_ts is not None:
-                if not conv.last_message_at or last_ts > conv.last_message_at:
-                    conv.last_message_at = last_ts
+            if conv is not None and (not conv.last_message_at or last_ts > conv.last_message_at):
+                conv.last_message_at = last_ts
     out["ok"] = True
     return out
 
