@@ -770,6 +770,13 @@ async def conversation_takeover(
 
     conv, _cust = _get_conv_or_404(db, conv_id)
     await set_takeover_with_mirror(db, conv, req.on, _main.settings, source="admin-ui")
+    try:
+        from services.activity_log import log_event
+        log_event("bot", "Оператор взял диалог на себя (бот замолчал)" if req.on
+                  else "Диалог возвращён боту", level="info", actor="operator",
+                  conversation_id=conv.id, customer_id=conv.customer_id)
+    except Exception:  # noqa: BLE001
+        pass
     return {"ok": True, "operator_takeover": req.on}
 
 
@@ -1819,6 +1826,15 @@ async def _run_send_sleeping_bg(conv_ids: list) -> None:
         _WA_SEND_STATE["running"] = False
         from datetime import datetime as _dt2, timezone as _tz2
         _WA_SEND_STATE["finished_at"] = _dt2.now(_tz2.utc).isoformat()
+        try:
+            from services.activity_log import log_event
+            _st = _WA_SEND_STATE
+            log_event("send", f"Отправка спящим: доставлено {_st['sent']}, ошибок {_st['errors']}, "
+                              f"пропущено {_st['skipped']} из {_st['total']}",
+                      level="warn" if _st["errors"] else "info", actor="operator",
+                      meta={k: _st.get(k) for k in ("sent", "errors", "skipped", "total")})
+        except Exception:  # noqa: BLE001
+            pass
 
 
 class SendSleepingRequest(BaseModel):
@@ -1912,6 +1928,15 @@ async def _run_mass_nudge_bg(conv_ids: list, template: str) -> None:
         _WA_SEND_STATE["running"] = False
         from datetime import datetime as _dt2, timezone as _tz2
         _WA_SEND_STATE["finished_at"] = _dt2.now(_tz2.utc).isoformat()
+        try:
+            from services.activity_log import log_event
+            _st = _WA_SEND_STATE
+            log_event("send", f"Массовый пинок: доставлено {_st['sent']}, ошибок {_st['errors']}, "
+                              f"пропущено {_st['skipped']} из {_st['total']}",
+                      level="warn" if _st["errors"] else "info", actor="operator",
+                      meta={k: _st.get(k) for k in ("sent", "errors", "skipped", "total")})
+        except Exception:  # noqa: BLE001
+            pass
 
 
 class MassNudgeRequest(BaseModel):
@@ -3749,6 +3774,72 @@ async def cron_sweep(_: None = Depends(_verify_owner)):
     except Exception as e:  # noqa: BLE001
         out["wa"] = {"error": str(e)}
     return out
+
+
+# ============================================================================
+# ACTIVITY LOG — журнал активности системы (что/как/почему/кто) для панели
+# ============================================================================
+
+@router.get("/logs")
+async def activity_logs(
+    category: Optional[str] = None,
+    level: Optional[str] = None,
+    q: Optional[str] = None,
+    conversation_id: Optional[str] = None,
+    before: Optional[str] = None,
+    limit: int = 80,
+    _: None = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    """Журнал активности для расширенных настроек: причины ошибок/изменений, кто что
+    сделал и почему. Фильтры (категория/уровень/поиск/диалог) + курсор по времени
+    (before). Только владелец — журнал может содержать чувствительное «кто что менял»."""
+    from db.models import ActivityLog
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    limit = max(1, min(limit, 200))
+    qry = db.query(ActivityLog)
+    if category:
+        qry = qry.filter(ActivityLog.category == category)
+    if level:
+        qry = qry.filter(ActivityLog.level == level)
+    if conversation_id:
+        try:
+            qry = qry.filter(ActivityLog.conversation_id == UUID(conversation_id))
+        except (ValueError, AttributeError, TypeError):
+            pass
+    if q and q.strip():
+        qry = qry.filter(ActivityLog.summary.ilike(f"%{q.strip()}%"))
+    if before:
+        qry = qry.filter(ActivityLog.created_at < _parse_iso(before))
+    rows = qry.order_by(ActivityLog.created_at.desc()).limit(limit).all()
+    # Сводка за сутки — для бейджей фильтра + индикатора ошибок.
+    since = _dt.now(_tz.utc) - _td(days=1)
+    cat_counts = dict(
+        db.query(ActivityLog.category, sql_func.count())
+        .filter(ActivityLog.created_at >= since)
+        .group_by(ActivityLog.category).all()
+    )
+    err_24h = (
+        db.query(sql_func.count()).select_from(ActivityLog)
+        .filter(ActivityLog.created_at >= since, ActivityLog.level == "error").scalar()
+    ) or 0
+    return {
+        "items": [
+            {
+                "id": str(r.id),
+                "at": r.created_at.isoformat() if r.created_at else None,
+                "level": r.level, "category": r.category, "actor": r.actor,
+                "summary": r.summary,
+                "conversation_id": str(r.conversation_id) if r.conversation_id else None,
+                "meta": r.meta,
+            }
+            for r in rows
+        ],
+        "cat_counts_24h": {str(k): int(v) for k, v in cat_counts.items()},
+        "errors_24h": int(err_24h),
+        "next_before": (rows[-1].created_at.isoformat()
+                        if len(rows) == limit and rows[-1].created_at else None),
+    }
 
 
 # ============================================================================

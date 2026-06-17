@@ -399,6 +399,10 @@ function WorkspaceCard() {
             <button className="btn sm ghost" onClick={() => { location.hash = '#/onboarding' }}>
               ↻ Мастер настройки заново
             </button>
+            <button className="btn sm ghost" onClick={() => { location.hash = '#/logs' }}
+                    title="История работы приложения: что/как/почему/кто — причины ошибок и изменений">
+              📋 Логи системы
+            </button>
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, cursor: 'pointer' }}>
             <input type="checkbox" defaultChecked={hintsEnabled()}

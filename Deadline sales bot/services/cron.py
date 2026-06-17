@@ -170,6 +170,14 @@ def run_wa_maintenance() -> dict:
                     logger.info("[cron] pruned %s old processed_updates", _pr.rowcount)
         except Exception as _pe:  # noqa: BLE001
             logger.warning("[cron] processed_updates prune failed: %s", _pe)
+        # Журнал активности: хранение 30 дней (не растёт без предела).
+        try:
+            from services.activity_log import prune as _alp
+            _n = _alp(days=30)
+            if _n:
+                summary["pruned_activity_log"] = _n
+        except Exception as _ape:  # noqa: BLE001
+            logger.warning("[cron] activity_log prune failed: %s", _ape)
     except Exception as exc:  # noqa: BLE001
         logger.warning("[cron] wa maintenance failed (non-fatal): %s", exc)
         summary["error"] = str(exc)

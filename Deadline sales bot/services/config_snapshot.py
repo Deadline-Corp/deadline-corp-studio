@@ -93,7 +93,16 @@ def snapshot_now(label: str, created_by: str = "system", reason: Optional[str] =
         from db.connection import session_scope
         with session_scope() as db:
             snap = capture(db, label, created_by, reason)
-            return str(snap.id)
+            _snap_id = str(snap.id)
+        # Журнал активности: КАЖДОЕ конфиг-меняющее действие проходит через снимок →
+        # одна точка фиксирует «кто что менял» для панели логов (Фаза 8).
+        try:
+            from services.activity_log import log_event
+            log_event("config", label, level="info", actor=created_by or "system",
+                      meta={"reason": reason, "snapshot_id": _snap_id})
+        except Exception:  # noqa: BLE001
+            pass
+        return _snap_id
     except Exception as e:  # noqa: BLE001
         log.warning("config_snapshot: snapshot_now failed (%s): %s", reason or label, e)
         return None

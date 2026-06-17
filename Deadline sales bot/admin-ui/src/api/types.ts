@@ -166,6 +166,24 @@ export interface Msg {
   extra_meta: any
 }
 
+export interface ActivityLogItem {
+  id: string
+  at: string | null
+  level: 'info' | 'warn' | 'error'
+  category: string
+  actor: string
+  summary: string
+  conversation_id: string | null
+  meta: any
+}
+
+export interface LogsResp {
+  items: ActivityLogItem[]
+  cat_counts_24h: Record<string, number>
+  errors_24h: number
+  next_before: string | null
+}
+
 export interface PromptVersionItem {
   id: string
   is_active: boolean

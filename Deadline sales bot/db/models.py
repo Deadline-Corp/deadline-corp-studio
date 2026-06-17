@@ -789,6 +789,39 @@ class ProcessedUpdate(Base):
         return f"<ProcessedUpdate {self.event_key}>"
 
 
+class ActivityLog(Base):
+    """Журнал активности системы для админ-панели: что/как/почему/кто — чтобы
+    находить причины ошибок, изменений и событий без копания в Railway-логах.
+
+    Пишется хелпером services.activity_log.log_event из ключевых точек: смена
+    конфигурации (кто и что поменял), ошибки (где/что), решения бота (стадия/созвон/
+    дожим), действия оператора (takeover, одобрение черновика), массовые отправки,
+    подключение каналов. Вспомогательная таблица — не должна ломать бизнес-логику.
+    Чистится в кроне (хранение N дней)."""
+    __tablename__ = "activity_log"
+    __table_args__ = (
+        Index("ix_activity_log_created", "created_at"),
+        Index("ix_activity_log_cat_created", "category", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False, index=True
+    )
+    level: Mapped[str] = mapped_column(String(10), nullable=False, server_default="info")  # info|warn|error
+    category: Mapped[str] = mapped_column(String(24), nullable=False)  # stage|bot|error|config|send|auth|channel|task|system|lead
+    actor: Mapped[str] = mapped_column(String(60), nullable=False, server_default="system")  # bot|admin:<name>|operator|automation|system|lead
+    summary: Mapped[str] = mapped_column(String(400), nullable=False)
+    conversation_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    customer_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    meta: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<ActivityLog {self.level}/{self.category} {self.summary[:40]}>"
+
+
 class LeadSubmission(Base):
     """Каждая отправка лид-формы (deadlinecorp.com/lead-form/) — сырой
     исторический след.

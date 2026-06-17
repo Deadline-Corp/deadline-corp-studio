@@ -342,6 +342,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.exception_handler(Exception)
+async def _log_unhandled_exception(request, exc: Exception):
+    """Любая НЕперехваченная ошибка в обработчике → в журнал активности (category=error)
+    + 500. Чтобы причины сбоев были видны прямо в панели (Настройки → Логи), а не только
+    в Railway-логах. HTTPException сюда НЕ попадает (у него свой обработчик)."""
+    from fastapi.responses import JSONResponse
+    try:
+        from services.activity_log import log_event
+        log_event("error", f"{type(exc).__name__}: {str(exc)[:240]}", level="error",
+                  actor="system",
+                  meta={"path": str(getattr(request, "url", "")), "method": getattr(request, "method", "")})
+    except Exception:  # noqa: BLE001
+        pass
+    log.error("unhandled %s on %s: %s", type(exc).__name__,
+              getattr(getattr(request, "url", None), "path", "?"), exc)
+    return JSONResponse(status_code=500, content={"detail": "internal error"})
+
 # ---- Admin UI (визуальная панель управления, 2026-06-11) ----
 # API-слой в admin_api.py (Bearer ADMIN_UI_TOKEN / TRAINING_AUTH_TOKEN),
 # SPA (React, admin-ui/dist) монтируется same-origin → CORS не участвует.
@@ -3678,6 +3696,12 @@ async def _process_wa_payload(payload: dict, engine: str) -> None:
             await _brain_bg(normalized.channel_conversation_id)
         except Exception as e:  # noqa: BLE001
             log.warning(f"_process_wa_payload({engine}) failed: {e}")
+            try:
+                from services.activity_log import log_event
+                log_event("error", f"Сбой обработки входящего {engine}: {type(e).__name__}: {str(e)[:200]}",
+                          level="error", actor="system", meta={"engine": engine})
+            except Exception:  # noqa: BLE001
+                pass
 
 
 @app.post("/webhooks/greenapi")
