@@ -42,10 +42,23 @@ const MODE: Record<string, { e: string; t: string; c?: string }> = {
   wait: { e: '⏸', t: 'ждём лида' },
   unclear: { e: '🆘', t: 'нужна помощь', c: '#e0524f' },
 }
+// Лид как единица умного задачника (зона = что с ним делать прямо сейчас).
+type Lead = {
+  conversation_id: string; name: string; stage: string | null; stage_label: string
+  temperature: string | null; channel: string; last_message_at: string | null
+  silent_hours: number; mode: string | null; kind: string | null; label: string
+  draft: string; reason: string; wa_autonomous: boolean; bot_capable: boolean
+  bot_status: string; bot_status_label: string
+  has_human_task: boolean; task_id: string | null; task_due: string | null; task_text: string | null
+}
+type ZoneId = 'approve_now' | 'your_turn' | 'bot_leading' | 'stuck' | 'waiting'
 type Board = {
-  summary: { overdue: number; today: number; no_task: number; bot: number; human: number }
+  summary: { overdue: number; today: number; no_task: number; bot: number; human: number
+    approve_now: number; your_turn: number; bot_leading: number; stuck: number }
   buckets: Record<'overdue' | 'today' | 'tomorrow' | 'week' | 'later', BoardTask[]>
   no_task_leads: NoTaskLead[]
+  zones: { approve_now: Lead[]; your_turn: Lead[]; bot_leading: Lead[]; waiting: Lead[] }
+  stuck: Lead[]
 }
 
 const StageChip = ({ s }: { s: string }) =>
@@ -85,9 +98,9 @@ export function Tasks() {
 function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   const [board, setBoard] = useState<Board | null>(null)
   const [busy, setBusy] = useState('')
-  // Фильтр-фокус: клик по счётчику вверху → показать только эту группу (убрать лишнее).
-  const [filter, setFilter] = useState<'overdue' | 'today' | 'no_task' | null>(null)
-  const [menuFor, setMenuFor] = useState<string | null>(null) // открытое выпадающее меню задачи
+  // Фильтр-фокус: клик по счётчику-зоне вверху → показать только эту зону.
+  const [filter, setFilter] = useState<ZoneId | null>(null)
+  const [waitOpen, setWaitOpen] = useState(false)  // зона «Ждём лида» свёрнута по умолчанию
   const { openConversation } = useDrawer()
 
   const load = async () => {
@@ -118,144 +131,125 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   }, days === 1 ? 'Перенесено на завтра' : `Перенесено на +${days}д`)
   const markLostTask = (convId: string) =>
     act(() => api.post(`/conversations/${convId}/stage`, { to_stage: 'lost', lost_reason: 'delayed' }), '✗ Не сложилось')
-
-  // Пункт выпадающего меню действий задачи.
-  const MenuBtn = ({ children, onClick, danger }: { children: any; onClick: () => void; danger?: boolean }) => (
-    <button className="btn sm ghost" disabled={!!busy} onClick={onClick}
-            style={{ justifyContent: 'flex-start', textAlign: 'left', width: '100%',
-                     color: danger ? 'var(--danger)' : undefined }}>{children}</button>
-  )
+  // Одобрить готовый черновик бота (зона «Одобри сейчас»): отправить / отклонить.
+  const approveDraft = (convId: string) => act(() => api.post(`/conversations/${convId}/wa-draft`, { action: 'send' }), '✅ Ответ отправлен')
+  const rejectDraft = (convId: string) => act(() => api.post(`/conversations/${convId}/wa-draft`, { action: 'reject' }), '🚫 Черновик отклонён')
+  // Вернуть автопилотного лида на ручное одобрение (зона «Бот ведёт»).
+  const toApproval = (convId: string) => act(() => api.post(`/conversations/${convId}/wa-autonomous`, { on: false }), '⏸ Вернул на одобрение')
 
   if (!board) return <div className="empty"><span className="spin" /> Загрузка…</div>
 
-  const Task = (t: BoardTask) => (
-    <div className={`conv-row${t.wa_autonomous ? ' autonomous' : ''}`} key={t.id} style={{ cursor: 'default' }}>
-      <span style={{ fontSize: 17 }}
-            title={t.wa_autonomous ? 'Бот ведёт диалог сам' : (t.who === 'bot' ? 'Бот сделает сам' : 'За тобой')}>
-        {t.wa_autonomous || t.who === 'bot' ? '🤖' : '👤'}
-      </span>
-      <div className="c-main" style={{ cursor: t.conversation_id ? 'pointer' : 'default' }}
-           onClick={() => t.conversation_id && openConversation(t.conversation_id)}>
+  // Одна карточка лида. Кнопки зависят от зоны.
+  const LeadCard = (l: Lead, zone: ZoneId) => (
+    <div className={`conv-row${l.wa_autonomous ? ' autonomous' : ''}`} key={l.conversation_id} style={{ cursor: 'default' }}>
+      <div className="c-main" style={{ cursor: 'pointer' }} onClick={() => openConversation(l.conversation_id)}>
         <div className="c-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          <TempDot t={t.temperature} />{t.name}
-          <StageChip s={t.stage_label} />
-          {t.wa_autonomous && <span className="chip accent" style={{ fontSize: 10 }}>🤖 ведёт</span>}
-          <span className="chip" style={{ fontSize: 10.5 }}>{TYPE_LABELS[t.action_type] ?? t.action_type}</span>
-          <span className="faint" style={{ fontWeight: 400 }}>{CHANNEL_META[t.channel]?.icon}</span>
+          <TempDot t={l.temperature} />{l.name}
+          <StageChip s={l.stage_label} />
+          <span className="chip" style={{ fontSize: 10 }} title="Статус автоматизации по лиду">{l.bot_status_label}</span>
+          <span className="faint" style={{ fontWeight: 400 }}>{CHANNEL_META[l.channel]?.icon}</span>
         </div>
-        <div className="c-preview">{t.text || '—'}</div>
+        <div className="c-preview">
+          {zone === 'approve_now'
+            ? (l.draft
+                ? <i>✍️ «{l.draft.slice(0, 130)}{l.draft.length > 130 ? '…' : ''}»</i>
+                : <i>🤖 бот подготовил ответ — нажми ✅ или открой</i>)
+            : zone === 'bot_leading'
+              ? <>🤖 ведёт сам{l.last_message_at ? ` · последнее ${fmtAgo(l.last_message_at)} назад` : ''}</>
+              : (l.label || l.task_text || (l.last_message_at ? `молчит ${Math.round(l.silent_hours)}ч` : '—'))}
+        </div>
+        {l.reason && <div className="faint" style={{ fontSize: 11 }}>{l.reason}</div>}
       </div>
-      <div className="c-meta" style={{ position: 'relative' }}>
-        <span className="chip">{t.due_at ? fmtTime(t.due_at) : '—'}</span>
-        <div style={{ display: 'flex', gap: 5 }}>
-          {t.who === 'human' && <button className="btn sm" onClick={() => done(t.id)} disabled={!!busy}>✓ Сделано</button>}
-          <button className="btn sm ghost" title="Действия" onClick={() => setMenuFor(menuFor === t.id ? null : t.id)} disabled={!!busy}>⋯</button>
+      <div className="c-meta">
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {zone === 'approve_now' && <>
+            <button className="btn sm primary" disabled={!!busy} title="Отправить ответ бота лиду" onClick={() => approveDraft(l.conversation_id)}>✅ Одобрить</button>
+            <button className="btn sm ghost" disabled={!!busy} title="Изменить перед отправкой" onClick={() => openConversation(l.conversation_id)}>✏️</button>
+            <button className="btn sm ghost" disabled={!!busy} title="Отклонить черновик" onClick={() => rejectDraft(l.conversation_id)}>🚫</button>
+          </>}
+          {zone === 'your_turn' && <>
+            {l.task_id && <button className="btn sm" disabled={!!busy} onClick={() => done(l.task_id!)}>✓ Сделано</button>}
+            {l.bot_capable && !l.wa_autonomous && <button className="btn sm" disabled={!!busy} onClick={() => botLead(l.conversation_id)}>🤖 Боту</button>}
+            <button className="btn sm ghost" onClick={() => openConversation(l.conversation_id)}>Открыть</button>
+          </>}
+          {zone === 'bot_leading' && <>
+            <button className="btn sm ghost" disabled={!!busy} title="Вернуть на ручное одобрение" onClick={() => toApproval(l.conversation_id)}>⏸ На одобрение</button>
+            <button className="btn sm ghost" onClick={() => openConversation(l.conversation_id)}>Открыть</button>
+          </>}
+          {(zone === 'waiting' || zone === 'stuck') && <>
+            {l.bot_capable && !l.wa_autonomous && <button className="btn sm" disabled={!!busy} onClick={() => botLead(l.conversation_id)}>🤖 Боту</button>}
+            <button className="btn sm ghost" disabled={!!busy} title="В «Не сложилось»" onClick={() => markLostTask(l.conversation_id)}>✗</button>
+            <button className="btn sm ghost" onClick={() => openConversation(l.conversation_id)}>Открыть</button>
+          </>}
         </div>
-        {menuFor === t.id && (
-          <div onMouseLeave={() => setMenuFor(null)}
-               style={{ position: 'absolute', top: '100%', right: 0, zIndex: 30, marginTop: 4,
-                        background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8,
-                        boxShadow: '0 8px 28px rgba(0,0,0,.4)', padding: 6, display: 'flex',
-                        flexDirection: 'column', gap: 2, minWidth: 210 }}>
-            {t.who === 'human' && <MenuBtn onClick={() => { done(t.id); setMenuFor(null) }}>✓ Отметить сделанной</MenuBtn>}
-            {t.conversation_id && <MenuBtn onClick={() => { openConversation(t.conversation_id!); setMenuFor(null) }}>📂 Открыть карточку</MenuBtn>}
-            <MenuBtn onClick={() => { reschedule(t.id, 1); setMenuFor(null) }}>⏰ Перенести на завтра</MenuBtn>
-            <MenuBtn onClick={() => { reschedule(t.id, 3); setMenuFor(null) }}>⏰ Перенести на +3 дня</MenuBtn>
-            {t.conversation_id && !t.wa_autonomous &&
-              <MenuBtn onClick={() => { botLead(t.conversation_id!); setMenuFor(null) }}>🤖 Передать боту</MenuBtn>}
-            {t.conversation_id &&
-              <MenuBtn danger onClick={() => { markLostTask(t.conversation_id!); setMenuFor(null) }}>✗ В «Не сложилось»</MenuBtn>}
-            <MenuBtn danger onClick={() => { cancel(t.id); setMenuFor(null) }}>✕ Снять задачу</MenuBtn>
-          </div>
-        )}
       </div>
     </div>
   )
 
-  const Bucket = ({ title, items, cls }: { title: string; items: BoardTask[]; cls?: string }) =>
-    items.length === 0 ? null : (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <b style={{ fontSize: 13 }} className={cls}>{title} ({items.length})</b>
-        {items.map(Task)}
+  const Zone = ({ id, title, hint, items, color, action }: {
+    id: ZoneId; title: string; hint?: string; items: Lead[]; color?: string; action?: JSX.Element
+  }) => items.length === 0 ? null : (
+    <div className="card" style={{ padding: 12, borderColor: color }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <b style={{ fontSize: 13 }}>{title} ({items.length})</b>
+        <span style={{ flex: 1 }} />{action}
       </div>
-    )
+      {hint && <div className="faint" style={{ fontSize: 11.5, margin: '4px 0 8px' }}>{hint}</div>}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: hint ? 0 : 8 }}>
+        {items.map(l => LeadCard(l, id))}
+      </div>
+    </div>
+  )
 
-  const b = board.buckets
-  const totalTasks = b.overdue.length + b.today.length + b.tomorrow.length + b.week.length + b.later.length
+  const sm = board.summary
+  const z = board.zones
+  const ZChip = ({ id, label, cls }: { id: ZoneId; label: string; cls?: string }) => (
+    <span className={`chip ${cls ?? ''}`} style={{ cursor: 'pointer', boxShadow: filter === id ? '0 0 0 2px var(--accent)' : 'none' }}
+          onClick={() => setFilter(filter === id ? null : id)}>{label}</span>
+  )
+  const empty = sm.approve_now + sm.your_turn + sm.bot_leading + sm.stuck + z.waiting.length === 0
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <span className="chip danger" title="Показать только просроченные"
-              style={{ cursor: 'pointer', boxShadow: filter === 'overdue' ? '0 0 0 2px var(--danger)' : 'none' }}
-              onClick={() => setFilter(filter === 'overdue' ? null : 'overdue')}>🔴 Просрочено {board.summary.overdue}</span>
-        <span className="chip warn" title="Показать только сегодняшние"
-              style={{ cursor: 'pointer', boxShadow: filter === 'today' ? '0 0 0 2px var(--warn, #e0a400)' : 'none' }}
-              onClick={() => setFilter(filter === 'today' ? null : 'today')}>🟡 Сегодня {board.summary.today}</span>
-        <span className="chip" title="Показать только лидов без задачи"
-              style={{ cursor: 'pointer', boxShadow: filter === 'no_task' ? '0 0 0 2px var(--accent)' : 'none' }}
-              onClick={() => setFilter(filter === 'no_task' ? null : 'no_task')}>🆕 Без задачи {board.summary.no_task}</span>
-        <span className="chip" title="🤖 — сколько лидов ведёт бот сам · 👤 — сколько задач на тебе">🤖 ведёт {board.summary.bot} · 👤 {board.summary.human}</span>
-        {filter && <button className="btn sm ghost" onClick={() => setFilter(null)} title="Сбросить фильтр">✕ показать всё</button>}
+        <ZChip id="approve_now" cls="warn" label={`⏳ Одобри ${sm.approve_now}`} />
+        <ZChip id="your_turn" label={`👤 Твой ход ${sm.your_turn}`} />
+        <ZChip id="bot_leading" cls="ok" label={`🤖 Бот ведёт ${sm.bot_leading}`} />
+        <ZChip id="stuck" cls="danger" label={`⚠️ Затык ${sm.stuck}`} />
+        {filter && <button className="btn sm ghost" onClick={() => setFilter(null)}>✕ показать всё</button>}
         <span style={{ flex: 1 }} />
-        <button className="btn sm" onClick={sweep} disabled={!!busy}>▶ Проверить задачи сейчас</button>
-        <Help title="Проверить задачи сейчас" text="Бот сам проверяет задачи и напоминания каждые ~10 минут (дожим молчунам, напоминания о созвонах). Эта кнопка запускает проверку немедленно — на случай, если ждать не хочется." />
+        <button className="btn sm" onClick={sweep} disabled={!!busy}>▶ Проверить сейчас</button>
+        <Help title="Проверить сейчас" text="Бот сам каждые ~10 минут: дожимает молчунов, шлёт напоминания, чинит рассинхроны. Кнопка запускает проверку немедленно." />
       </div>
 
-      {!filter && <SleepingPanel showToast={showToast} />}
+      {(!filter || filter === 'stuck') &&
+        <Zone id="stuck" color="var(--danger)" items={board.stuck}
+              title="⚠️ Затыки — лиды без движения и без задачи"
+              hint="Ими никто не занимается: ни бот, ни задача, давно молчат. Реши: передать боту, написать самому или закрыть." />}
+      {(!filter || filter === 'approve_now') &&
+        <Zone id="approve_now" color="var(--accent-border)" items={z.approve_now}
+              title="⏳ Одобри сейчас" hint="Бот подготовил ответ и ждёт твоё «ОК» — один клик ✅." />}
+      {(!filter || filter === 'your_turn') &&
+        <Zone id="your_turn" items={z.your_turn}
+              title="👤 Твой ход" hint="Нужен человек: позвонить, выставить КП, ответить на сложное."
+              action={<button className="btn sm primary" disabled={!!busy} onClick={generate} title="Бот прочитает диалоги без шага и предложит, что делать">🤖 Разобрать новых</button>} />}
+      {(!filter || filter === 'bot_leading') &&
+        <Zone id="bot_leading" items={z.bot_leading}
+              title="🤖 Бот ведёт сам" hint="Автопилот — делать ничего не надо, видно статус. Можно вернуть на одобрение." />}
 
-      {board.no_task_leads.length > 0 && (!filter || filter === 'no_task') && (
-        <div className="card" style={{ padding: 12, borderColor: 'var(--accent-border)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-            <b style={{ fontSize: 13 }}>🆕 Лиды без задачи ({board.no_task_leads.length})</b>
-            <span style={{ flex: 1 }} />
-            <button className="btn sm primary" onClick={generate} disabled={!!busy}>🤖 Разобрать (бот предложит шаг)</button>
+      {!filter && z.waiting.length > 0 && (
+        <div className="card" style={{ padding: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }} onClick={() => setWaitOpen(v => !v)}>
+            <b style={{ fontSize: 13 }}>{waitOpen ? '▾' : '▸'} ⏸ Ждём лида ({z.waiting.length})</b>
+            <span className="faint" style={{ fontSize: 11.5 }}>мяч у лида / бот дожмёт по каденции — не срочно</span>
           </div>
-          <div className="faint" style={{ fontSize: 11.5, marginBottom: 8 }}>
-            активные лиды без следующего шага. «Разобрать» — бот прочитает диалоги и предложит,
-            что делать (🔁 дожать молчуна / ⏳ ответ на одобрение / 👤 за тобой / 🆘 не понял — помоги).
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
-            {board.no_task_leads.map(l => {
-              const m = l.mode ? MODE[l.mode] : null
-              return (
-                <div className={`conv-row${l.wa_autonomous ? ' autonomous' : ''}`} key={l.conversation_id} style={{ cursor: 'default' }}>
-                  <div className="c-main" style={{ cursor: 'pointer' }} onClick={() => openConversation(l.conversation_id)}>
-                    <div className="c-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                      <TempDot t={l.temperature} />{l.name}
-                      <StageChip s={l.stage_label} />
-                      {m && <span className="chip" style={{ fontSize: 10.5, color: m.c, borderColor: m.c }}>{m.e} {m.t}</span>}
-                      <span className="faint" style={{ fontWeight: 400 }}>{CHANNEL_META[l.channel]?.icon}</span>
-                    </div>
-                    <div className="c-preview">→ {l.next_action}{l.last_message_at ? ` · ${fmtAgo(l.last_message_at)}` : ''}</div>
-                    {l.draft && <div className="faint" style={{ fontSize: 11.5, marginTop: 2, fontStyle: 'italic' }}>✍️ «{l.draft.slice(0, 110)}{l.draft.length > 110 ? '…' : ''}»</div>}
-                  </div>
-                  <div className="c-meta">
-                    <div style={{ display: 'flex', gap: 5 }}>
-                      {l.mode === 'needs_approval' &&
-                        <button className="btn sm primary" onClick={() => openConversation(l.conversation_id)} disabled={!!busy}>⏳ Одобрить</button>}
-                      {(l.mode === 'reengage' || (!l.analyzed && l.bot_can)) && !l.wa_autonomous &&
-                        <button className="btn sm" onClick={() => botLead(l.conversation_id)} disabled={!!busy}>🤖 Пусть бот</button>}
-                      {l.wa_autonomous && <span className="chip accent" style={{ fontSize: 10.5 }}>🤖 ведёт</span>}
-                      <button className="btn sm ghost" onClick={() => openConversation(l.conversation_id)}>Открыть</button>
-                    </div>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
+          {waitOpen && <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 8 }}>{z.waiting.map(l => LeadCard(l, 'waiting'))}</div>}
         </div>
       )}
 
-      {(!filter || filter === 'overdue') && <Bucket title="🔴 Просрочено" items={b.overdue} cls="text-danger" />}
-      {(!filter || filter === 'today') && <Bucket title="🟡 Сегодня" items={b.today} />}
-      {!filter && <Bucket title="📅 Завтра" items={b.tomorrow} />}
-      {!filter && <Bucket title="🗓 На неделе" items={b.week} />}
-      {!filter && <Bucket title="Позже" items={b.later} />}
+      {!filter && <SleepingPanel showToast={showToast} />}
 
-      {totalTasks === 0 && board.no_task_leads.length === 0 && (
-        <div className="empty">Всё под контролем — задач нет и лидов без задачи нет 🎉</div>
-      )}
+      {empty && <div className="empty">Всё под контролем — лидов, требующих внимания, нет 🎉</div>}
     </div>
   )
 }

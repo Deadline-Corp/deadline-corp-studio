@@ -2977,7 +2977,6 @@ async def task_board(
 
     # 🤖 = СКОЛЬКО ЛИДОВ ВЕДЁТ БОТ САМ (wa_autonomous), уникально по диалогу — а не
     # «сколько бот-задач» (раньше считали задачи executor=bot → 0, хотя лиды переданы боту).
-    # 👤 = сколько задач на человеке (pending).
     _bot_led: set = set()
     for _b in buckets.values():
         for _t in _b:
@@ -2986,15 +2985,101 @@ async def task_board(
     for _l in no_task:
         if _l.get("wa_autonomous"):
             _bot_led.add(_l["conversation_id"])
+
+    # ===== УМНЫЙ ЗАДАЧНИК (зоны): единица = ЛИД, требующий шага. Каждый активный лид
+    # попадает РОВНО в одну зону по приоритету: одобри сейчас → твой ход → бот ведёт →
+    # затык → ждём. Автономия (бот ведёт сам) возможна ТОЛЬКО для WhatsApp. =====
+    task_by_conv: dict = {}
+    for _a, _c2, _cv2 in rows:
+        if not _a.conversation_id:
+            continue
+        e = task_by_conv.setdefault(_a.conversation_id, {"human": False, "bot": False,
+                                                         "hid": None, "hdue": None, "htext": None})
+        if _a.executor == "human":
+            e["human"] = True
+            if e["hid"] is None:
+                e["hid"] = str(_a.id)
+                e["hdue"] = _a.due_at.isoformat() if _a.due_at else None
+                e["htext"] = (_a.payload or {}).get("text") or (_a.payload or {}).get("title") or ""
+        else:
+            e["bot"] = True
+
+    zones = {"approve_now": [], "your_turn": [], "bot_leading": [], "waiting": []}
+    stuck = []
+    for conv, c in active_convs:
+        na = getattr(conv, "next_action", None) or {}
+        mode = na.get("mode")
+        wa_auto = bool(getattr(conv, "wa_autonomous", False))
+        has_draft = bool(getattr(conv, "pending_wa_draft", None))
+        takeover = bool(getattr(conv, "operator_takeover", False))
+        bot_capable = (conv.channel or "").lower() == "whatsapp"
+        ti = task_by_conv.get(conv.id, {})
+        has_human_task = ti.get("human", False)
+        has_bot_task = ti.get("bot", False)
+        analyzed = bool(na)
+        lm = conv.last_message_at
+        if lm and lm.tzinfo is None:
+            lm = lm.replace(tzinfo=timezone.utc)
+        silent_h = ((now - lm).total_seconds() / 3600) if lm else 9999.0
+        # статус-индикатор бота на карточке — СОГЛАСОВАН с зоной (порядок тот же,
+        # чтобы не было «🟢 бот ведёт» на карточке в зоне «Твой ход»).
+        if takeover:
+            bstat, blabel = "you", "🔴 ты ведёшь"
+        elif mode in ("human", "unclear"):
+            bstat, blabel = "human", "🟠 нужен ты"
+        elif has_draft:
+            bstat, blabel = "approval", "🟡 ждёт одобрения"
+        elif wa_auto or mode == "bot_auto":
+            bstat, blabel = "leading", "🟢 бот ведёт"
+        elif not bot_capable:
+            bstat, blabel = "manual", "⚫ только вручную"
+        else:
+            bstat, blabel = "observe", "⚪ наблюдение"
+        lead = {
+            "conversation_id": str(conv.id),
+            "name": c.name or c.email or (("+" + c.phone) if getattr(c, "phone", None) else "Лид"),
+            "stage": conv.lead_stage,
+            "stage_label": _STAGE_LABEL.get(conv.lead_stage or "", conv.lead_stage or ""),
+            "temperature": c.lead_temperature, "channel": conv.channel,
+            "last_message_at": lm.isoformat() if lm else None,
+            "silent_hours": round(silent_h, 1),
+            "mode": mode, "kind": na.get("kind"), "label": na.get("label") or "",
+            "draft": (na.get("draft") or "")[:200], "reason": na.get("reason") or "",
+            "wa_autonomous": wa_auto, "bot_capable": bot_capable,
+            "bot_status": bstat, "bot_status_label": blabel,
+            "has_human_task": has_human_task, "task_id": ti.get("hid"),
+            "task_due": ti.get("hdue"), "task_text": ti.get("htext"),
+            "priority": pri(c.lead_temperature, conv.lead_stage),
+        }
+        # «Одобри сейчас» = есть РЕАЛЬНЫЙ черновик (pending_wa_draft), который можно
+        # отправить ✅. mode=needs_approval без черновика сюда НЕ кладём (нечего одобрять).
+        if has_draft:
+            zones["approve_now"].append(lead)
+        elif takeover or mode in ("human", "unclear") or has_human_task:
+            zones["your_turn"].append(lead)
+        elif wa_auto or mode == "bot_auto":
+            zones["bot_leading"].append(lead)
+        elif (not analyzed and not has_human_task and not has_bot_task and silent_h >= 48):
+            stuck.append(lead)
+        else:
+            zones["waiting"].append(lead)
+    for _z in zones.values():
+        _z.sort(key=lambda x: (-x["priority"], -x["silent_hours"]))
+    stuck.sort(key=lambda x: -x["silent_hours"])
+
     return {
         "summary": {
             "overdue": len(buckets["overdue"]), "today": len(buckets["today"]),
             "no_task": len(no_task),
             "bot": len(_bot_led),
             "human": sum(1 for b in buckets.values() for t in b if t["who"] == "human"),
+            "approve_now": len(zones["approve_now"]), "your_turn": len(zones["your_turn"]),
+            "bot_leading": len(zones["bot_leading"]), "stuck": len(stuck),
         },
         "buckets": buckets,
         "no_task_leads": no_task[:60],
+        "zones": {k: v[:60] for k, v in zones.items()},
+        "stuck": stuck[:40],
     }
 
 
