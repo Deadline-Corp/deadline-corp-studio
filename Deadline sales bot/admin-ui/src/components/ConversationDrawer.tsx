@@ -10,6 +10,24 @@ import { Help } from './Help'
    Один и тот же компонент из Inbox, Канбана и Канваса. Стадии — динамические
    (кастомная воронка из overview). */
 
+// Иконки/подписи для журнала решений бота (что бот решил и почему).
+export const DECISION_META: Record<string, { icon: string; label: string }> = {
+  stage_change: { icon: '📊', label: 'смена стадии' },
+  call_suggested: { icon: '📅', label: 'предложил созвон' },
+  call_booked: { icon: '📞', label: 'забронировал созвон' },
+  call_rescheduled: { icon: '🔁', label: 'перенёс созвон' },
+  call_cancelled: { icon: '✖️', label: 'отменил созвон' },
+  nudge_sent: { icon: '👋', label: 'дожал молчуна' },
+  winback_task: { icon: '♻️', label: 'возврат проигранного' },
+  handoff: { icon: '🤝', label: 'передал оператору' },
+  classification: { icon: '🏷', label: 'классификация' },
+  recall_greeting: { icon: '🔔', label: 'узнал вернувшегося' },
+  field_filled: { icon: '📇', label: 'заполнил поля' },
+  alt_channel: { icon: '↪️', label: 'другой канал' },
+  silence_lost: { icon: '💤', label: 'молчание → проигран' },
+  reply_sent: { icon: '✍️', label: 'ответил' },
+}
+
 export function ConversationDrawer({ convId, onClose }: { convId: string; onClose: () => void }) {
   const [detail, setDetail] = useState<ConvDetail | null>(null)
   const [msgs, setMsgs] = useState<Msg[]>([])
@@ -34,6 +52,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
   const [replyOpen, setReplyOpen] = useState(false) // окно ручного ответа оператора — по умолчанию свёрнуто
   const [actionsOpen, setActionsOpen] = useState(false) // панель действий сверху — по умолчанию свёрнута (видно переписку)
   const [historyOpen, setHistoryOpen] = useState(false) // «почему лид на этой стадии» — история переходов
+  const [decisionsOpen, setDecisionsOpen] = useState(false) // «🤖 Решения бота» — журнал решений с причинами
   const msgsRef = useRef<HTMLDivElement>(null)
   const lastTsRef = useRef<string | null>(null)
   const lastIdRef = useRef<string | null>(null)  // keyset-курсор вниз (новые): вторичный ключ по id
@@ -723,6 +742,30 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                       <span className="faint" style={{ minWidth: 96 }}>{h.at ? fmtTime(h.at) : ''}</span>
                       <span>{h.from ? `${stageLabel(h.from)} → ` : ''}<b>{stageLabel(h.to)}</b></span>
                       <span className="faint">· {by}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {detail && (detail.bot_decisions?.length ?? 0) > 0 && (
+          <div style={{ padding: '0 14px 8px' }}>
+            <button className="btn sm ghost" onClick={() => setDecisionsOpen(v => !v)}
+                    title="Что бот решил и ПОЧЕМУ — прозрачная логика, можно подстроить правила в «Мозге»">
+              {decisionsOpen ? '▾' : '▸'} 🤖 Решения бота ({detail.bot_decisions!.length})
+            </button>
+            {decisionsOpen && (
+              <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 7,
+                            fontSize: 12 }}>
+                {detail.bot_decisions!.map(d => {
+                  const m = DECISION_META[d.decision_type] || { icon: '•', label: d.decision_type }
+                  return (
+                    <div key={d.id} style={{ display: 'flex', gap: 7, alignItems: 'baseline' }}>
+                      <span className="faint" style={{ minWidth: 92, flexShrink: 0 }}>{d.at ? fmtTime(d.at) : ''}</span>
+                      <span title={m.label} style={{ flexShrink: 0 }}>{m.icon}</span>
+                      <span style={{ color: 'var(--text)' }}>{d.reason}</span>
                     </div>
                   )
                 })}

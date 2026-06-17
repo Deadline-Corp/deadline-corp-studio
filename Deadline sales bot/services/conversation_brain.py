@@ -504,6 +504,16 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
         ))
         db.commit()
         done["stage"] = new_stage
+        try:
+            from services.bot_decisions import log_decision as _logd
+            _rd = str(data.get("reason") or "").strip()
+            _logd("stage_change",
+                  f"Передвинул «{from_stage or 'старт'}» → «{new_stage}»"
+                  + (f": {_rd}" if _rd else " — распознал прогресс по переписке"),
+                  conversation_id=conv.id, customer_id=conv.customer_id,
+                  detail={"from": from_stage, "to": new_stage, "by": "bot-brain"}, db=db)
+        except Exception:  # noqa: BLE001
+            pass
         if settings.crm_enabled and new_stage in funnel_store.BUILTIN_KEYS:
             try:
                 from services.crm_dispatch import dispatch_stage_change
@@ -562,6 +572,17 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
                 }
                 db.commit()
                 done["suggested"] = new_dt.isoformat()
+                try:
+                    from services.bot_decisions import log_decision as _logds
+                    _med = data.get("call_medium")
+                    _logds("call_suggested",
+                           f"Распознал договорённость о созвоне: {when_h}"
+                           + (f" ({_med})" if _med else "")
+                           + ". Поставил предложение менеджеру на подтверждение.",
+                           conversation_id=conv.id, customer_id=conv.customer_id,
+                           detail={"at": new_dt.isoformat(), "when_human": when_h, "medium": _med}, db=db)
+                except Exception:  # noqa: BLE001
+                    pass
                 name = cust.name or conv.channel_conversation_id or "лид"
                 await _signal_owner(
                     settings,

@@ -1101,6 +1101,14 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                     )
                     _phase13_answer = recall_greeting_text
                     recall_skip_normal_flow = True
+                    try:
+                        from services.bot_decisions import log_decision as _logd
+                        _logd("recall_greeting",
+                              f"Узнал вернувшегося лида (был ~{days_ago}д назад) — поприветствовал с учётом прошлого контекста, не как нового",
+                              conversation_id=conversation.id, customer_id=customer.id,
+                              detail={"days_ago": days_ago, "prior_conv_id": str(prior_conv.id)}, db=db)
+                    except Exception:  # noqa: BLE001
+                        pass
             except Exception as _branch_a_exc:
                 log.warning(
                     "[recall] Phase13 Branch A failed for customer=%s: %s — falling through to normal flow",
@@ -1596,6 +1604,15 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 except Exception as _re2:  # noqa: BLE001
                     log.warning(f"[{str(conversation.id)[:8]}] rebook reminders failed: {_re2}")
                 log.info(f"[{str(conversation.id)[:8]}] call REBOOKED to {_chosen.isoformat()}")
+                try:
+                    from services.bot_decisions import log_decision as _logd
+                    _logd("call_rescheduled",
+                          f"Лид перенёс созвон на {_just_booked_human}"
+                          + (f" ({_medium})" if _medium else "") + " — пересоздал напоминания",
+                          conversation_id=conversation.id, customer_id=customer.id,
+                          detail={"at": _chosen.isoformat(), "medium": _medium}, db=db)
+                except Exception:  # noqa: BLE001
+                    pass
             elif _booked and _wants_cancel:
                 # --- ОТМЕНА / ПЕРЕНОС --- лид отказался: снимаем бронь, гасим напоминания,
                 # откатываем стадию CRM. НЕ настаиваем (фикс «уже записан» по кругу).
@@ -1604,6 +1621,13 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 _profile.pop("call_medium_asked", None)
                 customer.profile_data = _profile
                 conversation.lead_stage = "qualified"
+                try:
+                    from services.bot_decisions import log_decision as _logd
+                    _logd("call_cancelled",
+                          "Лид отменил созвон — снял бронь и напоминания, вернул стадию «Квалифицирован», поставил задачу согласовать новое время",
+                          conversation_id=conversation.id, customer_id=customer.id, db=db)
+                except Exception:  # noqa: BLE001
+                    pass
                 try:
                     from services.scheduled_actions import cancel_call_actions
                     await asyncio.to_thread(cancel_call_actions, str(conversation.id))
@@ -1679,6 +1703,15 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 _call_medium = _medium
                 _call_booked_at = _chosen  # сделку создаст/двинет dispatch_on_message_turn (после create_deal)
                 conversation.lead_stage = "on_call"
+                try:
+                    from services.bot_decisions import log_decision as _logd
+                    _logd("call_booked",
+                          f"Лид выбрал время — забронировал созвон: {_just_booked_human}"
+                          + (f" ({_medium})" if _medium else ""),
+                          conversation_id=conversation.id, customer_id=customer.id,
+                          detail={"at": _chosen.isoformat(), "medium": _medium}, db=db)
+                except Exception:  # noqa: BLE001
+                    pass
                 # P3 — уведомить бригаду/отдел о новом визите (настраиваемый чат).
                 try:
                     from services import bot_settings as _bsc
@@ -2272,6 +2305,17 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 await send_telegram_brief(str(conversation.id), handoff_data, history_dicts)
                 mark_handoff_done(db, conversation.id)
                 handoff_triggered = True
+                try:
+                    from services.bot_decisions import log_decision as _logd
+                    _hn = (handoff_data.get("lead_name") or customer.name or "лид")
+                    _hc = (handoff_data.get("lead_email") or handoff_data.get("lead_telegram_username")
+                           or handoff_data.get("lead_phone") or "контакт собран")
+                    _logd("handoff",
+                          f"Передал лида оператору: {_hn} ({_hc}) — собрал контакт и бриф, отправил карточку менеджеру",
+                          conversation_id=conversation.id, customer_id=customer.id,
+                          detail={"contact": _hc}, db=db)
+                except Exception:  # noqa: BLE001
+                    pass
             else:
                 # Контакта нет вообще — ждём, пока лид даст email/telegram/телефон.
                 log.info(

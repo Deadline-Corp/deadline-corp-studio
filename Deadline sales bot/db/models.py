@@ -829,6 +829,45 @@ class ActivityLog(Base):
         return f"<ActivityLog {self.level}/{self.category} {self.summary[:40]}>"
 
 
+class BotDecision(Base):
+    """ОТДЕЛЬНЫЙ от системного журнала (activity_log) журнал РЕШЕНИЙ БОТА: что
+    бот сделал и ПОЧЕМУ — простым языком. Каждое автономное решение (передвинул
+    стадию, предложил/забронировал созвон, дожал молчуна, передал человеку,
+    классифицировал лид/не-лид, узнал вернувшегося, заполнил поля, win-back) →
+    одна запись с человекочитаемой причиной. Цель: владелец (и будущие клиенты)
+    ВИДЯТ логику бота — доверие + точечный тюнинг правил. Пишется хелпером
+    services.bot_decisions.log_decision из точек решений, DB-only и best-effort
+    (НЕ должен ронять основной поток). Чистится в кроне (хранение N дней).
+    Без FK на conversations/customers намеренно (как activity_log) — reset/удаление
+    не должен ломать историю решений."""
+    __tablename__ = "bot_decisions"
+    __table_args__ = (
+        Index("ix_bot_decisions_conv_created", "conversation_id", "created_at"),
+        Index("ix_bot_decisions_created", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    conversation_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    customer_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), nullable=True)
+    # машинный тип решения: stage_change|call_booked|call_rescheduled|call_cancelled|
+    # nudge_sent|winback_task|handoff|classification|recall_greeting|field_filled|
+    # alt_channel|silence_lost|reply_sent
+    decision_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    # причина простым языком («Передвинул в "Квалифицирован", потому что лид назвал бюджет»)
+    reason: Mapped[str] = mapped_column(String(600), nullable=False)
+    # структурный контекст (from/to стадии, время созвона, шаг каденции и т.п.)
+    detail: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+    actor: Mapped[str] = mapped_column(String(24), nullable=False, server_default="bot")  # bot|automation
+
+    def __repr__(self) -> str:
+        return f"<BotDecision {self.decision_type} {self.reason[:40]}>"
+
+
 class LeadSubmission(Base):
     """Каждая отправка лид-формы (deadlinecorp.com/lead-form/) — сырой
     исторический след.

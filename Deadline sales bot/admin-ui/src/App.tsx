@@ -10,6 +10,7 @@ import { Tasks } from './pages/Tasks'
 import { Settings } from './pages/Settings'
 import { Channels } from './pages/Channels'
 import { Logs } from './pages/Logs'
+import { BotDecisions } from './pages/BotDecisions'
 import { Automations } from './pages/Automations'
 import { Analytics } from './pages/Analytics'
 import { Onboarding } from './pages/Onboarding'
@@ -40,6 +41,7 @@ export function App() {
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/channels" element={<Channels />} />
           <Route path="/logs" element={<Logs />} />
+          <Route path="/bot-decisions" element={<BotDecisions />} />
           <Route path="/settings" element={<Settings />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

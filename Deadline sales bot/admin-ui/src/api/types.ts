@@ -176,6 +176,17 @@ export interface ConvDetail extends ConvSummary {
     id: string; action_type: string; executor: string; due_at: string | null; payload: any
   }>
   stage_history?: Array<{ from: string | null; to: string; by: string; at: string | null }>
+  bot_decisions?: BotDecisionItem[]
+}
+
+export interface BotDecisionItem {
+  id: string
+  at: string | null
+  decision_type: string
+  reason: string
+  detail: any
+  actor: string
+  conversation_id?: string | null
 }
 
 export interface Msg {

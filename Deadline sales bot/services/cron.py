@@ -224,6 +224,14 @@ def run_wa_maintenance() -> dict:
                 summary["pruned_activity_log"] = _n
         except Exception as _ape:  # noqa: BLE001
             logger.warning("[cron] activity_log prune failed: %s", _ape)
+        # Журнал решений бота: хранение 60 дней (дольше — это «память почему»).
+        try:
+            from services.bot_decisions import prune as _bdp
+            _nb = _bdp(days=60)
+            if _nb:
+                summary["pruned_bot_decisions"] = _nb
+        except Exception as _bpe:  # noqa: BLE001
+            logger.warning("[cron] bot_decisions prune failed: %s", _bpe)
     except Exception as exc:  # noqa: BLE001
         logger.warning("[cron] wa maintenance failed (non-fatal): %s", exc)
         summary["error"] = str(exc)
@@ -290,6 +298,15 @@ def plan_winback_tasks(after_days: int, limit: int = 25) -> dict:
             ))
             pd["winback_attempted_at"] = now.isoformat()
             cust.profile_data = pd
+            try:
+                from services.bot_decisions import log_decision as _logdw
+                _logdw("winback_task",
+                       f"Поставил задачу вернуть проигранного «{name}»: был проигран "
+                       f"(причина «{reason}»), прошло >{after_days}д — {hint}",
+                       conversation_id=conv.id, customer_id=cust.id,
+                       detail={"lost_reason": reason, "after_days": after_days}, db=db)
+            except Exception:  # noqa: BLE001
+                pass
             out["created"] += 1
             if out["created"] >= limit:
                 break
@@ -643,6 +660,17 @@ async def sweep_once(*, tenant_config: dict) -> dict:
                     "[cron] funnel: conv=%s %s → %s (%s)",
                     conversation.id, current_stage, new_stage, funnel_decision.reason,
                 )
+                try:
+                    if new_stage == "lost":
+                        from services.bot_decisions import log_decision as _logd
+                        _logd("silence_lost",
+                              f"Перевёл в «Не сложилось»: лид молчит {int(silent_days)}д на этапе "
+                              f"«{current_stage}» (порог {silence_lost_threshold_d}д)",
+                              conversation_id=conversation.id, customer_id=customer.id,
+                              detail={"from": current_stage, "to": new_stage,
+                                      "silent_days": round(silent_days, 1)}, db=s)
+                except Exception:  # noqa: BLE001
+                    pass
                 dispatch_stage_change(
                     customer_id=str(customer.id),
                     crm_deal_id=conversation.crm_deal_id,
@@ -750,6 +778,17 @@ async def sweep_once(*, tenant_config: dict) -> dict:
                         logger.info("[cron] bot-nudge step %d/%d → %s conv=%s (%.1fh)",
                                     _sent + 1, len(_seq), customer.lead_temperature,
                                     str(conversation.id)[:8], silent_hours)
+                        try:
+                            from services.bot_decisions import log_decision as _logdn
+                            _logdn("nudge_sent",
+                                   f"Дожал молчащего лида (шаг {_sent + 1}/{len(_seq)}): "
+                                   f"молчит {silent_hours:.0f}ч, был вовлечён (скор {customer.lead_score}). "
+                                   f"Текст: «{(_txt or '')[:80]}»",
+                                   conversation_id=conversation.id, customer_id=customer.id,
+                                   detail={"step": _sent + 1, "of": len(_seq),
+                                           "silent_hours": round(silent_hours, 1)}, db=s)
+                        except Exception:  # noqa: BLE001
+                            pass
             except Exception as _ne:  # noqa: BLE001
                 logger.warning("[cron] bot-nudge skipped: %s", _ne)
 

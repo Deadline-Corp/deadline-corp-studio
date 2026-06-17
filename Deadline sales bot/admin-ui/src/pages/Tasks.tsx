@@ -25,7 +25,7 @@ type BoardTask = {
   id: string; who: 'bot' | 'human'; can_bot: boolean; action_type: string
   text: string; due_at: string | null; conversation_id: string | null
   name: string; stage: string | null; stage_label: string
-  temperature: string | null; channel: string
+  temperature: string | null; channel: string; wa_autonomous: boolean
 }
 type NoTaskLead = {
   conversation_id: string; name: string; stage: string | null; stage_label: string
@@ -87,6 +87,7 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   const [busy, setBusy] = useState('')
   // Фильтр-фокус: клик по счётчику вверху → показать только эту группу (убрать лишнее).
   const [filter, setFilter] = useState<'overdue' | 'today' | 'no_task' | null>(null)
+  const [menuFor, setMenuFor] = useState<string | null>(null) // открытое выпадающее меню задачи
   const { openConversation } = useDrawer()
 
   const load = async () => {
@@ -110,30 +111,63 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
     const r = await api.post<any>('/task-board/generate', { limit: 10 })
     showToast(`🤖 Разобрал ${r.processed ?? 0} лидов`)
   }, 'Готово')
+  // Перенос задачи на N дней вперёд (на 10:00). Бэкенд /reschedule меняет due_at.
+  const reschedule = (id: string, days: number) => act(async () => {
+    const d = new Date(); d.setDate(d.getDate() + days); d.setHours(10, 0, 0, 0)
+    await api.post(`/scheduled-actions/${id}/reschedule`, { due_at: d.toISOString() })
+  }, days === 1 ? 'Перенесено на завтра' : `Перенесено на +${days}д`)
+  const markLostTask = (convId: string) =>
+    act(() => api.post(`/conversations/${convId}/stage`, { to_stage: 'lost', lost_reason: 'delayed' }), '✗ Не сложилось')
+
+  // Пункт выпадающего меню действий задачи.
+  const MenuBtn = ({ children, onClick, danger }: { children: any; onClick: () => void; danger?: boolean }) => (
+    <button className="btn sm ghost" disabled={!!busy} onClick={onClick}
+            style={{ justifyContent: 'flex-start', textAlign: 'left', width: '100%',
+                     color: danger ? 'var(--danger)' : undefined }}>{children}</button>
+  )
 
   if (!board) return <div className="empty"><span className="spin" /> Загрузка…</div>
 
   const Task = (t: BoardTask) => (
-    <div className="conv-row" key={t.id} style={{ cursor: 'default' }}>
-      <span style={{ fontSize: 17 }} title={t.who === 'bot' ? 'Бот сделает сам' : 'За тобой'}>
-        {t.who === 'bot' ? '🤖' : '👤'}
+    <div className={`conv-row${t.wa_autonomous ? ' autonomous' : ''}`} key={t.id} style={{ cursor: 'default' }}>
+      <span style={{ fontSize: 17 }}
+            title={t.wa_autonomous ? 'Бот ведёт диалог сам' : (t.who === 'bot' ? 'Бот сделает сам' : 'За тобой')}>
+        {t.wa_autonomous || t.who === 'bot' ? '🤖' : '👤'}
       </span>
       <div className="c-main" style={{ cursor: t.conversation_id ? 'pointer' : 'default' }}
            onClick={() => t.conversation_id && openConversation(t.conversation_id)}>
         <div className="c-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <TempDot t={t.temperature} />{t.name}
           <StageChip s={t.stage_label} />
+          {t.wa_autonomous && <span className="chip accent" style={{ fontSize: 10 }}>🤖 ведёт</span>}
           <span className="chip" style={{ fontSize: 10.5 }}>{TYPE_LABELS[t.action_type] ?? t.action_type}</span>
           <span className="faint" style={{ fontWeight: 400 }}>{CHANNEL_META[t.channel]?.icon}</span>
         </div>
         <div className="c-preview">{t.text || '—'}</div>
       </div>
-      <div className="c-meta">
+      <div className="c-meta" style={{ position: 'relative' }}>
         <span className="chip">{t.due_at ? fmtTime(t.due_at) : '—'}</span>
         <div style={{ display: 'flex', gap: 5 }}>
           {t.who === 'human' && <button className="btn sm" onClick={() => done(t.id)} disabled={!!busy}>✓ Сделано</button>}
-          <button className="btn sm ghost" title="Снять задачу" onClick={() => cancel(t.id)} disabled={!!busy}>✕</button>
+          <button className="btn sm ghost" title="Действия" onClick={() => setMenuFor(menuFor === t.id ? null : t.id)} disabled={!!busy}>⋯</button>
         </div>
+        {menuFor === t.id && (
+          <div onMouseLeave={() => setMenuFor(null)}
+               style={{ position: 'absolute', top: '100%', right: 0, zIndex: 30, marginTop: 4,
+                        background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 8,
+                        boxShadow: '0 8px 28px rgba(0,0,0,.4)', padding: 6, display: 'flex',
+                        flexDirection: 'column', gap: 2, minWidth: 210 }}>
+            {t.who === 'human' && <MenuBtn onClick={() => { done(t.id); setMenuFor(null) }}>✓ Отметить сделанной</MenuBtn>}
+            {t.conversation_id && <MenuBtn onClick={() => { openConversation(t.conversation_id!); setMenuFor(null) }}>📂 Открыть карточку</MenuBtn>}
+            <MenuBtn onClick={() => { reschedule(t.id, 1); setMenuFor(null) }}>⏰ Перенести на завтра</MenuBtn>
+            <MenuBtn onClick={() => { reschedule(t.id, 3); setMenuFor(null) }}>⏰ Перенести на +3 дня</MenuBtn>
+            {t.conversation_id && !t.wa_autonomous &&
+              <MenuBtn onClick={() => { botLead(t.conversation_id!); setMenuFor(null) }}>🤖 Передать боту</MenuBtn>}
+            {t.conversation_id &&
+              <MenuBtn danger onClick={() => { markLostTask(t.conversation_id!); setMenuFor(null) }}>✗ В «Не сложилось»</MenuBtn>}
+            <MenuBtn danger onClick={() => { cancel(t.id); setMenuFor(null) }}>✕ Снять задачу</MenuBtn>
+          </div>
+        )}
       </div>
     </div>
   )
@@ -161,7 +195,7 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
         <span className="chip" title="Показать только лидов без задачи"
               style={{ cursor: 'pointer', boxShadow: filter === 'no_task' ? '0 0 0 2px var(--accent)' : 'none' }}
               onClick={() => setFilter(filter === 'no_task' ? null : 'no_task')}>🆕 Без задачи {board.summary.no_task}</span>
-        <span className="chip">🤖 {board.summary.bot} · 👤 {board.summary.human}</span>
+        <span className="chip" title="🤖 — сколько лидов ведёт бот сам · 👤 — сколько задач на тебе">🤖 ведёт {board.summary.bot} · 👤 {board.summary.human}</span>
         {filter && <button className="btn sm ghost" onClick={() => setFilter(null)} title="Сбросить фильтр">✕ показать всё</button>}
         <span style={{ flex: 1 }} />
         <button className="btn sm" onClick={sweep} disabled={!!busy}>▶ Проверить задачи сейчас</button>
@@ -185,7 +219,7 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
             {board.no_task_leads.map(l => {
               const m = l.mode ? MODE[l.mode] : null
               return (
-                <div className="conv-row" key={l.conversation_id} style={{ cursor: 'default' }}>
+                <div className={`conv-row${l.wa_autonomous ? ' autonomous' : ''}`} key={l.conversation_id} style={{ cursor: 'default' }}>
                   <div className="c-main" style={{ cursor: 'pointer' }} onClick={() => openConversation(l.conversation_id)}>
                     <div className="c-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                       <TempDot t={l.temperature} />{l.name}

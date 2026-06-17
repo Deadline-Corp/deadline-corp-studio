@@ -41,6 +41,7 @@ from db.models import (
     AutomationRun,
     CustomFieldDef,
     StageTransition,
+    BotDecision,
     WorkspaceMember,
 )
 
@@ -610,6 +611,14 @@ async def conversation_detail(
         .limit(20)
         .all()
     )
+    # Журнал решений бота по этому лиду — лента «🤖 Решения бота» в карточке (что и почему).
+    bot_decs = (
+        db.query(BotDecision)
+        .filter(BotDecision.conversation_id == conv.id)
+        .order_by(BotDecision.created_at.desc())
+        .limit(15)
+        .all()
+    )
 
     # Кастомные поля: определения + значения из profile_data['fields'].
     field_defs = (
@@ -682,6 +691,15 @@ async def conversation_detail(
                 "at": t.created_at.isoformat() if t.created_at else None,
             }
             for t in stage_hist
+        ],
+        "bot_decisions": [
+            {
+                "id": str(d.id),
+                "at": d.created_at.isoformat() if d.created_at else None,
+                "decision_type": d.decision_type, "reason": d.reason,
+                "detail": d.detail, "actor": d.actor,
+            }
+            for d in bot_decs
         ],
     })
     return out
@@ -2855,6 +2873,8 @@ async def task_board(
             "stage": stage, "stage_label": _STAGE_LABEL.get(stage or "", stage or ""),
             "temperature": temp,
             "channel": a.channel,
+            # ведёт ли бот этот диалог сам (для зелёной рамки в задачнике, как в «Переписках»)
+            "wa_autonomous": bool(getattr(conv, "wa_autonomous", False)) if conv else False,
             "priority": pri(temp, stage),
         }
 
@@ -2920,11 +2940,22 @@ async def task_board(
     # Сначала неразобранные/срочные (по приоритету), unclear (нужна помощь) — выше.
     no_task.sort(key=lambda x: (x["mode"] != "unclear", -x["priority"]))
 
+    # 🤖 = СКОЛЬКО ЛИДОВ ВЕДЁТ БОТ САМ (wa_autonomous), уникально по диалогу — а не
+    # «сколько бот-задач» (раньше считали задачи executor=bot → 0, хотя лиды переданы боту).
+    # 👤 = сколько задач на человеке (pending).
+    _bot_led: set = set()
+    for _b in buckets.values():
+        for _t in _b:
+            if _t.get("wa_autonomous") and _t.get("conversation_id"):
+                _bot_led.add(_t["conversation_id"])
+    for _l in no_task:
+        if _l.get("wa_autonomous"):
+            _bot_led.add(_l["conversation_id"])
     return {
         "summary": {
             "overdue": len(buckets["overdue"]), "today": len(buckets["today"]),
             "no_task": len(no_task),
-            "bot": sum(1 for b in buckets.values() for t in b if t["who"] == "bot"),
+            "bot": len(_bot_led),
             "human": sum(1 for b in buckets.values() for t in b if t["who"] == "human"),
         },
         "buckets": buckets,
@@ -4131,6 +4162,26 @@ async def activity_logs(
         "errors_24h": int(err_24h),
         "next_before": (rows[-1].created_at.isoformat()
                         if len(rows) == limit and rows[-1].created_at else None),
+    }
+
+
+@router.get("/bot-decisions")
+async def bot_decisions_feed(
+    conversation_id: Optional[str] = None,
+    before: Optional[str] = None,
+    limit: int = 50,
+    _: None = Depends(_verify_member),
+):
+    """Журнал РЕШЕНИЙ БОТА — ОТДЕЛЬНЫЙ от системного /logs. Что бот сделал и ПОЧЕМУ
+    простым языком. conversation_id → лента по одному лиду (для карточки «почему лид
+    на этой стадии»); пусто → глобальная лента (расширенные настройки). Курсор before
+    (ISO) — пагинация назад по времени."""
+    from services import bot_decisions as _bd
+    lim = max(1, min(limit, 500))
+    items = _bd.recent(conversation_id, limit=lim, before=before)
+    return {
+        "items": items,
+        "next_before": (items[-1]["at"] if len(items) == lim and items else None),
     }
 
 
