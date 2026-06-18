@@ -109,6 +109,7 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   // Фильтр-фокус: клик по счётчику-зоне вверху → показать только эту зону.
   const [filter, setFilter] = useState<ZoneId | null>(null)
   const [waitOpen, setWaitOpen] = useState(false)  // зона «Ждём лида» свёрнута по умолчанию
+  const [stageFilter, setStageFilter] = useState<string | null>(null)  // фильтр по СТАТУСУ (стадии воронки)
   const { openConversation } = useDrawer()
 
   const load = async () => {
@@ -211,6 +212,18 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
 
   const sm = board.summary
   const z = board.zones
+  // Фильтр «по статусам» (стадии воронки) — поверх зон (просьба владельца: открыть
+  // группу «квалифицирован»/«в диалоге»/«дожать» и работать с ней).
+  const _allLeads: Lead[] = [...z.approve_now, ...z.your_turn, ...z.bot_leading, ...z.waiting, ...board.stuck]
+  const _stageCounts = new Map<string, { label: string; n: number }>()
+  for (const l of _allLeads) {
+    if (!l.stage) continue
+    const e = _stageCounts.get(l.stage) || { label: l.stage_label || l.stage, n: 0 }
+    e.n++; _stageCounts.set(l.stage, e)
+  }
+  const stageList = [..._stageCounts.entries()].sort((a, b) => b[1].n - a[1].n)
+  const fStage = (items: Lead[]) => stageFilter ? items.filter(l => l.stage === stageFilter) : items
+  const stageEmpty = !!stageFilter && fStage(_allLeads).length === 0
   const ZChip = ({ id, label, cls }: { id: ZoneId; label: string; cls?: string }) => (
     <span className={`chip ${cls ?? ''}`} style={{ cursor: 'pointer', boxShadow: filter === id ? '0 0 0 2px var(--accent)' : 'none' }}
           onClick={() => setFilter(filter === id ? null : id)}>{label}</span>
@@ -229,6 +242,18 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
         <button className="btn sm" onClick={sweep} disabled={!!busy}>▶ Проверить сейчас</button>
         <Help title="Проверить сейчас" text="Бот сам каждые ~10 минут: дожимает молчунов, шлёт напоминания, чинит рассинхроны. Кнопка запускает проверку немедленно." />
       </div>
+
+      {stageList.length > 1 && (
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span className="faint" style={{ fontSize: 11.5, marginRight: 2 }}>по статусу:</span>
+          {stageList.map(([st, info]) => (
+            <span key={st} className="chip"
+                  style={{ cursor: 'pointer', fontSize: 11.5, boxShadow: stageFilter === st ? '0 0 0 2px var(--accent)' : 'none' }}
+                  onClick={() => setStageFilter(stageFilter === st ? null : st)}>{info.label} {info.n}</span>
+          ))}
+          {stageFilter && <button className="btn sm ghost" onClick={() => setStageFilter(null)}>✕ статус</button>}
+        </div>
+      )}
 
       {board.delivery_failed.length > 0 && (
         <div className="card" style={{ padding: 12, borderColor: 'var(--danger)' }}>
@@ -259,33 +284,34 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
       )}
 
       {(!filter || filter === 'stuck') &&
-        <Zone id="stuck" color="var(--danger)" items={board.stuck}
+        <Zone id="stuck" color="var(--danger)" items={fStage(board.stuck)}
               title="⚠️ Затыки — лиды без движения и без задачи"
               hint="Ими никто не занимается: ни бот, ни задача, давно молчат. Реши: передать боту, написать самому или закрыть." />}
       {(!filter || filter === 'approve_now') &&
-        <Zone id="approve_now" color="var(--accent-border)" items={z.approve_now}
+        <Zone id="approve_now" color="var(--accent-border)" items={fStage(z.approve_now)}
               title="⏳ Одобри сейчас" hint="Бот подготовил ответ и ждёт твоё «ОК» — один клик ✅." />}
       {(!filter || filter === 'your_turn') &&
-        <Zone id="your_turn" items={z.your_turn}
+        <Zone id="your_turn" items={fStage(z.your_turn)}
               title="👤 Твой ход" hint="Нужен человек: позвонить, выставить КП, ответить на сложное."
               action={<button className="btn sm primary" disabled={!!busy} onClick={generate} title="Бот прочитает диалоги без шага и предложит, что делать">🤖 Разобрать новых</button>} />}
       {(!filter || filter === 'bot_leading') &&
-        <Zone id="bot_leading" items={z.bot_leading}
+        <Zone id="bot_leading" items={fStage(z.bot_leading)}
               title="🤖 Бот ведёт сам" hint="Автопилот — делать ничего не надо, видно статус. Можно вернуть на одобрение." />}
 
-      {!filter && z.waiting.length > 0 && (
+      {!filter && fStage(z.waiting).length > 0 && (
         <div className="card" style={{ padding: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }} onClick={() => setWaitOpen(v => !v)}>
-            <b style={{ fontSize: 13 }}>{waitOpen ? '▾' : '▸'} ⏸ Ждём лида ({z.waiting.length})</b>
+            <b style={{ fontSize: 13 }}>{waitOpen ? '▾' : '▸'} ⏸ Ждём лида ({fStage(z.waiting).length})</b>
             <span className="faint" style={{ fontSize: 11.5 }}>мяч у лида / бот дожмёт по каденции — не срочно</span>
           </div>
-          {waitOpen && <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 8 }}>{z.waiting.map(l => LeadCard(l, 'waiting'))}</div>}
+          {waitOpen && <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 8 }}>{fStage(z.waiting).map(l => LeadCard(l, 'waiting'))}</div>}
         </div>
       )}
 
-      {!filter && <SleepingPanel showToast={showToast} />}
+      {!filter && !stageFilter && <SleepingPanel showToast={showToast} />}
 
-      {empty && <div className="empty">Всё под контролем — лидов, требующих внимания, нет 🎉</div>}
+      {stageEmpty && <div className="empty">Нет лидов в выбранном статусе.</div>}
+      {empty && !stageFilter && <div className="empty">Всё под контролем — лидов, требующих внимания, нет 🎉</div>}
     </div>
   )
 }
