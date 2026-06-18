@@ -231,25 +231,27 @@ async def run_due_followups(*, tenant_config: Optional[dict] = None) -> dict:
     # 2) Отправляем (await) вне сессии, затем помечаем результат.
     for item in todo:
         ok = False
-        # ГОНКА ПЕРЕХВАТА (I4): клеймы идут пачкой, отправки — сетевые (секунды каждая).
-        # Оператор мог взять диалог МЕЖДУ клеймом и этой отправкой → перепроверяем перед
-        # отправкой и гасим, не дожимая уже перехваченного лида.
+        # ИНВАРИАНТ АВТОНОМИИ + ГОНКА ПЕРЕХВАТА: дожим уходит ЛИДУ ТОЛЬКО если бот ведёт
+        # его сам (wa_autonomous) и диалог НЕ перехвачен. Иначе гасим (не дожимаем лида на
+        # ручном ведении — бот не пишет клиенту без одобрения). Перепроверка перед самой
+        # отправкой: состояние могло измениться между клеймом и сетевой отправкой.
         if item.get("conversation_id"):
-            _now_taken = False
+            _block = False
             try:
                 from db.models import Conversation as _Conv2
                 with session_scope() as _cs:
-                    _now_taken = bool(_cs.query(_Conv2.operator_takeover)
-                                      .filter(_Conv2.id == item["conversation_id"]).scalar())
-                    if _now_taken:
+                    _cv = (_cs.query(_Conv2.wa_autonomous, _Conv2.operator_takeover)
+                           .filter(_Conv2.id == item["conversation_id"]).first())
+                    _block = (_cv is None) or (not bool(_cv[0])) or bool(_cv[1])
+                    if _block:
                         _r2 = _cs.get(ScheduledAction, item["id"])
                         if _r2 is not None and _r2.status == "processing":
                             _r2.status = "cancelled"
                             _r2.claimed_at = None
             except Exception:  # noqa: BLE001 — перепроверка best-effort
-                _now_taken = False
-            if _now_taken:
-                stats["skipped_takeover"] = stats.get("skipped_takeover", 0) + 1
+                _block = False
+            if _block:
+                stats["skipped_manual"] = stats.get("skipped_manual", 0) + 1
                 continue
         if not item["chat_id"]:
             stats["skipped_no_chat"] += 1
@@ -493,16 +495,33 @@ async def run_due_call_reminders(*, tenant_config: Optional[dict] = None) -> dic
             .with_for_update(skip_locked=True)
             .all()
         )
+        from db.models import Conversation as _Conv3
         for r in rows:
             r.status = "processing"
             r.claimed_at = now
             stats["due"] += 1
             payload = r.payload or {}
+            _aud = payload.get("audience")
+            # ИНВАРИАНТ АВТОНОМИИ: бот шлёт ЛИДУ напоминание о созвоне ТОЛЬКО если ведёт
+            # его сам (wa_autonomous и не перехвачен). Для лидов на РУЧНОМ ведении оператор
+            # координирует созвон сам — иначе бот пишет клиенту без одобрения (жалоба
+            # владельца: бот сам отправил напоминание лиду, которого ведут вручную).
+            # Админ-напоминание (в опер-группу) — ВСЕГДА (это уведомление оператору).
+            if _aud != "admin" and r.conversation_id is not None:
+                _cv = (s.query(_Conv3.wa_autonomous, _Conv3.operator_takeover)
+                       .filter(_Conv3.id == r.conversation_id).first())
+                _ok = _cv is not None and bool(_cv[0]) and not bool(_cv[1])
+                if not _ok:
+                    r.status = "cancelled"
+                    r.claimed_at = None
+                    stats["skipped_manual"] = stats.get("skipped_manual", 0) + 1
+                    stats["due"] -= 1
+                    continue
             todo.append({
                 "id": str(r.id),
                 "chat_id": r.chat_id,
                 "channel": r.channel,
-                "audience": payload.get("audience"),
+                "audience": _aud,
                 "text": payload.get("text") or "Напоминаю про наш созвон 🙂",
             })
 

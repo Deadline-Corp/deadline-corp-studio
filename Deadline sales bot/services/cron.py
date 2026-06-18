@@ -771,7 +771,11 @@ async def sweep_once(*, tenant_config: dict) -> dict:
                 # остыл (score<40), шаги кончились, или тишина дольше потолка.
                 _paused = bool((customer.profile_data or {}).get("nudge_paused"))
                 _taken = bool(getattr(conversation, "operator_takeover", False))
-                if (_nudge_enabled and not _paused and not _taken
+                # ИНВАРИАНТ АВТОНОМИИ: бот дожимает (шлёт сам) ТОЛЬКО лидов на автопилоте
+                # (wa_autonomous). Лидов на ручном ведении оператор дожимает сам — иначе
+                # бот пишет клиенту без одобрения (жалоба владельца).
+                _autopilot = bool(getattr(conversation, "wa_autonomous", False))
+                if (_nudge_enabled and not _paused and not _taken and _autopilot
                         and _chat and _chan in ("telegram", "whatsapp", "instagram", "messenger")
                         and _engaged and not _booked
                         and silent_hours <= _ceiling):
