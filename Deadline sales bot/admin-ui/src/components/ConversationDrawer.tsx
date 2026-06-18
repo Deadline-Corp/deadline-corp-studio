@@ -795,8 +795,11 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
           {msgs.length === 0 && <div className="empty">Сообщений пока нет</div>}
           {msgs.map(m => (
             <div key={m.id} className={`msg ${m.role}`}>
-              {m.content}
+              {m.extra_meta?.wa_deleted === true
+                ? <span style={{ opacity: 0.55, fontStyle: 'italic', textDecoration: 'line-through' }}>{m.content}</span>
+                : m.content}
               <div className="m-meta">
+                {m.extra_meta?.wa_deleted === true && <span style={{ color: 'var(--warn, #c90)' }}>🚫 удалено в WhatsApp · </span>}
                 {m.role === 'operator' && '👤 оператор · '}
                 {m.role === 'assistant' && m.extra_meta?.kind === 'manual_nudge' && '⚡ ручной пинок · '}
                 {fmtTime(m.created_at)}

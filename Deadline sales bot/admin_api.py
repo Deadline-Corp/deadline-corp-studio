@@ -724,14 +724,10 @@ async def conversation_messages(
     # `after`+`after_id` НЕ теряет сообщения с тем же timestamp, что и граница страницы
     # (строгое `>` по одному created_at их роняло — кейс «бот+эхо в одну секунду»).
     query = db.query(Message).filter(Message.conversation_id == conv.id)
-    # Скрыть сообщения, удалённые в WhatsApp («удалить у всех» → wa_deleted=True в
-    # extra_meta, выставляет reconcile/revoke-вебхук). Обратимо: строка остаётся в БД
-    # (правило never-delete) — просто не отдаём в тред. NULL-ключ = не удалено.
-    query = query.filter(or_(
-        Message.extra_meta.is_(None),
-        Message.extra_meta["wa_deleted"].astext.is_(None),
-        Message.extra_meta["wa_deleted"].astext != "true",
-    ))
+    # Удалённые в WhatsApp («удалить у всех» → wa_deleted=True, ставит reconcile/revoke-
+    # вебхук) НЕ прячем — ОТДАЁМ с extra_meta.wa_deleted, чтобы UI показал их перечёркнуто
+    # с меткой «удалено». Владелец хочет ВИДЕТЬ факт удаления, а не тихое исчезновение
+    # (иначе рассинхрон в понимании). Строка в БД остаётся (правило never-delete).
     if after:
         _aft = _parse_iso(after)
         _aid = None
@@ -870,7 +866,7 @@ async def conversation_wa_resync(
         return {"ok": False, "added": 0, "reason": "не WhatsApp-карточка"}
     _cid = conv.id
     db.commit()  # отпустить коннект запроса ПЕРЕД сетевой сверкой (reconcile — свои сессии)
-    res = await reconcile_wa_conversation(_main.settings, _cid)
+    res = await reconcile_wa_conversation(_main.settings, _cid, limit=200)  # шире окно — ловит и старые удаления
     if (res.get("added") or res.get("restamped") or res.get("deduped")
             or res.get("removed") or res.get("restored")):
         try:

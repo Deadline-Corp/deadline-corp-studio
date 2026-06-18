@@ -499,6 +499,41 @@ async def _worker_loop(*, tenant_config: dict, interval_sec: int) -> None:
                 raise
             except Exception as exc:  # noqa: BLE001
                 logger.warning("[cron] auto-reconcile failed (non-fatal): %s", exc)
+            # ПЕР-КАРТОЧНЫЙ reconcile активных WhatsApp-чатов — ИМЕННО он ПОМЕЧАЕТ
+            # удалённые в WhatsApp сообщения (sync_waha_history выше только СЧИТАЕТ).
+            # Bounded топ-20 по свежести; reconcile_wa_conversation сам держит короткие
+            # сессии (сеть ВНЕ транзакции) → зовём в цикле без открытого коннекта.
+            try:
+                from datetime import timedelta as _td
+                from sqlalchemy import select as _sel
+                from db.connection import session_scope as _ss
+                from db.models import Conversation as _RConv
+                from services.whatsapp_sync import reconcile_wa_conversation as _recon
+                import main as _mr2
+                _rnow = datetime.now(timezone.utc)
+                with _ss() as _adb:
+                    _active_ids = _adb.execute(
+                        _sel(_RConv.id).where(
+                            _RConv.channel == "whatsapp",
+                            _RConv.status != "ARCHIVED",
+                            _RConv.last_message_at >= _rnow - _td(days=3),
+                        ).order_by(_RConv.last_message_at.desc()).limit(20)
+                    ).scalars().all()
+                _marked = 0
+                for _acid in _active_ids:
+                    try:
+                        _rr = await _recon(_mr2.settings, _acid, limit=80)
+                        _marked += int(_rr.get("removed") or 0)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:  # noqa: BLE001
+                        continue
+                logger.info("[cron] per-chat reconcile: chats=%d deletions_marked=%d",
+                            len(_active_ids), _marked)
+            except asyncio.CancelledError:
+                raise
+            except Exception as _pe:  # noqa: BLE001
+                logger.warning("[cron] per-chat reconcile skipped: %s", _pe)
         # Умное авто-ведение WhatsApp — периодическая проверка актуальности:
         # ловит ручные договорённости/новую инфу, которые могли не прийти вебхуком,
         # двигает воронку и ставит созвон в календарь. ОПАСНО на едином процессе с
