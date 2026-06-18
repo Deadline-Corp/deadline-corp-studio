@@ -110,6 +110,8 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   const [filter, setFilter] = useState<ZoneId | null>(null)
   const [waitOpen, setWaitOpen] = useState(false)  // зона «Ждём лида» свёрнута по умолчанию
   const [stageFilter, setStageFilter] = useState<string | null>(null)  // фильтр по СТАТУСУ (стадии воронки)
+  const [rsId, setRsId] = useState('')    // id задачи с открытым пикером переноса
+  const [rsVal, setRsVal] = useState('')  // значение datetime-local
   const { openConversation } = useDrawer()
 
   const load = async () => {
@@ -133,11 +135,12 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
     const r = await api.post<any>('/task-board/generate', { limit: 10 })
     showToast(`🤖 Разобрал ${r.processed ?? 0} лидов`)
   }, 'Готово')
-  // Перенос задачи на N дней вперёд (на 10:00). Бэкенд /reschedule меняет due_at.
-  const reschedule = (id: string, days: number) => act(async () => {
-    const d = new Date(); d.setDate(d.getDate() + days); d.setHours(10, 0, 0, 0)
-    await api.post(`/scheduled-actions/${id}/reschedule`, { due_at: d.toISOString() })
-  }, days === 1 ? 'Перенесено на завтра' : `Перенесено на +${days}д`)
+  // Перенос задачи на ПРОИЗВОЛЬНУЮ дату/время (пикер). Кейс владельца: «написать
+  // сегодня» → клиент попросил «через неделю» → переносим. Бэкенд /reschedule берёт ISO.
+  const rescheduleTo = (id: string, iso: string) => act(async () => {
+    await api.post(`/scheduled-actions/${id}/reschedule`, { due_at: iso })
+    setRsId(''); setRsVal('')
+  }, '↪ Перенесено')
   const markLostTask = (convId: string) =>
     act(() => api.post(`/conversations/${convId}/stage`, { to_stage: 'lost', lost_reason: 'delayed' }), '✗ Не сложилось')
   // Одобрить готовый черновик бота (зона «Одобри сейчас»): отправить / отклонить.
@@ -145,6 +148,20 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   const rejectDraft = (convId: string) => act(() => api.post(`/conversations/${convId}/wa-draft`, { action: 'reject' }), '🚫 Черновик отклонён')
   // Вернуть автопилотного лида на ручное одобрение (зона «Бот ведёт»).
   const toApproval = (convId: string) => act(() => api.post(`/conversations/${convId}/wa-autonomous`, { on: false }), '⏸ Вернул на одобрение')
+
+  // Инлайн-пикер переноса задачи на дату/время (раскрывается кнопкой «↪ Перенести»).
+  const Reschedule = ({ taskId }: { taskId: string }) =>
+    rsId === taskId ? (
+      <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }} onClick={e => e.stopPropagation()}>
+        <input type="datetime-local" value={rsVal} autoFocus onChange={e => setRsVal(e.target.value)} style={{ fontSize: 11 }} />
+        <button className="btn sm primary" disabled={!rsVal || !!busy}
+                onClick={() => rescheduleTo(taskId, new Date(rsVal).toISOString())}>OK</button>
+        <button className="btn sm ghost" onClick={() => { setRsId(''); setRsVal('') }}>✕</button>
+      </span>
+    ) : (
+      <button className="btn sm ghost" disabled={!!busy} title="Перенести задачу на дату/время"
+              onClick={() => { setRsId(taskId); setRsVal('') }}>↪ Перенести</button>
+    )
 
   if (!board) return <div className="empty"><span className="spin" /> Загрузка…</div>
 
@@ -178,6 +195,7 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
           </>}
           {zone === 'your_turn' && <>
             {l.task_id && <button className="btn sm" disabled={!!busy} onClick={() => done(l.task_id!)}>✓ Сделано</button>}
+            {l.task_id && <Reschedule taskId={l.task_id} />}
             {l.bot_capable && !l.wa_autonomous && <button className="btn sm" disabled={!!busy} onClick={() => botLead(l.conversation_id)}>🤖 Боту</button>}
             <button className="btn sm ghost" onClick={() => openConversation(l.conversation_id)}>Открыть</button>
           </>}
