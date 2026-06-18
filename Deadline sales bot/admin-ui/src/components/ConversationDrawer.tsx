@@ -825,10 +825,10 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
           />
         )}
 
-        {/* «План бота» — ТОЛЬКО когда лид передан боту (wa_autonomous). Если им
-            занимается человек (наблюдение/ручной ответ) — у бота нет плана, блок не
-            показываем, чтобы не путать «жду одобрения / следующий шаг» при ручном ведении. */}
-        {detail && me?.role !== 'viewer' && detail.wa_autonomous && (
+        {/* «План бота» — показываем ВСЕГДА (и на автопилоте, и на ручном ведении):
+            владелец хочет видеть логику бота — что он планирует написать и когда +
+            превью следующего ответа, даже когда диалог ведёт человек. */}
+        {detail && me?.role !== 'viewer' && (
           <BotPlanBlock detail={detail} convId={convId} showToast={showToast} />
         )}
 
@@ -993,8 +993,16 @@ function BotPlanBlock({ detail, convId, showToast }: {
           ? <>Следующий шаг: <b>{TYPE[nextSched.action_type]}</b>{nextSched.due_at ? <> · {fmtTime(nextSched.due_at)}</> : null}</>
           : (detail.nudge_paused
               ? 'Дожим на паузе — бот не пишет сам, пока не возобновишь.'
-              : 'Жду ответа лида. Замолчит — дожму по каденции (Настройки → «Каденция дожима»).')}
+              : (detail.wa_autonomous
+                  ? 'Жду ответа лида. Замолчит — дожму сам по каденции (Настройки → «Каденция дожима»).'
+                  : 'Жду ответа лида. Замолчит — подготовлю черновик дожима тебе на одобрение.'))}
       </div>
+      {nextSched?.payload?.text && (
+        <div style={{ marginTop: 5, padding: '6px 9px', background: 'var(--panel)', borderRadius: 7,
+                      fontSize: 12, lineHeight: 1.45, whiteSpace: 'pre-wrap', borderLeft: '2px solid var(--accent-border)' }}>
+          💬 «{nextSched.payload.text}»
+        </div>
+      )}
       <button className="btn sm ghost" style={{ marginTop: 6, fontSize: 11.5 }} onClick={showPreview} disabled={busy}>
         {busy ? <span className="spin" /> : (open && preview !== null ? '▾ Что бот напишет дальше' : '▸ Что бот напишет дальше')}
       </button>

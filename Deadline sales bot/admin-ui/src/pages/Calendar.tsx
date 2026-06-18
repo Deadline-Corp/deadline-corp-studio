@@ -41,7 +41,9 @@ export function Calendar() {
 
   const [visible, setVisible] = useState<Record<string, boolean>>(() => {
     try { const s = localStorage.getItem('cal_filters'); if (s) return JSON.parse(s) } catch { /* */ }
-    return { call: true, task: true, bot: true, reminder: false } // напоминания скрыты по умолчанию (шум)
+    // Календарь = ТОЛЬКО события для человека: созвоны + напоминания перед ними.
+    // Обычные задачи (написать/дожать) сюда не сваливаем — они в Задачнике (просьба владельца).
+    return { call: true, reminder: true, task: false, bot: false }
   })
   const visibleRef = useRef(visible)
   visibleRef.current = visible
