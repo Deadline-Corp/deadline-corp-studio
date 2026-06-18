@@ -299,8 +299,13 @@ def make_payload(
     source: str,
     based_on_count: int,
     phone_number_id: str = "",
+    kind: str = "reply",
 ) -> dict:
-    """Единый формат pending_wa_draft со штампом свежести."""
+    """Единый формат pending_wa_draft со штампом свежести.
+
+    kind: "reply" (черновик ОТВЕТА на сообщение лида, дефолт) | "nudge" (черновик
+    проактивного ДОЖИМА молчащего лида) — UI подписывает блок по-разному. Отправка
+    одинаковая (читает только text), поле обратно совместимо."""
     return {
         "text": text,
         "phone_number_id": phone_number_id,
@@ -308,6 +313,7 @@ def make_payload(
         "client_msg": (last_user or "")[:500],
         "source": source,
         "based_on_count": based_on_count,
+        "kind": kind,
         "ts": datetime.now(timezone.utc).isoformat(),
     }
 

@@ -163,7 +163,7 @@ export interface ConvDetail extends ConvSummary {
   forum_topic_id: number | null
   crm_deal_id: string | null
   crm_contact_id: string | null
-  pending_wa_draft: { text?: string; client_msg?: string; ts?: string; source?: string; stale?: boolean; based_on_count?: number } | null
+  pending_wa_draft: { text?: string; client_msg?: string; ts?: string; source?: string; stale?: boolean; based_on_count?: number; kind?: string } | null
   pending_call_suggestion?: { at?: string; when_human?: string; medium?: string | null; reason?: string; ts?: string } | null
   wa_autonomous: boolean
   nudge_paused?: boolean

@@ -1034,6 +1034,11 @@ function BehaviorCard() {
                  onChange={e => upd('nudge_enabled', e.target.checked)} />
           Дожимать вовлечённого лида, если он замолчал (по шагам ниже; ответил — дожим прекращается сам)
         </label>
+        <label style={row}>
+          <input type="checkbox" checked={overrides.nudge_draft_for_manual !== false}
+                 onChange={e => upd('nudge_draft_for_manual', e.target.checked)} />
+          Для лидов на РУЧНОМ ведении — готовить дожим как черновик на одобрение (бот не молчит и не пишет сам; черновик в «Одобри сейчас»)
+        </label>
         <div style={row}>
           <span className="muted" style={{ width: 280 }}>Каденция дожима (через сколько тишины):</span>
           <input type="text" value={overrides.nudge_sequence ?? ''} placeholder="1h,1d,3d"

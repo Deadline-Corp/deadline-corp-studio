@@ -564,6 +564,9 @@ async def sweep_once(*, tenant_config: dict) -> dict:
             funnel_cfg = {**funnel_cfg, "silence_lost_threshold_d": _ui_overrides["silence_lost_days"]}
     _nudge_enabled = bool(_ui_overrides.get("nudge_enabled", True))
     _nudge_text_override = _ui_overrides.get("nudge_text") or None
+    # Черновик-режим дожима для РУЧНЫХ лидов (не автопилот): вместо молчания бот
+    # готовит черновик дожима на одобрение. Деф. ВКЛ (безопасно — без одобрения не шлёт).
+    _nudge_draft_manual = bool(_ui_overrides.get("nudge_draft_for_manual", True))
     decay_per_48h = int(scoring_cfg.get("decay_per_48h", -1))
     temp_decay_days = int(temperature_cfg.get("decay_days", 14))
     temp_frozen_after = int(temperature_cfg.get("frozen_after_days", 21))
@@ -771,9 +774,9 @@ async def sweep_once(*, tenant_config: dict) -> dict:
                 # остыл (score<40), шаги кончились, или тишина дольше потолка.
                 _paused = bool((customer.profile_data or {}).get("nudge_paused"))
                 _taken = bool(getattr(conversation, "operator_takeover", False))
-                # ИНВАРИАНТ АВТОНОМИИ: бот дожимает (шлёт сам) ТОЛЬКО лидов на автопилоте
-                # (wa_autonomous). Лидов на ручном ведении оператор дожимает сам — иначе
-                # бот пишет клиенту без одобрения (жалоба владельца).
+                # ИНВАРИАНТ АВТОНОМИИ: бот ШЛЁТ дожим сам ТОЛЬКО на автопилоте (wa_autonomous).
+                # Ручных лидов бот САМ не дожимает (без одобрения не пишет — жалоба владельца),
+                # но и НЕ молчит — готовит черновик дожима на одобрение (ветка ниже).
                 _autopilot = bool(getattr(conversation, "wa_autonomous", False))
                 if (_nudge_enabled and not _paused and not _taken and _autopilot
                         and _chat and _chan in ("telegram", "whatsapp", "instagram", "messenger")
@@ -822,6 +825,48 @@ async def sweep_once(*, tenant_config: dict) -> dict:
                                    conversation_id=conversation.id, customer_id=customer.id,
                                    detail={"step": _sent + 1, "of": len(_seq),
                                            "silent_hours": round(silent_hours, 1)}, db=s)
+                        except Exception:  # noqa: BLE001
+                            pass
+                # РУЧНОЙ ЛИД (не автопилот): бот не молчит — готовит ЧЕРНОВИК дожима на
+                # одобрение (зона «Одобри сейчас» + блок в карточке). ОДИН черновик на эпизод
+                # тишины (ref = посл. сообщение лида): не спамим, сам сбросится когда лид
+                # ответит. Без LLM (шаблон) → коннект не держим. Пока WhatsApp (там отправка
+                # одобренного черновика _wa_send работает end-to-end).
+                if (_nudge_enabled and not _paused and not _taken and not _autopilot
+                        and _nudge_draft_manual and _chan == "whatsapp" and _chat
+                        and _engaged and not _booked and silent_hours <= _ceiling
+                        and not conversation.pending_wa_draft):
+                    from db.models import Message as _Msg2
+                    _lastu2 = (
+                        s.query(_Msg2.created_at)
+                        .filter(_Msg2.conversation_id == conversation.id, _Msg2.role == "user")
+                        .order_by(_Msg2.created_at.desc()).first()
+                    )
+                    _ref2 = (_lastu2[0] if _lastu2 else conversation.created_at) or now
+                    if getattr(_ref2, "tzinfo", None) is None:
+                        _ref2 = _ref2.replace(tzinfo=timezone.utc)
+                    _ref2_iso = _ref2.isoformat()
+                    _prof2 = customer.profile_data or {}
+                    if _prof2.get("nudge_draft_ref") != _ref2_iso and silent_hours >= _seq[0]:
+                        from services import wa_drafts as _wad
+                        _dtxt = _nudge_text_override or _NUDGE_TEXTS[0]
+                        conversation.pending_wa_draft = _wad.make_payload(
+                            conversation, _dtxt, last_user="", source="cron-nudge-draft",
+                            based_on_count=_wad.count_dialog_messages(s, conversation.id),
+                            kind="nudge",
+                        )
+                        customer.profile_data = {**_prof2, "nudge_draft_ref": _ref2_iso}
+                        stats["nudge_drafts"] = stats.get("nudge_drafts", 0) + 1
+                        logger.info("[cron] nudge-DRAFT (ручной лид) conv=%s (%.1fч тишины)",
+                                    str(conversation.id)[:8], silent_hours)
+                        try:
+                            from services.bot_decisions import log_decision as _logdn2
+                            _logdn2("nudge_draft",
+                                    f"Подготовил черновик дожима молчащему лиду (ручное ведение): "
+                                    f"молчит {silent_hours:.0f}ч, был вовлечён (скор {customer.lead_score}). "
+                                    f"Ждёт одобрения оператора. Текст: «{(_dtxt or '')[:80]}»",
+                                    conversation_id=conversation.id, customer_id=customer.id,
+                                    detail={"silent_hours": round(silent_hours, 1), "kind": "nudge"}, db=s)
                         except Exception:  # noqa: BLE001
                             pass
             except Exception as _ne:  # noqa: BLE001

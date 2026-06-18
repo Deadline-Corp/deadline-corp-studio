@@ -846,11 +846,11 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
              или напишите своё, затем «Отправить». Второго поля ввода нет. */
           <div style={{ borderTop: '1px solid var(--accent-border)', background: detail.pending_wa_draft ? 'var(--accent-soft)' : 'var(--panel-2)', padding: '8px 14px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-              <b style={{ fontSize: 12.5 }}>✍️ Ответ лиду</b>
+              <b style={{ fontSize: 12.5 }}>{detail.pending_wa_draft?.kind === 'nudge' ? '✍️ Дожать молчащего лида' : '✍️ Ответ лиду'}</b>
               {detail.pending_wa_draft
                 ? (detail.pending_wa_draft.stale
                     ? <span className="faint" style={{ fontSize: 11, color: 'var(--warn, #c90)' }}>был ответ вручную — нажмите 🔄 Переформулировать для свежего</span>
-                    : <span className="faint" style={{ fontSize: 11 }}>🤖 бот предложил — измените или напишите своё</span>)
+                    : <span className="faint" style={{ fontSize: 11 }}>{detail.pending_wa_draft.kind === 'nudge' ? '🤖 бот предлагает дожать молчащего — проверьте и отправьте' : '🤖 бот предложил — измените или напишите своё'}</span>)
                 : <span className="faint" style={{ fontSize: 11 }}>напишите ответ или нажмите 🔄 Переформулировать</span>}
             </div>
             <textarea value={draftText} onChange={e => setDraftText(e.target.value)}

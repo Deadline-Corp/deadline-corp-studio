@@ -3479,6 +3479,7 @@ async def behavior_get(_: None = Depends(_verify_owner)):
             "nudge_after_hours": 1,
             "nudge_max_hours": 36,
             "nudge_text": None,
+            "nudge_draft_for_manual": True,
             "silence_lost_days": 7,
             "silence_lost_extend_warm": False,
             "silence_lost_warm_days": 14,
