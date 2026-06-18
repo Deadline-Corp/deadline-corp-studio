@@ -724,6 +724,14 @@ async def conversation_messages(
     # `after`+`after_id` НЕ теряет сообщения с тем же timestamp, что и граница страницы
     # (строгое `>` по одному created_at их роняло — кейс «бот+эхо в одну секунду»).
     query = db.query(Message).filter(Message.conversation_id == conv.id)
+    # Скрыть сообщения, удалённые в WhatsApp («удалить у всех» → wa_deleted=True в
+    # extra_meta, выставляет reconcile/revoke-вебхук). Обратимо: строка остаётся в БД
+    # (правило never-delete) — просто не отдаём в тред. NULL-ключ = не удалено.
+    query = query.filter(or_(
+        Message.extra_meta.is_(None),
+        Message.extra_meta["wa_deleted"].astext.is_(None),
+        Message.extra_meta["wa_deleted"].astext != "true",
+    ))
     if after:
         _aft = _parse_iso(after)
         _aid = None
@@ -863,10 +871,12 @@ async def conversation_wa_resync(
     _cid = conv.id
     db.commit()  # отпустить коннект запроса ПЕРЕД сетевой сверкой (reconcile — свои сессии)
     res = await reconcile_wa_conversation(_main.settings, _cid)
-    if res.get("added") or res.get("restamped") or res.get("deduped"):
+    if (res.get("added") or res.get("restamped") or res.get("deduped")
+            or res.get("removed") or res.get("restored")):
         try:
             from services.activity_log import log_event
             _a, _r, _d = res.get("added", 0), res.get("restamped", 0), res.get("deduped", 0)
+            _rm, _rs = res.get("removed", 0), res.get("restored", 0)
             _parts = []
             if _a:
                 _parts.append(f"подтянуто {_a} пропущенных")
@@ -874,13 +884,19 @@ async def conversation_wa_resync(
                 _parts.append(f"выровнен порядок {_r}")
             if _d:
                 _parts.append(f"убрано дублей {_d}")
+            if _rm:
+                _parts.append(f"скрыто удалённых в WhatsApp {_rm}")
+            if _rs:
+                _parts.append(f"восстановлено {_rs}")
             log_event("bot", f"Сверка с WhatsApp: {', '.join(_parts)}",
                       level="info", actor="system", conversation_id=str(_cid),
-                      meta={k: res.get(k) for k in ("added", "restamped", "deduped", "fetched", "chat_id")})
+                      meta={k: res.get(k) for k in
+                            ("added", "restamped", "deduped", "removed", "restored", "fetched", "chat_id")})
         except Exception:  # noqa: BLE001
             pass
     return {"ok": res.get("ok", False), "added": res.get("added", 0),
             "restamped": res.get("restamped", 0), "deduped": res.get("deduped", 0),
+            "removed": res.get("removed", 0), "restored": res.get("restored", 0),
             "fetched": res.get("fetched", 0), "reason": res.get("reason")}
 
 

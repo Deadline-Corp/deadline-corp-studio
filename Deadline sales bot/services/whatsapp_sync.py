@@ -745,7 +745,8 @@ async def reconcile_wa_conversation(settings: Any, conv_id: Any, *, limit: int =
     СЕССИЮ НЕ держим во время сети (урок висов 06-15): короткая сессия на сбор данных →
     сеть вне сессии → короткая сессия на запись. Возвращает {ok, added, fetched, chat_id}."""
     from db.connection import session_scope
-    out: dict = {"ok": False, "added": 0, "restamped": 0, "deduped": 0, "fetched": 0, "chat_id": None}
+    out: dict = {"ok": False, "added": 0, "restamped": 0, "deduped": 0,
+                 "removed": 0, "restored": 0, "fetched": 0, "chat_id": None}
     base = getattr(settings, "waha_base_url", None)
     key = getattr(settings, "waha_api_key", None) or ""
     session = getattr(settings, "waha_session", None) or "default"
@@ -945,6 +946,57 @@ async def reconcile_wa_conversation(settings: Any, conv_id: Any, *, limit: int =
             for dup in grp[1:]:
                 db.delete(dup)
                 out["deduped"] += 1
+        # ДЕЛИШН (WAHA = источник правды): сообщение, которое РАНЬШЕ пришло из WhatsApp
+        # (есть waha_id) и попадает в ОКНО подтянутой выборки, но в текущем чате WhatsApp
+        # его БОЛЬШЕ НЕТ → его удалили в WhatsApp («удалить у всех»). Гасим ОБРАТИМО
+        # (wa_deleted=True в extra_meta — строку НЕ удаляем, правило never-delete; тред её
+        # прячет). Само-лечение: вернулось в выборку WAHA → флаг снимаем. Гасим ТОЛЬКО в
+        # окне [floor..ceil] подтянутых ts (вне окна — просто за пределом limit, НЕ удалено)
+        # и только при здоровой выборке (≥2), чтобы единичный сбой WAHA не погасил живое.
+        if len(items) >= 2:
+            _wa_full: set = set()
+            _wa_suf: set = set()
+            _ts_vals: list = []
+            for it in items:
+                _w = it.get("waha_id")
+                if _w:
+                    _wa_full.add(str(_w))
+                    _sf = _wa_msgid_suffix(_w)
+                    if _sf:
+                        _wa_suf.add(_sf)
+                _t = _ts_to_dt(it.get("ts"))
+                if _t is not None:
+                    _ts_vals.append(_t)
+            if _wa_suf and _ts_vals:
+                _floor_ts, _ceil_ts = min(_ts_vals), max(_ts_vals)
+                surv = db.execute(
+                    select(Message).where(Message.conversation_id == conv_id)
+                ).scalars().all()
+                for r in surv:
+                    meta = r.extra_meta if isinstance(r.extra_meta, dict) else {}
+                    wid = meta.get("waha_id")
+                    if not wid:
+                        continue  # бот-черновик/ручное без waha_id — не из стора WhatsApp
+                    sfx = _wa_msgid_suffix(wid)
+                    present = (str(wid) in _wa_full) or bool(sfx and sfx in _wa_suf)
+                    rc = r.created_at
+                    if rc is not None and rc.tzinfo is None:
+                        rc = rc.replace(tzinfo=timezone.utc)
+                    if present:
+                        if meta.get("wa_deleted"):  # вернулось → снять флаг (само-лечение)
+                            mm = dict(meta)
+                            mm.pop("wa_deleted", None)
+                            mm.pop("wa_deleted_at", None)
+                            r.extra_meta = mm
+                            out["restored"] = out.get("restored", 0) + 1
+                        continue
+                    if (rc is not None and _floor_ts <= rc <= _ceil_ts
+                            and not meta.get("wa_deleted")):
+                        mm = dict(meta)
+                        mm["wa_deleted"] = True
+                        mm["wa_deleted_at"] = datetime.now(timezone.utc).isoformat()
+                        r.extra_meta = mm
+                        out["removed"] = out.get("removed", 0) + 1
         if last_ts is not None:
             conv = db.get(Conversation, conv_id)
             if conv is not None and (not conv.last_message_at or last_ts > conv.last_message_at):

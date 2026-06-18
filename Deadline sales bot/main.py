@@ -3807,6 +3807,70 @@ async def _wa_throttle() -> None:
         _wa_daily["count"] += 1
 
 
+async def _handle_wa_revoke(payload: dict) -> None:
+    """WhatsApp «удалить у всех» → WAHA шлёт revoke-событие. parse_waha_webhook его
+    игнорирует (берёт только message/message.any), поэтому ловим здесь: гасим строку в
+    панели ОБРАТИМО (wa_deleted=True; строку НЕ удаляем — правило never-delete, тред её
+    прячет). Матч по ТОЧНОМУ message-id (полный + суффикс @lid/@c.us-копий — суффикс
+    глобально уникален). Best-effort: форма события у движков WAHA разнится — собираем
+    любые id-поля. Журналируем (заодно видно в «Логах», доходят ли revoke-события)."""
+    from datetime import datetime as _dtmod, timezone as _tzmod
+    try:
+        body = payload.get("payload") or {}
+        srcs = [body]
+        for k in ("before", "after", "message"):
+            v = body.get(k)
+            if isinstance(v, dict):
+                srcs.append(v)
+        cand: list = []
+        for s in srcs:
+            idv = s.get("id")
+            if isinstance(idv, str) and idv:
+                cand.append(idv)
+            elif isinstance(idv, dict):
+                ser = idv.get("_serialized") or idv.get("id")
+                if isinstance(ser, str) and ser:
+                    cand.append(ser)
+            for k in ("messageId", "msgId", "_serialized"):
+                v = s.get(k)
+                if isinstance(v, str) and v:
+                    cand.append(v)
+        cand = [c for c in dict.fromkeys(cand) if c]
+        if not cand:
+            return
+        from db.connection import session_scope
+        from db.models import Message as _Msg
+        from services.whatsapp_sync import _wa_msgid_suffix as _suf
+        cand_set = set(cand)
+        sufs = {x for x in (_suf(c) for c in cand) if x}
+        hidden = 0
+        with session_scope() as db:
+            # Недавние WhatsApp-сообщения (extra_meta не null) — revoke редок, скан ограничен.
+            rows = (db.query(_Msg).filter(_Msg.extra_meta.isnot(None))
+                    .order_by(_Msg.created_at.desc()).limit(2000).all())
+            for r in rows:
+                meta = r.extra_meta if isinstance(r.extra_meta, dict) else {}
+                wid = meta.get("waha_id")
+                if not wid or meta.get("wa_deleted"):
+                    continue
+                _s = _suf(wid)
+                if str(wid) in cand_set or (_s and _s in sufs):
+                    mm = dict(meta)
+                    mm["wa_deleted"] = True
+                    mm["wa_deleted_at"] = _dtmod.now(_tzmod.utc).isoformat()
+                    mm["wa_deleted_src"] = "revoke_webhook"
+                    r.extra_meta = mm
+                    hidden += 1
+        try:
+            from services.activity_log import log_event
+            log_event("bot", f"WhatsApp: сообщение удалено в чате → скрыто в панели ({hidden})",
+                      level="info", actor="system", meta={"ids": cand[:5], "hidden": hidden})
+        except Exception:  # noqa: BLE001
+            pass
+    except Exception as e:  # noqa: BLE001
+        log.warning(f"_handle_wa_revoke failed: {e}")
+
+
 async def _process_wa_payload(payload: dict, engine: str) -> None:
     """Фоновая обработка одного входящего WhatsApp (вебхук уже ответил 200).
     Парсит, гонит через _handle_message, отправляет ответ (если не наблюдение),
@@ -3814,6 +3878,12 @@ async def _process_wa_payload(payload: dict, engine: str) -> None:
     import os as _os
     if _os.getenv("WA_WEBHOOK_PAUSE", "").strip() in ("1", "true", "yes"):
         return  # аварийный стоп обработки (даём приложению разгрузиться)
+    # Удаление сообщения в WhatsApp («удалить у всех») — revoke-событие. Гасим ОБРАТИМО
+    # и выходим (не гоняем как входящее). Вне семафора — операция лёгкая (не LLM).
+    if engine == "waha" and str(payload.get("event") or "").lower() in (
+            "message.revoked", "message.revoke", "message.deleted", "message_revoked"):
+        await _handle_wa_revoke(payload)
+        return
     async with _WA_INBOUND_SEMA:
         try:
             from db.connection import session_scope

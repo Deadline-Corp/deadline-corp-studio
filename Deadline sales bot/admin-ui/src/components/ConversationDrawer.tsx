@@ -181,16 +181,20 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
     if (resyncing) return
     setResyncing(true)
     try {
-      const r = await api.post<{ added: number; restamped?: number; deduped?: number; reason?: string }>(`/conversations/${convId}/wa-resync`, {})
+      const r = await api.post<{ added: number; restamped?: number; deduped?: number; removed?: number; restored?: number; reason?: string }>(`/conversations/${convId}/wa-resync`, {})
       const restamped = r.restamped ?? 0
       const deduped = r.deduped ?? 0
-      if (r.added > 0 || restamped > 0 || deduped > 0) {
-        await loadMessages(true)  // перезагрузить — подтянулись недостающие / выровнялся порядок / убраны дубли
+      const removed = r.removed ?? 0
+      const restored = r.restored ?? 0
+      if (r.added > 0 || restamped > 0 || deduped > 0 || removed > 0 || restored > 0) {
+        await loadMessages(true)  // перезагрузить — подтянулись недостающие / порядок / дубли / скрыты удалённые
         if (!silent) {
           const bits: string[] = []
           if (r.added > 0) bits.push(`подтянуто ${r.added}`)
           if (restamped > 0) bits.push(`выровнен порядок ${restamped}`)
           if (deduped > 0) bits.push(`убрано дублей ${deduped}`)
+          if (removed > 0) bits.push(`скрыто удалённых ${removed}`)
+          if (restored > 0) bits.push(`восстановлено ${restored}`)
           showToast(`🔄 Сверено с WhatsApp: ${bits.join(', ')}`)
         }
       } else if (!silent) {
