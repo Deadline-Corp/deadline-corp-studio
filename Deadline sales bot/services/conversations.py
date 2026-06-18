@@ -229,6 +229,27 @@ def set_operator_takeover(
     if conversation is None:
         raise ValueError(f"Conversation {conversation_id} not found")
     conversation.operator_takeover = enabled
+    if enabled:
+        # КАСКАД ПЕРЕХВАТА (I4): раньше ставился ТОЛЬКО флаг — wa_autonomous не гас,
+        # созревающие bot-дожимы не отменялись, run_due_followups их не проверял →
+        # бот продолжал дожимать лида, которого человек лично взял на себя (прямое
+        # противоречие статуса «ты ведёшь» и поведения). Теперь перехват глушит
+        # автопилот И отменяет созревающие проактивные bot-задачи этого диалога.
+        # Обратимо (status→cancelled). НЕ трогаем call_reminder (созвон всё равно
+        # состоится) и operator_callback (это человеческие задачи).
+        conversation.wa_autonomous = False
+        from db.models import ScheduledAction
+        from sqlalchemy import update as _update
+        db.execute(
+            _update(ScheduledAction)
+            .where(
+                ScheduledAction.conversation_id == conversation_id,
+                ScheduledAction.executor == "bot",
+                ScheduledAction.action_type.in_(("followup_message", "warming_touch")),
+                ScheduledAction.status.in_(("pending", "processing")),
+            )
+            .values(status="cancelled")
+        )
     db.flush()
     return conversation
 

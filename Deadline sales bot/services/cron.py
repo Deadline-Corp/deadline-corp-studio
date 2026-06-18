@@ -751,7 +751,8 @@ async def sweep_once(*, tenant_config: dict) -> dict:
                 # счётчик считаем ПОСЛЕ его последнего сообщения → обнуляется), бронь, лид
                 # остыл (score<40), шаги кончились, или тишина дольше потолка.
                 _paused = bool((customer.profile_data or {}).get("nudge_paused"))
-                if (_nudge_enabled and not _paused
+                _taken = bool(getattr(conversation, "operator_takeover", False))
+                if (_nudge_enabled and not _paused and not _taken
                         and _chat and _chan in ("telegram", "whatsapp", "instagram", "messenger")
                         and _engaged and not _booked
                         and silent_hours <= _ceiling):

@@ -190,6 +190,21 @@ async def run_due_followups(*, tenant_config: Optional[dict] = None) -> dict:
                     r.claimed_at = None
                     stats["skipped_replied"] = stats.get("skipped_replied", 0) + 1
                     continue
+            # ГАРД ПЕРЕХВАТА (I4): оператор взял диалог на себя → не дожимаем. Защита
+            # от гонки (задача могла созреть между переключениями перехвата); основное
+            # снятие — в set_operator_takeover, тут — последний рубеж.
+            if r.conversation_id is not None:
+                from db.models import Conversation as _Conv
+                _taken = (
+                    s.query(_Conv.operator_takeover)
+                    .filter(_Conv.id == r.conversation_id)
+                    .scalar()
+                )
+                if _taken:
+                    r.status = "cancelled"
+                    r.claimed_at = None
+                    stats["skipped_takeover"] = stats.get("skipped_takeover", 0) + 1
+                    continue
             r.status = "processing"
             r.claimed_at = now
             stats["due"] += 1
