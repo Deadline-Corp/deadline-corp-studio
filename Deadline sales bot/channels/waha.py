@@ -163,13 +163,16 @@ async def parse_waha_webhook(
             )
         log.info(f"waha voice transcribed ({len(transcript)} chars)")
         return NormalizedMessage(
-            external_id=peer, content=transcript, username=uname,
+            external_id=peer, content=transcript[:4000], username=uname,
             channel_conversation_id=peer,
             extra_meta={**base, "transcribed_by": "groq-whisper-v3"},
         )
 
     # ---- text (chat) ----
-    text = (p.get("body") or "").strip()
+    # Обрезаем под лимит MessageRequest.content (4000): без этого длинное входящее
+    # падало на валидации → сообщение лида ТЕРЯЛОСЬ, бот не отвечал (лог-ошибка
+    # «string_too_long»). history-путь и отправка уже режут [:4000] — выравниваем.
+    text = (p.get("body") or "").strip()[:4000]
     if text and mtype not in ("image", "video", "document", "sticker", "location"):
         return NormalizedMessage(
             external_id=peer, content=text, username=uname,
