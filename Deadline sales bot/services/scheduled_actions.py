@@ -15,7 +15,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 logger = logging.getLogger("scheduled_actions")
 
@@ -99,14 +99,48 @@ def write_scheduled_action(
         return None, False
 
 
+async def _send_by_channel(channel: Any, chat_id: str, text: str,
+                           *, tg_token: Optional[str]) -> bool:
+    """Отправить ПРОАКТИВНОЕ сообщение в ПРАВИЛЬНЫЙ канал лида.
+
+    КОРЕНЬ тихой потери лидов: раньше дожимы/напоминания слались жёстко через
+    Telegram независимо от канала → WhatsApp/Instagram-лиду уходило в Telegram
+    Bot API с чужим chat_id → ok=False → 3 попытки → status=failed → лид молча
+    выпадал из дожима и из задачника. Теперь роутим по ScheduledAction.channel.
+    """
+    ch = (channel.value if hasattr(channel, "value") else str(channel or "")).lower()
+    if ch == "whatsapp":
+        # Единый WhatsApp-отправитель: WAHA→Green-API→Cloud failover + троттл +
+        # дневной потолок (антибан неофиц. WhatsApp). Сам читает настройки.
+        from main import _wa_send
+        return await _wa_send(str(chat_id), text)
+    if ch == "telegram":
+        if not tg_token:
+            return False
+        from channels.telegram import send_telegram_reply as _tg
+        return await _tg(tg_token, str(chat_id), text)
+    if ch in ("messenger", "instagram"):
+        import main as _main
+        page_token = getattr(_main.settings, "meta_page_access_token", "") or ""
+        if not page_token:
+            return False
+        if ch == "messenger":
+            from channels.messenger import send_messenger_reply as _mg
+            return await _mg(page_token, str(chat_id), text)
+        from channels.instagram import send_instagram_reply as _ig
+        return await _ig(page_token, str(chat_id), text)
+    # website / неизвестный — проактивной досылки нет (нет транспорта). Не «успех»,
+    # но и не вечный ретрай: вызывающий пометит failed → станет видно в «Затык».
+    return False
+
+
 async def run_due_followups(*, tenant_config: Optional[dict] = None) -> dict:
-    """Крон-шаг: исполнить созревшие bot-followup'ы (отправить в Telegram).
+    """Крон-шаг: исполнить созревшие bot-followup'ы (в КАНАЛ лида, см. _send_by_channel).
 
     Изолированно. Возвращает stats. Ошибка одной строки не валит остальные.
     """
     from db.connection import session_scope
     from db.models import ScheduledAction
-    from channels.telegram import send_telegram_reply
 
     stats = {"due": 0, "sent": 0, "failed": 0, "skipped_no_chat": 0}
     token = os.getenv("TELEGRAM_BOT_TOKEN") or (tenant_config or {}).get("telegram_bot_token")
@@ -163,6 +197,7 @@ async def run_due_followups(*, tenant_config: Optional[dict] = None) -> dict:
             todo.append({
                 "id": str(r.id),
                 "chat_id": r.chat_id,
+                "channel": r.channel,
                 "text": payload.get("text") or DEFAULT_FOLLOWUP_TEXT,
                 "crm_task_id": r.crm_task_id,
                 "customer_id": str(r.customer_id) if r.customer_id else None,
@@ -174,13 +209,15 @@ async def run_due_followups(*, tenant_config: Optional[dict] = None) -> dict:
     # 2) Отправляем (await) вне сессии, затем помечаем результат.
     for item in todo:
         ok = False
-        if not item["chat_id"] or not token:
+        if not item["chat_id"]:
             stats["skipped_no_chat"] += 1
         else:
             try:
-                ok = await send_telegram_reply(token, str(item["chat_id"]), item["text"])
+                ok = await _send_by_channel(item["channel"], item["chat_id"],
+                                            item["text"], tg_token=token)
             except Exception as exc:  # noqa: BLE001
-                logger.warning("[scheduled_actions] send failed row=%s: %s", item["id"], exc)
+                logger.warning("[scheduled_actions] send failed row=%s ch=%s: %s",
+                               item["id"], item.get("channel"), exc)
                 ok = False
         # 3) Пометить статус.
         try:
@@ -420,6 +457,8 @@ async def run_due_call_reminders(*, tenant_config: Optional[dict] = None) -> dic
             todo.append({
                 "id": str(r.id),
                 "chat_id": r.chat_id,
+                "channel": r.channel,
+                "audience": payload.get("audience"),
                 "text": payload.get("text") or "Напоминаю про наш созвон 🙂",
             })
 
@@ -428,11 +467,19 @@ async def run_due_call_reminders(*, tenant_config: Optional[dict] = None) -> dic
 
     for item in todo:
         ok = False
-        if not item["chat_id"] or not token:
+        if not item["chat_id"]:
             stats["skipped_no_chat"] += 1
         else:
             try:
-                ok = await send_telegram_reply(token, str(item["chat_id"]), item["text"])
+                if item.get("audience") == "admin":
+                    # Админ-напоминание ВСЕГДА в Telegram опер-группу (chat_id = id
+                    # группы), независимо от канала лида.
+                    ok = bool(token) and await send_telegram_reply(
+                        token, str(item["chat_id"]), item["text"])
+                else:
+                    # Лиду — в его канал (раньше всё уходило в Telegram → падало).
+                    ok = await _send_by_channel(item["channel"], item["chat_id"],
+                                                item["text"], tg_token=token)
             except Exception as exc:  # noqa: BLE001
                 logger.warning("[scheduled_actions] call-reminder send failed row=%s: %s", item["id"], exc)
                 ok = False

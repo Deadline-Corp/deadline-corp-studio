@@ -3073,6 +3073,27 @@ async def task_board(
         _z.sort(key=lambda x: (-x["priority"], -x["silent_hours"]))
     stuck.sort(key=lambda x: -x["silent_hours"])
 
+    # ДОСТАВКА НЕ УДАЛАСЬ: bot-задачи (дожим/напоминание), упавшие после 3 попыток
+    # (status=failed) — раньше тихо исчезали (доска показывала только pending/
+    # processing) → лид молча терялся. Показываем отдельным сигналом «нужен человек».
+    failed_rows = (
+        db.query(ScheduledAction, Customer, Conversation)
+        .join(Customer, ScheduledAction.customer_id == Customer.id)
+        .outerjoin(Conversation, ScheduledAction.conversation_id == Conversation.id)
+        .filter(ScheduledAction.status == "failed")
+        .filter(ScheduledAction.executor == "bot")
+        .filter((Conversation.id.is_(None)) |
+                (Conversation.status != ConversationStatusEnum.ARCHIVED))
+        .order_by(ScheduledAction.due_at.desc())
+        .limit(100)
+        .all()
+    )
+    delivery_failed = []
+    for a, c, conv in failed_rows:
+        it = pack(a, c, conv)
+        it["attempts"] = a.attempts or 0
+        delivery_failed.append(it)
+
     return {
         "summary": {
             "overdue": len(buckets["overdue"]), "today": len(buckets["today"]),
@@ -3081,6 +3102,7 @@ async def task_board(
             "human": sum(1 for b in buckets.values() for t in b if t["who"] == "human"),
             "approve_now": len(zones["approve_now"]), "your_turn": len(zones["your_turn"]),
             "bot_leading": len(zones["bot_leading"]), "stuck": len(stuck),
+            "delivery_failed": len(delivery_failed),
         },
         "buckets": buckets,
         "no_task_leads": no_task[:60],
@@ -3088,6 +3110,8 @@ async def task_board(
         # «Затыки» — зона-стоп-сигнал: не прячем лиды, показываем все (счётчик в
         # summary = реальный total). Кап высокий, чтобы ничего не потерялось из виду.
         "stuck": stuck[:300],
+        # «Доставка не удалась» — упавшие bot-дожимы/напоминания (нужен человек).
+        "delivery_failed": delivery_failed[:60],
     }
 
 

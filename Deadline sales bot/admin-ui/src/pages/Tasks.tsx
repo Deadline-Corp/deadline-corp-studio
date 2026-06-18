@@ -52,13 +52,21 @@ type Lead = {
   has_human_task: boolean; task_id: string | null; task_due: string | null; task_text: string | null
 }
 type ZoneId = 'approve_now' | 'your_turn' | 'bot_leading' | 'stuck' | 'waiting'
+// Упавшая bot-задача (дожим/напоминание не доставлено) — сигнал «нужен человек».
+type FailedItem = {
+  id: string; conversation_id: string | null; name: string; channel: string
+  text: string; action_type: string; stage_label: string; temperature: string | null
+  attempts: number
+}
 type Board = {
   summary: { overdue: number; today: number; no_task: number; bot: number; human: number
-    approve_now: number; your_turn: number; bot_leading: number; stuck: number }
+    approve_now: number; your_turn: number; bot_leading: number; stuck: number
+    delivery_failed: number }
   buckets: Record<'overdue' | 'today' | 'tomorrow' | 'week' | 'later', BoardTask[]>
   no_task_leads: NoTaskLead[]
   zones: { approve_now: Lead[]; your_turn: Lead[]; bot_leading: Lead[]; waiting: Lead[] }
   stuck: Lead[]
+  delivery_failed: FailedItem[]
 }
 
 const StageChip = ({ s }: { s: string }) =>
@@ -221,6 +229,34 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
         <button className="btn sm" onClick={sweep} disabled={!!busy}>▶ Проверить сейчас</button>
         <Help title="Проверить сейчас" text="Бот сам каждые ~10 минут: дожимает молчунов, шлёт напоминания, чинит рассинхроны. Кнопка запускает проверку немедленно." />
       </div>
+
+      {board.delivery_failed.length > 0 && (
+        <div className="card" style={{ padding: 12, borderColor: 'var(--danger)' }}>
+          <b style={{ fontSize: 13, color: 'var(--danger)' }}>📵 Доставка не удалась ({board.delivery_failed.length})</b>
+          <div className="faint" style={{ fontSize: 11.5, margin: '4px 0 8px' }}>
+            Авто-сообщения бота этим лидам не доставились (канал/транспорт). Открой и ответь вручную.
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+            {board.delivery_failed.map(f => (
+              <div className="conv-row" key={f.id}>
+                <div className="c-main" style={{ cursor: f.conversation_id ? 'pointer' : 'default' }}
+                     onClick={() => f.conversation_id && openConversation(f.conversation_id)}>
+                  <div className="c-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <TempDot t={f.temperature} />{f.name}
+                    <StageChip s={f.stage_label} />
+                    <span className="faint" style={{ fontWeight: 400 }}>{CHANNEL_META[f.channel]?.icon}</span>
+                  </div>
+                  <div className="c-preview"><i>не доставлено ({f.attempts} попыт.): «{(f.text || '').slice(0, 90)}»</i></div>
+                </div>
+                <div className="c-meta">
+                  {f.conversation_id &&
+                    <button className="btn sm ghost" onClick={() => openConversation(f.conversation_id!)}>Открыть</button>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {(!filter || filter === 'stuck') &&
         <Zone id="stuck" color="var(--danger)" items={board.stuck}
