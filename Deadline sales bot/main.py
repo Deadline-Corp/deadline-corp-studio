@@ -839,6 +839,28 @@ async def send_telegram_brief(session_id: str, handoff_data: dict, history_dicts
 # CORE — universal message handler (the brains of /message and /chat alias)
 # ============================================================================
 
+# ── Глобальный потолок параллелизма горячего пути (страховка пула) ───────────
+# КОРЕНЬ инцидента 06-02 (см. db/connection.py:40): каждый запрос держит коннект БД
+# на весь ход, ВКЛЮЧАЯ LLM-вызов (2-6с). WhatsApp уже ограничен (_WA_INBOUND_SEMA=3),
+# brain (_BRAIN_SEMA=2), НО website/telegram-всплеск был НЕограничен → под нагрузкой
+# пул (50) мог исчерпаться → checkout блокировал event-loop → вис всего процесса.
+# Потолок 15 (+транзиентные to_thread-сессии) держит пик заметно ниже 50, оставляя
+# запас крону/CRM/brain, и делает безопасным будущее авто-ведение на каждое сообщение.
+# При нормальном трафике (единицы запросов) НЕ срабатывает — чистая страховка, поведение
+# не меняет. Это «осторожная» версия фикса корня пула: НЕ трогаем транзакционную модель
+# горячего пути (риск), а просто ограничиваем число держателей коннекта во время LLM.
+import asyncio as _aio_hot
+_HOTPATH_SEMA = _aio_hot.Semaphore(15)
+
+
+def _bounded_hotpath(_fn):
+    async def _wrapped(req, db):
+        async with _HOTPATH_SEMA:
+            return await _fn(req, db)
+    return _wrapped
+
+
+@_bounded_hotpath
 async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     """Pipeline:
       1. Identity: (channel, external_id, email?) → Customer (existing or new)
