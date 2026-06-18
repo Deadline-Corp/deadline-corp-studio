@@ -243,7 +243,7 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
         <Help title="Проверить сейчас" text="Бот сам каждые ~10 минут: дожимает молчунов, шлёт напоминания, чинит рассинхроны. Кнопка запускает проверку немедленно." />
       </div>
 
-      {stageList.length > 1 && (
+      {(stageList.length > 1 || stageFilter) && (
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           <span className="faint" style={{ fontSize: 11.5, marginRight: 2 }}>по статусу:</span>
           {stageList.map(([st, info]) => (

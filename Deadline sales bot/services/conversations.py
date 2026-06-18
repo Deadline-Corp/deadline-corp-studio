@@ -245,7 +245,9 @@ def set_operator_takeover(
             .where(
                 ScheduledAction.conversation_id == conversation_id,
                 ScheduledAction.executor == "bot",
-                ScheduledAction.action_type.in_(("followup_message", "warming_touch")),
+                # followup_message — реальный проактивный bot-дожим/нудж (warming идёт
+                # человеку через operator_task, bot-строки warming_touch не создаются).
+                ScheduledAction.action_type == "followup_message",
                 ScheduledAction.status.in_(("pending", "processing")),
             )
             .values(status="cancelled")

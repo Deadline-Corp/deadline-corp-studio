@@ -3082,6 +3082,12 @@ async def task_board(
         .outerjoin(Conversation, ScheduledAction.conversation_id == Conversation.id)
         .filter(ScheduledAction.status == "failed")
         .filter(ScheduledAction.executor == "bot")
+        # Исключаем АДМИН-напоминания о созвоне (audience=admin): их сбой = упало
+        # ВНУТРЕННЕЕ уведомление в опер-группу, а не сообщение лиду → не «нужен человек».
+        .filter(~(
+            (ScheduledAction.action_type == "call_reminder")
+            & (sql_func.coalesce(ScheduledAction.payload["audience"].astext, "") == "admin")
+        ))
         .filter((Conversation.id.is_(None)) |
                 (Conversation.status != ConversationStatusEnum.ARCHIVED))
         .order_by(ScheduledAction.due_at.desc())
@@ -4322,7 +4328,7 @@ async def activity_logs(
 @router.get("/_diag/lead/{needle}")
 async def _diag_lead(
     needle: str,
-    _: dict = Depends(_verify_member),
+    _: None = Depends(_verify_owner),
     db: Session = Depends(get_db),
 ):
     """READ-ONLY диагностика рассинхрона созвона по телефону/ключу (owner). Ничего не

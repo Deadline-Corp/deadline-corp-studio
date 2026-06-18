@@ -124,11 +124,17 @@ async def _send_by_channel(channel: Any, chat_id: str, text: str,
         page_token = getattr(_main.settings, "meta_page_access_token", "") or ""
         if not page_token:
             return False
+        # Проактивная досылка (дожим/напоминание) почти всегда ВНЕ 24ч-окна Meta →
+        # дефолтный RESPONSE отклонят. Шлём с HUMAN_AGENT-тегом (окно 7 дней). Если у
+        # приложения нет human_agent permission — Meta отклонит, строка станет failed
+        # и будет видна в «Доставка не удалась» (а не потеряется молча).
         if ch == "messenger":
             from channels.messenger import send_messenger_reply as _mg
-            return await _mg(page_token, str(chat_id), text)
+            return await _mg(page_token, str(chat_id), text,
+                             messaging_type="MESSAGE_TAG", tag="HUMAN_AGENT")
         from channels.instagram import send_instagram_reply as _ig
-        return await _ig(page_token, str(chat_id), text)
+        return await _ig(page_token, str(chat_id), text,
+                         messaging_type="MESSAGE_TAG", tag="HUMAN_AGENT")
     # website / неизвестный — проактивной досылки нет (нет транспорта). Не «успех»,
     # но и не вечный ретрай: вызывающий пометит failed → станет видно в «Затык».
     return False
@@ -213,6 +219,7 @@ async def run_due_followups(*, tenant_config: Optional[dict] = None) -> dict:
                 "id": str(r.id),
                 "chat_id": r.chat_id,
                 "channel": r.channel,
+                "conversation_id": str(r.conversation_id) if r.conversation_id else None,
                 "text": payload.get("text") or DEFAULT_FOLLOWUP_TEXT,
                 "crm_task_id": r.crm_task_id,
                 "customer_id": str(r.customer_id) if r.customer_id else None,
@@ -224,6 +231,26 @@ async def run_due_followups(*, tenant_config: Optional[dict] = None) -> dict:
     # 2) Отправляем (await) вне сессии, затем помечаем результат.
     for item in todo:
         ok = False
+        # ГОНКА ПЕРЕХВАТА (I4): клеймы идут пачкой, отправки — сетевые (секунды каждая).
+        # Оператор мог взять диалог МЕЖДУ клеймом и этой отправкой → перепроверяем перед
+        # отправкой и гасим, не дожимая уже перехваченного лида.
+        if item.get("conversation_id"):
+            _now_taken = False
+            try:
+                from db.models import Conversation as _Conv2
+                with session_scope() as _cs:
+                    _now_taken = bool(_cs.query(_Conv2.operator_takeover)
+                                      .filter(_Conv2.id == item["conversation_id"]).scalar())
+                    if _now_taken:
+                        _r2 = _cs.get(ScheduledAction, item["id"])
+                        if _r2 is not None and _r2.status == "processing":
+                            _r2.status = "cancelled"
+                            _r2.claimed_at = None
+            except Exception:  # noqa: BLE001 — перепроверка best-effort
+                _now_taken = False
+            if _now_taken:
+                stats["skipped_takeover"] = stats.get("skipped_takeover", 0) + 1
+                continue
         if not item["chat_id"]:
             stats["skipped_no_chat"] += 1
         else:
@@ -238,7 +265,9 @@ async def run_due_followups(*, tenant_config: Optional[dict] = None) -> dict:
         try:
             with session_scope() as s:
                 row = s.get(ScheduledAction, item["id"])
-                if row is not None:
+                # Не перезаписываем статус, если конкурентный перехват уже пометил
+                # строку 'cancelled' между отправкой и этим апдейтом (lost-update guard).
+                if row is not None and row.status == "processing":
                     row.claimed_at = None
                     if ok:
                         row.status = "done"

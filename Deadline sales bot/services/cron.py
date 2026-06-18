@@ -672,6 +672,17 @@ async def sweep_once(*, tenant_config: dict) -> dict:
                 conversation.lead_stage = new_stage
                 if new_stage == "lost":
                     conversation.lost_reason = funnel_decision.lost_reason
+                    # Симметрия с hot-path lost-handler: лид ушёл в lost → снять бронь
+                    # созвона (in-session, без лишнего коннекта). Осиротевшие напоминания
+                    # подчистит диагностика/auto_heal (orphan_reminder) на след. проходе —
+                    # тут НЕ зовём sync cancel_future_actions (sweep_once async → блок loop).
+                    try:
+                        _prof = dict(customer.profile_data or {})
+                        if _prof.pop("booked_call_at", None) is not None:
+                            _prof.pop("call_medium", None)
+                            customer.profile_data = _prof
+                    except Exception:  # noqa: BLE001
+                        pass
                 stats["funnel_lost_transitions"] += 1
                 logger.info(
                     "[cron] funnel: conv=%s %s → %s (%s)",

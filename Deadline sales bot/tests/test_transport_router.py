@@ -61,14 +61,15 @@ def test_route_messenger_uses_page_token(monkeypatch):
     monkeypatch.setitem(sys.modules, "main", _fake_main([]))
     calls = []
 
-    async def fake_mg(token, rid, text):
-        calls.append((token, rid, text))
+    async def fake_mg(token, rid, text, *, messaging_type="RESPONSE", tag=None):
+        calls.append((token, rid, text, messaging_type, tag))
         return True
 
     monkeypatch.setattr(mg, "send_messenger_reply", fake_mg)
     ok = asyncio.run(_send_by_channel("messenger", "PSID123", "hi", tg_token="T"))
     assert ok is True
-    assert calls == [("PTK", "PSID123", "hi")]  # взял meta_page_access_token
+    # взял meta_page_access_token + проактивный HUMAN_AGENT-тег (вне 24ч-окна Meta)
+    assert calls == [("PTK", "PSID123", "hi", "MESSAGE_TAG", "HUMAN_AGENT")]
 
 
 def test_route_website_has_no_proactive_transport():

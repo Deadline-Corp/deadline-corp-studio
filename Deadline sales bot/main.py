@@ -853,7 +853,9 @@ import asyncio as _aio_hot
 _HOTPATH_SEMA = _aio_hot.Semaphore(15)
 
 
+import functools as _functools
 def _bounded_hotpath(_fn):
+    @_functools.wraps(_fn)
     async def _wrapped(req, db):
         async with _HOTPATH_SEMA:
             return await _fn(req, db)
