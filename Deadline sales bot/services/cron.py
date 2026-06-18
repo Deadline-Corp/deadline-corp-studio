@@ -568,6 +568,10 @@ async def sweep_once(*, tenant_config: dict) -> dict:
     temp_decay_days = int(temperature_cfg.get("decay_days", 14))
     temp_frozen_after = int(temperature_cfg.get("frozen_after_days", 21))
     silence_lost_threshold_d = int(funnel_cfg.get("silence_lost_threshold_d", 7))
+    # Молчун→lost на «тёплых» стадиях (qualified/proposal) — ПО УМОЛЧАНИЮ ВЫКЛ.
+    # Включается в Настройках → Поведение, отдельный КОНСЕРВАТИВНЫЙ порог (деф. 14д).
+    _extend_warm_lost = bool(_ui_overrides.get("silence_lost_extend_warm", False))
+    _warm_lost_d = int(_ui_overrides.get("silence_lost_warm_days", 14))
 
     now = datetime.now(timezone.utc)
 
@@ -655,6 +659,8 @@ async def sweep_once(*, tenant_config: dict) -> dict:
                     current_stage=current_stage,
                     silent_days=int(silent_days),
                     silence_lost_threshold_d=silence_lost_threshold_d,
+                    extend_warm=_extend_warm_lost,
+                    warm_threshold_d=_warm_lost_d,
                 )
             if (
                 funnel_decision is not None
@@ -674,9 +680,11 @@ async def sweep_once(*, tenant_config: dict) -> dict:
                 try:
                     if new_stage == "lost":
                         from services.bot_decisions import log_decision as _logd
+                        _thr_shown = (_warm_lost_d if current_stage in ("qualified", "proposal")
+                                      else silence_lost_threshold_d)
                         _logd("silence_lost",
                               f"Перевёл в «Не сложилось»: лид молчит {int(silent_days)}д на этапе "
-                              f"«{current_stage}» (порог {silence_lost_threshold_d}д)",
+                              f"«{current_stage}» (порог {_thr_shown}д)",
                               conversation_id=conversation.id, customer_id=customer.id,
                               detail={"from": current_stage, "to": new_stage,
                                       "silent_days": round(silent_days, 1)}, db=s)

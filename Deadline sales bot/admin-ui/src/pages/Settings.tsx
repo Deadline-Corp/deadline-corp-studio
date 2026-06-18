@@ -994,6 +994,7 @@ function BehaviorCard() {
         if (values[k] != null) values[k] = parseFloat(values[k])
       }
       if (values.silence_lost_days != null) values.silence_lost_days = parseInt(values.silence_lost_days, 10)
+      if (values.silence_lost_warm_days != null) values.silence_lost_warm_days = parseInt(values.silence_lost_warm_days, 10)
       for (const k of ['digest_hour', 'digest_tz_offset']) {
         if (values[k] != null) values[k] = parseInt(values[k], 10)
       }
@@ -1061,6 +1062,18 @@ function BehaviorCard() {
           <span className="muted" style={{ width: 280 }}>Считать лида потерянным после (дней тишины):</span>
           <input type="number" min={1} step={1} value={overrides.silence_lost_days}
                  onChange={e => upd('silence_lost_days', e.target.value)} style={{ width: 90 }} />
+          <span className="faint" style={{ fontSize: 11, marginLeft: 8 }}>стадия «в диалоге»</span>
+        </div>
+        <label style={row}>
+          <input type="checkbox" checked={!!overrides.silence_lost_extend_warm}
+                 onChange={e => upd('silence_lost_extend_warm', e.target.checked)} />
+          Уводить в «Не сложилось» и долго молчащих <b>квалифицированных</b> лидов и лидов с висящим <b>КП</b> (обратимо)
+        </label>
+        <div style={row}>
+          <span className="muted" style={{ width: 280 }}>↳ для «тёплых» стадий — порог тишины (дней):</span>
+          <input type="number" min={1} step={1} value={overrides.silence_lost_warm_days ?? 14}
+                 onChange={e => upd('silence_lost_warm_days', e.target.value)} style={{ width: 90 }} />
+          <span className="faint" style={{ fontSize: 11, marginLeft: 8 }}>консервативно; созвон/деньги/работа не трогаются</span>
         </div>
         <div style={row}>
           <span className="muted" style={{ width: 280 }}>♻️ Возвращать проигранного через (дней, 0 = выкл):</span>

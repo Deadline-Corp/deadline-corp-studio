@@ -218,16 +218,28 @@ def decide_on_handoff_classifier(
     return TransitionDecision.no_change()
 
 
+# Стадии, которые НИКОГДА не авто-уводим в lost по тишине (есть обязательство/бронь/
+# работа — решает оператор): nda/on_call/tz_approved/prepayment/in_work/терминалы.
+# qualified/proposal — «тёплые», уводим ТОЛЬКО при extend_warm=True и КОНСЕРВАТИВНОМ
+# пороге (КП на руках / лид квалифицирован — даём больше времени).
+_WARM_LOST_STAGES = frozenset({"qualified", "proposal"})
+
+
 def decide_on_silence(
     current_stage: str,
     silent_days: int,
     silence_lost_threshold_d: int,
+    *,
+    extend_warm: bool = False,
+    warm_threshold_d: int = 14,
 ) -> TransitionDecision:
-    """Warming cron found a silent lead. in_dialog + long silence -> lost(delayed).
+    """Молчун (warming cron) → lost(delayed, revivable).
 
-    Notion §13 silent-unexplained type with the configured threshold.
-    Other stages don't auto-lose on silence — operators decide for stages
-    like proposal/prepayment/in_work where money/legal is involved.
+    in_dialog — базовый порог `silence_lost_threshold_d` (как раньше).
+    qualified/proposal — ТОЛЬКО при extend_warm=True (по умолчанию ВЫКЛ) и отдельном
+    КОНСЕРВАТИВНОМ пороге `warm_threshold_d` (тёплый лид / КП на руках — больше времени).
+    Деньги/юр/созвон-стадии (nda/on_call/tz_approved/prepayment/in_work) оператор
+    решает сам — их не трогаем. lost обратим (revivable: winback / ручная реактивация).
     """
     if current_stage == "in_dialog" and silent_days >= silence_lost_threshold_d:
         return TransitionDecision(
@@ -235,6 +247,13 @@ def decide_on_silence(
             TERMINAL_LOST,
             "delayed",
             reason=f"silent for {silent_days}d on in_dialog (>= {silence_lost_threshold_d}d)",
+        )
+    if extend_warm and current_stage in _WARM_LOST_STAGES and silent_days >= warm_threshold_d:
+        return TransitionDecision(
+            True,
+            TERMINAL_LOST,
+            "delayed",
+            reason=f"silent for {silent_days}d on {current_stage} (>= {warm_threshold_d}d, warm-extend)",
         )
     return TransitionDecision.no_change()
 
