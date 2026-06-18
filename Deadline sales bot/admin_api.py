@@ -2766,14 +2766,33 @@ async def calendar_events(
         .limit(500)
         .all()
     )
+    seen_call: set = set()
     for a, c in rows:
         if not a.due_at:
             continue
-        if a.action_type == "call_booked":
-            continue  # сам созвон показываем из booked_call_at (ниже) — не дублируем
         # JUNK: контакт без имени И без телефона И без email — мусор (WhatsApp-статусы/
         # рассылки), не показываем как событие (кейс «!!!!!!!» без номера).
         if not ((c.name or "").strip() or getattr(c, "phone", None) or (c.email or "").strip()):
+            continue
+        if a.action_type == "call_booked":
+            # СОЗВОН — источник правды строка call_booked (conversation_id + due_at), а
+            # НЕ booked_call_at + join по lead_stage=='on_call' (та ПРОПАДАЛА с календаря,
+            # как только стадия уходила вперёд on_call→proposal, и путала мультиканал).
+            # Строка привязана к КОНКРЕТНОМУ диалогу и времени; reschedule/cancel её гасят
+            # (cancel_call_actions), дедуп переносит на канон → одна актуальная бронь.
+            ckey = str(a.conversation_id or a.id)
+            if ckey in seen_call:
+                continue
+            seen_call.add(ckey)
+            _cm = (a.payload or {}).get("medium")
+            events.append({
+                "id": "call-" + ckey,
+                "kind": "call",
+                "title": f"📞 {c.name or c.email or 'Лид'}{' · ' + _cm if _cm else ''}",
+                "start": a.due_at.isoformat(),
+                "conversation_id": str(a.conversation_id) if a.conversation_id else None,
+                "action_id": str(a.id),
+            })
             continue
         text = (a.payload or {}).get("text") or (a.payload or {}).get("title") or ""
         if a.action_type == "call_reminder":
@@ -2796,42 +2815,6 @@ async def calendar_events(
             "start": a.due_at.isoformat(),
             "conversation_id": str(a.conversation_id) if a.conversation_id else None,
             "action_id": str(a.id),
-        })
-
-    # 2) Назначенные созвоны (booked_call_at в диапазоне), дедуп по тел./имени
-    custs = (
-        db.query(Customer, Conversation)
-        .join(Conversation, Conversation.customer_id == Customer.id)
-        .filter(Customer.profile_data.isnot(None))
-        .filter(Conversation.lead_stage == "on_call")
-        .filter(Conversation.status != ConversationStatusEnum.ARCHIVED)
-        .limit(300)
-        .all()
-    )
-    seen_call: set = set()
-    for c, conv in custs:
-        booked = (c.profile_data or {}).get("booked_call_at")
-        if not booked:
-            continue
-        try:
-            bdt = _parse_iso(str(booked))
-        except Exception:
-            continue
-        if not (rng_start <= bdt < rng_end):
-            continue
-        phone = "".join(ch for ch in (getattr(c, "phone", None) or "") if ch.isdigit())
-        key = phone or (c.name or "").strip().lower() or str(c.id)
-        if key in seen_call:
-            continue
-        seen_call.add(key)
-        medium = (c.profile_data or {}).get("call_medium")
-        events.append({
-            "id": "call-" + str(conv.id),
-            "kind": "call",
-            "title": f"📞 {c.name or c.email or 'Лид'}{' · ' + medium if medium else ''}",
-            "start": bdt.isoformat(),
-            "conversation_id": str(conv.id),
-            "action_id": None,
         })
 
     return {"events": events}

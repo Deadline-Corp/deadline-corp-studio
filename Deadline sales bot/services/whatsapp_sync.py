@@ -322,6 +322,25 @@ def _carry_and_archive(canon: Conversation, src: Conversation, reason: str) -> N
         canon.pending_call_suggestion = src.pending_call_suggestion
     if (getattr(src, "summary", None) or "").strip() and not (getattr(canon, "summary", None) or "").strip():
         canon.summary = (src.summary or "")[:2000]
+    # Перенести АКТИВНУЮ бронь созвона + напоминания src → канон. Иначе после слияния
+    # call_booked-строка висит на архивном src и ПРОПАДАЕТ с календаря (он читает
+    # call_booked по conversation_id НЕархивных диалогов). booked_call_at в profile_data
+    # переносит вызывающий дедуп; здесь синхронизируем строки. Best-effort.
+    try:
+        from sqlalchemy.orm import object_session as _osess
+        from sqlalchemy import update as _upd
+        from db.models import ScheduledAction as _SA
+        _db = _osess(src)
+        if _db is not None:
+            _db.execute(
+                _upd(_SA)
+                .where(_SA.conversation_id == src.id,
+                       _SA.action_type.in_(("call_booked", "call_reminder")),
+                       _SA.status == "pending")
+                .values(conversation_id=canon.id)
+            )
+    except Exception:  # noqa: BLE001 — перенос строк не валит дедуп
+        pass
     src.status = ConversationStatusEnum.ARCHIVED
     src.summary = ((src.summary or "") + f" → дубль слит в {canon.id} ({reason})").strip()[:2000]
 
