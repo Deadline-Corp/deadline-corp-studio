@@ -173,6 +173,33 @@ def _stage_forward(current: str, suggested: str) -> Optional[str]:
     return None
 
 
+# Бот сам двигает максимум до «квалифицирован» (on_call ставит отдельная бронь-логика).
+# Серьёзные стадии — КП/аванс/сдано — ставит ТОЛЬКО человек (это деньги/обязательства).
+ALLOWED_BRAIN_STAGES = frozenset({"new_lead", "in_dialog", "qualified", "on_call"})
+
+
+def clamp_brain_stage(current: str, suggested: str, is_relevant: bool) -> Optional[str]:
+    """Гейт авто-стадии для «мозга» (чистая функция → тестируемо).
+
+    Закрывает баг «спам/офтоп улетает в КП»:
+    - НЕ релевантный лид (спам / личное / не наш профиль) → None: по воронке НЕ двигаем;
+    - иначе forward-only, но бот НЕ ставит сам серьёзные стадии (proposal/prepayment/
+      completed_won) — это решает человек. Если LLM предложил серьёзную из стадии ниже
+      «квалифицирован» — поднимаем максимум до qualified (нельзя прыгнуть через квалификацию).
+    """
+    if not is_relevant:
+        return None
+    nxt = _stage_forward(current, suggested)
+    if not nxt:
+        return None
+    if nxt in ALLOWED_BRAIN_STAGES:
+        return nxt
+    # nxt — серьёзная (КП/аванс/сдано): бот максимум до «квалифицирован».
+    if current in _FORWARD and _FORWARD.index(current) < _FORWARD.index("qualified"):
+        return "qualified"
+    return None
+
+
 async def _signal_owner(settings: Any, text: str) -> None:
     from services import bot_settings as _bs
     from channels.telegram import send_telegram_reply
@@ -184,6 +211,41 @@ async def _signal_owner(settings: Any, text: str) -> None:
         await send_telegram_reply(token, str(chat), text[:3500])
     except Exception as e:  # noqa: BLE001
         log.warning(f"brain owner-signal failed: {e}")
+
+
+async def _flag_unclear_for_manager(db: Session, conv: Conversation, cust: Customer,
+                                    settings: Any, reason: str) -> None:
+    """Непонятный / не наш профиль диалог: пометить для менеджера (дедуп) + один сигнал.
+    Лид остаётся где есть (в работе оператора), бот по воронке его НЕ двигает."""
+    reason = (reason or "").strip()
+    try:
+        pf = dict(cust.profile_data or {})
+        if pf.get("needs_manager_review"):
+            return  # уже помечен — не спамим менеджера повторно
+        pf["needs_manager_review"] = {
+            "reason": (reason or "не наш профиль")[:200],
+            "at": datetime.now(timezone.utc).isoformat(),
+        }
+        cust.profile_data = pf
+        try:
+            from services.bot_decisions import log_decision as _logd
+            _logd("classification",
+                  "Непонятный диалог / не наш профиль — оставил в работе, нужен менеджер"
+                  + (f": {reason}" if reason else ""),
+                  conversation_id=conv.id, customer_id=cust.id, db=db)
+        except Exception:  # noqa: BLE001
+            pass
+        db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        return
+    nm = (cust.name or cust.email or "лид")
+    await _signal_owner(
+        settings,
+        f"🧐 Непонятный лид «{nm}»: бот не понял, о чём диалог (возможно офтоп/спам). "
+        "Оставил в работе оператору, в воронку не двигаю — глянь сам."
+        + (f"\nПричина: {reason[:150]}" if reason else ""),
+    )
 
 
 async def _book(db: Session, conv: Conversation, cust: Customer,
@@ -591,6 +653,10 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
         f"Сейчас у лида {now_lead.strftime('%Y-%m-%d %H:%M')} ({tz_label}), {_WEEKDAY_RU[now_lead.weekday()]};\n"
         '  "call_medium": "WhatsApp"|"Телефон"|"Zoom"|"Google Meet"|null;\n'
         '  "wants_human": true если лид ЯВНО просит позвонить/связаться с человеком/менеджером;\n'
+        '  "is_relevant_lead": true|false — ДЕЛОВОЙ ли это лид по нашему профилю '
+        "(разработка: сайты/лендинги/веб-приложения/боты/автоматизация/CRM/AI). false — "
+        "если диалог НЕ про это: личное, спам, реклама, бессмыслица, не наш профиль, "
+        "непонятно о чём. Сомневаешься в пользу бизнеса — true;\n"
         '  "reason": кратко почему (≤120 симв).\n'
         + _fields_spec_block(field_specs)
         + f"\nПереписка:\n{transcript}"
@@ -631,7 +697,17 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
             conv.lead_stage = _fresh_stage
     except Exception:  # noqa: BLE001
         pass
-    new_stage = _stage_forward(conv.lead_stage or "new_lead", str(data.get("stage") or ""))
+    # Гейт релевантности + квалификации (КОДОМ, не промптом — LLM ненадёжен к prose-правилам):
+    # спам/офтоп/не наш профиль → по воронке НЕ двигаем + один сигнал менеджеру; в серьёзные
+    # стадии (КП/аванс/сдано) бот сам НЕ двигает (максимум «квалифицирован») — это решает человек.
+    _cur_stage = conv.lead_stage or "new_lead"
+    _is_relevant = bool(data.get("is_relevant_lead", True))
+    new_stage = clamp_brain_stage(_cur_stage, str(data.get("stage") or ""), _is_relevant)
+    if not _is_relevant:
+        try:
+            await _flag_unclear_for_manager(db, conv, cust, settings, str(data.get("reason") or ""))
+        except Exception as _fe:  # noqa: BLE001
+            log.warning(f"[{str(conv.id)[:8]}] flag-unclear failed: {_fe}")
     if new_stage and new_stage != "on_call":  # on_call ставит бронь ниже
         from_stage = conv.lead_stage
         conv.lead_stage = new_stage
