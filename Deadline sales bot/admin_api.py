@@ -3018,6 +3018,41 @@ async def calendar_events(
     return {"events": events}
 
 
+@router.post("/maintenance/fix-task-times")
+async def maintenance_fix_task_times(
+    _: dict = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    """Одноразовая подчистка: выровнять время уже существующих ЗАДАЧ МЕНЕДЖЕРА
+    (operator_callback/human), которые раньше создавались с due_at=now() и висели на
+    календаре в произвольную минуту/ночь. Ставит чистый рабочий слот тем же хелпером,
+    что и новые задачи (services.manager_schedule). Идемпотентно: уже чистые не трогает.
+    Созвоны (call_booked), напоминания (call_reminder) и задачи бота НЕ затрагивает."""
+    from services.manager_schedule import schedule_for_manager
+    rows = (
+        db.query(ScheduledAction)
+        .filter(ScheduledAction.action_type == "operator_callback",
+                ScheduledAction.executor == "human",
+                ScheduledAction.status.in_(("pending", "processing")))
+        .all()
+    )
+    scanned = len(rows)
+    fixed = 0
+    samples: list = []
+    for a in rows:
+        if not a.due_at:
+            continue
+        cur = a.due_at if a.due_at.tzinfo else a.due_at.replace(tzinfo=timezone.utc)
+        new = schedule_for_manager(cur)
+        if abs((new - cur).total_seconds()) > 60:
+            if len(samples) < 8:
+                samples.append({"was": cur.isoformat(), "now": new.isoformat()})
+            a.due_at = new
+            fixed += 1
+    db.commit()
+    return {"ok": True, "scanned": scanned, "fixed": fixed, "samples": samples}
+
+
 # ============================================================================
 # ЗАДАЧНИК В СТИЛЕ CRM (amoCRM/Kommo): у каждого активного лида должна быть
 # СЛЕДУЮЩАЯ задача. Лид без задачи = забытый лид → выводим отдельно. Приоритет
