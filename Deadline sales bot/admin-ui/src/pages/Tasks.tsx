@@ -66,7 +66,7 @@ type FailedItem = {
 type Board = {
   summary: { overdue: number; today: number; no_task: number; bot: number; human: number
     approve_now: number; your_turn: number; bot_leading: number; stuck: number
-    delivery_failed: number }
+    delivery_failed: number; done_7d?: number }
   buckets: Record<'overdue' | 'today' | 'tomorrow' | 'week' | 'later', BoardTask[]>
   no_task_leads: NoTaskLead[]
   zones: { approve_now: Lead[]; your_turn: Lead[]; bot_leading: Lead[]; waiting: Lead[] }
@@ -305,7 +305,9 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
 
   // Карточка ЗАДАЧИ (из buckets по дням): что сделать + срок. Бот-задачи бот сделает сам.
   const TaskCard = (t: BoardTask) => {
-    const overdue = !!t.due_at && new Date(t.due_at).getTime() < Date.now()
+    const overdueMs = t.due_at ? Date.now() - new Date(t.due_at).getTime() : 0
+    const overdue = overdueMs > 0
+    const overdueDays = overdue ? Math.floor(overdueMs / 86400000) : 0
     const isBot = t.who === 'bot'
     return (
       <div className={`conv-row${t.wa_autonomous ? ' autonomous' : ''}`} key={t.id}
@@ -320,6 +322,7 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
             <span className="faint" style={{ fontWeight: 400 }}>{CHANNEL_META[t.channel]?.icon}</span>
           </div>
           <div className="c-preview" style={overdue ? { color: 'var(--danger)' } : undefined}>
+            {overdue && <b>🔴 просрочено {overdueDays > 0 ? `${overdueDays} дн` : 'сегодня'} · </b>}
             {isBot ? '🤖 бот сделает сам' : ''}{t.due_at ? `${isBot ? ' · ' : ''}${fmtTime(t.due_at)}` : ''}
             {isBot && !overdue && fmtCountdown(t.due_at) && <span className="faint" style={{ fontSize: 10.5 }}> ({fmtCountdown(t.due_at)})</span>}
           </div>
@@ -450,8 +453,28 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   )
   const colS: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 7 }
 
+  // Плитка сводки (amoCRM-style): число + подпись, кликабельна если ведёт к фильтру.
+  const Stat = ({ n, label, color, onClick, active }: { n: number; label: string; color?: string; onClick?: () => void; active?: boolean }) => (
+    <div onClick={onClick} title={onClick ? 'Показать' : undefined}
+         style={{ flex: '1 1 100px', minWidth: 92, padding: '8px 12px', borderRadius: 10,
+                  background: 'var(--panel)', cursor: onClick ? 'pointer' : 'default',
+                  boxShadow: active ? '0 0 0 2px var(--accent)' : '0 0 0 1px var(--border)' }}>
+      <div style={{ fontSize: 20, fontWeight: 800, color, lineHeight: 1.1 }}>{n}</div>
+      <div className="faint" style={{ fontSize: 11 }}>{label}</div>
+    </div>
+  )
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <Stat n={sm.today} label="на сегодня" />
+        <Stat n={sm.overdue} label="просрочено" color={sm.overdue ? 'var(--danger)' : undefined} />
+        <Stat n={sm.no_task} label="без шага" color={sm.no_task ? '#b6791f' : undefined}
+              active={filterWho === 'notask'} onClick={() => setFilterWho(filterWho === 'notask' ? 'all' : 'notask')} />
+        <Stat n={sm.approve_now} label="ждут одобрения" color={sm.approve_now ? 'var(--accent)' : undefined}
+              active={filterWho === 'approve'} onClick={() => setFilterWho(filterWho === 'approve' ? 'all' : 'approve')} />
+        <Stat n={sm.done_7d ?? 0} label="сделано за 7 дн" color="#1a8c6d" />
+      </div>
       <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap' }}>
         <span className="faint" style={{ fontSize: 11.5 }}>кто ведёт:</span>
         {whoChip('all', 'Все')}

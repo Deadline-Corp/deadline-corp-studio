@@ -8,6 +8,7 @@ import { useStages, useStageLabel } from '../overviewContext'
 import { HintBar } from '../components/HintBar'
 import { CHANNEL_META, TEMP_META, fmtAgo, initials, onLeadsChanged, emitLeadDismissed } from '../lib'
 import { dismissLead } from '../api/leads'
+import { NextStep } from '../components/NextStep'
 
 /* Единый inbox: все переписки всех каналов, фильтры, клик → drawer. */
 
@@ -135,7 +136,8 @@ export function Inbox() {
                 <div className="c-preview">{c.preview || '—'}</div>
               </div>
               <div className="c-meta">
-                <div style={{ display: 'flex', gap: 5 }}>
+                <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+                  <NextStep ns={c.next_step} stage={c.lead_stage} />
                   <span className="chip accent">{stageLabel(c.lead_stage)}</span>
                   {temp && <span className={`chip ${temp.cls}`}>{temp.label}</span>}
                 </div>

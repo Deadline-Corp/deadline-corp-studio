@@ -8,6 +8,7 @@ import { CHANNEL_META, LOST_REASONS, TEMP_META, fmtAgo, initials, onLeadsChanged
 import { dismissLead } from '../api/leads'
 import { HintBar } from '../components/HintBar'
 import { Help } from '../components/Help'
+import { NextStep } from '../components/NextStep'
 
 /* Канбан-воронка: стадии динамические (своя CRM — настраиваются тут же),
    drag → подтверждение → stage override (встроенные стадии зеркалятся в
@@ -130,6 +131,7 @@ export function Funnel() {
         </div>
         <div className="kc-preview">{c.preview || '—'}</div>
         <div className="kc-meta">
+          <NextStep ns={c.next_step} stage={c.lead_stage} compact />
           {temp && <span className={`chip ${temp.cls}`}>{temp.label}</span>}
           <span className="chip">скор {c.customer.lead_score}</span>
           <span className="chip">{fmtAgo(c.last_message_at)}</span>
