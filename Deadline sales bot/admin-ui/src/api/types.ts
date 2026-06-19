@@ -98,6 +98,8 @@ export interface ConvSummary {
   wa_hidden_phone?: boolean
   customer: CustomerBrief
   preview: string | null
+  // amoCRM-style «следующий шаг»: статус ближайшей задачи лида.
+  next_step?: { status: 'none' | 'overdue' | 'today' | 'future'; due_at: string | null; overdue_days?: number } | null
 }
 
 export interface CustomFieldValue {
