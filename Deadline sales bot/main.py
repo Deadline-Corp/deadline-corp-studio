@@ -1040,8 +1040,16 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
             and conversation.lead_stage not in ("on_call", "nda", "tz_approved", "prepayment", "in_work")):
         try:
             from services.next_action import maybe_create_stuck_task
-            if maybe_create_stuck_task(db, conversation, None, f"не распознал голосовое ({_tf})"):
-                db.commit()
+            from db.connection import session_scope as _sscope
+            from db.models import Conversation as _ConvM
+            _cid = conversation.id
+            # ОТДЕЛЬНАЯ короткая сессия: НЕ коммитим hot-path db (expire_on_commit=True
+            # обнулил бы conversation/customer → N+1 lazy-load в hot-path, находка ревью).
+            # Кратко (query+insert+commit), НЕ держим во время LLM/сети — пулу не грозит.
+            with _sscope() as _sdb:
+                _c2 = _sdb.get(_ConvM, _cid)
+                if _c2 is not None:
+                    maybe_create_stuck_task(_sdb, _c2, None, f"не распознал голосовое ({_tf})")
         except Exception:  # noqa: BLE001
             pass
 

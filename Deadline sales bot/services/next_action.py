@@ -65,8 +65,8 @@ _KIND_DEFAULT_LABEL = {
 }
 
 
-def maybe_create_stuck_task(db: Session, conv: Conversation, cust: Customer,
-                            reason: str) -> bool:
+def maybe_create_stuck_task(db: Session, conv: Conversation,
+                            cust: Optional[Customer], reason: str) -> bool:
     """Бот не справляется с лидом (непонятно / не распознал голос / нет прогресса) →
     ставим задачу ЧЕЛОВЕКУ помочь. Бот+человек в связке: бот сам сколько может, но если
     затупил — зовёт человека, а не молчит/тупит. Дедуп: НЕ плодим вторую открытую
@@ -98,6 +98,10 @@ def maybe_create_stuck_task(db: Session, conv: Conversation, cust: Customer,
 async def generate_next_action(db: Session, conv: Conversation, cust: Customer,
                                llm: Any) -> dict:
     """Сгенерировать следующий шаг по лиду и записать в conv.next_action."""
+    # Не трогаем АВТО-логикой денежные/юр/рабочие стадии — там решает человек (инвариант).
+    # Иначе на платящем клиенте мог появиться черновик бота / задача «бот затупил» (находка ревью).
+    if (conv.lead_stage or "") in ("nda", "tz_approved", "prepayment", "in_work"):
+        return {}
     transcript = _transcript(db, conv)
     if not transcript.strip():
         return {}
