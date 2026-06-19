@@ -1,5 +1,5 @@
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { api, clearToken } from '../api/client'
 import { Overview } from '../api/types'
 import { usePolling } from '../hooks/usePolling'
@@ -17,10 +17,10 @@ const NAV = [
   { to: '/inbox', icon: '💬', label: 'Переписки' },
   { to: '/tasks', icon: '⏰', label: 'Задачи' },
   { to: '/calendar', icon: '📅', label: 'Календарь' },
-  { to: '/automations', icon: '⚡', label: 'Автоматизации', owner: true },
-  { to: '/analytics', icon: '📈', label: 'Аналитика' },
-  { to: '/brain', icon: '🧠', label: 'Мозг', owner: true },
-  { to: '/settings', icon: '⚙️', label: 'Настройки', owner: true },
+  { to: '/automations', icon: '⚡', label: 'Автоматизации', owner: true, manage: true },
+  { to: '/analytics', icon: '📈', label: 'Аналитика', manage: true },
+  { to: '/brain', icon: '🧠', label: 'Мозг', owner: true, manage: true },
+  { to: '/settings', icon: '⚙️', label: 'Настройки', owner: true, manage: true },
   // «Каналы» переехали внутрь Настроек (разгрузка интерфейса, 2026-06-13) —
   // роут /channels остаётся, вход из карточки «Каналы и интеграции» в Настройках.
 ]
@@ -55,7 +55,16 @@ export function Layout() {
     try { setOverview(await api.get<Overview>('/overview')) } catch { /* ignore */ }
   }, 30000)
 
-  const [theme, setTheme] = useState(localStorage.getItem('deadline_theme') || 'light')
+  const [theme, setTheme] = useState(() => {
+    // Разовая миграция после редизайна: показать новый светлый интерфейс всем один раз,
+    // дальше уважаем выбор тумблера (Nick может вернуть тёмную).
+    if (localStorage.getItem('deadline_theme_v') !== 'light-redesign') {
+      localStorage.setItem('deadline_theme_v', 'light-redesign')
+      localStorage.setItem('deadline_theme', 'light')
+      return 'light'
+    }
+    return localStorage.getItem('deadline_theme') || 'light'
+  })
   useEffect(() => {
     document.documentElement.dataset.theme = theme
     localStorage.setItem('deadline_theme', theme)
@@ -98,14 +107,20 @@ export function Layout() {
                   {(brand || 'DEADLINE').toUpperCase()}
                 </span>
               </div>
-              {visibleNav.map(n => (
-                <NavLink key={n.to} to={n.to} end={n.end as any} data-tour={`nav-${n.to}`}
-                  className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
-                  <span className="nav-ico">{n.icon}</span>
-                  {n.label}
-                  {badge(n.to) != null && <span className="nav-badge">{badge(n.to)}</span>}
-                </NavLink>
-              ))}
+              {visibleNav.map((n, i) => {
+                const showSep = (n as any).manage && (i === 0 || !(visibleNav[i - 1] as any).manage)
+                return (
+                  <Fragment key={n.to}>
+                    {showSep && <div className="nav-sep">Управление</div>}
+                    <NavLink to={n.to} end={n.end as any} data-tour={`nav-${n.to}`}
+                      className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}>
+                      <span className="nav-ico">{n.icon}</span>
+                      {n.label}
+                      {badge(n.to) != null && <span className="nav-badge">{badge(n.to)}</span>}
+                    </NavLink>
+                  </Fragment>
+                )
+              })}
               <div className="foot">
                 <div>
                   {me ? (me.role === 'manager' ? `👤 ${me.member_name}` : `${me.display_name}`) : '…'}

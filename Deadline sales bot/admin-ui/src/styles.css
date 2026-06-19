@@ -35,9 +35,9 @@
   --info-soft: rgba(90, 169, 247, 0.13);
 
   /* размеры */
-  --radius: 12px;
-  --radius-sm: 8px;
-  --sidebar-w: 216px;
+  --radius: 14px;
+  --radius-sm: 10px;
+  --sidebar-w: 230px;
 
   --accent-2: #4938d8;
   --node-shadow: 0 8px 28px rgba(0,0,0,0.35);
@@ -155,35 +155,45 @@ html, body, #root {
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  padding: 16px 10px;
-  gap: 2px;
+  padding: 16px 12px;
+  gap: 3px;
 }
 
 .sidebar .brand {
-  display: flex; align-items: center; gap: 10px;
-  padding: 6px 10px 18px;
-  font-weight: 700; letter-spacing: 0.06em; font-size: 15px;
+  display: flex; align-items: center; gap: 11px;
+  padding: 6px 8px 20px;
+  font-weight: 800; letter-spacing: 0.04em; font-size: 15px;
 }
 .sidebar .brand .logo {
-  width: 30px; height: 30px; border-radius: 8px;
-  background: linear-gradient(135deg, var(--accent), #4938d8);
+  width: 34px; height: 34px; border-radius: 10px;
+  background: linear-gradient(140deg, var(--accent), var(--accent-2));
   display: grid; place-items: center;
-  font-size: 13px; font-weight: 800; color: #fff;
+  font-size: 14px; font-weight: 800; color: #fff;
+  box-shadow: 0 4px 14px -3px var(--accent-border);
 }
 
 .nav-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 9px 12px;
+  display: flex; align-items: center; gap: 11px;
+  padding: 8px 10px;
   border-radius: var(--radius-sm);
   color: var(--text-dim);
   text-decoration: none;
   font-weight: 500;
   transition: background 0.15s ease, color 0.15s ease;
 }
-.nav-item:hover { background: var(--panel); color: var(--text); }
-.nav-item.active { background: var(--accent-soft); color: var(--text); }
-.nav-item.active .nav-ico { color: var(--accent); }
-.nav-ico { width: 18px; text-align: center; }
+.nav-item:hover { background: var(--panel-2); color: var(--text); }
+.nav-item.active { background: var(--accent-soft); color: var(--text); font-weight: 600; }
+.nav-ico {
+  width: 30px; height: 30px; border-radius: 8px; flex-shrink: 0;
+  display: grid; place-items: center; font-size: 15px;
+  background: var(--panel-2); transition: background 0.15s ease, box-shadow 0.15s ease;
+}
+.nav-item:hover .nav-ico { background: var(--panel); }
+.nav-item.active .nav-ico { background: var(--panel); box-shadow: var(--card-shadow); }
+.nav-sep {
+  font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--text-faint); font-weight: 600; padding: 14px 12px 5px;
+}
 .nav-badge {
   margin-left: auto; font-size: 11px; font-weight: 600;
   background: var(--panel-2); color: var(--text-dim);
