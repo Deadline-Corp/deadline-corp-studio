@@ -87,12 +87,35 @@ def find_customer_by_telegram_username(db: Session, username: str) -> Optional[C
     return cust
 
 
+def find_customer_by_phone(db: Session, phone: Optional[str]) -> Optional[Customer]:
+    """Найти карточку по НОРМАЛИЗОВАННОМУ телефону (хвост-10 цифр). Только для нац.
+    номеров ≥10 цифр (иначе риск ложной склейки коротких/служебных). Игнорирует уже
+    слитые карточки (profile_data.merged_into). Возвращает самую раннюю (стабильный
+    канон). Профилактика дублей: новые лиды доливаются в существующую карточку."""
+    digits = "".join(ch for ch in (phone or "") if ch.isdigit())
+    if len(digits) < 10:
+        return None
+    tail = digits[-10:]
+    rows = db.execute(
+        select(Customer).where(Customer.phone.isnot(None))
+        .order_by(Customer.created_at.asc())
+    ).scalars().all()
+    for c in rows:
+        if (c.profile_data or {}).get("merged_into"):
+            continue
+        cd = "".join(ch for ch in (c.phone or "") if ch.isdigit())
+        if len(cd) >= 10 and cd[-10:] == tail:
+            return c
+    return None
+
+
 def resolve_or_create_customer(
     db: Session,
     channel: str,
     external_id: str,
     email: Optional[str] = None,
     username: Optional[str] = None,
+    phone: Optional[str] = None,
 ) -> Customer:
     """Resolve a lead from (channel, external_id) → Customer, creating as needed.
 
@@ -153,6 +176,13 @@ def resolve_or_create_customer(
                 "[identity] cross-channel merge via tg username %s → customer %s",
                 _norm_handle(username), customer.id,
             )
+
+    # ----- Step 2.7: phone anchor (нац. номер ≥10 цифр) — профилактика дублей -----
+    # Новый лид с тем же номером доливается в существующую карточку, а не плодит вторую.
+    if customer is None and phone:
+        customer = find_customer_by_phone(db, phone)
+        if customer is not None:
+            log.info("[identity] phone-merge → customer %s", customer.id)
 
     # ----- Step 3: new customer if nothing matched -----
     if customer is None:
@@ -380,6 +410,150 @@ def update_email(db: Session, customer_id: UUID, email: str) -> Customer:
     db.expire(target, ["identities"])
 
     return target
+
+
+def merge_customers(db: Session, canon_id: Any, shadow_id: Any) -> dict:
+    """РУЧНОЕ слияние двух карточек (Customer-уровень) — для кнопки «Объединить» в
+    Настройках, когда оператор ВИДИТ, что две карточки = один человек, но авто-склейка
+    не сработала (рекламный @lid без номера + карточка с номером и т.п.).
+
+    NEVER-DELETE: shadow НЕ удаляется — помечается profile_data.merged_into (обратимо).
+    Переносит identities/conversations/scheduled_actions/CRM на canon, дозаполняет пустые
+    поля canon. Идемпотентно: повторный вызов на уже-слитой → no-op. Раздельные UPDATE
+    (как в update_email) обходят ORM-каскад delete-orphan."""
+    from datetime import datetime as _dt, timezone as _tz
+    from db.models import Conversation as _Conv, ScheduledAction as _SA
+    if str(canon_id) == str(shadow_id):
+        raise ValueError("нельзя слить карточку саму с собой")
+    canon = db.get(Customer, canon_id)
+    shadow = db.get(Customer, shadow_id)
+    if canon is None or shadow is None:
+        raise ValueError("карточка не найдена")
+    if (shadow.profile_data or {}).get("merged_into"):
+        return {"ok": True, "already_merged": True, "canon": str(canon.id)}
+
+    moved: dict = {}
+    moved["identities"] = db.execute(
+        update(ChannelIdentity).where(ChannelIdentity.customer_id == shadow.id)
+        .values(customer_id=canon.id)).rowcount or 0
+    db.expire(shadow, ["identities"])
+    moved["conversations"] = db.execute(
+        update(_Conv).where(_Conv.customer_id == shadow.id)
+        .values(customer_id=canon.id)).rowcount or 0
+    db.expire(shadow, ["conversations"])
+    moved["tasks"] = db.execute(
+        update(_SA).where(_SA.customer_id == shadow.id)
+        .values(customer_id=canon.id)).rowcount or 0
+
+    # email — UNIQUE-safe: освобождаем у shadow ДО присвоения canon
+    shadow_email = shadow.email
+    if shadow_email:
+        shadow.email = None
+        db.flush()
+        if not (canon.email or "").strip():
+            canon.email = shadow_email
+            db.flush()
+    # дозаполнить пустые поля canon (не перетирая существующие)
+    if not (canon.name or "").strip() and (shadow.name or "").strip():
+        canon.name = shadow.name[:200]
+    if not (canon.phone or "").strip() and (shadow.phone or "").strip():
+        canon.phone = shadow.phone
+    try:
+        if int(shadow.lead_score or 0) > int(canon.lead_score or 0):
+            canon.lead_score = shadow.lead_score
+    except (TypeError, ValueError):
+        pass
+    _pd = {**(shadow.profile_data or {}), **(canon.profile_data or {})}
+    if (shadow.profile_data or {}).get("booked_call_at") and not _pd.get("booked_call_at"):
+        _pd["booked_call_at"] = shadow.profile_data["booked_call_at"]
+    canon.profile_data = _pd
+    _absorb_crm_contacts(canon, shadow)
+
+    # пометить shadow слитым (NEVER-DELETE) + откатные данные
+    sp = dict(shadow.profile_data or {})
+    sp["merged_into"] = str(canon.id)
+    if shadow.phone:
+        sp["_phone_before_merge"] = shadow.phone
+    sp["_merged_at"] = _dt.now(_tz.utc).isoformat()
+    shadow.profile_data = sp
+    shadow.phone = None  # чтобы не попадал в выборки/анкоры/кандидаты повторно
+    db.flush()
+    log.info("[identity] manual merge: shadow %s → canon %s (%s)", shadow.id, canon.id, moved)
+    return {"ok": True, "canon": str(canon.id), "shadow": str(shadow.id), **moved}
+
+
+def find_duplicate_candidates(db: Session, limit: int = 40) -> list:
+    """Вероятные ДУБЛИ карточек для ручного слияния в Настройках. Группирует активные
+    (не слитые) карточки по: телефон(хвост-10) ЛИБО нормализованное имя. Возвращает
+    группы по 2+ карточки с инфо для решения оператором. НИЧЕГО не меняет (только показ).
+    Имя-группы намеренно показываем — это те случаи, что авто-склейка не берёт (риск
+    разных людей), их подтверждает человек."""
+    from db.models import Conversation as _Conv
+    rows = db.execute(select(Customer)).scalars().all()
+    convs = db.execute(
+        select(_Conv).order_by(_Conv.last_message_at.desc().nullslast())
+    ).scalars().all()
+    last_conv: dict = {}
+    conv_count: dict = {}
+    for cv in convs:
+        conv_count[cv.customer_id] = conv_count.get(cv.customer_id, 0) + 1
+        last_conv.setdefault(cv.customer_id, cv)
+
+    def _norm_name(n: Optional[str]) -> str:
+        return " ".join((n or "").split()).strip().lower()
+
+    def _ptail(p: Optional[str]) -> str:
+        d = "".join(ch for ch in (p or "") if ch.isdigit())
+        return d[-10:] if len(d) >= 10 else ""
+
+    by_phone: dict = {}
+    by_name: dict = {}
+    for c in rows:
+        if (c.profile_data or {}).get("merged_into"):
+            continue
+        if c.id not in last_conv and not (c.name or c.phone or c.email):
+            continue  # пустышка без диалога и контактов — не предлагаем
+        pt = _ptail(c.phone)
+        if pt:
+            by_phone.setdefault(pt, []).append(c)
+        nm = _norm_name(c.name)
+        if len(nm) >= 2:
+            by_name.setdefault(nm, []).append(c)
+
+    def _card(c: Customer) -> dict:
+        cv = last_conv.get(c.id)
+        return {
+            "id": str(c.id),
+            "name": c.name or c.email or (("+" + c.phone) if c.phone else "Лид"),
+            "phone": c.phone,
+            "channel": cv.channel if cv else None,
+            "stage": cv.lead_stage if cv else None,
+            "last_message_at": cv.last_message_at.isoformat() if (cv and cv.last_message_at) else None,
+            "conversations": conv_count.get(c.id, 0),
+            "lead_score": int(c.lead_score or 0),
+        }
+
+    seen_pairs: set = set()
+    out: list = []
+
+    def _emit(group: list, reason: str) -> None:
+        ids = tuple(sorted(str(c.id) for c in group))
+        if ids in seen_pairs:
+            return
+        seen_pairs.add(ids)
+        g = sorted(group, key=lambda c: (0 if c.phone else 1, -int(c.lead_score or 0)))
+        out.append({"reason": reason, "suggested_canon": str(g[0].id),
+                    "cards": [_card(c) for c in g]})
+
+    for grp in by_phone.values():
+        if len(grp) >= 2:
+            _emit(grp, "одинаковый телефон")
+    for grp in by_name.values():
+        if len(grp) >= 2:
+            _emit(grp, "одинаковое имя")
+        if len(out) >= limit:
+            break
+    return out[:limit]
 
 
 def bridge_telegram_to_website_session(

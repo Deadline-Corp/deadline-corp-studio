@@ -74,6 +74,7 @@ export function Settings() {
       <ConfigAgentCard />
       <div style={{ height: 14 }} />
       <MaintenanceCard />
+      <DuplicateMergeCard />
       <DiagnosticsCard />
       <div style={{ height: 14 }} />
       <BackupCard />
@@ -182,6 +183,80 @@ function MaintenanceCard() {
         {busy ? <span className="spin" /> : '🔄 Синхронизировать сейчас'}
       </button>
       {msg && <span style={{ marginLeft: 10, fontSize: 12.5 }}>{msg}</span>}
+    </div>
+  )
+}
+
+/* ---------- Ручное слияние дублей карточек ----------
+   Для случаев, что авто-склейка не берёт (рекламный @lid без номера + карточка с
+   номером, или один человек двумя заявками). Оператор подтверждает — сливаем. */
+function DuplicateMergeCard() {
+  const [busy, setBusy] = useState('')
+  const [groups, setGroups] = useState<any[] | null>(null)
+  const [msg, setMsg] = useState('')
+  const find = async () => {
+    setBusy('find'); setMsg('')
+    try {
+      const r = await api.get<{ groups: any[] }>('/maintenance/duplicate-candidates')
+      setGroups(r.groups || [])
+      if (!r.groups?.length) setMsg('✅ Похожих карточек не найдено')
+    } catch (e: any) { setMsg('Ошибка: ' + (e?.detail ?? e?.message ?? 'не вышло')) }
+    finally { setBusy('') }
+  }
+  const merge = async (canon_id: string, shadow_id: string, gi: number) => {
+    setBusy('m' + gi); setMsg('')
+    try {
+      await api.post('/maintenance/merge-customers', { canon_id, shadow_id })
+      setMsg('✅ Объединено')
+      await find()
+    } catch (e: any) { setMsg('Ошибка: ' + (e?.detail ?? e?.message ?? 'не вышло')) }
+    finally { setBusy('') }
+  }
+  return (
+    <div className="card">
+      <b>🧩 Объединить дубли карточек (вручную)</b>
+      <p className="faint" style={{ fontSize: 11.5, margin: '6px 0 10px' }}>
+        Если ОДИН человек завёлся двумя карточками (например рекламный лид со скрытым
+        номером + карточка с номером) и бот не склеил их сам — найдите и объедините здесь.
+        Сливаем только по вашему подтверждению, чтобы не схлопнуть разных людей с одним
+        именем. История и задачи переедут на главную (⭐) карточку; дубль не удаляется,
+        а помечается «слит» (обратимо).
+      </p>
+      <button className="btn sm" onClick={find} disabled={!!busy}>
+        {busy === 'find' ? <span className="spin" /> : '🔎 Найти похожие'}
+      </button>
+      {msg && <span style={{ marginLeft: 10, fontSize: 12.5 }}>{msg}</span>}
+      {groups && groups.length > 0 && (
+        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {groups.map((g, gi) => {
+            const canon = g.cards.find((c: any) => c.id === g.suggested_canon) || g.cards[0]
+            const others = g.cards.filter((c: any) => c.id !== canon.id)
+            return (
+              <div key={gi} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 10 }}>
+                <div className="faint" style={{ fontSize: 11, marginBottom: 4 }}>совпадение: {g.reason}</div>
+                {g.cards.map((c: any) => (
+                  <div key={c.id} style={{ fontSize: 12.5, padding: '2px 0' }}>
+                    {c.id === canon.id ? '⭐ ' : '• '}
+                    <b>{c.name}</b>
+                    {c.phone ? ` · ${c.phone}` : ''}
+                    {c.channel ? ` · ${c.channel}` : ''}
+                    {c.stage ? ` · ${c.stage}` : ''}
+                    {c.last_message_at ? ` · ${new Date(c.last_message_at).toLocaleDateString()}` : ''}
+                  </div>
+                ))}
+                <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {others.map((o: any) => (
+                    <button key={o.id} className="btn sm primary" disabled={!!busy}
+                            onClick={() => merge(canon.id, o.id, gi)}>
+                      {busy === 'm' + gi ? <span className="spin" /> : `Объединить «${o.name}» → ⭐`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

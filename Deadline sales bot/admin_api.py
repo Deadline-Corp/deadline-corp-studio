@@ -1222,6 +1222,45 @@ async def conversation_extract_fields(
     return res
 
 
+@router.get("/maintenance/duplicate-candidates")
+async def maintenance_duplicate_candidates(
+    _: dict = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    """Вероятные дубли карточек для РУЧНОГО слияния (Настройки → «Объединить дубли»).
+    Только показывает (ничего не меняет) — оператор сам подтверждает, что это один человек."""
+    from services.identity import find_duplicate_candidates
+    return {"ok": True, "groups": find_duplicate_candidates(db, limit=40)}
+
+
+class MergeCustomersRequest(BaseModel):
+    canon_id: str
+    shadow_id: str
+
+
+@router.post("/maintenance/merge-customers")
+async def maintenance_merge_customers(
+    req: MergeCustomersRequest,
+    _: dict = Depends(_verify_owner),
+    db: Session = Depends(get_db),
+):
+    """Ручное слияние двух карточек (оператор подтвердил — это один человек). NEVER-DELETE:
+    дубль помечается «слит», история/диалоги/задачи/CRM переезжают на главную карточку."""
+    from services.identity import merge_customers
+    try:
+        res = merge_customers(db, req.canon_id, req.shadow_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    db.commit()
+    try:
+        from services.activity_log import log_event
+        log_event("config", f"Ручное слияние карточек: {req.shadow_id[:8]} → {req.canon_id[:8]}",
+                  level="info", actor="owner")
+    except Exception:  # noqa: BLE001
+        pass
+    return res
+
+
 @router.post("/maintenance/dedup")
 async def maintenance_dedup(
     _: dict = Depends(_verify_owner),

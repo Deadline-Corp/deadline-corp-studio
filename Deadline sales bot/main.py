@@ -4418,33 +4418,61 @@ def _persist_lead_submission_sync(
         if not crm_enabled:
             return out
 
-        # CRM on → create a Customer (the bot's native lead record).
+        # CRM on → create/reuse a Customer (the bot's native lead record).
         phone = normalized if ctype == "phone" else None
         email = normalized if ctype == "email" else None
-        cust = Customer(
-            name=lead.name[:200],
-            email=email,
-            phone=phone,
-            first_channel=ChannelEnum.WEBSITE,
-            utm_source=(lead.source or None),
-            utm_campaign=(lead.campaign or None),
-            lead_score=70,
-            lead_temperature="warm",   # fresh inbound form lead — NOT cold
-            interaction_type="P1",     # direct request: they stated need + timeframe
-            profile_data={
-                "lead_form": True,
-                "lead_stage": "new_lead",
-                "need": lead.need,
-                "business": lead.business,
-                "task": lead.task,
-                "when": lead.when,
-                "contact_raw": lead.contact,
-                "contact_type": ctype,
-                "contact_exists": cexists,
-            },
-        )
-        s.add(cust)
-        s.flush()  # populate cust.id
+        # Профилактика дублей: если карточка с этим email/телефоном уже есть — доливаемся
+        # в неё, а не плодим вторую (заявка с сайта была частым источником дублей).
+        from services.identity import find_customer_by_email, find_customer_by_phone
+        cust = None
+        if email:
+            try:
+                cust = find_customer_by_email(s, email)
+            except Exception:  # noqa: BLE001
+                cust = None
+        if cust is None and phone:
+            cust = find_customer_by_phone(s, phone)
+        if cust is not None:
+            # дозаполнить пустое, НЕ перетирая существующее
+            if not (cust.name or "").strip():
+                cust.name = lead.name[:200]
+            if phone and not (cust.phone or "").strip():
+                cust.phone = phone
+            if email and not (cust.email or "").strip():
+                cust.email = email
+            _pd = dict(cust.profile_data or {})
+            _pd["lead_form"] = True
+            for _k, _v in (("need", lead.need), ("business", lead.business),
+                           ("task", lead.task), ("when", lead.when)):
+                if _v and not _pd.get(_k):
+                    _pd[_k] = _v
+            cust.profile_data = _pd
+            s.flush()
+        else:
+            cust = Customer(
+                name=lead.name[:200],
+                email=email,
+                phone=phone,
+                first_channel=ChannelEnum.WEBSITE,
+                utm_source=(lead.source or None),
+                utm_campaign=(lead.campaign or None),
+                lead_score=70,
+                lead_temperature="warm",   # fresh inbound form lead — NOT cold
+                interaction_type="P1",     # direct request: they stated need + timeframe
+                profile_data={
+                    "lead_form": True,
+                    "lead_stage": "new_lead",
+                    "need": lead.need,
+                    "business": lead.business,
+                    "task": lead.task,
+                    "when": lead.when,
+                    "contact_raw": lead.contact,
+                    "contact_type": ctype,
+                    "contact_exists": cexists,
+                },
+            )
+            s.add(cust)
+            s.flush()  # populate cust.id
         sub.customer_id = cust.id
 
         # A message-less Conversation so the lead becomes a real DEAL in the
