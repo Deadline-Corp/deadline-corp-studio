@@ -173,6 +173,8 @@ export interface ConvDetail extends ConvSummary {
   deal_value?: number | null
   deal_currency?: string | null
   next_action?: { label?: string; mode?: string; kind?: string } | null
+  // Проекция даты следующего дожима (видна сразу, до материализации строки кроном).
+  projected_next_followup?: { due_at: string | null; step?: number; of?: number; from_cadence?: boolean; text?: string | null } | null
   hubspot: { contact_url?: string; deal_url?: string }
   utm: { source: string | null; campaign: string | null; medium: string | null; content: string | null }
   scheduled_actions: Array<{

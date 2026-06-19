@@ -1020,14 +1020,16 @@ function BotPlanBlock({ detail, convId, showToast }: {
       <div className="faint" style={{ fontSize: 11.5, marginTop: 3 }}>
         {nextSched
           ? <>Следующий шаг: <b>{TYPE[nextSched.action_type]}</b>{nextSched.due_at ? <> · {fmtTime(nextSched.due_at)}</> : null}</>
-          : (detail.nudge_paused
-              ? 'Дожим на паузе — бот не пишет сам, пока не возобновишь.'
-              : 'Жду ответа лида. Если замолчит — сам напишу дожим; дата и текст сообщения появятся здесь, как только запланирую.')}
+          : detail.nudge_paused
+            ? 'Дожим на паузе — бот не пишет сам, пока не возобновишь.'
+            : detail.projected_next_followup?.due_at
+                ? <>Следующий дожим <span style={{ opacity: .7 }}>(планово)</span>: <b>{fmtTime(detail.projected_next_followup.due_at)}</b>{detail.projected_next_followup.of && detail.projected_next_followup.of > 1 ? ` · шаг ${detail.projected_next_followup.step}/${detail.projected_next_followup.of}` : ''}</>
+                : 'Жду ответа лида. Если замолчит — сам напишу дожим (дата появится здесь).'}
       </div>
-      {nextSched?.payload?.text && (
+      {(nextSched?.payload?.text || detail.projected_next_followup?.text) && (
         <div style={{ marginTop: 5, padding: '6px 9px', background: 'var(--panel)', borderRadius: 7,
                       fontSize: 12, lineHeight: 1.45, whiteSpace: 'pre-wrap', borderLeft: '2px solid var(--accent-border)' }}>
-          💬 «{nextSched.payload.text}»
+          💬 «{nextSched?.payload?.text || detail.projected_next_followup?.text}»{!nextSched && <span style={{ opacity: .6 }}> (планово)</span>}
         </div>
       )}
       <button className="btn sm ghost" style={{ marginTop: 6, fontSize: 11.5 }} onClick={showPreview} disabled={busy}>

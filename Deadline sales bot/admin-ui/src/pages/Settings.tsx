@@ -995,7 +995,7 @@ function BehaviorCard() {
       }
       if (values.silence_lost_days != null) values.silence_lost_days = parseInt(values.silence_lost_days, 10)
       if (values.silence_lost_warm_days != null) values.silence_lost_warm_days = parseInt(values.silence_lost_warm_days, 10)
-      for (const k of ['digest_hour', 'digest_tz_offset']) {
+      for (const k of ['digest_hour', 'digest_tz_offset', 'send_window_start', 'send_window_end']) {
         if (values[k] != null) values[k] = parseInt(values[k], 10)
       }
       await api.post('/behavior', { values })
@@ -1041,11 +1041,18 @@ function BehaviorCard() {
         </label>
         <div style={row}>
           <span className="muted" style={{ width: 280 }}>Каденция дожима (через сколько тишины):</span>
+          <select value={['', '1d', '2d', '3d', '1h,1d,3d'].includes(overrides.nudge_sequence ?? '') ? (overrides.nudge_sequence ?? '') : '__custom'}
+                  onChange={e => { if (e.target.value !== '__custom') upd('nudge_sequence', e.target.value || null) }}
+                  style={{ width: 200, marginRight: 8 }}>
+            <option value="">Один пинг</option>
+            <option value="1d">Раз в сутки</option>
+            <option value="2d">Раз в 2 суток</option>
+            <option value="3d">Раз в 3 суток</option>
+            <option value="1h,1d,3d">Через 1ч → 1д → 3д</option>
+            <option value="__custom">Свой формат →</option>
+          </select>
           <input type="text" value={overrides.nudge_sequence ?? ''} placeholder="1h,1d,3d"
-                 onChange={e => upd('nudge_sequence', e.target.value || null)} style={{ width: 130 }} />
-          <span className="faint" style={{ fontSize: 11, marginLeft: 8 }}>
-            напр. <b>1h,1d,3d</b> — пинг через 1ч, потом через 1 день, потом через 3 дня. Пусто = один пинг.
-          </span>
+                 onChange={e => upd('nudge_sequence', e.target.value || null)} style={{ width: 120 }} />
         </div>
         <div style={row}>
           <span className="muted" style={{ width: 280 }}>Первый пинг через (часов тишины, если каденция пуста):</span>
@@ -1056,6 +1063,21 @@ function BehaviorCard() {
           <span className="muted" style={{ width: 280 }}>Уже не пинговать после (часов):</span>
           <input type="number" min={1} step={1} value={overrides.nudge_max_hours}
                  onChange={e => upd('nudge_max_hours', e.target.value)} style={{ width: 90 }} />
+        </div>
+        <div style={{ ...row, flexWrap: 'wrap' }}>
+          <span className="muted" style={{ width: 280 }}>Окно отправки (по времени лида):</span>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <input type="checkbox" checked={overrides.send_window_enabled ?? true}
+                   onChange={e => upd('send_window_enabled', e.target.checked)} />
+            <span style={{ fontSize: 12.5 }}>не писать ночью</span>
+          </label>
+          <span style={{ marginLeft: 6 }}>с</span>
+          <input type="number" min={0} max={23} step={1} value={overrides.send_window_start ?? 9}
+                 onChange={e => upd('send_window_start', e.target.value)} style={{ width: 64 }} />
+          <span>до</span>
+          <input type="number" min={1} max={24} step={1} value={overrides.send_window_end ?? 21}
+                 onChange={e => upd('send_window_end', e.target.value)} style={{ width: 64 }} />
+          <span className="faint" style={{ fontSize: 11 }}>дожимы/напоминания вне окна сдвигаются на ближайшее утро</span>
         </div>
         <div style={{ ...row, alignItems: 'flex-start' }}>
           <span className="muted" style={{ width: 280, paddingTop: 6 }}>Текст пинка (пусто = стандартный):</span>

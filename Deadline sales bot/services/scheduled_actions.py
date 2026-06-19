@@ -151,6 +151,17 @@ async def run_due_followups(*, tenant_config: Optional[dict] = None) -> dict:
     stats = {"due": 0, "sent": 0, "failed": 0, "skipped_no_chat": 0}
     token = os.getenv("TELEGRAM_BOT_TOKEN") or (tenant_config or {}).get("telegram_bot_token")
     now = datetime.now(timezone.utc)
+    # QUIET HOURS: окно отправки в поясе лида (чтобы бот не писал ночью). Из bot_settings
+    # (TTL-кэш), дефолт 9–21. Fail-safe: ошибка чтения → дефолты, отправка не блокируется.
+    try:
+        from services import bot_settings as _bs
+        _sw = _bs.get_all()
+    except Exception:  # noqa: BLE001
+        _sw = {}
+    _send_window_on = bool(_sw.get("send_window_enabled", True))
+    _qstart = int(_sw.get("send_window_start", 9) or 9)
+    _qend = int(_sw.get("send_window_end", 21) or 21)
+    from services.scheduling import is_within_send_window, clamp_to_send_window
 
     # 1) КЛЕЙМ: атомарно забираем созревшие строки (FOR UPDATE SKIP LOCKED) и
     #    переводим в 'processing' + claimed_at=now. Конкурентный свип/инстанс
@@ -211,6 +222,15 @@ async def run_due_followups(*, tenant_config: Optional[dict] = None) -> dict:
                     r.claimed_at = None
                     stats["skipped_takeover"] = stats.get("skipped_takeover", 0) + 1
                     continue
+            # QUIET HOURS: вне дневного окна по поясу лида — НЕ клеймим, переносим due_at
+            # на ближайшее start:00 локального, оставляем pending (без инкремента attempts —
+            # это отложенная доставка, не сбой). ТОЛЬКО WhatsApp: там chat_id=номер → пояс по
+            # нему; у Telegram/IG chat_id — числовой ID платформы (не телефон), пояс не вывести.
+            if (_send_window_on and (r.channel or "").lower() == "whatsapp"
+                    and not is_within_send_window(now, r.chat_id, _qstart, _qend)):
+                r.due_at = clamp_to_send_window(now, r.chat_id, _qstart, _qend)
+                stats["deferred_quiet"] = stats.get("deferred_quiet", 0) + 1
+                continue
             r.status = "processing"
             r.claimed_at = now
             stats["due"] += 1

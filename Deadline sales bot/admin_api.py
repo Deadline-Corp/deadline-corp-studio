@@ -714,6 +714,83 @@ async def conversation_detail(
         except Exception:  # noqa: BLE001
             pass
 
+    # ПРОЕКЦИЯ даты следующего дожима — видна в карточке СРАЗУ (до материализации строки
+    # кроном). Реальная pending-строка приоритетнее проекции. Считается по ТОЙ ЖЕ каденции
+    # (nudge_sequence) и ТОМ ЖЕ окне отправки (send_window_*), что и реальный дожим — чтобы
+    # дата на карточке совпадала с тем, когда бот реально напишет. Без записи в БД.
+    proj_next = None
+    try:
+        from services.scheduling import parse_nudge_seq, clamp_to_send_window
+        from services import bot_settings as _bs2
+        _bset = _bs2.get_all()
+        _sw_on = bool(_bset.get("send_window_enabled", True))
+        _qs = int(_bset.get("send_window_start", 9) or 9)
+        _qe = int(_bset.get("send_window_end", 21) or 21)
+        _chan = (conv.channel or "").lower()
+
+        def _disp(dt):
+            # Показать дату так же, как реально уйдёт: quiet-hours сдвигает на утро ТОЛЬКО
+            # для WhatsApp (там chat_id=номер → пояс по нему); прочие каналы — без сдвига.
+            if _sw_on and _chan == "whatsapp" and dt is not None:
+                try:
+                    return clamp_to_send_window(dt, cust.phone, _qs, _qe)
+                except Exception:  # noqa: BLE001
+                    return dt
+            return dt
+
+        _real_fu = next((a for a in pending_actions if a.action_type == "followup_message"), None)
+        if _real_fu and _real_fu.due_at:
+            _d = _disp(_real_fu.due_at)
+            proj_next = {"due_at": (_d or _real_fu.due_at).isoformat(), "from_cadence": False,
+                         "text": (_real_fu.payload or {}).get("text")}
+        else:
+            _applicable = (
+                bool(getattr(conv, "wa_autonomous", False))
+                and bool(getattr(conv, "channel_conversation_id", None))  # есть транспорт
+                and _chan in ("whatsapp", "telegram", "instagram", "messenger")
+                and bool(_bset.get("nudge_enabled", True))
+                and not bool((cust.profile_data or {}).get("nudge_paused"))
+                and not bool(getattr(conv, "operator_takeover", False))
+                and (cust.lead_score or 0) >= 40
+                and not (cust.profile_data or {}).get("booked_call_at")
+            )
+            if _applicable:
+                _last_user = (
+                    db.query(Message.created_at)
+                    .filter(Message.conversation_id == conv.id, Message.role == "user")
+                    .order_by(Message.created_at.desc()).first()
+                )
+                _ref = (_last_user[0] if _last_user else None) or conv.created_at  # для счётчика _sent
+                # БАЗА времени дожима = last_message_at — именно от неё крон считает тишину
+                # (silent_hours), а не от последней реплики лида. Иначе проекция расходится.
+                _base = conv.last_message_at or _ref
+                if _ref is not None and _base is not None:
+                    if _ref.tzinfo is None:
+                        _ref = _ref.replace(tzinfo=timezone.utc)
+                    if _base.tzinfo is None:
+                        _base = _base.replace(tzinfo=timezone.utc)
+                    _sent = (
+                        db.query(sql_func.count(ScheduledAction.id))
+                        .filter(ScheduledAction.conversation_id == conv.id,
+                                ScheduledAction.action_type == "followup_message",
+                                ScheduledAction.executor == "bot",
+                                ScheduledAction.created_at > _ref)
+                        .scalar() or 0
+                    )
+                    seq = parse_nudge_seq(_bset.get("nudge_sequence"),
+                                          float(_bset.get("nudge_after_hours", 1) or 1))
+                    if _sent < len(seq):
+                        cand = _base + timedelta(hours=seq[_sent])
+                        _now2 = datetime.now(timezone.utc)
+                        if cand < _now2:
+                            cand = _now2
+                        _d = _disp(cand)
+                        proj_next = {"due_at": (_d or cand).isoformat(), "step": _sent + 1,
+                                     "of": len(seq), "from_cadence": True,
+                                     "text": _bset.get("nudge_text") or None}
+    except Exception:  # noqa: BLE001
+        proj_next = None
+
     out = _conv_summary_row(conv, cust, None)
     out.update({
         "fields": [
@@ -741,6 +818,8 @@ async def conversation_detail(
         "deal_currency": getattr(conv, "deal_currency", None),
         # План бота: что он понял про лида и какой следующий шаг (для прозрачности в карточке).
         "next_action": getattr(conv, "next_action", None) or None,
+        # Проекция даты следующего дожима (видна сразу, до материализации строки кроном).
+        "projected_next_followup": proj_next,
         "hubspot": hubspot,
         "utm": {
             "source": cust.utm_source, "campaign": cust.utm_campaign,
@@ -3647,7 +3726,11 @@ async def behavior_get(_: None = Depends(_verify_owner)):
             "nudge_after_hours": 1,
             "nudge_max_hours": 36,
             "nudge_text": None,
+            "nudge_sequence": None,
             "nudge_draft_for_manual": True,
+            "send_window_enabled": True,
+            "send_window_start": 9,
+            "send_window_end": 21,
             "silence_lost_days": 7,
             "silence_lost_extend_warm": False,
             "silence_lost_warm_days": 14,

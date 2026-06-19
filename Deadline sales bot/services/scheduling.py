@@ -91,6 +91,54 @@ def lead_tz_from_phone(phone: str) -> timezone:
     return BANGKOK                             # дефолт — Пхукет/Бангкок
 
 
+def parse_nudge_seq(raw, default_after: float) -> list:
+    """CSV «1h,1d,3d» → отсортированный список ПОРОГОВ тишины (в часах) для шагов дожима.
+    Единицы m/h/d, голое число = часы. Та же логика, что в cron._parse_nudge_seq —
+    вынесена сюда, чтобы ПРОЕКЦИЯ даты следующего дожима (в карточке) считалась по той
+    же каденции, что и реальная постановка дожима в кроне."""
+    out: list = []
+    for tok in str(raw or "").split(","):
+        tok = tok.strip().lower()
+        m = re.match(r"^(\d+(?:\.\d+)?)\s*([mhd]?)$", tok)
+        if not m:
+            continue
+        n = float(m.group(1)); u = m.group(2) or "h"
+        out.append(n / 60.0 if u == "m" else n * 24.0 if u == "d" else n)
+    out = sorted(h for h in out if h > 0)
+    return out or [float(default_after)]
+
+
+def clamp_to_send_window(due_utc, phone, start_hour: int = 9, end_hour: int = 21, lead_tz=None):
+    """Сдвинуть момент в ближайшее ДНЕВНОЕ окно [start,end) по поясу лида — чтобы бот
+    НЕ писал ночью. Час < start → сегодня start:00 локально; час >= end → завтра start:00.
+    Fail-safe: при любой ошибке (битый номер/naive datetime) вернуть момент как есть —
+    кривой пояс никогда не должен блокировать отправку."""
+    try:
+        if due_utc.tzinfo is None:
+            due_utc = due_utc.replace(tzinfo=timezone.utc)
+        tz = lead_tz or lead_tz_from_phone(phone)
+        loc = due_utc.astimezone(tz)
+        if loc.hour < start_hour:
+            loc = loc.replace(hour=start_hour, minute=0, second=0, microsecond=0)
+        elif loc.hour >= end_hour:
+            loc = (loc + timedelta(days=1)).replace(hour=start_hour, minute=0, second=0, microsecond=0)
+        return loc.astimezone(timezone.utc)
+    except Exception:  # noqa: BLE001
+        return due_utc
+
+
+def is_within_send_window(dt_utc, phone, start_hour: int = 9, end_hour: int = 21, lead_tz=None) -> bool:
+    """Попадает ли момент в дневное окно отправки [start,end) по поясу лида.
+    Fail-safe → True (не блокировать отправку при ошибке определения пояса)."""
+    try:
+        if dt_utc.tzinfo is None:
+            dt_utc = dt_utc.replace(tzinfo=timezone.utc)
+        tz = lead_tz or lead_tz_from_phone(phone)
+        return start_hour <= dt_utc.astimezone(tz).hour < end_hour
+    except Exception:  # noqa: BLE001
+        return True
+
+
 def tz_label_from_phone(phone: str) -> str:
     """Короткая подпись пояса для подстановки в текст лиду («время Астаны» и т.п.)."""
     digits = re.sub(r"\D", "", phone or "")
