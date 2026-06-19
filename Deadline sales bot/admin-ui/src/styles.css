@@ -527,6 +527,9 @@ textarea { resize: vertical; }
   transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
 }
 .kb-card:hover { border-color: var(--accent-border); box-shadow: var(--node-shadow); transform: translateY(-1px); }
+/* «Ведёт бот» — зелёная левая полоса поверх тени карточки (единое правило, как .conv-row.autonomous) */
+.kb-card.autonomous { box-shadow: inset 3px 0 0 #3bb4a0, var(--card-shadow); }
+.kb-card.autonomous:hover { box-shadow: inset 3px 0 0 #3bb4a0, var(--node-shadow); }
 .kb-card { position: relative; }
 .kb-card .kc-name { padding-right: 22px; }
 

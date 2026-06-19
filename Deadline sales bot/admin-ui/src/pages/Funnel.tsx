@@ -117,7 +117,7 @@ export function Funnel() {
     return (
       <div
         key={c.id}
-        className="kb-card"
+        className={`kb-card${c.wa_autonomous ? ' autonomous' : ''}`}
         draggable
         onDragStart={e => e.dataTransfer.setData('text/conv', JSON.stringify({ id: c.id }))}
         onClick={() => openConversation(c.id)}

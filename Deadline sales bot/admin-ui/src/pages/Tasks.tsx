@@ -61,7 +61,7 @@ type ZoneId = 'approve_now' | 'your_turn' | 'bot_leading' | 'stuck' | 'waiting'
 type FailedItem = {
   id: string; conversation_id: string | null; name: string; channel: string
   text: string; action_type: string; stage_label: string; temperature: string | null
-  attempts: number
+  attempts: number; wa_autonomous?: boolean
 }
 type Board = {
   summary: { overdue: number; today: number; no_task: number; bot: number; human: number
@@ -520,7 +520,7 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
                 hint="Авто-сообщения бота этим лидам не дошли. Открой и ответь вручную." />
           <div style={colS}>
             {board.delivery_failed.map(f => (
-              <div className="conv-row" key={f.id}>
+              <div className={`conv-row${f.wa_autonomous ? ' autonomous' : ''}`} key={f.id}>
                 <div className="c-main" style={{ cursor: f.conversation_id ? 'pointer' : 'default' }}
                      onClick={() => f.conversation_id && openConversation(f.conversation_id)}>
                   <div className="c-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -800,7 +800,7 @@ function SleepingPanel({ showToast }: { showToast: (t: string) => void }) {
           {data && items.length === 0 && <div className="faint" style={{ fontSize: 12 }}>спящих нет 🎉</div>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
             {items.map((l: any) => (
-              <div className="conv-row" key={l.conversation_id} style={{ cursor: 'default' }}>
+              <div className={`conv-row${l.wa_autonomous ? ' autonomous' : ''}`} key={l.conversation_id} style={{ cursor: 'default' }}>
                 <div className="c-main" style={{ cursor: 'pointer' }} onClick={() => openConversation(l.conversation_id)}>
                   <div className="c-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     <TempDot t={l.temperature} />{l.name}
