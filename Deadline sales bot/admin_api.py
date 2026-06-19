@@ -128,6 +128,42 @@ async def me(member: dict = Depends(_verify_member)):
 
 
 # ============================================================================
+# LOGIN — вход по ЛОГИНУ/ПАРОЛЮ (проще длинного токена; для владельца и партнёра)
+# ============================================================================
+
+class LoginRequest(BaseModel):
+    username: str = Field(..., min_length=1, max_length=80)
+    password: str = Field(..., min_length=1, max_length=200)
+
+
+@router.post("/login")
+async def login(req: LoginRequest):
+    """Вход по логину/паролю — чтобы не вводить длинный admin-токен. Креды в env
+    PANEL_LOGINS («user1:pass1,user2:pass2»). При совпадении возвращаем owner-токен
+    (фронт хранит как Bearer — тот же механизм, просто без ручного ввода токена).
+    Constant-time сравнение пароля. PANEL_LOGINS пуст → 503 (остаётся вход по токену)."""
+    import os
+    import main as _main
+    pairs: dict = {}
+    for pair in (os.getenv("PANEL_LOGINS") or "").split(","):
+        pair = pair.strip()
+        if ":" in pair:
+            u, p = pair.split(":", 1)
+            if u.strip() and p:
+                pairs[u.strip().lower()] = p
+    if not pairs:
+        raise HTTPException(status_code=503,
+                            detail="Вход по логину не настроен (PANEL_LOGINS). Войдите по токену.")
+    exp = pairs.get(req.username.strip().lower()) or ""
+    if not (exp and hmac.compare_digest(exp.encode("utf-8"), req.password.encode("utf-8"))):
+        raise HTTPException(status_code=401, detail="Неверный логин или пароль")
+    owner_token = os.getenv("ADMIN_UI_TOKEN") or _main.settings.training_auth_token
+    if not owner_token:
+        raise HTTPException(status_code=503, detail="Нет owner-токена на сервере")
+    return {"ok": True, "token": owner_token, "role": "owner"}
+
+
+# ============================================================================
 # TEAM — команда (owner-only): именные токены менеджеров
 # ============================================================================
 
