@@ -812,16 +812,18 @@ async def reconcile_wa_conversation(settings: Any, conv_id: Any, *, limit: int =
         ).scalars().all()
         for meta in metas:
             if isinstance(meta, dict):
-                jid = chat_id_from_waha_id(meta.get("waha_id"))
+                # wa_chat_id (полный JID) надёжнее парсинга waha_id и НЕ зависит от движка
+                # (у NOWEB и GOWS разный формат waha_id, а wa_chat_id кладёт парсер всегда).
+                jid = meta.get("wa_chat_id") or chat_id_from_waha_id(meta.get("waha_id"))
                 if jid and "@" in jid:
                     chat_id = jid
                     break
         if not chat_id:  # фолбэк: из ключа карточки (телефон @c.us / скрытый @lid)
             d = _norm_phone(getattr(conv, "channel_conversation_id", None))
             if d:
-                chat_id = (d + "@lid") if len(d) >= 13 else (d + "@c.us")
+                chat_id = (d + "@lid") if _is_lid_key(d) else (d + "@c.us")
         existing_full = _existing_waha_ids(db, conv_id)
-    if not chat_id:
+    if not chat_id or "@" not in chat_id:
         out["reason"] = "не определить chat id"
         return out
     out["chat_id"] = chat_id
@@ -868,6 +870,11 @@ async def reconcile_wa_conversation(settings: Any, conv_id: Any, *, limit: int =
         # ДУБЛЕЙ: бот-отправка сохранялась без waha_id → reconcile матчил только по
         # waha_id → добавлял эхо как новую строку.
         nowid_by_text: dict = {}
+        # Engine-agnostic индекс (роль, нормализованный текст) → строки. Повторный импорт
+        # того же сообщения под ДРУГИМ движком (NOWEB→GOWS дают разные waha_id) матчим по
+        # содержимому+роли+времени, а не только по id — иначе переезд плодит дубли.
+        by_text_role: dict = {}
+        _consumed_text: set = set()
         for r in rows:
             meta = r.extra_meta if isinstance(r.extra_meta, dict) else {}
             wid = meta.get("waha_id")
@@ -878,6 +885,7 @@ async def reconcile_wa_conversation(settings: Any, conv_id: Any, *, limit: int =
                     by_suf.setdefault(suf, r)
             else:
                 nowid_by_text.setdefault(_norm_txt(r.content), []).append(r)
+            by_text_role.setdefault((_role_str(r), _norm_txt(r.content)), []).append(r)
         prev_dt = None
         last_ts = None
         for it in items:
@@ -911,6 +919,32 @@ async def reconcile_wa_conversation(settings: Any, conv_id: Any, *, limit: int =
                                 by_suf.setdefault(_s, r)
                             cands.remove(r)
                             existing = r
+                            break
+            if existing is None:
+                # Cross-engine дедуп: то же сообщение могло уже лежать под ДРУГИМ waha_id
+                # (переезд NOWEB→GOWS) или из живого вебхука. Матчим по (роль, текст, ±30с),
+                # чтобы повторный импорт НЕ плодил дубль. Каждую строку забираем ≤1 раза за
+                # проход (_consumed_text) — легитимные повторы текста сохраняются.
+                _ctxt = _norm_txt(it["content"])
+                if _ctxt:
+                    for r in by_text_role.get((it["role"], _ctxt), []):
+                        if id(r) in _consumed_text:
+                            continue
+                        rc = r.created_at
+                        if rc is not None and rc.tzinfo is None:
+                            rc = rc.replace(tzinfo=timezone.utc)
+                        if rc is None or abs((rc - assigned).total_seconds()) <= 30:
+                            _consumed_text.add(id(r))
+                            if wid:  # перецепляем на актуальный (GOWS) id — впредь матч by_full
+                                mm = dict(r.extra_meta or {})
+                                mm["waha_id"] = str(wid)
+                                r.extra_meta = mm
+                                by_full[str(wid)] = r
+                                _s2 = _wa_msgid_suffix(wid)
+                                if _s2:
+                                    by_suf.setdefault(_s2, r)
+                            existing = r
+                            out["deduped"] = out.get("deduped", 0) + 1
                             break
             if existing is not None:
                 cur = existing.created_at
@@ -1044,7 +1078,10 @@ async def reconcile_wa_conversation(settings: Any, conv_id: Any, *, limit: int =
             conv = db.get(Conversation, conv_id)
             if conv is not None and (not conv.last_message_at or last_ts > conv.last_message_at):
                 conv.last_message_at = last_ts
-    out["ok"] = True
+    # «ok» = реально были изменения; иначе честный «уже синхронизировано» вместо фейкового ✅
+    out["ok"] = any(out.get(k, 0) > 0 for k in ("added", "restamped", "deduped", "removed", "restored"))
+    if not out["ok"]:
+        out["reason"] = out.get("reason") or "уже синхронизировано"
     return out
 
 

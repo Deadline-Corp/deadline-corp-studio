@@ -3473,6 +3473,7 @@ async def _wa_route_answer(db: Session, conversation, answer: str, req) -> bool:
         source="observe",
         based_on_count=_wad.count_dialog_messages(db, conversation.id),
         phone_number_id=(req.extra_meta or {}).get("phone_number_id") or settings.whatsapp_phone_number_id or "",
+        wa_chat_id=(req.extra_meta or {}).get("wa_chat_id") or "",
     )
     db.commit()
 
@@ -3521,6 +3522,7 @@ async def _handle_wa_draft_callback(action: str, conv_id_str: str, cb_id: str, d
             draft.get("to_wa_id") or "",
             draft.get("text") or "",
             draft.get("phone_number_id") or "",
+            draft.get("wa_chat_id") or "",
         )
         if ok:
             # Одобренный ответ становится сообщением бота в истории диалога.
@@ -3538,16 +3540,21 @@ async def _handle_wa_draft_callback(action: str, conv_id_str: str, cb_id: str, d
         await answer_callback_query(token, cb_id, text="🚫 Отклонено, клиенту не отправлено.")
 
 
-def _resolve_wa_chat_id(to_peer: str) -> str:
+def _resolve_wa_chat_id(to_peer: str, draft_wa_chat_id: str = "") -> str:
     """Определить НАСТОЯЩИЙ WhatsApp chatId (JID) для отправки. Рекламные лиды
     (click-to-WhatsApp) приходят под скрытым `@lid`, а не `@c.us` — если слать на
-    `<цифры>@c.us`, WAHA принимает (201), но клиент НЕ получает. Берём реальный JID
-    из истории сообщений диалога (extra_meta.wa_chat_id или из waha_id вида
-    `false_<jid>_<id>`). Фоллбэк — `<цифры>@c.us` (как было)."""
+    `<цифры>@c.us`, движок (особенно GOWS) гонит его в `@s.whatsapp.net` и отвергает
+    (`no LID found` → 500), клиент НЕ получает. Берём реальный JID: сперва прямой
+    `draft_wa_chat_id` из живого входящего/черновика (надёжнее всего), затем из истории
+    сообщений (extra_meta.wa_chat_id или из waha_id `false_<jid>_<id>`). Фоллбэк — `@c.us`."""
     if not to_peer:
         return ""
     if "@" in to_peer:
         return to_peer
+    # Прямой JID из живого входящего/черновика — надёжнее истории (она может не
+    # содержать wa_chat_id, и тогда падали на @c.us → GOWS 500 для @lid-лидов).
+    if draft_wa_chat_id and "@" in draft_wa_chat_id:
+        return draft_wa_chat_id
     try:
         from db.connection import SessionLocal
         from channels.waha import chat_id_from_waha_id
@@ -3573,7 +3580,7 @@ def _resolve_wa_chat_id(to_peer: str) -> str:
     return f"{to_peer}@c.us"
 
 
-async def _wa_send(to_peer: str, text: str, phone_number_id: str = "") -> bool:
+async def _wa_send(to_peer: str, text: str, phone_number_id: str = "", wa_chat_id: str = "") -> bool:
     """Единая отправка в WhatsApp с FAILOVER-цепочкой. `to_peer` — номер клиента
     (цифры) / wa_id. Пробуем провайдеров по порядку, пока один не доставит:
     WAHA → Green-API → Meta Cloud API. Первый можно переопределить в настройках
@@ -3588,7 +3595,7 @@ async def _wa_send(to_peer: str, text: str, phone_number_id: str = "") -> bool:
 
     async def _try_waha() -> bool:
         from channels.waha import send_waha_reply, resolve_lid_phone
-        chat_id = _resolve_wa_chat_id(to_peer)  # @lid для рекламных лидов
+        chat_id = _resolve_wa_chat_id(to_peer, wa_chat_id)  # @lid для рекламных лидов
         # Рекламный лид под @lid: отправка на @lid через NOWEB нестабильна. Пробуем
         # разрезолвить @lid → реальный телефон (WAHA LID API) и слать на надёжный
         # @c.us. Если WAHA не знает номер (pn:null) — остаёмся на @lid (best-effort).
@@ -3948,7 +3955,8 @@ async def _process_wa_payload(payload: dict, engine: str) -> None:
             with session_scope() as db:
                 resp = await _handle_message(msg_req, db)
             if resp and not resp.suppress_send and resp.answer:
-                await _wa_send(normalized.channel_conversation_id, resp.answer)
+                await _wa_send(normalized.channel_conversation_id, resp.answer,
+                               wa_chat_id=(normalized.extra_meta or {}).get("wa_chat_id") or "")
             # Умное авто-ведение (gated WA_BRAIN, само разрулит вкл/выкл).
             await _brain_bg(normalized.channel_conversation_id)
         except Exception as e:  # noqa: BLE001

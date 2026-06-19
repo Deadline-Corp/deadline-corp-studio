@@ -275,7 +275,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
       const r = await api.post<{ delivered: boolean }>(`/conversations/${convId}/wa-draft`, {
         action: 'send', text: draftText.trim(),
       })
-      showToast(r.delivered ? '✅ Отправлено клиенту в WhatsApp' : '⚠️ Сохранено, но не доставлено (см. логи)', !r.delivered)
+      showToast(r.delivered ? '✅ Отправлено клиенту в WhatsApp' : '⚠️ НЕ доставлено лиду (см. логи) — черновик сохранён, попробуйте ещё раз', !r.delivered)
       await loadDetail(); await loadMessages(false)
     } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
     finally { setBusy(false) }
@@ -319,10 +319,15 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
         const r = await api.post<{ delivered: boolean; channel: string }>(`/conversations/${convId}/reply`, { text: t })
         delivered = r.delivered; channel = r.channel
       }
-      if (!delivered) showToast('⚠️ Сохранено, но НЕ доставлено лиду (см. логи)', true)
-      else if (channel === 'website') showToast('Сохранено. Website-лид увидит при следующем визите.')
-      else showToast('✅ Доставлено лиду')
-      setDraftText('')
+      if (!delivered) {
+        // НЕ доставлено — оставляем текст в поле для повторной попытки (без дубля),
+        // НЕ делаем вид, что отправлено.
+        showToast('⚠️ НЕ доставлено лиду (см. логи) — текст сохранён, попробуйте ещё раз', true)
+      } else {
+        if (channel === 'website') showToast('Сохранено. Website-лид увидит при следующем визите.')
+        else showToast('✅ Доставлено лиду')
+        setDraftText('')
+      }
       await loadDetail(); await loadMessages(false)
     } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
     finally { setBusy(false) }
@@ -846,10 +851,13 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
           />
         )}
 
-        {/* «План бота» — показываем ВСЕГДА (и на автопилоте, и на ручном ведении):
-            владелец хочет видеть логику бота — что он планирует написать и когда +
-            превью следующего ответа, даже когда диалог ведёт человек. */}
-        {detail && me?.role !== 'viewer' && (
+        {/* «План бота» — ТОЛЬКО когда диалог ведёт БОТ: на автопилоте (wa_autonomous)
+            или есть предложенный ботом черновик. В ручных переписках, где отвечает
+            человек или оператор взял диалог на себя (operator_takeover), блок скрыт —
+            там он не нужен (план/дожим относятся к автоведению бота). */}
+        {detail && me?.role !== 'viewer'
+          && (detail.wa_autonomous || !!detail.pending_wa_draft)
+          && !detail.operator_takeover && (
           <BotPlanBlock detail={detail} convId={convId} showToast={showToast} />
         )}
 

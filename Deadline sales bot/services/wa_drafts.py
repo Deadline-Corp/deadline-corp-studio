@@ -300,16 +300,22 @@ def make_payload(
     based_on_count: int,
     phone_number_id: str = "",
     kind: str = "reply",
+    wa_chat_id: str = "",
 ) -> dict:
     """Единый формат pending_wa_draft со штампом свежести.
 
     kind: "reply" (черновик ОТВЕТА на сообщение лида, дефолт) | "nudge" (черновик
     проактивного ДОЖИМА молчащего лида) — UI подписывает блок по-разному. Отправка
-    одинаковая (читает только text), поле обратно совместимо."""
+    одинаковая (читает только text), поле обратно совместимо.
+
+    wa_chat_id: настоящий WhatsApp JID входящего (`<digits>@lid` для рекламных лидов
+    или `<digits>@c.us`). Несём его в черновик, чтобы при отправке слать на ТОТ ЖЕ JID,
+    а не падать на `@c.us` (движок GOWS отвергает @c.us для скрытых @lid → 500)."""
     return {
         "text": text,
         "phone_number_id": phone_number_id,
         "to_wa_id": conv.channel_conversation_id,
+        "wa_chat_id": wa_chat_id,
         "client_msg": (last_user or "")[:500],
         "source": source,
         "based_on_count": based_on_count,

@@ -873,7 +873,7 @@ async def conversation_reply(
     delivered = await deliver_operator_reply(conv, text, _main.settings)
     append_message(
         db, conv.id, role="operator", content=text,
-        extra_meta={"by": "admin-ui", "delivered": delivered},
+        extra_meta={"by": "admin-ui", "delivered": delivered, "failed": not delivered},
     )
     db.commit()
 
@@ -889,7 +889,7 @@ async def conversation_reply(
     # Анти-рассинхрон: операторы в Telegram-форуме видят, что из UI уже ответили.
     await mirror_to_forum(conv, f"💻 [Admin UI → лиду] {text}", _main.settings)
 
-    return {"ok": True, "delivered": delivered, "channel": conv.channel, "rescheduled": rescheduled}
+    return {"ok": delivered, "delivered": delivered, "channel": conv.channel, "rescheduled": rescheduled}
 
 
 class TakeoverRequest(BaseModel):
@@ -1234,12 +1234,17 @@ async def conversation_wa_draft(
         pending.get("to_wa_id") or conv.channel_conversation_id or "",
         text,
         pending.get("phone_number_id") or "",
+        pending.get("wa_chat_id") or "",
     )
+    if not delivered:
+        # Не доставлено (напр. @lid без маппинга) — НЕ чистим черновик и НЕ помечаем
+        # как отправленное: оператор увидит ошибку и сможет повторить без дубля.
+        return {"ok": False, "sent": False, "delivered": False}
     append_message(db, conv.id, role="assistant", content=text,
-                   extra_meta={"approved_via": "admin-ui", "delivered": delivered})
+                   extra_meta={"approved_via": "admin-ui", "delivered": True})
     conv.pending_wa_draft = None
     db.commit()
-    return {"ok": True, "sent": True, "delivered": delivered}
+    return {"ok": True, "sent": True, "delivered": True}
 
 
 class WaAutonomousRequest(BaseModel):
@@ -1272,11 +1277,16 @@ async def conversation_wa_autonomous(
                 pending.get("to_wa_id") or conv.channel_conversation_id or "",
                 text,
                 pending.get("phone_number_id") or "",
+                pending.get("wa_chat_id") or "",
             )
-            append_message(db, conv.id, role="assistant", content=text,
-                           extra_meta={"approved_via": "admin-ui-autonomous", "delivered": delivered})
-            sent = True
-        conv.pending_wa_draft = None
+            if delivered:
+                append_message(db, conv.id, role="assistant", content=text,
+                               extra_meta={"approved_via": "admin-ui-autonomous", "delivered": True})
+                conv.pending_wa_draft = None  # доставлено — черновик исполнен
+                sent = True
+            # не доставлено — оставляем черновик, бот повторит в следующий ход
+        else:
+            conv.pending_wa_draft = None  # пустой черновик — просто чистим
     db.commit()
     return {"ok": True, "wa_autonomous": conv.wa_autonomous, "sent": sent, "delivered": delivered}
 
