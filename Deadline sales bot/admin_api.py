@@ -468,6 +468,16 @@ async def overview(
 # INBOX — переписки всех каналов в одном месте
 # ============================================================================
 
+def _contact_key(c: Customer) -> str:
+    """Единый ключ дедупа КОНТАКТА для вьюх: телефон(цифры) → имя(lower) → id.
+    Тот же принцип, что seen_call в /today, вынесен для переиспользования. Нужен,
+    чтобы один человек с НЕСКОЛЬКИМИ карточками-контактами (рекламный @lid + импорт
+    по номеру + заявка с сайта) НЕ лез в задачник/календарь/today по нескольку раз
+    («Денис ×2 / Нонна ×3»). Это страховка на уровне ОТОБРАЖЕНИЯ — БД не трогает."""
+    phone = "".join(ch for ch in (getattr(c, "phone", None) or "") if ch.isdigit())
+    return phone or (c.name or "").strip().lower() or str(c.id)
+
+
 def _wa_display_name(cust: Customer, conv: Conversation) -> str:
     """Никогда не «Без имени»: имя → телефон → +номер (реальный @c.us) → хвост
     скрытого @lid. Юзер просил видеть хотя бы номер, а не «Без имени»."""
@@ -2891,7 +2901,12 @@ async def today_view(
         }
 
     overdue, today, upcoming = [], [], []
+    seen_task_contact: set = set()  # дедуп: один человек = одна строка задачи (rows по due_at asc → срочнейшая)
     for a, c in rows:
+        tkey = (_contact_key(c), a.action_type)
+        if tkey in seen_task_contact:
+            continue
+        seen_task_contact.add(tkey)
         due = a.due_at
         if due and due.tzinfo is None:
             due = due.replace(tzinfo=timezone.utc)
@@ -2974,6 +2989,7 @@ async def calendar_events(
         .all()
     )
     seen_call: set = set()
+    seen_task_contact: set = set()  # дедуп задач/бот-действий по контакту (один человек = одна плашка/день)
     for a, c in rows:
         if not a.due_at:
             continue
@@ -3015,6 +3031,13 @@ async def calendar_events(
             kind, icon = "bot", "🤖"
         else:
             kind, icon = "task", "📋"
+        # ДЕДУП-страховка: один человек с N карточками не плодит N плашек на один день
+        # (созвоны/напоминания уже дедуплены выше через seen_call/seen_reminder).
+        if kind in ("task", "bot"):
+            _tk = (_contact_key(c), a.action_type, a.due_at.date().isoformat())
+            if _tk in seen_task_contact:
+                continue
+            seen_task_contact.add(_tk)
         events.append({
             "id": "task-" + str(a.id),
             "kind": kind,
@@ -3149,9 +3172,14 @@ async def task_board(
 
     buckets = {"overdue": [], "today": [], "tomorrow": [], "week": [], "later": []}
     convs_with_task: set = set()
+    seen_task_contact: set = set()  # дедуп: один человек = одна строка задачи в бакетах
     for a, c, conv in rows:
         if a.conversation_id:
             convs_with_task.add(a.conversation_id)
+        ckey = (_contact_key(c), a.action_type)
+        if ckey in seen_task_contact:
+            continue  # человек уже показан с этой задачей (rows по due_at asc → срочнейшая)
+        seen_task_contact.add(ckey)
         due = a.due_at
         if due and due.tzinfo is None:
             due = due.replace(tzinfo=timezone.utc)
@@ -3184,9 +3212,14 @@ async def task_board(
     if len(active_convs) >= 1500:
         log.warning("[task-board] active_convs hit cap 1500 — старые активные лиды не видны на доске")
     no_task = []
+    seen_lead_contact: set = set()  # один человек с N активными диалогами = одна строка «без задачи»
     for conv, c in active_convs:
         if conv.id in convs_with_task:
             continue
+        lkey = _contact_key(c)
+        if lkey in seen_lead_contact:
+            continue
+        seen_lead_contact.add(lkey)
         # Умный next_action (мозг разобрал диалог) — приоритетнее статичного по стадии.
         na = getattr(conv, "next_action", None) or {}
         stage_nxt, bot_ok = _NEXT_ACTION.get(conv.lead_stage or "new_lead", ("Решить следующий шаг", False))
@@ -3251,7 +3284,13 @@ async def task_board(
 
     zones = {"approve_now": [], "your_turn": [], "bot_leading": [], "waiting": []}
     stuck = []
+    seen_zone_contact: set = set()  # ГЛАВНЫЙ дедуп задачника: один человек = одна карточка
+    # в зонах (а не по диалогу). active_convs по last_message_at desc → берём свежий диалог.
     for conv, c in active_convs:
+        zkey = _contact_key(c)
+        if zkey in seen_zone_contact:
+            continue
+        seen_zone_contact.add(zkey)
         na = getattr(conv, "next_action", None) or {}
         mode = na.get("mode")
         wa_auto = bool(getattr(conv, "wa_autonomous", False))
