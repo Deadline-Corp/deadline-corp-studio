@@ -87,14 +87,14 @@ export function Tasks() {
       <div className="page-head">
         <h1>Задачи</h1>
         <div style={{ display: 'flex', gap: 4, background: 'var(--panel)', borderRadius: 8, padding: 3 }}>
-          <button className={`btn sm ${tab === 'day' ? 'primary' : 'ghost'}`} onClick={() => setTab('day')}>Мой день</button>
+          <button className={`btn sm ${tab === 'day' ? 'primary' : 'ghost'}`} onClick={() => setTab('day')}>Приоритет сегодня</button>
           <button className={`btn sm ${tab === 'all' ? 'primary' : 'ghost'}`} onClick={() => setTab('all')}>Все задачи</button>
         </div>
       </div>
       <HintBar id="tasks" icon="⏰">
-        Доска как в CRM: у каждого активного лида — следующая задача. Сверху <b>«Лиды без
-        задачи»</b> (их легко забыть) — реши, ведёт ли их бот сам или ты. Ниже задачи по
-        срочности и приоритету (🔥 горячие выше). 🤖 — бот сделает сам, 👤 — за тобой.
+        Задачи по дням: <b>просрочено</b> и <b>сегодня</b> — в первую очередь. <b>«Без задачи»</b>
+        (бледно-красным) — клиенты без следующего шага, их легко потерять: назначь задачу или
+        передай боту. 🤖 — бот сделает сам, 👤 — за тобой. «Будущее» свёрнуто внизу.
       </HintBar>
       {tab === 'day' ? <CrmBoard showToast={showToast} /> : <AllTasks showToast={showToast} />}
       {toast && <div className="toast">{toast}</div>}
@@ -108,8 +108,8 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   const [board, setBoard] = useState<Board | null>(null)
   const [busy, setBusy] = useState('')
   // Фильтр-фокус: клик по счётчику-зоне вверху → показать только эту зону.
-  const [filter, setFilter] = useState<ZoneId | null>(null)
-  const [waitOpen, setWaitOpen] = useState(false)  // зона «Ждём лида» свёрнута по умолчанию
+  const [filterWho, setFilterWho] = useState<'all' | 'bot' | 'human' | 'approve'>('all')
+  const [daysOpen, setDaysOpen] = useState(false)  // будущие дни (завтра/неделя/позже) свёрнуты
   const [stageFilter, setStageFilter] = useState<string | null>(null)  // фильтр по СТАТУСУ (стадии воронки)
   const [rsId, setRsId] = useState('')    // id задачи с открытым пикером переноса
   const [rsVal, setRsVal] = useState('')  // значение datetime-local
@@ -259,42 +259,118 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
     </div>
   )
 
+  // Карточка ЗАДАЧИ (из buckets по дням): что сделать + срок. Бот-задачи бот сделает сам.
+  const TaskCard = (t: BoardTask) => {
+    const overdue = !!t.due_at && new Date(t.due_at).getTime() < Date.now()
+    const isBot = t.who === 'bot'
+    return (
+      <div className={`conv-row${t.wa_autonomous ? ' autonomous' : ''}`} key={t.id}
+           style={overdue ? { borderLeft: '3px solid var(--danger)' } : undefined}>
+        <div className="c-main" style={{ cursor: t.conversation_id ? 'pointer' : 'default' }}
+             onClick={() => t.conversation_id && openConversation(t.conversation_id)}>
+          <div className="c-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <TempDot t={t.temperature} />{t.name}
+            <span className="faint" style={{ fontWeight: 400 }}>· {t.text || TYPE_LABELS[t.action_type] || 'задача'}</span>
+            <StageChip s={t.stage_label} />
+            <span className="faint" style={{ fontWeight: 400 }}>{CHANNEL_META[t.channel]?.icon}</span>
+          </div>
+          <div className="c-preview" style={overdue ? { color: 'var(--danger)' } : undefined}>
+            {isBot ? '🤖 бот сделает сам' : ''}{t.due_at ? `${isBot ? ' · ' : ''}${fmtTime(t.due_at)}` : ''}
+          </div>
+        </div>
+        <div className="c-meta">
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {!isBot && <button className="btn sm" disabled={!!busy} onClick={() => done(t.id)}>✓ Сделано</button>}
+            {!isBot && <Reschedule taskId={t.id} />}
+            {t.conversation_id && <button className="btn sm ghost" onClick={() => openConversation(t.conversation_id!)}>Открыть</button>}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Карточка КЛИЕНТА БЕЗ ЗАДАЧИ (бледно-красным, мягко) — назначь шаг или передай боту.
+  const NoTaskCard = (l: NoTaskLead) => (
+    <div className="conv-row" key={l.conversation_id}
+         style={{ borderLeft: '3px solid var(--danger)', background: 'rgba(224,82,79,0.07)' }}>
+      <div className="c-main" style={{ cursor: 'pointer' }} onClick={() => openConversation(l.conversation_id)}>
+        <div className="c-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <TempDot t={l.temperature} />{l.name}
+          <StageChip s={l.stage_label} />
+          <span className="faint" style={{ fontWeight: 400 }}>{CHANNEL_META[l.channel]?.icon}</span>
+        </div>
+        <div className="c-preview" style={{ color: 'var(--danger)' }}>
+          нет следующего шага{l.last_message_at ? ` · молчит ${fmtAgo(l.last_message_at)}` : ''}
+        </div>
+      </div>
+      <div className="c-meta">
+        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <NewTask convId={l.conversation_id} />
+          {l.bot_can && <button className="btn sm" disabled={!!busy} onClick={() => botLead(l.conversation_id)}>🤖 Боту</button>}
+          <button className="btn sm ghost" onClick={() => openConversation(l.conversation_id)}>Открыть</button>
+        </div>
+      </div>
+    </div>
+  )
+
   const sm = board.summary
   const z = board.zones
-  // Фильтр «по статусам» (стадии воронки) — поверх зон (просьба владельца: открыть
-  // группу «квалифицирован»/«в диалоге»/«дожать» и работать с ней).
-  const _allLeads: Lead[] = [...z.approve_now, ...z.your_turn, ...z.bot_leading, ...z.waiting, ...board.stuck]
-  const _stageCounts = new Map<string, { label: string; n: number }>()
-  for (const l of _allLeads) {
-    if (!l.stage) continue
-    const e = _stageCounts.get(l.stage) || { label: l.stage_label || l.stage, n: 0 }
-    e.n++; _stageCounts.set(l.stage, e)
+  const b = board.buckets
+  // Стадии для фильтра по статусу — из всех задач по дням.
+  const stageCounts = new Map<string, { label: string; n: number }>()
+  for (const t of [...b.overdue, ...b.today, ...b.tomorrow, ...b.week, ...b.later]) {
+    if (!t.stage) continue
+    const e = stageCounts.get(t.stage) || { label: t.stage_label || t.stage, n: 0 }
+    e.n++; stageCounts.set(t.stage, e)
   }
-  const stageList = [..._stageCounts.entries()].sort((a, b) => b[1].n - a[1].n)
-  const fStage = (items: Lead[]) => stageFilter ? items.filter(l => l.stage === stageFilter) : items
-  const stageEmpty = !!stageFilter && fStage(_allLeads).length === 0
-  const ZChip = ({ id, label, cls }: { id: ZoneId; label: string; cls?: string }) => (
-    <span className={`chip ${cls ?? ''}`} style={{ cursor: 'pointer', boxShadow: filter === id ? '0 0 0 2px var(--accent)' : 'none' }}
-          onClick={() => setFilter(filter === id ? null : id)}>{label}</span>
+  const stageList = [...stageCounts.entries()].sort((a, c) => c[1].n - a[1].n)
+  const sStage = (st: string | null) => !stageFilter || st === stageFilter
+  const sWho = (who: string, wa: boolean) =>
+    (filterWho === 'all' || filterWho === 'approve') ? true
+      : filterWho === 'bot' ? (who === 'bot' || wa)
+        : (who === 'human' && !wa)
+  const fT = (items: BoardTask[]) =>
+    filterWho === 'approve' ? [] : items.filter(t => sStage(t.stage) && sWho(t.who, t.wa_autonomous))
+  const approveIds = new Set(z.approve_now.map(l => l.conversation_id))
+  const fApprove = filterWho === 'bot' ? [] : z.approve_now.filter(l => sStage(l.stage))
+  const fNoTask = (filterWho === 'approve' || filterWho === 'bot') ? []
+    : board.no_task_leads.filter(l => sStage(l.stage) && !approveIds.has(l.conversation_id))
+
+  const overdue = fT(b.overdue), today = fT(b.today)
+  const tomorrow = fT(b.tomorrow), week = fT(b.week), later = fT(b.later)
+  const futureN = tomorrow.length + week.length + later.length
+  const nothing = overdue.length + fApprove.length + today.length + fNoTask.length + futureN === 0
+
+  const whoChip = (id: 'all' | 'bot' | 'human' | 'approve', label: string) => (
+    <span className="chip" style={{ cursor: 'pointer', boxShadow: filterWho === id ? '0 0 0 2px var(--accent)' : 'none' }}
+          onClick={() => setFilterWho(id)}>{label}</span>
   )
-  const empty = sm.approve_now + sm.your_turn + sm.bot_leading + sm.stuck + z.waiting.length === 0
+  const Head = ({ title, n, color, hint, action }: { title: string; n: number; color?: string; hint?: string; action?: JSX.Element }) => (
+    <div style={{ margin: '2px 0 8px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <b style={{ fontSize: 13, color }}>{title} · {n}</b><span style={{ flex: 1 }} />{action}
+      </div>
+      {hint && <div className="faint" style={{ fontSize: 11.5, marginTop: 2 }}>{hint}</div>}
+    </div>
+  )
+  const colS: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 7 }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <ZChip id="approve_now" cls="warn" label={`⏳ Одобри ${sm.approve_now}`} />
-        <ZChip id="your_turn" label={`👤 Твой ход ${sm.your_turn}`} />
-        <ZChip id="bot_leading" cls="ok" label={`🤖 Бот ведёт ${sm.bot_leading}`} />
-        <ZChip id="stuck" cls="danger" label={`⚠️ Затык ${sm.stuck}`} />
-        {filter && <button className="btn sm ghost" onClick={() => setFilter(null)}>✕ показать всё</button>}
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap' }}>
+        <span className="faint" style={{ fontSize: 11.5 }}>кто ведёт:</span>
+        {whoChip('all', 'Все')}
+        {whoChip('bot', `🤖 Бот ${sm.bot}`)}
+        {whoChip('human', '👤 Менеджер')}
+        {whoChip('approve', `⏳ Одобрить ${sm.approve_now}`)}
         <span style={{ flex: 1 }} />
-        <button className="btn sm" onClick={sweep} disabled={!!busy}>▶ Проверить сейчас</button>
-        <Help title="Проверить сейчас" text="Бот сам каждые ~10 минут: дожимает молчунов, шлёт напоминания, чинит рассинхроны. Кнопка запускает проверку немедленно." />
+        <button className="btn sm" onClick={sweep} disabled={!!busy}>↻ Обновить</button>
+        <Help title="Обновить" text="Ручной запуск проверки: бот сразу дожмёт молчунов, разошлёт напоминания и подтянет переписки. Обычно делает это сам каждые ~10 минут." />
       </div>
 
       {(stageList.length > 1 || stageFilter) && (
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-          <span className="faint" style={{ fontSize: 11.5, marginRight: 2 }}>по статусу:</span>
+          <span className="faint" style={{ fontSize: 11.5, marginRight: 2 }}>стадия:</span>
           {stageList.map(([st, info]) => (
             <span key={st} className="chip"
                   style={{ cursor: 'pointer', fontSize: 11.5, boxShadow: stageFilter === st ? '0 0 0 2px var(--accent)' : 'none' }}
@@ -305,62 +381,73 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
       )}
 
       {board.delivery_failed.length > 0 && (
-        <div className="card" style={{ padding: 12, borderColor: 'var(--danger)' }}>
-          <b style={{ fontSize: 13, color: 'var(--danger)' }}>📵 Доставка не удалась ({board.delivery_failed.length})</b>
-          <div className="faint" style={{ fontSize: 11.5, margin: '4px 0 8px' }}>
-            Авто-сообщения бота этим лидам не доставились (канал/транспорт). Открой и ответь вручную.
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+        <div>
+          <Head title="📵 Доставка не удалась" n={board.delivery_failed.length} color="var(--danger)"
+                hint="Авто-сообщения бота этим лидам не дошли. Открой и ответь вручную." />
+          <div style={colS}>
             {board.delivery_failed.map(f => (
               <div className="conv-row" key={f.id}>
                 <div className="c-main" style={{ cursor: f.conversation_id ? 'pointer' : 'default' }}
                      onClick={() => f.conversation_id && openConversation(f.conversation_id)}>
                   <div className="c-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <TempDot t={f.temperature} />{f.name}
-                    <StageChip s={f.stage_label} />
+                    <TempDot t={f.temperature} />{f.name}<StageChip s={f.stage_label} />
                     <span className="faint" style={{ fontWeight: 400 }}>{CHANNEL_META[f.channel]?.icon}</span>
                   </div>
                   <div className="c-preview"><i>не доставлено ({f.attempts} попыт.): «{(f.text || '').slice(0, 90)}»</i></div>
                 </div>
-                <div className="c-meta">
-                  {f.conversation_id &&
-                    <button className="btn sm ghost" onClick={() => openConversation(f.conversation_id!)}>Открыть</button>}
-                </div>
+                <div className="c-meta">{f.conversation_id && <button className="btn sm ghost" onClick={() => openConversation(f.conversation_id!)}>Открыть</button>}</div>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {(!filter || filter === 'stuck') &&
-        <Zone id="stuck" color="var(--danger)" items={fStage(board.stuck)}
-              title="⚠️ Затыки — лиды без движения и без задачи"
-              hint="Ими никто не занимается: ни бот, ни задача, давно молчат. Реши: передать боту, написать самому или закрыть." />}
-      {(!filter || filter === 'approve_now') &&
-        <Zone id="approve_now" color="var(--accent-border)" items={fStage(z.approve_now)}
-              title="⏳ Одобри сейчас" hint="Бот подготовил ответ и ждёт твоё «ОК» — один клик ✅." />}
-      {(!filter || filter === 'your_turn') &&
-        <Zone id="your_turn" items={fStage(z.your_turn)}
-              title="👤 Твой ход" hint="Нужен человек: позвонить, выставить КП, ответить на сложное."
-              action={<button className="btn sm primary" disabled={!!busy} onClick={generate} title="Бот прочитает диалоги без шага и предложит, что делать">🤖 Разобрать новых</button>} />}
-      {(!filter || filter === 'bot_leading') &&
-        <Zone id="bot_leading" items={fStage(z.bot_leading)}
-              title="🤖 Бот ведёт сам" hint="Автопилот — делать ничего не надо, видно статус. Можно вернуть на одобрение." />}
-
-      {!filter && fStage(z.waiting).length > 0 && (
-        <div className="card" style={{ padding: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }} onClick={() => setWaitOpen(v => !v)}>
-            <b style={{ fontSize: 13 }}>{waitOpen ? '▾' : '▸'} ⏸ Ждём лида ({fStage(z.waiting).length})</b>
-            <span className="faint" style={{ fontSize: 11.5 }}>мяч у лида / бот дожмёт по каденции — не срочно</span>
-          </div>
-          {waitOpen && <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 8 }}>{fStage(z.waiting).map(l => LeadCard(l, 'waiting'))}</div>}
+      {overdue.length > 0 && (
+        <div>
+          <Head title="⚠️ Просрочено" n={overdue.length} color="var(--danger)"
+                hint="Срок прошёл, а шаг не сделан — в первую очередь." />
+          <div style={colS}>{overdue.map(TaskCard)}</div>
         </div>
       )}
 
-      {!filter && !stageFilter && <SleepingPanel showToast={showToast} />}
+      {(fApprove.length + today.length) > 0 && (
+        <div>
+          <Head title="Сегодня" n={fApprove.length + today.length}
+                hint="Что нужно сделать сегодня. ⏳ — бот подготовил ответ, нужно твоё «ОК»." />
+          <div style={colS}>
+            {fApprove.map(l => LeadCard(l, 'approve_now'))}
+            {today.map(TaskCard)}
+          </div>
+        </div>
+      )}
 
-      {stageEmpty && <div className="empty">Нет лидов в выбранном статусе.</div>}
-      {empty && !stageFilter && <div className="empty">Всё под контролем — лидов, требующих внимания, нет 🎉</div>}
+      {fNoTask.length > 0 && (
+        <div>
+          <Head title="🏷 Без задачи" n={fNoTask.length} color="var(--danger)"
+                hint="По этим клиентам нет следующего шага — назначь задачу или передай боту, чтобы не потерять."
+                action={<button className="btn sm primary" disabled={!!busy} onClick={generate} title="Бот прочитает диалоги без шага и предложит, что делать дальше">🤖 Разобрать ботом</button>} />
+          <div style={colS}>{fNoTask.map(NoTaskCard)}</div>
+        </div>
+      )}
+
+      {futureN > 0 && (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }} onClick={() => setDaysOpen(v => !v)}>
+            <b style={{ fontSize: 13 }}>{daysOpen ? '▾' : '▸'} Будущее · {futureN}</b>
+            <span className="faint" style={{ fontSize: 11.5 }}>завтра, эта неделя и дальше — не срочно</span>
+          </div>
+          {daysOpen && (
+            <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {tomorrow.length > 0 && <div><Head title="Завтра" n={tomorrow.length} /><div style={colS}>{tomorrow.map(TaskCard)}</div></div>}
+              {week.length > 0 && <div><Head title="Эта неделя" n={week.length} /><div style={colS}>{week.map(TaskCard)}</div></div>}
+              {later.length > 0 && <div><Head title="Позже" n={later.length} /><div style={colS}>{later.map(TaskCard)}</div></div>}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!stageFilter && filterWho === 'all' && <SleepingPanel showToast={showToast} />}
+      {nothing && <div className="empty">Всё под контролем — на сегодня задач, требующих тебя, нет 🎉</div>}
     </div>
   )
 }
