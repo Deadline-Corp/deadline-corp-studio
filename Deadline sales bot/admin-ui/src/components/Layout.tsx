@@ -55,7 +55,7 @@ export function Layout() {
     try { setOverview(await api.get<Overview>('/overview')) } catch { /* ignore */ }
   }, 30000)
 
-  const [theme, setTheme] = useState(localStorage.getItem('deadline_theme') || 'dark')
+  const [theme, setTheme] = useState(localStorage.getItem('deadline_theme') || 'light')
   useEffect(() => {
     document.documentElement.dataset.theme = theme
     localStorage.setItem('deadline_theme', theme)

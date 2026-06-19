@@ -17,6 +17,11 @@ interface PendingMove {
   toStage: string
 }
 
+/* Цвет-маркер стадии: выигрыш — зелёный, проигрыш — серый, остальные циклом. */
+const STAGE_COLORS = ['#6d5cff', '#3b82f6', '#06b6d4', '#14b8a6', '#f59e0b', '#ec4899', '#8b5cf6']
+const stageColor = (kind: string | undefined, i: number): string =>
+  kind === 'won' ? '#16a34a' : kind === 'lost' ? '#94a3b8' : STAGE_COLORS[i % STAGE_COLORS.length]
+
 export function Funnel() {
   const [items, setItems] = useState<ConvSummary[]>([])
   const [loaded, setLoaded] = useState(false)
@@ -155,12 +160,13 @@ export function Funnel() {
       </div>
 
       <div className="kanban">
-        {stages.map(s => {
+        {stages.map((s, i) => {
           const cards = byStage(s.stage)
           return (
             <div
               key={s.stage}
               className={`kb-col${dragOver === s.stage ? ' drag-over' : ''}`}
+              style={{ ['--col' as any]: stageColor(s.kind, i) }}
               onDragOver={e => { e.preventDefault(); setDragOver(s.stage) }}
               onDragLeave={() => setDragOver(d => (d === s.stage ? null : d))}
               onDrop={e => {
@@ -174,6 +180,7 @@ export function Funnel() {
               }}
             >
               <div className="k-head">
+                <span className="k-dot" />
                 {s.label}
                 <span className="k-count">{cards.length}</span>
               </div>
@@ -185,8 +192,8 @@ export function Funnel() {
           )
         })}
         {other.length > 0 && (
-          <div className="kb-col">
-            <div className="k-head">Другое <span className="k-count">{other.length}</span></div>
+          <div className="kb-col" style={{ ['--col' as any]: '#94a3b8' }}>
+            <div className="k-head"><span className="k-dot" />Другое <span className="k-count">{other.length}</span></div>
             <div className="k-body">{other.map(renderCard)}</div>
           </div>
         )}

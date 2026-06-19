@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  ReactFlow, Background, Controls, MiniMap, Node, Edge, Handle, Position, useNodesState,
+  ReactFlow, Background, Controls, Node, Edge, Handle, Position, useNodesState,
 } from '@xyflow/react'
 import { api } from '../api/client'
 import { AnalyticsView } from '../api/types'
@@ -31,7 +31,7 @@ const WARN = '#e0a23b'
 
 interface Metric { label: string; value: string | number; tone?: string }
 interface NodeData {
-  icon: string; title: string; sub?: string; tone?: string; badge?: string
+  icon: string; title: string; sub?: string; tone?: string; badge?: string; dot?: 'live' | 'warn' | 'idle'
   rows?: Array<{ k: string; v: string | number; cls?: string }>
   metrics?: Metric[]
   kpis?: Metric[]
@@ -51,7 +51,7 @@ function CardNode({ data }: { data: NodeData }) {
       <span className="n-stripe" />
       <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
       <div className="n-head">
-        <div className="n-ico">{data.icon}</div>
+        <div className="n-ico">{data.icon}{data.dot && <span className={`n-dot ${data.dot}`} />}</div>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div className="n-title">{data.title}</div>
           {data.sub && <div className="n-sub">{data.sub}</div>}
@@ -107,7 +107,11 @@ function CardNode({ data }: { data: NodeData }) {
   )
 }
 
-const nodeTypes = { card: CardNode }
+function LabelNode({ data }: { data: { text: string } }) {
+  return <div className="flow-label">{data.text}</div>
+}
+
+const nodeTypes = { card: CardNode, label: LabelNode }
 
 export function Canvas() {
   const ov = useOverview()
@@ -130,16 +134,16 @@ export function Canvas() {
     const nodes: Node[] = []
     const edges: Edge[] = []
     // Изогнутые (bezier) связи. Подключённое = «живой» поток (анимация), иначе статика.
-    const edge = (id: string, source: string, target: string, tone: string, on = true): Edge => ({
+    const edge = (id: string, source: string, target: string, _tone: string, on = true): Edge => ({
       id, source, target, type: 'default', animated: on,
-      style: { stroke: tone, strokeWidth: on ? 2.2 : 1.2, opacity: on ? 0.85 : 0.22 },
+      style: { stroke: on ? 'var(--accent)' : 'var(--border-strong)', strokeWidth: on ? 2 : 1.3, opacity: on ? 0.5 : 0.7 },
     })
 
     // ЦЕНТР — бот-агент со встроенным дашбордом (отдельной ноды «Дашборд» больше нет).
     nodes.push({
       id: 'bot', type: 'card', position: saved['bot'] ?? { x: 560, y: 230 },
       data: {
-        icon: '🤖', title: 'Дедлайн · AI-агент', center: true, tone: TONE.bot,
+        icon: '🤖', title: 'Дедлайн · AI-агент', center: true, tone: TONE.bot, dot: 'live',
         badge: ov.bot.model.split('/').pop(),
         sub: ov.bot.prompt_source === 'db' ? 'мозг кастомный' : 'мозг заводской',
         metrics: [
@@ -165,6 +169,7 @@ export function Canvas() {
       id: 'sources', type: 'card', position: saved['sources'] ?? { x: 305, y: 250 },
       data: {
         icon: '📥', title: 'Источники', tone: TONE.sources,
+        dot: totalNewY > 0 ? 'live' : 'idle',
         sub: `${activeCh} из ${ov.channels.length} каналов на связи`,
         metrics: [
           { label: 'диалогов', value: totalConvs },
@@ -185,6 +190,7 @@ export function Canvas() {
         id, type: 'card', position: saved[id] ?? { x: 40, y: 20 + i * 150 },
         data: {
           icon: meta.icon, title: meta.label, tone, dim: !ch.configured,
+          dot: ch.configured ? (((ch.hot ?? 0) > 0 || (ch.no_task ?? 0) > 0) ? 'warn' : 'live') : 'idle',
           badge: ch.configured ? 'подключён' : 'выкл',
           sub: ch.configured ? `актив. ${fmtAgo(ch.last_message_at)} назад` : 'не подключён',
           collapsible: true, expanded: expanded.has(id),
@@ -219,6 +225,7 @@ export function Canvas() {
         id: 'tasks', y: 190,
         data: {
           icon: '⏰', title: 'Задачи', to: '/tasks', onOpen: () => go('/tasks'), tone: TONE.tasks,
+          dot: (t.overdue ?? 0) > 0 ? 'warn' : 'live',
           metrics: [
             { label: 'просрочено', value: t.overdue ?? 0, tone: (t.overdue ?? 0) > 0 ? HOT : undefined },
             { label: 'сегодня', value: t.today ?? 0 },
@@ -241,6 +248,7 @@ export function Canvas() {
         id: 'crm', y: 520,
         data: {
           icon: '🗂', title: 'CRM', to: '/settings', onOpen: () => go('/settings'), tone: TONE.crm,
+          dot: ov.crm.enabled ? (ov.crm.events_failed ? 'warn' : 'live') : 'idle',
           sub: ov.crm.enabled ? ov.crm.provider : 'выключена', dim: !ov.crm.enabled,
           metrics: [
             { label: 'в очереди', value: ov.crm.events_pending },
@@ -253,6 +261,17 @@ export function Canvas() {
       nodes.push({ id: r.id, type: 'card', position: saved[r.id] ?? { x: 880, y: r.y }, data: r.data })
       edges.push(edge(`e-${r.id}`, 'bot', r.id, r.data.tone || TONE.bot))
     })
+
+    // Подписи колонок (статичные ориентиры, не перетаскиваются).
+    const label = (id: string, x: number, y: number, text: string): Node => ({
+      id, type: 'label', position: { x, y }, data: { text },
+      draggable: false, selectable: false, connectable: false,
+    })
+    nodes.push(
+      label('lbl-ch', 48, -26, 'Каналы'),
+      label('lbl-bot', 580, 196, 'AI-агент'),
+      label('lbl-sub', 896, -26, 'Подсистемы'),
+    )
 
     return { nodes, edges }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -288,11 +307,14 @@ export function Canvas() {
           onNodesChange={onNodesChange}
           nodeTypes={nodeTypes}
           fitView
-          fitViewOptions={{ padding: 0.16 }}
+          fitViewOptions={{ padding: 0.18 }}
           proOptions={{ hideAttribution: true }}
           nodesDraggable
           nodesConnectable={false}
-          minZoom={0.4}
+          panOnDrag
+          selectionOnDrag={false}
+          zoomOnDoubleClick={false}
+          minZoom={0.3}
           onNodeClick={(_, node) => {
             const d = node.data as NodeData
             // Сворачиваемые каналы: клик = полу-разворот (переход — только кнопкой «Открыть»).
@@ -312,12 +334,8 @@ export function Canvas() {
             localStorage.setItem(LAYOUT_KEY, JSON.stringify(saved))
           }}
         >
-          <Background gap={22} size={1.2} color="rgba(148,156,210,0.12)" />
+          <Background gap={24} size={1.2} color="var(--grid-dot)" />
           <Controls showInteractive={false} />
-          <MiniMap pannable zoomable nodeStrokeWidth={2}
-                   nodeColor={(n) => ((n.data as NodeData)?.tone as string) || '#7c6cff'}
-                   maskColor="rgba(10,12,22,0.6)"
-                   style={{ background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 10 }} />
         </ReactFlow>
       </div>
     </div>
