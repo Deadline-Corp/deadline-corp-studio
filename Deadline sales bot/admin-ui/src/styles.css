@@ -466,12 +466,17 @@ textarea { resize: vertical; }
 .drawer .d-title h2 { margin: 0; font-size: 16px; flex: 1; }
 .drawer .d-chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .drawer .d-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-/* Компактные зоны действий карточки (Диалог / Сделка / Запланировать / Помощь / Ещё). */
-.drawer .d-actions-zones { display: flex; flex-direction: column; }
-.drawer .d-zone { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 6px 0; }
-.drawer .d-zone + .d-zone { border-top: 1px dashed var(--border); }
-.drawer .d-zl { font-size: 9.5px; letter-spacing: 0.06em; text-transform: uppercase;
-  color: var(--text-faint); font-weight: 700; width: 92px; flex-shrink: 0; }
+/* Тонкая строка действий карточки (всегда видна) + инлайн-панели (Созвон / Ещё). */
+.drawer .d-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 9px 16px; border-bottom: 1px solid var(--border); }
+.drawer .ab { display: inline-flex; align-items: center; gap: 5px; background: var(--panel);
+  border: 1px solid var(--border); color: var(--text-dim); border-radius: 8px; padding: 5px 10px;
+  font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; white-space: nowrap; }
+.drawer .ab:hover { border-color: var(--accent-border); color: var(--text); }
+.drawer .ab:disabled { opacity: 0.5; cursor: default; }
+.drawer .ab.danger:hover { border-color: rgba(225,29,72,0.4); color: var(--danger); }
+.drawer select.ab { padding: 5px 8px; }
+.drawer .d-panel { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 8px 16px;
+  border-bottom: 1px solid var(--border); background: var(--panel-2); }
 
 .drawer .d-msgs {
   flex: 1; overflow-y: auto; padding: 16px 18px;
