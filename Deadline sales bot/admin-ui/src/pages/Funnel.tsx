@@ -41,7 +41,7 @@ export function Funnel() {
     try {
       // include_lost=true: воронка ПОКАЗЫВАЕТ проигранных (колонка «Не сложилось») —
       // в отличие от «Переписок», где они скрыты по умолчанию (чтобы не мешали).
-      const r = await api.get<{ items: ConvSummary[] }>('/conversations?limit=1000&include_lost=true')
+      const r = await api.get<{ items: ConvSummary[] }>('/conversations?limit=1000&include_lost=true&leads_only=true')
       setItems(r.items)
       setLoaded(true)
     } catch { /* ignore */ }

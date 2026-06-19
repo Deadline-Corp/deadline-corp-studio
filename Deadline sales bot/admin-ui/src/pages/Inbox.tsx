@@ -40,6 +40,7 @@ export function Inbox() {
     if (temperature) qs.set('temperature', temperature)
     if (q) qs.set('q', q)
     qs.set('limit', '60')
+    qs.set('leads_only', 'true')  // только реальные лиды (без спама/личных чатов из WhatsApp)
     try {
       const r = await api.get<{ total: number; items: ConvSummary[] }>(`/conversations?${qs}`)
       setItems(r.items)

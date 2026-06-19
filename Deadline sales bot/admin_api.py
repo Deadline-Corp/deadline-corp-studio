@@ -563,6 +563,7 @@ async def conversations_list(
     q: Optional[str] = None,
     include_archived: bool = False,
     include_lost: bool = False,
+    leads_only: bool = False,
     limit: int = 50,
     offset: int = 0,
     _: None = Depends(_verify_member),
@@ -600,6 +601,13 @@ async def conversations_list(
             Customer.email.ilike(like),
             Customer.phone.ilike(like),
         ))
+    if leads_only:
+        # Только РЕАЛЬНЫЕ лиды (Переписки/Воронка): прячем явно помеченных «не лид»
+        # (wa_classification.is_lead == False) — личное/спам/служебное из WhatsApp-синка.
+        # NULL/true (Website/Telegram/неклассифицированные) остаются. JSONB ->> 'is_lead'.
+        query = query.filter(
+            sql_func.coalesce(Conversation.wa_classification["is_lead"].astext, "true") != "false"
+        )
 
     total = query.count()
     rows = (
