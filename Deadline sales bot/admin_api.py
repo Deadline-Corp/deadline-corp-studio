@@ -2949,6 +2949,7 @@ async def task_board(
             "channel": a.channel,
             # ведёт ли бот этот диалог сам (для зелёной рамки в задачнике, как в «Переписках»)
             "wa_autonomous": bool(getattr(conv, "wa_autonomous", False)) if conv else False,
+            "deal_value": float(conv.deal_value) if (conv and conv.deal_value) else None,
             "priority": pri(temp, stage),
         }
 
@@ -3011,6 +3012,7 @@ async def task_board(
             "analyzed": bool(na),
             "bot_can": bot_ok,
             "wa_autonomous": bool(getattr(conv, "wa_autonomous", False)),
+            "deal_value": float(conv.deal_value) if conv.deal_value else None,
             "priority": pri(c.lead_temperature, conv.lead_stage),
         })
     # Сначала неразобранные/срочные (по приоритету), unclear (нужна помощь) — выше.
@@ -3093,7 +3095,8 @@ async def task_board(
             "last_message_at": lm.isoformat() if lm else None,
             "silent_hours": round(silent_h, 1),
             "mode": mode, "kind": na.get("kind"), "label": na.get("label") or "",
-            "draft": (na.get("draft") or "")[:200], "reason": na.get("reason") or "",
+            "draft": (na.get("draft") or "")[:1000], "reason": na.get("reason") or "",
+            "deal_value": float(conv.deal_value) if conv.deal_value else None,
             "wa_autonomous": wa_auto, "bot_capable": bot_capable,
             "bot_status": bstat, "bot_status_label": blabel,
             "has_human_task": has_human_task, "task_id": ti.get("hid"),
@@ -3229,6 +3232,43 @@ async def task_board_generate(
         except Exception as e:  # noqa: BLE001
             log.warning(f"next_action gen failed {cid[:8]}: {e}")
     return {"ok": True, "processed": len(cand), "by_mode": counts}
+
+
+class RethinkRequest(BaseModel):
+    hint: Optional[str] = None
+
+
+@router.post("/conversations/{conv_id}/rethink")
+async def conversation_rethink(
+    conv_id: str,
+    req: RethinkRequest,
+    _: None = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """«Объясни боту, что делать» по зависшему лиду: менеджер пишет подсказку, бот
+    ПЕРЕразбирает диалог с её учётом и формирует умный следующий шаг (next_action /
+    черновик на одобрение). Лиду НИЧЕГО не отправляется — только готовится шаг.
+    Без подсказки — обычный переразбор. LLM в СВОЕЙ короткой сессии (не держит пул)."""
+    from db.connection import session_scope
+    from services.next_action import generate_next_action
+    import main as _main
+    try:
+        cid = UUID(conv_id)
+    except ValueError:
+        raise HTTPException(status_code=422, detail="bad conversation id")
+    hint = (req.hint or "").strip() or None
+    with session_scope() as s:
+        conv = s.get(Conversation, cid)
+        if conv is None:
+            raise HTTPException(status_code=404, detail="conversation not found")
+        cust = s.get(Customer, conv.customer_id)
+        na = await generate_next_action(s, conv, cust, _main.primary_llm, hint=hint)
+    if not na:
+        # Денежные/юр стадии или пустой диалог — бот намеренно не лезет.
+        return {"ok": True, "rethought": False,
+                "reason": "стадия не для авто-разбора или пустой диалог"}
+    return {"ok": True, "rethought": True, "mode": na.get("mode"),
+            "kind": na.get("kind"), "label": na.get("label"), "has_draft": bool(na.get("draft"))}
 
 
 # ============================================================================

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { api } from '../api/client'
 import { ScheduledActionItem } from '../api/types'
 import { usePolling } from '../hooks/usePolling'
@@ -27,12 +27,14 @@ type BoardTask = {
   text: string; due_at: string | null; conversation_id: string | null
   name: string; stage: string | null; stage_label: string
   temperature: string | null; channel: string; wa_autonomous: boolean
+  deal_value: number | null
 }
 type NoTaskLead = {
   conversation_id: string; name: string; stage: string | null; stage_label: string
   temperature: string | null; channel: string; last_message_at: string | null
   next_action: string; bot_can: boolean; wa_autonomous: boolean
   mode: string | null; kind: string | null; draft: string; reason: string; analyzed: boolean
+  deal_value: number | null
 }
 // Режимы умного шага (см. services/next_action.py).
 const MODE: Record<string, { e: string; t: string; c?: string }> = {
@@ -52,6 +54,7 @@ type Lead = {
   bot_status: string; bot_status_label: string
   has_human_task: boolean; task_id: string | null; task_due: string | null; task_text: string | null
   bot_next_action_type: string | null; bot_next_due: string | null; bot_next_text: string | null
+  deal_value: number | null
 }
 type ZoneId = 'approve_now' | 'your_turn' | 'bot_leading' | 'stuck' | 'waiting'
 // Упавшая bot-задача (дожим/напоминание не доставлено) — сигнал «нужен человек».
@@ -76,6 +79,21 @@ const StageChip = ({ s }: { s: string }) =>
 const TempDot = ({ t }: { t: string | null }) => {
   const m = TEMP[(t || '').toLowerCase()]
   return m ? <span title={t || ''} style={{ fontSize: 12 }}>{m.e}</span> : null
+}
+// Вес сделки: ₸150К / ₸1.2М. Крупные (≥500К) — зелёным (трогать вручную), мелкие серым.
+const DealChip = ({ v }: { v: number | null }) => {
+  if (!v || v <= 0) return null
+  const s = v >= 1e6 ? `₸${(v / 1e6).toFixed(1)}М` : v >= 1e3 ? `₸${Math.round(v / 1e3)}К` : `₸${v}`
+  return <span className="chip" title="Сумма сделки"
+    style={{ fontSize: 10, color: v >= 5e5 ? '#3bb4a0' : undefined, fontWeight: 600 }}>{s}</span>
+}
+// «через 2ч 15м» для будущего времени (контекст «когда бот напишет»). Прошлое → ''.
+const fmtCountdown = (iso: string | null): string => {
+  if (!iso) return ''
+  const ms = new Date(iso).getTime() - Date.now()
+  if (ms <= 0) return ''
+  const h = Math.floor(ms / 3.6e6), m = Math.floor((ms % 3.6e6) / 6e4)
+  return h >= 24 ? `через ${Math.round(h / 24)}д` : h > 0 ? `через ${h}ч${m ? ` ${m}м` : ''}` : `через ${m}м`
 }
 
 export function Tasks() {
@@ -109,7 +127,7 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   const [board, setBoard] = useState<Board | null>(null)
   const [busy, setBusy] = useState('')
   // Фильтр-фокус: клик по счётчику-зоне вверху → показать только эту зону.
-  const [filterWho, setFilterWho] = useState<'all' | 'bot' | 'human' | 'approve'>('all')
+  const [filterWho, setFilterWho] = useState<'all' | 'bot' | 'human' | 'approve' | 'notask'>('all')
   const [daysOpen, setDaysOpen] = useState(false)  // будущие дни (завтра/неделя/позже) свёрнуты
   const [stageFilter, setStageFilter] = useState<string | null>(null)  // фильтр по СТАТУСУ (стадии воронки)
   const [rsId, setRsId] = useState('')    // id задачи с открытым пикером переноса
@@ -117,12 +135,18 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   const [ntConvId, setNtConvId] = useState('')  // диалог с открытой формой «создать задачу»
   const [ntVal, setNtVal] = useState('')        // дата/время новой задачи
   const [ntText, setNtText] = useState('')      // текст новой задачи
+  const [stkId, setStkId] = useState('')        // диалог с открытым полем «объясни боту»
+  const [stkVal, setStkVal] = useState('')      // текст подсказки боту
+  const [openDraft, setOpenDraft] = useState('') // диалог с раскрытым полным черновиком
+  const [lastLoad, setLastLoad] = useState(0)    // когда последний раз обновили доску (мс)
+  const [, setTick] = useState(0)                // тик раз в 5с — освежить метку «обновлено N назад»
   const { openConversation } = useDrawer()
 
   const load = async () => {
-    try { setBoard(await api.get<Board>('/task-board')) } catch { /* */ }
+    try { setBoard(await api.get<Board>('/task-board')); setLastLoad(Date.now()) } catch { /* */ }
   }
   usePolling(load, 20000)
+  useEffect(() => { const t = setInterval(() => setTick(x => x + 1), 5000); return () => clearInterval(t) }, [])
 
   // fn может вернуть строку — она станет текстом тоста (иначе берётся ok). Так у
   // действий со счётчиком (крон/разбор) ровно ОДИН тост, а не два подряд.
@@ -165,6 +189,13 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   const rejectDraft = (convId: string) => act(() => api.post(`/conversations/${convId}/wa-draft`, { action: 'reject' }), '🚫 Черновик отклонён')
   // Вернуть автопилотного лида на ручное одобрение (зона «Бот ведёт»).
   const toApproval = (convId: string) => act(() => api.post(`/conversations/${convId}/wa-autonomous`, { on: false }), '⏸ Вернул на одобрение')
+  // «Объясни боту» по зависшему лиду: подсказка менеджера → бот ПЕРЕразбирает с её
+  // учётом (лиду ничего не шлёт — готовит шаг/черновик). Без текста — просто переразбор.
+  const rethink = (convId: string, hint: string) => act(async () => {
+    const r = await api.post<any>(`/conversations/${convId}/rethink`, { hint: hint.trim() || undefined })
+    setStkId(''); setStkVal('')
+    return r.rethought ? `🤖 Бот разобрал: ${r.label || r.mode || 'готово'}` : (r.reason || 'бот не стал разбирать')
+  }, '🤖 Переразобрал')
 
   // Инлайн-пикер переноса задачи на дату/время (раскрывается кнопкой «↪ Перенести»).
   const Reschedule = ({ taskId }: { taskId: string }) =>
@@ -205,13 +236,18 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
         <div className="c-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <TempDot t={l.temperature} />{l.name}
           <StageChip s={l.stage_label} />
+          <DealChip v={l.deal_value} />
           <span className="chip" style={{ fontSize: 10 }} title="Статус автоматизации по лиду">{l.bot_status_label}</span>
           <span className="faint" style={{ fontWeight: 400 }}>{CHANNEL_META[l.channel]?.icon}</span>
         </div>
         <div className="c-preview">
           {zone === 'approve_now'
             ? (l.draft
-                ? <i>✍️ «{l.draft.slice(0, 130)}{l.draft.length > 130 ? '…' : ''}»</i>
+                ? <i onClick={e => { e.stopPropagation(); setOpenDraft(openDraft === l.conversation_id ? '' : l.conversation_id) }}
+                     style={{ cursor: 'pointer' }} title={openDraft === l.conversation_id ? 'Свернуть' : 'Показать целиком'}>
+                    ✍️ «{openDraft === l.conversation_id ? l.draft : l.draft.slice(0, 130) + (l.draft.length > 130 ? '…' : '')}»
+                    {l.draft.length > 130 && <span className="faint" style={{ fontSize: 10 }}> {openDraft === l.conversation_id ? '▴ свернуть' : '▾ целиком'}</span>}
+                  </i>
                 : <i>🤖 бот подготовил ответ — нажми ✅ или открой</i>)
             : zone === 'bot_leading'
               ? <>🤖 ведёт сам{l.last_message_at ? ` · последнее ${fmtAgo(l.last_message_at)} назад` : ''}
@@ -280,10 +316,12 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
             <TempDot t={t.temperature} />{t.name}
             <span className="faint" style={{ fontWeight: 400 }}>· {t.text || TYPE_LABELS[t.action_type] || 'задача'}</span>
             <StageChip s={t.stage_label} />
+            <DealChip v={t.deal_value} />
             <span className="faint" style={{ fontWeight: 400 }}>{CHANNEL_META[t.channel]?.icon}</span>
           </div>
           <div className="c-preview" style={overdue ? { color: 'var(--danger)' } : undefined}>
             {isBot ? '🤖 бот сделает сам' : ''}{t.due_at ? `${isBot ? ' · ' : ''}${fmtTime(t.due_at)}` : ''}
+            {isBot && !overdue && fmtCountdown(t.due_at) && <span className="faint" style={{ fontSize: 10.5 }}> ({fmtCountdown(t.due_at)})</span>}
           </div>
         </div>
         <div className="c-meta">
@@ -305,6 +343,7 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
         <div className="c-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <TempDot t={l.temperature} />{l.name}
           <StageChip s={l.stage_label} />
+          <DealChip v={l.deal_value} />
           <span className="faint" style={{ fontWeight: 400 }}>{CHANNEL_META[l.channel]?.icon}</span>
         </div>
         <div className="c-preview" style={{ color: 'var(--danger)' }}>
@@ -320,6 +359,48 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
       </div>
     </div>
   )
+
+  // Карточка «ЗАТЫК»: бот не разобрался (молчит >2 суток, шага нет). Человек может
+  // ОБЪЯСНИТЬ боту, что делать — бот переразберёт с подсказкой и даст готовый шаг.
+  const StuckCard = (l: Lead) => {
+    const open = stkId === l.conversation_id
+    return (
+      <div className="conv-row" key={l.conversation_id}
+           style={{ borderLeft: '3px solid #c9a23b', background: 'rgba(201,162,59,0.07)' }}>
+        <div className="c-main" style={{ cursor: 'pointer' }} onClick={() => openConversation(l.conversation_id)}>
+          <div className="c-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <TempDot t={l.temperature} />{l.name}
+            <StageChip s={l.stage_label} />
+            <DealChip v={l.deal_value} />
+            <span className="faint" style={{ fontWeight: 400 }}>{CHANNEL_META[l.channel]?.icon}</span>
+          </div>
+          <div className="c-preview" style={{ color: '#c9a23b' }}>
+            бот не разобрался{l.last_message_at ? ` · молчит ${fmtAgo(l.last_message_at)}` : ''} — объясни ему, что делать
+          </div>
+        </div>
+        <div className="c-meta" style={{ width: '100%' }}>
+          {open ? (
+            <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap', width: '100%', justifyContent: 'flex-end' }}
+                 onClick={e => e.stopPropagation()}>
+              <input type="text" value={stkVal} autoFocus placeholder="напр.: это ресторан, предложи созвон в четверг"
+                     onChange={e => setStkVal(e.target.value)} style={{ fontSize: 11, flex: 1, minWidth: 180 }} />
+              <button className="btn sm primary" disabled={!!busy}
+                      onClick={() => rethink(l.conversation_id, stkVal)}>🤖 Переразобрать</button>
+              <button className="btn sm ghost" onClick={() => { setStkId(''); setStkVal('') }}>✕</button>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <button className="btn sm primary" disabled={!!busy} title="Написать боту, что делать — он переразберёт"
+                      onClick={() => { setStkId(l.conversation_id); setStkVal('') }}>💬 Объяснить боту</button>
+              <NewTask convId={l.conversation_id} />
+              <button className="btn sm ghost" disabled={!!busy} title="В «Не сложилось»" onClick={() => markLostTask(l.conversation_id)}>✗</button>
+              <button className="btn sm ghost" onClick={() => openConversation(l.conversation_id)}>Открыть</button>
+            </div>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   const sm = board.summary
   const z = board.zones
@@ -337,19 +418,25 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
     (filterWho === 'all' || filterWho === 'approve') ? true
       : filterWho === 'bot' ? (who === 'bot' || wa)
         : (who === 'human' && !wa)
+  // notask/approve фокус прячут задачи-по-дням; bot прячет «одобрить»/«без задачи»/«затыки».
   const fT = (items: BoardTask[]) =>
-    filterWho === 'approve' ? [] : items.filter(t => sStage(t.stage) && sWho(t.who, t.wa_autonomous))
+    (filterWho === 'approve' || filterWho === 'notask') ? [] : items.filter(t => sStage(t.stage) && sWho(t.who, t.wa_autonomous))
   const approveIds = new Set(z.approve_now.map(l => l.conversation_id))
-  const fApprove = filterWho === 'bot' ? [] : z.approve_now.filter(l => sStage(l.stage))
+  const stuckIds = new Set(board.stuck.map(l => l.conversation_id))
+  const fApprove = (filterWho === 'bot' || filterWho === 'notask') ? [] : z.approve_now.filter(l => sStage(l.stage))
+  // «Затыки» исключены из «Без задачи» — показываются отдельным блоком (иначе задвоятся).
   const fNoTask = (filterWho === 'approve' || filterWho === 'bot') ? []
-    : board.no_task_leads.filter(l => sStage(l.stage) && !approveIds.has(l.conversation_id))
+    : board.no_task_leads.filter(l => sStage(l.stage) && !approveIds.has(l.conversation_id) && !stuckIds.has(l.conversation_id))
+  const fStuck = (filterWho === 'approve' || filterWho === 'bot') ? []
+    : board.stuck.filter(l => sStage(l.stage))
 
   const overdue = fT(b.overdue), today = fT(b.today)
   const tomorrow = fT(b.tomorrow), week = fT(b.week), later = fT(b.later)
   const futureN = tomorrow.length + week.length + later.length
-  const nothing = overdue.length + fApprove.length + today.length + fNoTask.length + futureN === 0
+  const nothing = overdue.length + fApprove.length + today.length + fNoTask.length + fStuck.length + futureN === 0
+  const staleSec = lastLoad ? Math.round((Date.now() - lastLoad) / 1000) : 0
 
-  const whoChip = (id: 'all' | 'bot' | 'human' | 'approve', label: string) => (
+  const whoChip = (id: 'all' | 'bot' | 'human' | 'approve' | 'notask', label: string) => (
     <span className="chip" style={{ cursor: 'pointer', boxShadow: filterWho === id ? '0 0 0 2px var(--accent)' : 'none' }}
           onClick={() => setFilterWho(id)}>{label}</span>
   )
@@ -371,7 +458,14 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
         {whoChip('bot', `🤖 Бот ${sm.bot}`)}
         {whoChip('human', '👤 Менеджер')}
         {whoChip('approve', `⏳ Одобрить ${sm.approve_now}`)}
+        {whoChip('notask', `🏷 Без задачи ${sm.no_task}`)}
         <span style={{ flex: 1 }} />
+        {lastLoad > 0 && (
+          <span className="faint" style={{ fontSize: 10.5, color: staleSec > 60 ? '#c9a23b' : undefined }}
+                title="Когда доска последний раз обновилась с сервера">
+            {staleSec > 60 ? `⚠️ обновлено ${staleSec >= 120 ? Math.round(staleSec / 60) + ' мин' : staleSec + ' сек'} назад` : `обновлено ${staleSec} сек назад`}
+          </span>
+        )}
         <button className="btn sm" onClick={sweep} disabled={!!busy}>↻ Обновить</button>
         <Help title="Обновить" text="Ручной запуск проверки: бот сразу дожмёт молчунов, разошлёт напоминания и подтянет переписки. Обычно делает это сам каждые ~10 минут." />
       </div>
@@ -440,6 +534,14 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
               + ещё {sm.no_task - board.no_task_leads.length} лидов без задачи не показаны — разбери текущие или подними лимит на бэке
             </div>
           )}
+        </div>
+      )}
+
+      {fStuck.length > 0 && (
+        <div>
+          <Head title="🆘 Бот завис — помоги" n={fStuck.length} color="#c9a23b"
+                hint="Бот не разобрался сам (молчат >2 суток). Объясни боту, что делать — он переразберёт диалог с твоей подсказкой и подготовит шаг. Или поставь задачу / закрой." />
+          <div style={colS}>{fStuck.map(StuckCard)}</div>
         </div>
       )}
 

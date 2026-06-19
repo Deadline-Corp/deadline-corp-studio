@@ -96,8 +96,11 @@ def maybe_create_stuck_task(db: Session, conv: Conversation,
 
 
 async def generate_next_action(db: Session, conv: Conversation, cust: Customer,
-                               llm: Any) -> dict:
-    """Сгенерировать следующий шаг по лиду и записать в conv.next_action."""
+                               llm: Any, hint: Optional[str] = None) -> dict:
+    """Сгенерировать следующий шаг по лиду и записать в conv.next_action.
+
+    hint — подсказка менеджера («объясни боту, что делать»): если бот завис/не понял,
+    человек пишет пояснение, бот ПЕРЕразбирает лид с учётом подсказки (приоритетно)."""
     # Не трогаем АВТО-логикой денежные/юр/рабочие стадии — там решает человек (инвариант).
     # Иначе на платящем клиенте мог появиться черновик бота / задача «бот затупил» (находка ревью).
     if (conv.lead_stage or "") in ("nda", "tz_approved", "prepayment", "in_work"):
@@ -126,6 +129,12 @@ async def generate_next_action(db: Session, conv: Conversation, cust: Customer,
         f"Лид сейчас {'МОЛЧИТ — мы написали последними, он не ответил' if silent else 'ответил последним'}.\n"
         f"Переписка:\n{transcript}"
     )
+    if hint and hint.strip():
+        prompt += (
+            "\n\nВАЖНО — менеджер ОБЪЯСНИЛ, что делать с этим лидом. Учти это в ПЕРВУЮ "
+            "очередь при выборе шага и тексте сообщения (если просит написать лиду — "
+            f"kind=answer/reengage с draft):\n«{hint.strip()[:500]}»"
+        )
     try:
         result = await llm.ainvoke(prompt)
         data = _parse_json(getattr(result, "content", None) or "")
@@ -159,6 +168,8 @@ async def generate_next_action(db: Session, conv: Conversation, cust: Customer,
         "silent": silent,
         "ts": datetime.now(timezone.utc).isoformat(),
     }
+    if hint and hint.strip():
+        na["hint"] = hint.strip()[:500]  # что объяснил менеджер — для прослеживаемости
     conv.next_action = na
     # Для «дожима»/«ответа» на одобрение — кладём черновик в pending_wa_draft, чтобы
     # он всплыл в карточке с кнопкой «✅ Отправить» (единый механизм одобрения, #5).
