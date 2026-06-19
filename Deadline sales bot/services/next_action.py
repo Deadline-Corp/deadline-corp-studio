@@ -73,12 +73,12 @@ def maybe_create_stuck_task(db: Session, conv: Conversation,
     operator-задачу по этому диалогу. db.flush() — коммитит вызывающий. True если создал."""
     from db.models import ScheduledAction as _SA
     existing = db.query(_SA.id).filter(
-        _SA.conversation_id == conv.id,
+        _SA.customer_id == conv.customer_id,
         _SA.action_type == "operator_callback",
         _SA.status.in_(("pending", "processing")),
     ).first()
     if existing:
-        return False  # уже есть открытая задача человеку по лиду — не дублируем
+        return False  # уже есть открытая задача по этому КОНТАКТУ — не дублируем
     from services.manager_schedule import schedule_for_manager
     db.add(_SA(
         customer_id=conv.customer_id,

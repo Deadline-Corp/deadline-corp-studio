@@ -1235,12 +1235,14 @@ async def maintenance_dedup(
     db.commit()  # отпустить коннект перед обслуживанием (свои сессии)
     from services.whatsapp_sync import (
         cleanup_wa_artifacts, dedup_messages_global, merge_wa_split, dedup_wa_by_phone,
+        dedup_scheduled_actions,
     )
     res: dict = {}
     res["cleanup"] = await _aio.to_thread(cleanup_wa_artifacts)
     res["global_dedup"] = await _aio.to_thread(dedup_messages_global)
     res["merge"] = await _aio.to_thread(merge_wa_split)
     res["dedup_phone"] = await _aio.to_thread(dedup_wa_by_phone)
+    res["dedup_tasks"] = await _aio.to_thread(dedup_scheduled_actions)  # дубль-задачи по человеку
     cl = res["cleanup"]
     removed = (cl.get("phantoms", 0) + cl.get("echo_dupes", 0) + cl.get("sfx_dupes", 0)
                + res["global_dedup"].get("removed", 0))

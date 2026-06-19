@@ -458,10 +458,18 @@ def dedup_scheduled_actions(db: Optional[Session] = None) -> dict:
         )
         seen: set = set()
         n = 0
+        # Поручения, привязанные к ЧЕЛОВЕКУ, а не к конкретному диалогу («связаться/
+        # дожать»): дубль = повтор по КОНТАКТУ. У человека с N диалогами/карточками
+        # была N-кратная одинаковая задача (Нонна ×3). Ключ — (customer, тип), без текста
+        # и без диалога. Для остальных типов — как было (диалог, тип, текст).
+        NON_CONV_TYPES = {"operator_callback", "warming_touch"}
         for a in rows:
             payload = a.payload or {}
             text = (payload.get("text") or payload.get("title") or "")[:100]
-            key = (str(a.conversation_id), a.action_type, text)
+            if a.action_type in NON_CONV_TYPES:
+                key = (str(a.customer_id), a.action_type)
+            else:
+                key = (str(a.conversation_id), a.action_type, text)
             if key in seen:
                 a.status = "superseded"  # дубль (старее свежей) → гасим
                 n += 1
