@@ -2349,20 +2349,28 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                     except Exception as _e:  # noqa: BLE001
                         log.warning("[handoff] не сохранил имя лида: %s", _e)
 
-                await send_telegram_brief(str(conversation.id), handoff_data, history_dicts)
-                mark_handoff_done(db, conversation.id)
-                handoff_triggered = True
+                # Бриф оператору + пометка handoff_done. Обёрнуто в try/except: падение
+                # Telegram НЕ должно рушить ответ лиду (раньше исключение всплывало выше
+                # и обрывало весь hot-path). handoff_done ставим ТОЛЬКО при успешной
+                # доставке — иначе бриф уйдёт повторно, когда лид напишет снова
+                # (ретрай вместо тихой потери карточки лида).
                 try:
-                    from services.bot_decisions import log_decision as _logd
-                    _hn = (handoff_data.get("lead_name") or customer.name or "лид")
-                    _hc = (handoff_data.get("lead_email") or handoff_data.get("lead_telegram_username")
-                           or handoff_data.get("lead_phone") or "контакт собран")
-                    _logd("handoff",
-                          f"Передал лида оператору: {_hn} ({_hc}) — собрал контакт и бриф, отправил карточку менеджеру",
-                          conversation_id=conversation.id, customer_id=customer.id,
-                          detail={"contact": _hc}, db=db)
-                except Exception:  # noqa: BLE001
-                    pass
+                    await send_telegram_brief(str(conversation.id), handoff_data, history_dicts)
+                    mark_handoff_done(db, conversation.id)
+                    handoff_triggered = True
+                    try:
+                        from services.bot_decisions import log_decision as _logd
+                        _hn = (handoff_data.get("lead_name") or customer.name or "лид")
+                        _hc = (handoff_data.get("lead_email") or handoff_data.get("lead_telegram_username")
+                               or handoff_data.get("lead_phone") or "контакт собран")
+                        _logd("handoff",
+                              f"Передал лида оператору: {_hn} ({_hc}) — собрал контакт и бриф, отправил карточку менеджеру",
+                              conversation_id=conversation.id, customer_id=customer.id,
+                              detail={"contact": _hc}, db=db)
+                    except Exception:  # noqa: BLE001
+                        pass
+                except Exception as _he:  # noqa: BLE001
+                    log.warning("[handoff] бриф оператору не ушёл — повторю при след. сообщении: %s", _he)
             else:
                 # Контакта нет вообще — ждём, пока лид даст email/telegram/телефон.
                 log.info(

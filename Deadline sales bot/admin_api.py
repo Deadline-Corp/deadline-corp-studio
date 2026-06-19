@@ -2919,9 +2919,11 @@ async def task_board(
         .filter((Conversation.id.is_(None)) |
                 (Conversation.status != ConversationStatusEnum.ARCHIVED))
         .order_by(ScheduledAction.due_at.asc())
-        .limit(500)
+        .limit(1500)
         .all()
     )
+    if len(rows) >= 1500:
+        log.warning("[task-board] rows hit cap 1500 — задачи за пределом не видны на доске")
 
     def pri(temp: Optional[str], stage: Optional[str]) -> int:
         try:
@@ -2981,9 +2983,11 @@ async def task_board(
         .filter(Conversation.status != ConversationStatusEnum.ARCHIVED)
         .filter(Conversation.lead_stage.in_(list(_ACTIVE_STAGES)))
         .order_by(Conversation.last_message_at.desc().nullslast())
-        .limit(400)
+        .limit(1500)
         .all()
     )
+    if len(active_convs) >= 1500:
+        log.warning("[task-board] active_convs hit cap 1500 — старые активные лиды не видны на доске")
     no_task = []
     for conv, c in active_convs:
         if conv.id in convs_with_task:
@@ -3145,6 +3149,7 @@ async def task_board(
         "summary": {
             "overdue": len(buckets["overdue"]), "today": len(buckets["today"]),
             "no_task": len(no_task),
+            "no_task_shown": min(len(no_task), 300),  # сколько реально отдано (для «+N скрыто»)
             "bot": len(_bot_led),
             "human": sum(1 for b in buckets.values() for t in b if t["who"] == "human"),
             "approve_now": len(zones["approve_now"]), "your_turn": len(zones["your_turn"]),
@@ -3152,7 +3157,7 @@ async def task_board(
             "delivery_failed": len(delivery_failed),
         },
         "buckets": buckets,
-        "no_task_leads": no_task[:60],
+        "no_task_leads": no_task[:300],
         "zones": {k: v[:120] for k, v in zones.items()},
         # «Затыки» — зона-стоп-сигнал: не прячем лиды, показываем все (счётчик в
         # summary = реальный total). Кап высокий, чтобы ничего не потерялось из виду.

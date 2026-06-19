@@ -442,7 +442,13 @@ async def _worker_loop(*, tenant_config: dict, interval_sec: int) -> None:
         # Постоянная актуальность панели = WhatsApp: дешёвая (только БД) авто-чистка
         # фантомов/эхо-дублей + слияние разорванных карточек + дедуп каждый цикл.
         # Тот же код доступен по кнопке «Проверить сейчас» (POST /admin/api/cron/sweep).
-        run_wa_maintenance()
+        # В ПОТОКЕ (~8-10 синхронных DB-транзакций): голый вызов в async-цикле блокировал
+        # event loop на всё время запросов → вебхуки/health висли при нагрузке (инцидент
+        # с пулом). to_thread снимает блокировку, не меняя саму функцию (она же под кнопкой).
+        try:
+            await asyncio.to_thread(run_wa_maintenance)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[cron] run_wa_maintenance failed (non-fatal): %s", exc)
         # АВТО-БЭКАП БД раз в день → владельцу в Telegram (offsite-копия на случай
         # потери системы/номера; Telegram хранит файл). Дамп в потоке — не держит loop.
         # Выключить: env DB_BACKUP_TG=0.
@@ -728,6 +734,20 @@ async def sweep_once(*, tenant_config: dict) -> dict:
                         if _prof.pop("booked_call_at", None) is not None:
                             _prof.pop("call_medium", None)
                             customer.profile_data = _prof
+                    except Exception:  # noqa: BLE001
+                        pass
+                    # Гасим pending бронь + напоминания СРАЗУ, в той же сессии s (только БД,
+                    # без async/сети). Порядок в _worker_loop: sweep_once → run_due_call_reminders
+                    # → run_wa_maintenance. Без этого напоминание о созвоне ушло бы лиду,
+                    # которого мы только что увели в lost, ещё ДО того как orphan-чистка
+                    # (auto_heal/maintenance) их подберёт в этом же цикле.
+                    try:
+                        from db.models import ScheduledAction as _SA
+                        s.query(_SA).filter(
+                            _SA.conversation_id == conversation.id,
+                            _SA.action_type.in_(("call_booked", "call_reminder")),
+                            _SA.status.in_(("pending", "processing")),
+                        ).update({"status": "cancelled"}, synchronize_session=False)
                     except Exception:  # noqa: BLE001
                         pass
                 stats["funnel_lost_transitions"] += 1

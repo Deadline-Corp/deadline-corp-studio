@@ -615,7 +615,22 @@ async def analyze_and_advance(db: Session, conv: Conversation, cust: Customer,
             db.rollback()
             log.warning(f"[{str(conv.id)[:8]}] brain auto-fields failed: {e}")
 
-    # 1) стадия вперёд
+    # 1) стадия вперёд.
+    # WA_BRAIN идёт ПАРАЛЛЕЛЬНО hot-path (оба — независимые писатели lead_stage в своих
+    # сессиях). Brain читает conv из своей сессии и мог взять устаревшую стадию ДО коммита
+    # hot-path. Перечитываем СВЕЖУЮ стадию из БД (column-query минует identity-map → видит
+    # уже закоммиченное hot-path значение, READ COMMITTED) и применяем forward-guard к ней —
+    # иначе brain мог откатить стадию, которую hot-path только что продвинул вперёд.
+    try:
+        _fresh_stage = (
+            db.query(Conversation.lead_stage)
+            .filter(Conversation.id == conv.id)
+            .scalar()
+        )
+        if _fresh_stage and _fresh_stage != conv.lead_stage:
+            conv.lead_stage = _fresh_stage
+    except Exception:  # noqa: BLE001
+        pass
     new_stage = _stage_forward(conv.lead_stage or "new_lead", str(data.get("stage") or ""))
     if new_stage and new_stage != "on_call":  # on_call ставит бронь ниже
         from_stage = conv.lead_stage

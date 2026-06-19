@@ -15,6 +15,7 @@ import { Help } from '../components/Help'
 const TYPE_LABELS: Record<string, string> = {
   followup_message: '📨 Написать лиду', warming_touch: '🔥 Прогрев',
   operator_callback: '👤 Связаться / сделать', escalation: '🚨 Эскалация',
+  call_booked: '📞 Созвон', call_reminder: '⏰ Напоминание о созвоне',
 }
 const TEMP: Record<string, { e: string; c: string }> = {
   ready: { e: '✅', c: '#3bb4a0' }, hot: { e: '🔥', c: '#e0524f' },
@@ -123,21 +124,28 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   }
   usePolling(load, 20000)
 
+  // fn может вернуть строку — она станет текстом тоста (иначе берётся ok). Так у
+  // действий со счётчиком (крон/разбор) ровно ОДИН тост, а не два подряд.
   const act = async (fn: () => Promise<any>, ok: string) => {
     setBusy('1')
-    try { await fn(); showToast(ok); await load() }
+    try { const r = await fn(); showToast(typeof r === 'string' ? r : ok); await load() }
     catch (e: any) { showToast(`Ошибка: ${e?.detail ?? e?.message ?? 'ошибка'}`) }
     finally { setBusy('') }
   }
   const done = (id: string) => act(() => api.post(`/scheduled-actions/${id}/done`), '✅ Сделано')
   const cancel = (id: string) => act(() => api.post(`/scheduled-actions/${id}/cancel`), 'Отменено')
-  const botLead = (id: string) => act(() => api.post(`/conversations/${id}/wa-autonomous`, { on: true }), '🤖 Бот ведёт диалог')
+  // 🤖 Боту = передать диалог боту. На WhatsApp (WAHA, неофициальный) это может СРАЗУ
+  // отправить готовый черновик лиду — поэтому подтверждаем перед включением автопилота.
+  const botLead = (id: string) => {
+    if (!window.confirm('Передать лида боту? Бот будет вести диалог сам; если для него уже готов черновик ответа — он отправит его лиду сейчас.')) return
+    act(() => api.post(`/conversations/${id}/wa-autonomous`, { on: true }), '🤖 Бот ведёт диалог')
+  }
   const sweep = () => act(async () => {
-    const r = await api.post<any>('/cron/sweep'); showToast(`Крон: бот отправил ${r.followups?.sent ?? 0}`)
+    const r = await api.post<any>('/cron/sweep'); return `↻ Готово · бот отправил ${r.followups?.sent ?? 0}`
   }, 'Крон прогнан')
   const generate = () => act(async () => {
     const r = await api.post<any>('/task-board/generate', { limit: 10 })
-    showToast(`🤖 Разобрал ${r.processed ?? 0} лидов`)
+    return `🤖 Разобрал ${r.processed ?? 0} лидов`
   }, 'Готово')
   // Перенос задачи на ПРОИЗВОЛЬНУЮ дату/время (пикер). Кейс владельца: «написать
   // сегодня» → клиент попросил «через неделю» → переносим. Бэкенд /reschedule берёт ISO.
@@ -427,6 +435,11 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
                 hint="По этим клиентам нет следующего шага — назначь задачу или передай боту, чтобы не потерять."
                 action={<button className="btn sm primary" disabled={!!busy} onClick={generate} title="Бот прочитает диалоги без шага и предложит, что делать дальше">🤖 Разобрать ботом</button>} />
           <div style={colS}>{fNoTask.map(NoTaskCard)}</div>
+          {sm.no_task > board.no_task_leads.length && (
+            <div className="faint" style={{ fontSize: 11.5, marginTop: 6, color: 'var(--danger)' }}>
+              + ещё {sm.no_task - board.no_task_leads.length} лидов без задачи не показаны — разбери текущие или подними лимит на бэке
+            </div>
+          )}
         </div>
       )}
 
