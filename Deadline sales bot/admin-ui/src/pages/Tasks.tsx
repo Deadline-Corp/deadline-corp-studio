@@ -168,8 +168,10 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
     act(() => api.post(`/conversations/${id}/wa-autonomous`, { on: true }), '🤖 Бот ведёт диалог')
   }
   const sweep = () => act(async () => {
-    const r = await api.post<any>('/cron/sweep'); return `↻ Готово · бот отправил ${r.followups?.sent ?? 0}`
-  }, 'Крон прогнан')
+    const r = await api.post<any>('/cron/sweep'); const n = r.followups?.sent ?? 0
+    return n > 0 ? `↻ Проверка прошла · бот разослал ${n} сообщений молчунам`
+      : '↻ Проверка прошла · сейчас писать никому не нужно было'
+  }, 'Проверка прошла')
   const generate = () => act(async () => {
     const r = await api.post<any>('/task-board/generate', { limit: 10 })
     return `🤖 Разобрал ${r.processed ?? 0} лидов`
@@ -510,7 +512,7 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
       {showCat('delivery') && board.delivery_failed.length > 0 && (
         <div>
           <Head title="📵 Доставка не удалась" n={board.delivery_failed.length} color="var(--danger)"
-                hint="Авто-сообщения бота этим лидам не дошли. Открой и ответь вручную." />
+                hint="Бот пытался сам отправить лиду авто-сообщение (напоминание о созвоне / дожим), но оно НЕ доставилось (3 попытки — номер недоступен или заблокирован). Лид его НЕ получил → открой и напиши вручную." />
           <div style={colS}>
             {board.delivery_failed.map(f => (
               <div className={`conv-row${f.wa_autonomous ? ' autonomous' : ''}`} key={f.id}>
@@ -554,9 +556,12 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
 
       {showCat('notask') && fNoTask.length > 0 && (
         <div>
-          <Head title="🏷 Без задачи" n={fNoTask.length} color="var(--danger)"
-                hint="По этим клиентам нет следующего шага — назначь задачу или передай боту, чтобы не потерять."
-                action={<button className="btn sm primary" disabled={!!busy} onClick={generate} title="Бот прочитает диалоги без шага и предложит, что делать дальше">🤖 Разобрать ботом</button>} />
+          <Head title={view === 'bot' ? '🤖 Бот ведёт сам' : '🏷 Без задачи'} n={fNoTask.length}
+                color={view === 'bot' ? '#3bb4a0' : 'var(--danger)'}
+                hint={view === 'bot'
+                  ? 'Эти диалоги бот ведёт сам (зелёная рамка). Зайди в карточку — увидишь его план и дату следующего сообщения.'
+                  : 'По этим клиентам нет следующего шага — назначь задачу или передай боту, чтобы не потерять.'}
+                action={view !== 'bot' ? <button className="btn sm primary" disabled={!!busy} onClick={generate} title="Бот прочитает диалоги без шага и предложит, что делать дальше">🤖 Разобрать ботом</button> : undefined} />
           <div style={colS}>{fNoTask.map(NoTaskCard)}</div>
           {sm.no_task > board.no_task_leads.length && (
             <div className="faint" style={{ fontSize: 11.5, marginTop: 6, color: 'var(--danger)' }}>
