@@ -851,12 +851,12 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
           />
         )}
 
-        {/* «План бота» — ТОЛЬКО когда диалог ведёт БОТ: на автопилоте (wa_autonomous)
-            или есть предложенный ботом черновик. В ручных переписках, где отвечает
-            человек или оператор взял диалог на себя (operator_takeover), блок скрыт —
-            там он не нужен (план/дожим относятся к автоведению бота). */}
+        {/* «План бота» — ТОЛЬКО когда диалог ПОЛНОСТЬЮ ведёт бот (автопилот wa_autonomous).
+            У ручных лидов (даже если бот подготовил черновик на одобрение) и при
+            operator_takeover блок скрыт — план/дожим относятся к автоведению бота,
+            а не к ручной работе (черновик у ручных одобряется в «✍ Ответ лиду» ниже). */}
         {detail && me?.role !== 'viewer'
-          && (detail.wa_autonomous || !!detail.pending_wa_draft)
+          && detail.wa_autonomous
           && !detail.operator_takeover && (
           <BotPlanBlock detail={detail} convId={convId} showToast={showToast} />
         )}
@@ -1022,9 +1022,7 @@ function BotPlanBlock({ detail, convId, showToast }: {
           ? <>Следующий шаг: <b>{TYPE[nextSched.action_type]}</b>{nextSched.due_at ? <> · {fmtTime(nextSched.due_at)}</> : null}</>
           : (detail.nudge_paused
               ? 'Дожим на паузе — бот не пишет сам, пока не возобновишь.'
-              : (detail.wa_autonomous
-                  ? 'Жду ответа лида. Замолчит — дожму сам по каденции (Настройки → «Каденция дожима»).'
-                  : 'Жду ответа лида. Замолчит — подготовлю черновик дожима тебе на одобрение.'))}
+              : 'Жду ответа лида. Если замолчит — сам напишу дожим; дата и текст сообщения появятся здесь, как только запланирую.')}
       </div>
       {nextSched?.payload?.text && (
         <div style={{ marginTop: 5, padding: '6px 9px', background: 'var(--panel)', borderRadius: 7,
