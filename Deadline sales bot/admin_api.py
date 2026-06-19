@@ -277,20 +277,11 @@ async def overview(
     import main as _main
     s = _main.settings
 
-    # Каналы: configured из env, счётчики из БД (ORM enum-маппинг прозрачен).
-    by_channel_total = dict(db.execute(
-        sql_select(Conversation.channel, sql_func.count()).group_by(Conversation.channel)
-    ).fetchall())
-    by_channel_open = dict(db.execute(
-        sql_select(Conversation.channel, sql_func.count())
-        .where(Conversation.status == "open")
-        .group_by(Conversation.channel)
-    ).fetchall())
-    last_msg_by_channel = dict(db.execute(
-        sql_select(Conversation.channel, sql_func.max(Conversation.last_message_at))
-        .group_by(Conversation.channel)
-    ).fetchall())
-
+    # Каналы: configured из env. СЧЁТЧИКИ — только по РЕАЛЬНЫМ лидам: НЕ архив + НЕ
+    # помеченные «не лид» (wa_classification.is_lead == False). Иначе «диалогов» раздувался
+    # до ВСЕГО списка чатов личного номера (личное/спам/служебное), затянутого синхронизацией
+    # WhatsApp. Website/Telegram без классификации = считаем лидом (они с лид-каналов).
+    # Считаем одним проходом по строкам (на текущем объёме дёшево; точные, согласованные числа).
     configured = {
         "whatsapp": bool(getattr(s, "waha_base_url", None) or getattr(s, "greenapi_id_instance", None)),
         "website": True,
@@ -298,37 +289,57 @@ async def overview(
         "instagram": bool(s.meta_page_access_token),
         "messenger": bool(s.meta_page_access_token),
     }
-    # Доп.метрики каналов для Канваса-обзора: новых за вчера, горячих, без задачи.
     from datetime import datetime as _dt, timedelta as _td, timezone as _tz
     _now = _dt.now(_tz.utc)
     _t0 = _now.replace(hour=0, minute=0, second=0, microsecond=0)
     _y0 = _t0 - _td(days=1)
-    new_yest = dict(db.execute(
-        sql_select(Conversation.channel, sql_func.count())
-        .where(Conversation.created_at >= _y0, Conversation.created_at < _t0)
-        .group_by(Conversation.channel)
-    ).fetchall())
-    hot_by_ch = dict(db.execute(
-        sql_select(Conversation.channel, sql_func.count())
-        .select_from(Conversation).join(Customer, Conversation.customer_id == Customer.id)
-        .where(Customer.lead_temperature.in_(("hot", "ready")),
-               Conversation.status != "archived")
-        .group_by(Conversation.channel)
-    ).fetchall())
     _have_task = {r[0] for r in db.execute(
         sql_select(ScheduledAction.conversation_id)
         .where(ScheduledAction.status.in_(("pending", "processing")),
                ScheduledAction.conversation_id.isnot(None))
     ).fetchall()}
-    _active_rows = db.execute(
-        sql_select(Conversation.channel, Conversation.id)
-        .where(Conversation.status != "archived",
-               Conversation.lead_stage.in_(list(_ACTIVE_STAGES)))
+    _rows = db.execute(
+        sql_select(
+            Conversation.channel, Conversation.id, Conversation.status,
+            Conversation.wa_classification, Conversation.lead_stage,
+            Conversation.created_at, Conversation.last_message_at,
+            Customer.lead_temperature,
+        ).select_from(Conversation).join(Customer, Conversation.customer_id == Customer.id)
     ).fetchall()
+
+    def _is_real_lead(status, wac) -> bool:
+        if status == "archived":
+            return False
+        if isinstance(wac, dict) and wac.get("is_lead") is False:
+            return False
+        return True
+
+    by_channel_total: dict = {}
+    by_channel_open: dict = {}
+    new_yest: dict = {}
+    hot_by_ch: dict = {}
     no_task_ch: dict = {}
-    for _chn, _cid in _active_rows:
-        if _cid not in _have_task:
-            no_task_ch[_chn] = no_task_ch.get(_chn, 0) + 1
+    last_msg_by_channel: dict = {}
+    stage_counts: dict = {}
+    for _ch, _cid, _st, _wac, _stg, _cr, _lm, _temp in _rows:
+        # last_message_at канала — по всем диалогам (для «актив. N назад»).
+        if _lm is not None and (last_msg_by_channel.get(_ch) is None or _lm > last_msg_by_channel[_ch]):
+            last_msg_by_channel[_ch] = _lm
+        if not _is_real_lead(_st, _wac):
+            continue
+        by_channel_total[_ch] = by_channel_total.get(_ch, 0) + 1
+        if _st == "open":
+            by_channel_open[_ch] = by_channel_open.get(_ch, 0) + 1
+        if _cr is not None:
+            _c = _cr if getattr(_cr, "tzinfo", None) else _cr.replace(tzinfo=_tz.utc)
+            if _y0 <= _c < _t0:
+                new_yest[_ch] = new_yest.get(_ch, 0) + 1
+        if _temp in ("hot", "ready"):
+            hot_by_ch[_ch] = hot_by_ch.get(_ch, 0) + 1
+        if _stg in _ACTIVE_STAGES and _cid not in _have_task:
+            no_task_ch[_ch] = no_task_ch.get(_ch, 0) + 1
+        if _stg:
+            stage_counts[_stg] = stage_counts.get(_stg, 0) + 1
     channels = []
     for ch in CHANNELS:
         last = last_msg_by_channel.get(ch)
@@ -346,9 +357,7 @@ async def overview(
     # Воронка: динамический набор стадий (funnel_store: кастомные из БД или
     # встроенные 8) + counts по lead_stage.
     from services import funnel_store
-    stage_counts = dict(db.execute(
-        sql_select(Conversation.lead_stage, sql_func.count()).group_by(Conversation.lead_stage)
-    ).fetchall())
+    # stage_counts уже посчитан выше — ТОЛЬКО по реальным лидам (не архив / не «не лид»).
     all_stages = funnel_store.get_stages(db)
     funnel_stages = [
         {"stage": s["key"], "label": s["label"], "kind": s["kind"],
