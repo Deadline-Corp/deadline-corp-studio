@@ -436,10 +436,17 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   const stuckIds = new Set(board.stuck.map(l => l.conversation_id))
   const fT = (items: BoardTask[]) => items.filter(pass)
   const fApprove = z.approve_now.filter(pass)
-  // «Затыки» исключены из «Без задачи» — показываются отдельным блоком (иначе задвоятся).
+  // «Без задачи» = активные лиды без следующего шага, которыми НЕ занят бот (это сироты,
+  // нужен ЧЕЛОВЕК). Бот-ведомые сюда НЕ попадают (кроме фильтра «🤖 Бот») — их «ведёт бот»,
+  // это не «без задачи для тебя». «Затыки» тоже исключены (отдельный блок).
   const fNoTask = board.no_task_leads.filter(l =>
-    !approveIds.has(l.conversation_id) && !stuckIds.has(l.conversation_id) && pass(l))
+    !approveIds.has(l.conversation_id) && !stuckIds.has(l.conversation_id) && pass(l)
+    && (view === 'bot' || !isBot(l)))
   const fStuck = board.stuck.filter(pass)
+  // Счётчик «Без задачи» = только сироты для человека (без бот-ведомых/одобрить/затыков),
+  // чтобы число на кнопке совпадало с тем, что в секции.
+  const noTaskN = board.no_task_leads.filter(l =>
+    !isBot(l) && !approveIds.has(l.conversation_id) && !stuckIds.has(l.conversation_id)).length
 
   const overdue = fT(b.overdue), today = fT(b.today)
   const tomorrow = fT(b.tomorrow), week = fT(b.week), later = fT(b.later)
@@ -453,8 +460,8 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   const staleSec = lastLoad ? Math.round((Date.now() - lastLoad) / 1000) : 0
 
   // Кликабельная кнопка-категория вверху. Активная подсвечена. Клик → показать ТОЛЬКО её.
-  const Chip = ({ id, label, color }: { id: ViewKey; label: string; color?: string }) => (
-    <button className={`btn sm ${view === id ? 'primary' : 'ghost'}`}
+  const Chip = ({ id, label, color, hint }: { id: ViewKey; label: string; color?: string; hint?: string }) => (
+    <button className={`btn sm ${view === id ? 'primary' : 'ghost'}`} title={hint}
             style={color && view !== id ? { color } : undefined}
             onClick={() => setView(id)}>{label}</button>
   )
@@ -473,16 +480,22 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
       {/* ОДНА кликабельная панель: «Всё» + категории + срез «кто ведёт». Клик → видна
           ТОЛЬКО выбранная категория, остальные секции скрыты (не нужно крутить вниз). */}
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-        <Chip id="all" label="Всё" />
-        <Chip id="overdue" label={`⚠️ Просрочено ${sm.overdue}`} color="var(--danger)" />
-        <Chip id="approve" label={`⏳ Одобрить ${sm.approve_now}`} color="var(--accent)" />
-        <Chip id="today" label={`☀️ Сегодня ${sm.today}`} />
-        <Chip id="notask" label={`🏷 Без задачи ${sm.no_task}`} color="#b6791f" />
-        <Chip id="stuck" label={`🆘 Бот завис ${sm.stuck}`} color="#c9a23b" />
-        {board.delivery_failed.length > 0 && <Chip id="delivery" label={`📵 Не дошло ${board.delivery_failed.length}`} color="var(--danger)" />}
+        <Chip id="all" label="Всё" hint="Все задачи и лиды по порядку срочности." />
+        <Chip id="overdue" label={`⚠️ Просрочено ${sm.overdue}`} color="var(--danger)"
+              hint="Срок шага прошёл, а он не сделан — это в первую очередь." />
+        <Chip id="approve" label={`⏳ Одобрить ${sm.approve_now}`} color="var(--accent)"
+              hint="Бот подготовил ответы лидам — проверь и нажми «Одобрить» (или поправь перед отправкой)." />
+        <Chip id="today" label={`☀️ Сегодня ${sm.today}`} hint="Задачи, у которых срок — сегодня." />
+        <Chip id="notask" label={`🏷 Без задачи ${noTaskN}`} color="#b6791f"
+              hint="Активные лиды, по которым НЕТ следующего шага и которыми НЕ занят бот — назначь задачу или передай боту, чтобы не потерять." />
+        <Chip id="stuck" label={`🆘 Бот завис ${sm.stuck}`} color="#c9a23b"
+              hint="Бот не разобрался сам (молчат >2 суток) — объясни ему, что делать, или возьми на себя." />
+        {board.delivery_failed.length > 0 && <Chip id="delivery" label={`📵 Не дошло ${board.delivery_failed.length}`} color="var(--danger)"
+              hint="Авто-сообщения бота не доставились лиду — проверь / напиши вручную." />}
         <span style={{ width: 1, alignSelf: 'stretch', minHeight: 20, background: 'var(--border)', margin: '0 3px' }} />
-        <Chip id="bot" label={`🤖 Бот ${sm.bot}`} />
-        <Chip id="human" label={`👤 Я веду ${sm.your_turn + sm.approve_now}`} />
+        <Chip id="bot" label={`🤖 Бот ${sm.bot}`} hint="Диалоги, которые бот ведёт сам (зелёная рамка). Зайди — увидишь его план." />
+        <Chip id="human" label={`👤 Я веду ${sm.your_turn + sm.approve_now}`}
+              hint="Лиды, которыми занимаешься ты (бот их не ведёт автономно)." />
         <span style={{ flex: 1 }} />
         {lastLoad > 0 && (
           <span className="faint" style={{ fontSize: 10.5, color: staleSec > 60 ? '#c9a23b' : undefined }}

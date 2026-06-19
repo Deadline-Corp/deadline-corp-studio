@@ -416,6 +416,54 @@ async def resolve_lid_backlog(*, limit: int = 8) -> dict:
     return out
 
 
+async def auto_analyze_bot_led(limit: int = 5) -> dict:
+    """Бот-ведомые лиды (wa_autonomous) без вычисленного next_action и без задачи —
+    АВТО-разбор: бот сам определяет следующий шаг (как кнопка «Разобрать ботом», но
+    автоматически). Чтобы у КАЖДОГО ведомого ботом лида был ОПРЕДЕЛЁН шаг, а не висел
+    «без задачи». next_action ставится один раз → лид перестаёт попадать в кандидаты
+    (self-limiting). Bounded; каждый лид в своей короткой сессии (LLM не держит пул)."""
+    out = {"analyzed": 0}
+    try:
+        from db.connection import session_scope
+        from db.models import Conversation, Customer, ScheduledAction, ConversationStatusEnum
+        from services.next_action import generate_next_action
+        import main as _main
+        with session_scope() as s:
+            have_task = {
+                r[0] for r in s.query(ScheduledAction.conversation_id)
+                .filter(ScheduledAction.status.in_(("pending", "processing")),
+                        ScheduledAction.conversation_id.isnot(None)).all()
+            }
+            rows = (
+                s.query(Conversation.id)
+                .filter(Conversation.status != ConversationStatusEnum.ARCHIVED,
+                        Conversation.wa_autonomous.is_(True),
+                        Conversation.next_action.is_(None),
+                        Conversation.operator_takeover.isnot(True),
+                        Conversation.lead_stage.notin_(("lost", "completed_won")))
+                .order_by(Conversation.last_message_at.desc().nullslast())
+                .limit(80).all()
+            )
+            cand = [r[0] for r in rows if r[0] not in have_task][:max(1, limit)]
+        for cid in cand:
+            try:
+                with session_scope() as s2:
+                    conv = s2.get(Conversation, cid)
+                    if conv is None:
+                        continue
+                    cust = s2.get(Customer, conv.customer_id)
+                    na = await generate_next_action(s2, conv, cust, _main.primary_llm)
+                    if na:
+                        out["analyzed"] += 1
+            except Exception as e:  # noqa: BLE001
+                logger.warning("[cron] auto-analyze lead %s failed: %s", str(cid)[:8], e)
+        if out["analyzed"]:
+            logger.info("[cron] авто-разобрано бот-ведомых лидов: %s", out["analyzed"])
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[cron] auto_analyze_bot_led failed (non-fatal): %s", exc)
+    return out
+
+
 async def _worker_loop(*, tenant_config: dict, interval_sec: int) -> None:
     """Run one sweep, sleep, repeat. Cancellation-friendly."""
     logger.info("[cron] worker loop entered")
@@ -449,6 +497,15 @@ async def _worker_loop(*, tenant_config: dict, interval_sec: int) -> None:
             raise
         except Exception as exc:  # noqa: BLE001
             logger.warning("[cron] run_due_followups/call_reminders failed (non-fatal): %s", exc)
+        # Авто-разбор бот-ведомых лидов: у каждого диалога на автопилоте должен быть
+        # ОПРЕДЕЛЁН следующий шаг. Раньше next_action считался только по кнопке «Разобрать
+        # ботом» → ведомые лиды висели «без задачи». Bounded LLM (5/цикл, self-limiting).
+        try:
+            await auto_analyze_bot_led(limit=5)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[cron] auto_analyze_bot_led failed (non-fatal): %s", exc)
         # @lid-лиды (реклама): добить реальный телефон через WAHA (СЕТЬ, bounded 8) —
         # history-synced карточки сами не резолвятся (кейс Heinrich). ДО maintenance,
         # чтобы merge_wa_split тут же перекеил разрезолвленную карточку в phone-canonical.
