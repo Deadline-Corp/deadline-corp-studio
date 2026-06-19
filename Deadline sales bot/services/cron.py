@@ -303,11 +303,12 @@ def plan_winback_tasks(after_days: int, limit: int = 25) -> dict:
             reason = conv.lost_reason or ""
             hint = _WINBACK_REASONS.get(reason, "")
             name = cust.name or cust.email or (cust.phone or str(cust.id)[:8])
+            from services.manager_schedule import schedule_for_manager
             db.add(_SA(
                 customer_id=cust.id, conversation_id=conv.id,
                 channel=conv.channel, chat_id=conv.channel_conversation_id,
                 action_type="operator_callback", executor="human",
-                due_at=now, status="pending",
+                due_at=schedule_for_manager(now), status="pending",  # слот, не now()
                 payload={
                     "text": f"♻️ Вернуть проигранного — {name}. Причина: {hint}.",
                     "by": "winback", "winback_reason": reason,
@@ -800,6 +801,10 @@ async def sweep_once(*, tenant_config: dict) -> dict:
                     f"Warm {customer.lead_temperature or 'cold'} lead "
                     f"({pause_type}) — {customer.name or customer.email or str(customer.id)[:8]}"
                 )
+                from services.manager_schedule import schedule_for_manager
+                _now_aware = now if now.tzinfo else now.replace(tzinfo=timezone.utc)
+                _warm_slot = schedule_for_manager(_now_aware)
+                _warm_due_min = max(0, int((_warm_slot - _now_aware).total_seconds() // 60))
                 dispatch_operator_task(
                     customer_id=str(customer.id),
                     crm_contact_id=customer.crm_contact_id,
@@ -807,7 +812,7 @@ async def sweep_once(*, tenant_config: dict) -> dict:
                     conversation_id=str(conversation.id),
                     title=title,
                     category="warming",
-                    due_in_minutes=0,
+                    due_in_minutes=_warm_due_min,  # осмысленный слот в рабочем окне, не now()
                     description=(
                         f"Lead silent for {silent_days:.1f} days. Format suggestion: "
                         f"{warm_action.format}. Reason: {warm_action.reason}"

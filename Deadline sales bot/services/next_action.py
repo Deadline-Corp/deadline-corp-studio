@@ -79,6 +79,7 @@ def maybe_create_stuck_task(db: Session, conv: Conversation,
     ).first()
     if existing:
         return False  # уже есть открытая задача человеку по лиду — не дублируем
+    from services.manager_schedule import schedule_for_manager
     db.add(_SA(
         customer_id=conv.customer_id,
         conversation_id=conv.id,
@@ -86,7 +87,7 @@ def maybe_create_stuck_task(db: Session, conv: Conversation,
         chat_id=conv.channel_conversation_id,
         action_type="operator_callback",
         executor="human",
-        due_at=datetime.now(timezone.utc),
+        due_at=schedule_for_manager(),  # осмысленный слот в рабочем окне, не now()
         status="pending",
         payload={"text": f"🤖 Бот не справляется — помоги с лидом: {(reason or '')[:200]}",
                  "title": "Бот затупил — нужна помощь", "by": "bot-stuck"},

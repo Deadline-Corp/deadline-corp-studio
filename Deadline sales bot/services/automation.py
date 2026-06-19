@@ -367,6 +367,7 @@ async def _run_sequence_rule(s, rule, now, stats, budget: int) -> int:
                 detail["bot_message"] = f"queued {action_id}"
             else:
                 from db.models import ScheduledAction
+                from services.manager_schedule import schedule_for_manager
                 row = ScheduledAction(
                     customer_id=conv.customer_id,
                     conversation_id=conv.id,
@@ -374,7 +375,7 @@ async def _run_sequence_rule(s, rule, now, stats, budget: int) -> int:
                     chat_id=conv.channel_conversation_id,
                     action_type="operator_callback",
                     executor="human",
-                    due_at=datetime.now(timezone.utc),
+                    due_at=schedule_for_manager(),  # осмысленный слот, не now()
                     status="pending",
                     payload={"text": f"Касание {k + 1} цепочки «{rule.name}» — написать лиду: {text}",
                              "by": f"sequence:{rule.name}"},
@@ -404,6 +405,7 @@ async def _execute_actions(s, rule, conv, cust) -> dict:
                 if (conv.channel or "").lower() != "telegram":
                     # Не-Telegram канал: бот не может писать сам — создаём задачу оператору.
                     from db.models import ScheduledAction
+                    from services.manager_schedule import schedule_for_manager
                     text = a.get("text", "")
                     row = ScheduledAction(
                         customer_id=conv.customer_id,
@@ -412,7 +414,7 @@ async def _execute_actions(s, rule, conv, cust) -> dict:
                         chat_id=conv.channel_conversation_id,
                         action_type="operator_callback",
                         executor="human",
-                        due_at=datetime.now(timezone.utc),
+                        due_at=schedule_for_manager(),  # осмысленный слот, не now()
                         status="pending",
                         payload={
                             "text": text,
