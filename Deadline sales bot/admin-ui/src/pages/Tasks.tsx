@@ -50,6 +50,7 @@ type Lead = {
   draft: string; reason: string; wa_autonomous: boolean; bot_capable: boolean
   bot_status: string; bot_status_label: string
   has_human_task: boolean; task_id: string | null; task_due: string | null; task_text: string | null
+  bot_next_action_type: string | null; bot_next_due: string | null; bot_next_text: string | null
 }
 type ZoneId = 'approve_now' | 'your_turn' | 'bot_leading' | 'stuck' | 'waiting'
 // Упавшая bot-задача (дожим/напоминание не доставлено) — сигнал «нужен человек».
@@ -112,6 +113,9 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   const [stageFilter, setStageFilter] = useState<string | null>(null)  // фильтр по СТАТУСУ (стадии воронки)
   const [rsId, setRsId] = useState('')    // id задачи с открытым пикером переноса
   const [rsVal, setRsVal] = useState('')  // значение datetime-local
+  const [ntConvId, setNtConvId] = useState('')  // диалог с открытой формой «создать задачу»
+  const [ntVal, setNtVal] = useState('')        // дата/время новой задачи
+  const [ntText, setNtText] = useState('')      // текст новой задачи
   const { openConversation } = useDrawer()
 
   const load = async () => {
@@ -141,6 +145,11 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
     await api.post(`/scheduled-actions/${id}/reschedule`, { due_at: iso })
     setRsId(''); setRsVal('')
   }, '↪ Перенесено')
+  // Создать задачу человеку с датой (использует существующий POST /tasks, executor=human).
+  const createTask = (convId: string, iso: string, text: string) => act(async () => {
+    await api.post('/tasks', { conversation_id: convId, text, due_at: iso, executor: 'human' })
+    setNtConvId(''); setNtVal(''); setNtText('')
+  }, '✅ Задача создана')
   const markLostTask = (convId: string) =>
     act(() => api.post(`/conversations/${convId}/stage`, { to_stage: 'lost', lost_reason: 'delayed' }), '✗ Не сложилось')
   // Одобрить готовый черновик бота (зона «Одобри сейчас»): отправить / отклонить.
@@ -163,6 +172,22 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
               onClick={() => { setRsId(taskId); setRsVal('') }}>↪ Перенести</button>
     )
 
+  // Создать задачу человеку с датой прямо из доски (без внутр. useState — стабильно).
+  const NewTask = ({ convId }: { convId: string }) =>
+    ntConvId === convId ? (
+      <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }} onClick={e => e.stopPropagation()}>
+        <input type="text" value={ntText} placeholder="что сделать…" autoFocus
+               onChange={e => setNtText(e.target.value)} style={{ fontSize: 11, width: 150 }} />
+        <input type="datetime-local" value={ntVal} onChange={e => setNtVal(e.target.value)} style={{ fontSize: 11 }} />
+        <button className="btn sm primary" disabled={!ntVal || !ntText.trim() || !!busy}
+                onClick={() => createTask(convId, new Date(ntVal).toISOString(), ntText.trim())}>OK</button>
+        <button className="btn sm ghost" onClick={() => { setNtConvId(''); setNtVal(''); setNtText('') }}>✕</button>
+      </span>
+    ) : (
+      <button className="btn sm ghost" disabled={!!busy} title="Создать задачу человеку с датой"
+              onClick={() => { setNtConvId(convId); setNtVal(''); setNtText('') }}>➕ Задача</button>
+    )
+
   if (!board) return <div className="empty"><span className="spin" /> Загрузка…</div>
 
   // Одна карточка лида. Кнопки зависят от зоны.
@@ -181,7 +206,10 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
                 ? <i>✍️ «{l.draft.slice(0, 130)}{l.draft.length > 130 ? '…' : ''}»</i>
                 : <i>🤖 бот подготовил ответ — нажми ✅ или открой</i>)
             : zone === 'bot_leading'
-              ? <>🤖 ведёт сам{l.last_message_at ? ` · последнее ${fmtAgo(l.last_message_at)} назад` : ''}</>
+              ? <>🤖 ведёт сам{l.last_message_at ? ` · последнее ${fmtAgo(l.last_message_at)} назад` : ''}
+                  {l.bot_next_due && <div className="faint" style={{ fontSize: 10.5, marginTop: 2 }}>
+                    📨 напишет {fmtTime(l.bot_next_due)}{l.bot_next_text ? `: «${l.bot_next_text.slice(0, 60)}${l.bot_next_text.length > 60 ? '…' : ''}»` : ''}
+                  </div>}</>
               : (l.label || l.task_text || (l.last_message_at ? `молчит ${Math.round(l.silent_hours)}ч` : '—'))}
         </div>
         {l.reason && <div className="faint" style={{ fontSize: 11 }}>{l.reason}</div>}
@@ -197,14 +225,17 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
             {l.task_id && <button className="btn sm" disabled={!!busy} onClick={() => done(l.task_id!)}>✓ Сделано</button>}
             {l.task_id && <Reschedule taskId={l.task_id} />}
             {l.bot_capable && !l.wa_autonomous && <button className="btn sm" disabled={!!busy} onClick={() => botLead(l.conversation_id)}>🤖 Боту</button>}
+            <NewTask convId={l.conversation_id} />
             <button className="btn sm ghost" onClick={() => openConversation(l.conversation_id)}>Открыть</button>
           </>}
           {zone === 'bot_leading' && <>
             <button className="btn sm ghost" disabled={!!busy} title="Вернуть на ручное одобрение" onClick={() => toApproval(l.conversation_id)}>⏸ На одобрение</button>
+            <NewTask convId={l.conversation_id} />
             <button className="btn sm ghost" onClick={() => openConversation(l.conversation_id)}>Открыть</button>
           </>}
           {(zone === 'waiting' || zone === 'stuck') && <>
             {l.bot_capable && !l.wa_autonomous && <button className="btn sm" disabled={!!busy} onClick={() => botLead(l.conversation_id)}>🤖 Боту</button>}
+            <NewTask convId={l.conversation_id} />
             <button className="btn sm ghost" disabled={!!busy} title="В «Не сложилось»" onClick={() => markLostTask(l.conversation_id)}>✗</button>
             <button className="btn sm ghost" onClick={() => openConversation(l.conversation_id)}>Открыть</button>
           </>}

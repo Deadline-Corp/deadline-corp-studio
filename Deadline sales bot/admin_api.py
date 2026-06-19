@@ -2995,7 +2995,8 @@ async def task_board(
         if not _a.conversation_id:
             continue
         e = task_by_conv.setdefault(_a.conversation_id, {"human": False, "bot": False,
-                                                         "hid": None, "hdue": None, "htext": None})
+                                                         "hid": None, "hdue": None, "htext": None,
+                                                         "btype": None, "bdue": None, "btext": None})
         if _a.executor == "human":
             e["human"] = True
             if e["hid"] is None:
@@ -3004,6 +3005,13 @@ async def task_board(
                 e["htext"] = (_a.payload or {}).get("text") or (_a.payload or {}).get("title") or ""
         else:
             e["bot"] = True
+            # план бота: показываем БЛИЖАЙШЕЕ по времени запланированное действие бота
+            # (дожим/напоминание) + его текст — чтобы в карточке задачи видеть что бот напишет.
+            _bdue = _a.due_at.isoformat() if _a.due_at else None
+            if e["btype"] is None or (_bdue and (e["bdue"] is None or _bdue < e["bdue"])):
+                e["btype"] = _a.action_type
+                e["bdue"] = _bdue
+                e["btext"] = ((_a.payload or {}).get("text") or "")[:120]
 
     zones = {"approve_now": [], "your_turn": [], "bot_leading": [], "waiting": []}
     stuck = []
@@ -3050,6 +3058,8 @@ async def task_board(
             "bot_status": bstat, "bot_status_label": blabel,
             "has_human_task": has_human_task, "task_id": ti.get("hid"),
             "task_due": ti.get("hdue"), "task_text": ti.get("htext"),
+            "bot_next_action_type": ti.get("btype"), "bot_next_due": ti.get("bdue"),
+            "bot_next_text": ti.get("btext"),
             "priority": pri(c.lead_temperature, conv.lead_stage),
         }
         # «Одобри сейчас» = есть РЕАЛЬНЫЙ черновик (pending_wa_draft), который можно
