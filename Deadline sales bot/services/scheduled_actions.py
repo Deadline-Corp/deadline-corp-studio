@@ -268,8 +268,12 @@ async def run_due_followups(*, tenant_config: Optional[dict] = None) -> dict:
                         if _r2 is not None and _r2.status == "processing":
                             _r2.status = "cancelled"
                             _r2.claimed_at = None
-            except Exception:  # noqa: BLE001 — перепроверка best-effort
-                _block = False
+            except Exception as _ae:  # noqa: BLE001
+                # FAIL CLOSED: сбой перепроверки автономии → НЕ шлём (тишина безопаснее
+                # несанкционированного сообщения ручному лиду). Строка остаётся processing →
+                # переотправится позже, когда автономию можно будет подтвердить.
+                logger.warning("[scheduled_actions] autonomy re-check failed → блокирую отправку: %s", _ae)
+                _block = True
             if _block:
                 stats["skipped_manual"] = stats.get("skipped_manual", 0) + 1
                 continue

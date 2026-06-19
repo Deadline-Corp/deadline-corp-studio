@@ -3385,10 +3385,19 @@ async def task_board(
         .limit(100)
         .all()
     )
+    # Группируем по ЛИДУ: один клиент = одна строка с числом упавших сообщений (fail_count).
+    # Иначе 3 дубля-напоминания одного созвона = 3 строки «не дошло» (раздувало счётчик).
     delivery_failed = []
+    _df_seen: dict = {}
     for a, c, conv in failed_rows:
+        key = str(a.conversation_id) if a.conversation_id else f"cust:{c.id}"
+        if key in _df_seen:
+            _df_seen[key]["fail_count"] += 1
+            continue
         it = pack(a, c, conv)
         it["attempts"] = a.attempts or 0
+        it["fail_count"] = 1
+        _df_seen[key] = it
         delivery_failed.append(it)
 
     # Аналитика-полоска (amoCRM-style): сколько задач закрыто за последние 7 дней
@@ -4559,8 +4568,8 @@ async def scheduled_action_cancel(
     row = db.get(ScheduledAction, aid)
     if row is None:
         raise HTTPException(status_code=404, detail="Action not found")
-    if row.status != "pending":
-        raise HTTPException(status_code=409, detail=f"Only pending actions can be cancelled (status={row.status})")
+    if row.status not in ("pending", "failed"):
+        raise HTTPException(status_code=409, detail=f"Можно отменить только ожидающие или упавшие действия (статус={row.status})")
     row.status = "cancelled"
     db.commit()
     return {"ok": True}

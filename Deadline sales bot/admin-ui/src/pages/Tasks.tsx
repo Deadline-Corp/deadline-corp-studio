@@ -63,7 +63,7 @@ type ViewKey = 'all' | 'overdue' | 'approve' | 'today' | 'notask' | 'stuck' | 'd
 type FailedItem = {
   id: string; conversation_id: string | null; name: string; channel: string
   text: string; action_type: string; stage_label: string; temperature: string | null
-  attempts: number; wa_autonomous?: boolean
+  attempts: number; wa_autonomous?: boolean; fail_count?: number
 }
 type Board = {
   summary: { overdue: number; today: number; no_task: number; bot: number; human: number
@@ -169,9 +169,9 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   }
   const sweep = () => act(async () => {
     const r = await api.post<any>('/cron/sweep'); const n = r.followups?.sent ?? 0
-    return n > 0 ? `↻ Проверка прошла · бот разослал ${n} сообщений молчунам`
-      : '↻ Проверка прошла · сейчас писать никому не нужно было'
-  }, 'Проверка прошла')
+    return n > 0 ? `↻ Готово · бот разослал ${n} сообщений (ботоведомым) и навёл порядок`
+      : '↻ Готово · бот навёл порядок; рассылать сейчас было нечего'
+  }, 'Готово')
   const generate = () => act(async () => {
     const r = await api.post<any>('/task-board/generate', { limit: 10 })
     return `🤖 Разобрал ${r.processed ?? 0} лидов`
@@ -482,7 +482,7 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
         {board.delivery_failed.length > 0 && <Chip id="delivery" label={`📵 Не дошло ${board.delivery_failed.length}`} color="var(--danger)" />}
         <span style={{ width: 1, alignSelf: 'stretch', minHeight: 20, background: 'var(--border)', margin: '0 3px' }} />
         <Chip id="bot" label={`🤖 Бот ${sm.bot}`} />
-        <Chip id="human" label="👤 Я веду" />
+        <Chip id="human" label={`👤 Я веду ${sm.your_turn + sm.approve_now}`} />
         <span style={{ flex: 1 }} />
         {lastLoad > 0 && (
           <span className="faint" style={{ fontSize: 10.5, color: staleSec > 60 ? '#c9a23b' : undefined }}
@@ -491,10 +491,10 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
           </span>
         )}
         <button className="btn sm" onClick={sweep} disabled={!!busy}
-                title="Запустить проверку прямо сейчас: бот дожмёт молчунов, разошлёт напоминания, подтянет новые ответы и пересчитает задачи. Сам делает это каждые ~10 минут.">
-          {busy ? '↻ Проверяю…' : '↻ Проверить сейчас'}
+                title="Запустить работу бота прямо сейчас (он и так делает это сам каждые ~10 мин).">
+          {busy ? '↻ Бот работает…' : '↻ Бот: проверить'}
         </button>
-        <Help title="Проверить сейчас" text="Запускает проверку прямо сейчас: бот дожмёт молчунов, разошлёт напоминания, подтянет новые ответы и пересчитает задачи. Обычно делает это сам каждые ~10 минут — нажми, если не хочешь ждать." />
+        <Help title="Бот: проверить сейчас" text="Запускает работу бота прямо сейчас (он и так делает это сам каждые ~10 минут — нажимай, только если не хочешь ждать). Делает два дела: 1) НАВОДИТ ПОРЯДОК во всей панели — склеивает раздвоенные карточки, убирает дубли и фантомы, чинит рассинхроны (по ВСЕМ лидам); 2) ШЛЁТ авто-сообщения (дожимы молчунам, напоминания о созвоне) — ТОЛЬКО лидам, которых ведёт сам бот (зелёная рамка). Лидам на ручном ведении бот по нажатию НЕ пишет — только готовит черновик на твоё одобрение." />
       </div>
 
       {(stageList.length > 1 || stageFilter) && (
@@ -512,7 +512,7 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
       {showCat('delivery') && board.delivery_failed.length > 0 && (
         <div>
           <Head title="📵 Доставка не удалась" n={board.delivery_failed.length} color="var(--danger)"
-                hint="Бот пытался сам отправить лиду авто-сообщение (напоминание о созвоне / дожим), но оно НЕ доставилось (3 попытки — номер недоступен или заблокирован). Лид его НЕ получил → открой и напиши вручную." />
+                hint="Бот пытался сам отправить лиду авто-сообщение (напоминание о созвоне / дожим), но оно НЕ доставилось: номер недоступен/заблокирован ИЛИ был временный сбой связи. Лид мог не получить → открой и проверь / напиши вручную. Старые такие записи бот сам убирает через 2 недели." />
           <div style={colS}>
             {board.delivery_failed.map(f => (
               <div className={`conv-row${f.wa_autonomous ? ' autonomous' : ''}`} key={f.id}>
@@ -520,9 +520,10 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
                      onClick={() => f.conversation_id && openConversation(f.conversation_id)}>
                   <div className="c-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                     <TempDot t={f.temperature} />{f.name}<StageChip s={f.stage_label} />
+                    {(f.fail_count ?? 1) > 1 && <span className="chip" style={{ fontSize: 10, color: 'var(--danger)' }}>×{f.fail_count} не дошло</span>}
                     <span className="faint" style={{ fontWeight: 400 }}>{CHANNEL_META[f.channel]?.icon}</span>
                   </div>
-                  <div className="c-preview"><i>не доставлено ({f.attempts} попыт.): «{(f.text || '').slice(0, 90)}»</i></div>
+                  <div className="c-preview"><i>не доставлено: «{(f.text || '').slice(0, 90)}»</i></div>
                 </div>
                 <div className="c-meta">{f.conversation_id && <button className="btn sm ghost" onClick={() => openConversation(f.conversation_id!)}>Открыть</button>}</div>
               </div>

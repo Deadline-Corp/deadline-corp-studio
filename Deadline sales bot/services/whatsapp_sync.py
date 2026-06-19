@@ -443,7 +443,8 @@ def dedup_scheduled_actions(db: Optional[Session] = None) -> dict:
     """Дедуп задач (чисто БД): один pending/processing action на (диалог, тип, текст).
     Бот/брейн/массовые прогоны плодили ОДИНАКОВЫЕ задачи («Лид завис — связаться лично»
     по 2-3 на лида) → засор задачника/календаря. Оставляем САМУЮ СВЕЖУЮ, остальные →
-    'superseded'. Напоминания о созвоне (call_reminder) НЕ трогаем (их 3 штуки по дизайну)."""
+    'superseded'. call_reminder: 3 легитимных (1d/3h/1h) имеют РАЗНЫЙ due_at и переживают;
+    гасим только ДУБЛИ одного слота (после слияния @lid+@c.us карточек одного человека)."""
     from db.connection import session_scope
     from db.models import ScheduledAction
 
@@ -451,8 +452,7 @@ def dedup_scheduled_actions(db: Optional[Session] = None) -> dict:
         rows = (
             _db.query(ScheduledAction)
             .filter(ScheduledAction.status.in_(("pending", "processing")),
-                    ScheduledAction.conversation_id.isnot(None),
-                    ScheduledAction.action_type != "call_reminder")
+                    ScheduledAction.conversation_id.isnot(None))
             .order_by(ScheduledAction.created_at.desc().nullslast())
             .all()
         )
@@ -466,7 +466,12 @@ def dedup_scheduled_actions(db: Optional[Session] = None) -> dict:
         for a in rows:
             payload = a.payload or {}
             text = (payload.get("text") or payload.get("title") or "")[:100]
-            if a.action_type in NON_CONV_TYPES:
+            if a.action_type == "call_reminder":
+                # дубль = тот же слот созвона одному лиду одной аудитории (до минуты);
+                # 1d/3h/1h имеют разный due_at → НЕ схлопнутся.
+                due_min = a.due_at.replace(second=0, microsecond=0).isoformat() if a.due_at else ""
+                key = (str(a.conversation_id), a.action_type, payload.get("audience") or "", due_min)
+            elif a.action_type in NON_CONV_TYPES:
                 key = (str(a.customer_id), a.action_type)
             else:
                 key = (str(a.conversation_id), a.action_type, text)

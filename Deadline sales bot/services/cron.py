@@ -249,6 +249,24 @@ def run_wa_maintenance() -> dict:
                 summary["pruned_bot_decisions"] = _nb
         except Exception as _bpe:  # noqa: BLE001
             logger.warning("[cron] bot_decisions prune failed: %s", _bpe)
+        # Авто-архив старых УПАВШИХ действий (failed > 14д): обратимо (status=failed_archived,
+        # НЕ удаляем) — чтобы «Доставка не удалась» не зарастала дублями-стейлом навечно.
+        try:
+            from datetime import datetime as _dtf, timezone as _tzf, timedelta as _tdf
+            from sqlalchemy import func as _fn
+            from db.connection import session_scope as _ssf
+            from db.models import ScheduledAction as _SAf
+            _cut = _dtf.now(_tzf.utc) - _tdf(days=14)
+            with _ssf() as _s2:
+                _na = (_s2.query(_SAf)
+                       .filter(_SAf.status == "failed",
+                               _fn.coalesce(_SAf.executed_at, _SAf.due_at, _SAf.created_at) < _cut)
+                       .update({"status": "failed_archived"}, synchronize_session=False))
+            if _na:
+                summary["failed_archived"] = _na
+                logger.info("[cron] архивировано старых failed-действий: %s", _na)
+        except Exception as _fae:  # noqa: BLE001
+            logger.warning("[cron] failed-archive failed: %s", _fae)
     except Exception as exc:  # noqa: BLE001
         logger.warning("[cron] wa maintenance failed (non-fatal): %s", exc)
         summary["error"] = str(exc)
