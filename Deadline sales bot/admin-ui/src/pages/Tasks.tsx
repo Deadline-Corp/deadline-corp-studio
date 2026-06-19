@@ -127,7 +127,7 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   const [board, setBoard] = useState<Board | null>(null)
   const [busy, setBusy] = useState('')
   // Фильтр-фокус: клик по счётчику-зоне вверху → показать только эту зону.
-  const [filterWho, setFilterWho] = useState<'all' | 'bot' | 'human' | 'approve' | 'notask'>('all')
+  const [view, setView] = useState<'all' | 'bot' | 'human'>('all')  // кто ведёт: все / бот / я
   const [daysOpen, setDaysOpen] = useState(false)  // будущие дни (завтра/неделя/позже) свёрнуты
   const [stageFilter, setStageFilter] = useState<string | null>(null)  // фильтр по СТАТУСУ (стадии воронки)
   const [rsId, setRsId] = useState('')    // id задачи с открытым пикером переноса
@@ -311,7 +311,7 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
     const isBot = t.who === 'bot'
     return (
       <div className={`conv-row${t.wa_autonomous ? ' autonomous' : ''}`} key={t.id}
-           style={overdue ? { borderLeft: '3px solid var(--danger)' } : undefined}>
+           style={!t.wa_autonomous && overdue ? { boxShadow: 'inset 3px 0 0 var(--danger)' } : undefined}>
         <div className="c-main" style={{ cursor: t.conversation_id ? 'pointer' : 'default' }}
              onClick={() => t.conversation_id && openConversation(t.conversation_id)}>
           <div className="c-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -340,8 +340,8 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
 
   // Карточка КЛИЕНТА БЕЗ ЗАДАЧИ (бледно-красным, мягко) — назначь шаг или передай боту.
   const NoTaskCard = (l: NoTaskLead) => (
-    <div className="conv-row" key={l.conversation_id}
-         style={{ borderLeft: '3px solid var(--danger)', background: 'rgba(224,82,79,0.07)' }}>
+    <div className={`conv-row${l.wa_autonomous ? ' autonomous' : ''}`} key={l.conversation_id}
+         style={l.wa_autonomous ? undefined : { boxShadow: 'inset 3px 0 0 var(--danger)', background: 'rgba(224,82,79,0.07)' }}>
       <div className="c-main" style={{ cursor: 'pointer' }} onClick={() => openConversation(l.conversation_id)}>
         <div className="c-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
           <TempDot t={l.temperature} />{l.name}
@@ -368,8 +368,8 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   const StuckCard = (l: Lead) => {
     const open = stkId === l.conversation_id
     return (
-      <div className="conv-row" key={l.conversation_id}
-           style={{ borderLeft: '3px solid #c9a23b', background: 'rgba(201,162,59,0.07)' }}>
+      <div className={`conv-row${l.wa_autonomous ? ' autonomous' : ''}`} key={l.conversation_id}
+           style={l.wa_autonomous ? undefined : { boxShadow: 'inset 3px 0 0 #c9a23b', background: 'rgba(201,162,59,0.07)' }}>
         <div className="c-main" style={{ cursor: 'pointer' }} onClick={() => openConversation(l.conversation_id)}>
           <div className="c-name" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <TempDot t={l.temperature} />{l.name}
@@ -417,21 +417,21 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   }
   const stageList = [...stageCounts.entries()].sort((a, c) => c[1].n - a[1].n)
   const sStage = (st: string | null) => !stageFilter || st === stageFilter
-  const sWho = (who: string, wa: boolean) =>
-    (filterWho === 'all' || filterWho === 'approve') ? true
-      : filterWho === 'bot' ? (who === 'bot' || wa)
-        : (who === 'human' && !wa)
-  // notask/approve фокус прячут задачи-по-дням; bot прячет «одобрить»/«без задачи»/«затыки».
-  const fT = (items: BoardTask[]) =>
-    (filterWho === 'approve' || filterWho === 'notask') ? [] : items.filter(t => sStage(t.stage) && sWho(t.who, t.wa_autonomous))
+  // Единый предикат «кто ведёт» на ВСЕ источники: бот = автопилот ИЛИ шаг назначен боту.
+  // «Я веду» прячет ВСЁ бот-ведомое (а не сортирует) — чинит протечку approve/no_task/stuck.
+  const isBot = (it: { who?: string; wa_autonomous?: boolean }) => it.wa_autonomous === true || it.who === 'bot'
+  const inView = (it: { who?: string; wa_autonomous?: boolean }) =>
+    view === 'all' ? true : view === 'bot' ? isBot(it) : !isBot(it)
+  const pass = (it: { who?: string; wa_autonomous?: boolean; stage?: string | null }) =>
+    inView(it) && sStage(it.stage ?? null)
   const approveIds = new Set(z.approve_now.map(l => l.conversation_id))
   const stuckIds = new Set(board.stuck.map(l => l.conversation_id))
-  const fApprove = (filterWho === 'bot' || filterWho === 'notask') ? [] : z.approve_now.filter(l => sStage(l.stage))
+  const fT = (items: BoardTask[]) => items.filter(pass)
+  const fApprove = z.approve_now.filter(pass)
   // «Затыки» исключены из «Без задачи» — показываются отдельным блоком (иначе задвоятся).
-  const fNoTask = (filterWho === 'approve' || filterWho === 'bot') ? []
-    : board.no_task_leads.filter(l => sStage(l.stage) && !approveIds.has(l.conversation_id) && !stuckIds.has(l.conversation_id))
-  const fStuck = (filterWho === 'approve' || filterWho === 'bot') ? []
-    : board.stuck.filter(l => sStage(l.stage))
+  const fNoTask = board.no_task_leads.filter(l =>
+    !approveIds.has(l.conversation_id) && !stuckIds.has(l.conversation_id) && pass(l))
+  const fStuck = board.stuck.filter(pass)
 
   const overdue = fT(b.overdue), today = fT(b.today)
   const tomorrow = fT(b.tomorrow), week = fT(b.week), later = fT(b.later)
@@ -439,9 +439,8 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   const nothing = overdue.length + fApprove.length + today.length + fNoTask.length + fStuck.length + futureN === 0
   const staleSec = lastLoad ? Math.round((Date.now() - lastLoad) / 1000) : 0
 
-  const whoChip = (id: 'all' | 'bot' | 'human' | 'approve' | 'notask', label: string) => (
-    <span className="chip" style={{ cursor: 'pointer', boxShadow: filterWho === id ? '0 0 0 2px var(--accent)' : 'none' }}
-          onClick={() => setFilterWho(id)}>{label}</span>
+  const Seg = ({ id, label }: { id: 'all' | 'bot' | 'human'; label: string }) => (
+    <button className={`btn sm ${view === id ? 'primary' : 'ghost'}`} onClick={() => setView(id)}>{label}</button>
   )
   const Head = ({ title, n, color, hint, action }: { title: string; n: number; color?: string; hint?: string; action?: JSX.Element }) => (
     <div style={{ margin: '2px 0 8px' }}>
@@ -452,45 +451,55 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
     </div>
   )
   const colS: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 7 }
-
-  // Плитка сводки (amoCRM-style): число + подпись, кликабельна если ведёт к фильтру.
-  const Stat = ({ n, label, color, onClick, active }: { n: number; label: string; color?: string; onClick?: () => void; active?: boolean }) => (
-    <div onClick={onClick} title={onClick ? 'Показать' : undefined}
-         style={{ flex: '1 1 100px', minWidth: 92, padding: '8px 12px', borderRadius: 10,
-                  background: 'var(--panel)', cursor: onClick ? 'pointer' : 'default',
-                  boxShadow: active ? '0 0 0 2px var(--accent)' : '0 0 0 1px var(--border)' }}>
-      <div style={{ fontSize: 20, fontWeight: 800, color, lineHeight: 1.1 }}>{n}</div>
-      <div className="faint" style={{ fontSize: 11 }}>{label}</div>
-    </div>
-  )
+  const numStat = (label: string, n: number, c?: string) =>
+    <span className="faint">{label} <b style={{ color: c || 'var(--text)' }}>{n}</b></span>
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <Stat n={sm.today} label="на сегодня" />
-        <Stat n={sm.overdue} label="просрочено" color={sm.overdue ? 'var(--danger)' : undefined} />
-        <Stat n={sm.no_task} label="без шага" color={sm.no_task ? '#b6791f' : undefined}
-              active={filterWho === 'notask'} onClick={() => setFilterWho(filterWho === 'notask' ? 'all' : 'notask')} />
-        <Stat n={sm.approve_now} label="ждут одобрения" color={sm.approve_now ? 'var(--accent)' : undefined}
-              active={filterWho === 'approve'} onClick={() => setFilterWho(filterWho === 'approve' ? 'all' : 'approve')} />
-        <Stat n={sm.done_7d ?? 0} label="сделано за 7 дн" color="#1a8c6d" />
-      </div>
-      <div style={{ display: 'flex', gap: 7, alignItems: 'center', flexWrap: 'wrap' }}>
+      {/* ОДИН фильтр-контрол «кто ведёт» (сегмент). «Я веду» прячет ВСЁ бот-ведомое. */}
+      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
         <span className="faint" style={{ fontSize: 11.5 }}>кто ведёт:</span>
-        {whoChip('all', 'Все')}
-        {whoChip('bot', `🤖 Бот ${sm.bot}`)}
-        {whoChip('human', '👤 Менеджер')}
-        {whoChip('approve', `⏳ Одобрить ${sm.approve_now}`)}
-        {whoChip('notask', `🏷 Без задачи ${sm.no_task}`)}
+        <div style={{ display: 'flex', gap: 4, background: 'var(--panel)', borderRadius: 9, padding: 3 }}>
+          <Seg id="all" label="Всё" />
+          <Seg id="bot" label="🤖 Бот" />
+          <Seg id="human" label="👤 Я веду" />
+        </div>
         <span style={{ flex: 1 }} />
         {lastLoad > 0 && (
           <span className="faint" style={{ fontSize: 10.5, color: staleSec > 60 ? '#c9a23b' : undefined }}
-                title="Когда доска последний раз обновилась с сервера">
+                title="Когда доска последний раз подтянула данные (сама раз в ~20 сек)">
             {staleSec > 60 ? `⚠️ обновлено ${staleSec >= 120 ? Math.round(staleSec / 60) + ' мин' : staleSec + ' сек'} назад` : `обновлено ${staleSec} сек назад`}
           </span>
         )}
-        <button className="btn sm" onClick={sweep} disabled={!!busy}>↻ Обновить</button>
-        <Help title="Обновить" text="Ручной запуск проверки: бот сразу дожмёт молчунов, разошлёт напоминания и подтянет переписки. Обычно делает это сам каждые ~10 минут." />
+        <button className="btn sm" onClick={sweep} disabled={!!busy}
+                title="Запустить проверку прямо сейчас: бот дожмёт молчунов, разошлёт напоминания, подтянет новые ответы и пересчитает задачи. Сам делает это каждые ~10 минут.">
+          {busy ? '↻ Проверяю…' : '↻ Проверить сейчас'}
+        </button>
+        <Help title="Проверить сейчас" text="Запускает проверку прямо сейчас: бот дожмёт молчунов, разошлёт напоминания, подтянет новые ответы и пересчитает задачи. Обычно делает это сам каждые ~10 минут — нажми, если не хочешь ждать." />
+      </div>
+
+      {/* Пассивное ТАБЛО: только цифры (не кликается). «Одобрить» — якорь к секции. */}
+      <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', fontSize: 12.5 }}>
+        {numStat('🤖 Ведёт бот', sm.bot, '#3bb4a0')}
+        {numStat('Сегодня', sm.today)}
+        {numStat('Просрочено', sm.overdue, sm.overdue ? 'var(--danger)' : undefined)}
+        {numStat('Без шага', sm.no_task, sm.no_task ? '#b6791f' : undefined)}
+        {sm.approve_now > 0
+          ? <span style={{ cursor: 'pointer', color: 'var(--accent)' }} title="Перейти к черновикам на одобрение"
+                  onClick={() => {
+                    // Секция «Сегодня» (#approve-anchor) могла быть скрыта фильтром вида/стадии
+                    // → сбрасываем их, чтобы она точно отрендерилась, и скроллим после ре-рендера.
+                    setView('all'); setStageFilter(null)
+                    setTimeout(() => document.getElementById('approve-anchor')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)
+                  }}>⏳ Одобрить <b>{sm.approve_now}</b></span>
+          : numStat('⏳ Одобрить', 0)}
+        {numStat('Сделано за 7 дн', sm.done_7d ?? 0, '#1a8c6d')}
+        <span style={{ flex: 1 }} />
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, opacity: 0.75 }}
+              title="Бот сам отвечает в этом чате. Открой карточку — посмотришь/поправишь план бота.">
+          <span style={{ width: 3, height: 13, background: '#3bb4a0', borderRadius: 2, display: 'inline-block' }} />
+          <span className="faint" style={{ fontSize: 11 }}>зелёная рамка = ведёт бот</span>
+        </span>
       </div>
 
       {(stageList.length > 1 || stageFilter) && (
@@ -536,7 +545,7 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
       )}
 
       {(fApprove.length + today.length) > 0 && (
-        <div>
+        <div id="approve-anchor">
           <Head title="Сегодня" n={fApprove.length + today.length}
                 hint="Что нужно сделать сегодня. ⏳ — бот подготовил ответ, нужно твоё «ОК»." />
           <div style={colS}>
@@ -584,8 +593,12 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
         </div>
       )}
 
-      {!stageFilter && filterWho === 'all' && <SleepingPanel showToast={showToast} />}
-      {nothing && <div className="empty">Всё под контролем — на сегодня задач, требующих тебя, нет 🎉</div>}
+      {!stageFilter && view === 'all' && <SleepingPanel showToast={showToast} />}
+      {nothing && <div className="empty">{
+        view === 'human' ? '👤 В режиме «Я веду» сейчас нет задач — всё либо ведёт бот (переключись на «🤖 Бот»), либо сделано.'
+          : view === 'bot' ? '🤖 Под ботом сейчас нет активных диалогов.'
+            : 'Всё под контролем — на сегодня задач, требующих тебя, нет 🎉'
+      }</div>}
     </div>
   )
 }
