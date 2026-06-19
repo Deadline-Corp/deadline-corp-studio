@@ -52,6 +52,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
   const [draftOpen, setDraftOpen] = useState(true)  // свернуть блок «система предлагает», чтобы видеть переписку
   const [replyOpen, setReplyOpen] = useState(false) // окно ручного ответа оператора — по умолчанию свёрнуто
   const [actionsOpen, setActionsOpen] = useState(false) // панель действий сверху — по умолчанию свёрнута (видно переписку)
+  const [moreOpen, setMoreOpen] = useState(false) // «⋯ Ещё» — редкие действия (пауза дожима / регулярный / HubSpot)
   const [historyOpen, setHistoryOpen] = useState(false) // «почему лид на этой стадии» — история переходов
   const [decisionsOpen, setDecisionsOpen] = useState(false) // «🤖 Решения бота» — журнал решений с причинами
   const msgsRef = useRef<HTMLDivElement>(null)
@@ -553,84 +554,96 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                       {actionsOpen ? '▾ Действия' : '⚙️ Действия'}
                     </button>}
               </div>
-              {actionsOpen && <div className="d-actions">
-                <button className="btn sm" onClick={toggleTakeover} disabled={busy}>
-                  {detail.operator_takeover ? '🤖 Вернуть боту' : '👤 Взять на себя'}
-                </button>
-                <Help title="Взять на себя" text="Бот замолкает в этом диалоге — отвечаете только вы. Лид ничего не заметит. Когда закончите, верните боту — он продолжит сам с того же места." />
-                <button className="btn sm" onClick={toggleNudgePause} disabled={busy}
-                        title="Авто-дожим: бот сам пишет молчуну по расписанию (Настройки → Каденция дожима). Пауза — для ЭТОГО лида бот дожимать не будет, пока не возобновите.">
-                  {detail.nudge_paused ? '▶️ Возобновить дожим' : '⏸ Пауза дожима'}
-                </button>
-                {detail.channel === 'whatsapp' && !detail.pending_wa_draft && (
-                  <button className="btn sm" onClick={suggestReply} disabled={busy} title="Система прочитает всю переписку и предложит ответ">🔄 Предложить ответ</button>
-                )}
-                <Help title="Стадия" text="Где лид в вашей воронке. Бот двигает сделку сам по мере прогресса; вы можете перевести вручную здесь или перетащив карточку в Воронке. Изменение уходит и в CRM." />
-                <select value={stagePick} onChange={e => setStagePick(e.target.value)} style={{ padding: '4px 8px', fontSize: 12 }}>
-                  <option value="">Сменить стадию…</option>
-                  {stages.filter(s => s.stage !== detail.lead_stage).map(s => (
-                    <option key={s.stage} value={s.stage}>{s.label}</option>
-                  ))}
-                </select>
-                {stagePick && isLostStage(stagePick) && (
-                  <select value={lostReason} onChange={e => setLostReason(e.target.value)} style={{ padding: '4px 8px', fontSize: 12 }}>
-                    {LOST_REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-                  </select>
-                )}
-                {stagePick && <button className="btn sm primary" onClick={applyStage} disabled={busy}>OK</button>}
-                <button className="btn sm danger" onClick={dismissLeadAction} disabled={busy}
-                        title="Убрать лид в архив (не сложилось / спам): исчезнет из воронки и переписок. Обратимо — кнопка «Вернуть».">🗑 Убрать</button>
-                <button className="btn sm" onClick={() => { setNudgeOpen(v => !v); setTaskOpen(false) }}>⚡ Пинок</button>
-                <Help title="Пинок" text="Лид замолчал? Отправьте напоминание от имени бота — диалог продолжится естественно. Кнопка «Черновик от LLM» сама сочинит текст по контексту переписки." />
-                <button className="btn sm" onClick={() => { setTaskOpen(v => !v); setNudgeOpen(false) }}>📋 Задача</button>
-                <Help title="Задача" text="Напоминалка по этому лиду: «👤 сам» — появится в вашем «Моём дне»; «🤖 бот» — бот сам напишет лиду в указанное время (пока только Telegram)." />
-                <button className="btn sm" onClick={advise} disabled={busy}>🧭 Что делать</button>
-                <Help title="Что делать (AI-копилот)" text="Агент смотрит стадию, score и переписку → советует лучшее следующее действие и кладёт готовый черновик ответа в поле. Ничего не отправляет — решаете вы." />
-                {!hiddenActions.includes('recurring') && (<>
-                <button className="btn sm" disabled={busy} onClick={async () => {
-                  const d = window.prompt('Регулярный клиент: визит каждые N дней (пусто или 0 — снять):', '')
-                  if (d === null) return
-                  const n = parseInt(d, 10) || 0
-                  setBusy(true)
-                  try {
-                    await api.post(`/conversations/${convId}/recurrence`, { every_days: n > 0 ? n : null, active: n > 0 })
-                    showToast(n > 0 ? `🔁 Регулярно каждые ${n} дн. — бот сам напомнит` : 'Регулярность снята')
-                  } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
-                  finally { setBusy(false) }
-                }}>🔁 Регулярный</button>
-                <Help title="Регулярный клиент" text="Постоянный клининг / ТО: бот сам шлёт плановое напоминание каждые N дней («подтвердите время — команда приедет»). Снять — введите 0." />
-                </>)}
-                {!hiddenActions.includes('call_schedule') && (
-                <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-                  {detail.booked_call_at && <span className="chip accent">📞 {fmtTime(detail.booked_call_at)}</span>}
-                  <input type="datetime-local" value={callDt} onChange={e => setCallDt(e.target.value)} style={{ fontSize: 12, padding: '3px 6px' }} title="Дата и время созвона" />
-                  <button className="btn sm" onClick={() => setCall('reschedule')} disabled={busy}>📞 {detail.booked_call_at ? 'Перенести' : 'Назначить'}</button>
-                  {detail.booked_call_at && <button className="btn sm ghost" onClick={() => setCall('cancel')} disabled={busy}>Отменить созвон</button>}
-                  <Help title="Созвон" text="Назначить или перенести время созвона прямо из карточки. Бот пересоздаст напоминания (лиду в мессенджер и вам в опер-группу — интервалы в Настройках → Напоминания)." />
-                </span>
-                )}
-                {!hiddenActions.includes('assign') && team.filter((m: any) => m.active).length > 0 && (
-                  <select value="" disabled={busy} style={{ fontSize: 12 }}
-                          onChange={async e => {
-                            const v = e.target.value
-                            if (!v) return
-                            const mid = v === '__unassign__' ? null : v
-                            setBusy(true)
-                            try {
-                              const r = await api.post<{ assigned: any }>(`/conversations/${convId}/assign`, { member_id: mid })
-                              showToast(r.assigned ? `📋 Назначено: ${r.assigned.name}` : 'Назначение снято')
-                            } catch (er: any) { showToast(`Ошибка: ${er.detail ?? er.message}`, true) }
-                            finally { setBusy(false) }
-                          }}>
-                    <option value="">📋 Назначить на…</option>
-                    {team.filter((m: any) => m.active).map((m: any) => (
-                      <option key={m.id} value={m.id}>{m.name}{m.department ? ` · ${m.department}` : ''}</option>
+              {actionsOpen && <div className="d-actions-zones">
+                <div className="d-zone">
+                  <span className="d-zl">Диалог</span>
+                  <button className="btn sm" onClick={toggleTakeover} disabled={busy}
+                          title="Бот замолкает — отвечаете только вы. Когда закончите — «Вернуть боту», он продолжит сам.">
+                    {detail.operator_takeover ? '🤖 Вернуть боту' : '👤 Взять на себя'}
+                  </button>
+                  <button className="btn sm" onClick={() => { setNudgeOpen(v => !v); setTaskOpen(false) }}
+                          title="Дожать молчащего лида — напоминание от имени бота.">⚡ Пинок</button>
+                </div>
+                <div className="d-zone">
+                  <span className="d-zl">Сделка</span>
+                  <select value={stagePick} onChange={e => setStagePick(e.target.value)} style={{ padding: '4px 8px', fontSize: 12 }}>
+                    <option value="">📊 Сменить стадию…</option>
+                    {stages.filter(s => s.stage !== detail.lead_stage).map(s => (
+                      <option key={s.stage} value={s.stage}>{s.label}</option>
                     ))}
-                    <option value="__unassign__">— снять назначение —</option>
                   </select>
-                )}
-                {detail.hubspot.contact_url && (
-                  <a className="btn sm ghost" href={detail.hubspot.contact_url} target="_blank" rel="noreferrer">HubSpot ↗</a>
+                  {stagePick && isLostStage(stagePick) && (
+                    <select value={lostReason} onChange={e => setLostReason(e.target.value)} style={{ padding: '4px 8px', fontSize: 12 }}>
+                      {LOST_REASONS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                    </select>
+                  )}
+                  {stagePick && <button className="btn sm primary" onClick={applyStage} disabled={busy}>OK</button>}
+                  <button className="btn sm danger" onClick={dismissLeadAction} disabled={busy}
+                          title="Убрать лид в архив (не сложилось / спам): исчезнет из воронки и переписок. Обратимо — кнопка «Вернуть».">🗑 Убрать</button>
+                </div>
+                <div className="d-zone">
+                  <span className="d-zl">Запланировать</span>
+                  <button className="btn sm" onClick={() => { setTaskOpen(v => !v); setNudgeOpen(false) }}
+                          title="Напоминание по лиду: «сам» — в ваш «Мой день»; «бот» — бот напишет лиду в срок.">📋 Задача</button>
+                  {!hiddenActions.includes('call_schedule') && (
+                    <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                      {detail.booked_call_at && <span className="chip accent">📞 {fmtTime(detail.booked_call_at)}</span>}
+                      <input type="datetime-local" value={callDt} onChange={e => setCallDt(e.target.value)} style={{ fontSize: 12, padding: '3px 6px' }} title="Дата и время созвона" />
+                      <button className="btn sm" onClick={() => setCall('reschedule')} disabled={busy}>📞 {detail.booked_call_at ? 'Перенести' : 'Созвон'}</button>
+                      {detail.booked_call_at && <button className="btn sm ghost" onClick={() => setCall('cancel')} disabled={busy}>Отменить</button>}
+                    </span>
+                  )}
+                  {!hiddenActions.includes('assign') && team.filter((m: any) => m.active).length > 0 && (
+                    <select value="" disabled={busy} style={{ fontSize: 12 }} title="Передать лид ответственному менеджеру"
+                            onChange={async e => {
+                              const v = e.target.value
+                              if (!v) return
+                              const mid = v === '__unassign__' ? null : v
+                              setBusy(true)
+                              try {
+                                const r = await api.post<{ assigned: any }>(`/conversations/${convId}/assign`, { member_id: mid })
+                                showToast(r.assigned ? `👥 Ответственный: ${r.assigned.name}` : 'Назначение снято')
+                              } catch (er: any) { showToast(`Ошибка: ${er.detail ?? er.message}`, true) }
+                              finally { setBusy(false) }
+                            }}>
+                      <option value="">👥 Ответственный…</option>
+                      {team.filter((m: any) => m.active).map((m: any) => (
+                        <option key={m.id} value={m.id}>{m.name}{m.department ? ` · ${m.department}` : ''}</option>
+                      ))}
+                      <option value="__unassign__">— снять —</option>
+                    </select>
+                  )}
+                </div>
+                <div className="d-zone">
+                  <span className="d-zl">Помощь</span>
+                  <button className="btn sm" onClick={advise} disabled={busy}
+                          title="AI-копилот: смотрит стадию/переписку → советует следующий шаг и кладёт черновик ответа в поле. Сам ничего не отправляет.">🧭 Совет</button>
+                  <button className="btn sm ghost" onClick={() => setMoreOpen(v => !v)}>{moreOpen ? '▾ Ещё' : '⋯ Ещё'}</button>
+                </div>
+                {moreOpen && (
+                  <div className="d-zone">
+                    <span className="d-zl">Ещё</span>
+                    <button className="btn sm" onClick={toggleNudgePause} disabled={busy}
+                            title="Авто-дожим: бот сам пишет молчуну по расписанию. Пауза — для этого лида дожимать не будет.">
+                      {detail.nudge_paused ? '▶️ Возобновить дожим' : '⏸ Пауза дожима'}
+                    </button>
+                    {!hiddenActions.includes('recurring') && (
+                      <button className="btn sm" disabled={busy} onClick={async () => {
+                        const d = window.prompt('Регулярный клиент: визит каждые N дней (пусто или 0 — снять):', '')
+                        if (d === null) return
+                        const n = parseInt(d, 10) || 0
+                        setBusy(true)
+                        try {
+                          await api.post(`/conversations/${convId}/recurrence`, { every_days: n > 0 ? n : null, active: n > 0 })
+                          showToast(n > 0 ? `🔁 Регулярно каждые ${n} дн. — бот сам напомнит` : 'Регулярность снята')
+                        } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+                        finally { setBusy(false) }
+                      }}>🔁 Регулярный</button>
+                    )}
+                    {detail.hubspot.contact_url && (
+                      <a className="btn sm ghost" href={detail.hubspot.contact_url} target="_blank" rel="noreferrer">HubSpot ↗</a>
+                    )}
+                  </div>
                 )}
               </div>}
               {advice && (
