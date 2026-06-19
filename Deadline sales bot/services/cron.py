@@ -138,7 +138,7 @@ def run_wa_maintenance() -> dict:
         from services.whatsapp_sync import (
             cleanup_wa_artifacts, dedup_wa_by_phone, dedup_wa_by_name,
             cancel_orphan_scheduled_actions, dedup_scheduled_actions,
-            merge_wa_split, dedup_messages_global,
+            merge_wa_split, dedup_messages_global, dedup_empty_customer_stubs,
         )
         _cl = cleanup_wa_artifacts()
         summary["cleanup"] = _cl
@@ -168,6 +168,12 @@ def run_wa_maintenance() -> dict:
         summary["dedup_name"] = _dn
         if _dd.get("archived") or _dn.get("archived"):
             logger.info("[cron] wa dedup: by_phone=%s by_name=%s", _dd, _dn)
+        # Чистка ПУСТЫХ дублей-клиентов (stub после merge_split: 0 диалогов + двойник по
+        # телефону с историей) → archived_stub в profile_data (обратимо, не удаляем).
+        _st = dedup_empty_customer_stubs()
+        summary["dedup_stubs"] = _st
+        if _st.get("archived_stubs"):
+            logger.info("[cron] empty-stub cleanup: archived=%s", _st.get("archived_stubs"))
         # Гасим осиротевшие задачи/напоминания архивных карточек + дедуп ОДИНАКОВЫХ
         # задач (один «Лид завис — связаться» на лида) → чистый задачник/календарь.
         _orf = cancel_orphan_scheduled_actions()
@@ -499,10 +505,13 @@ async def _worker_loop(*, tenant_config: dict, interval_sec: int) -> None:
                 raise
             except Exception as exc:  # noqa: BLE001
                 logger.warning("[cron] auto-reconcile failed (non-fatal): %s", exc)
-            # ПЕР-КАРТОЧНЫЙ reconcile активных WhatsApp-чатов — ИМЕННО он ПОМЕЧАЕТ
-            # удалённые в WhatsApp сообщения (sync_waha_history выше только СЧИТАЕТ).
-            # Bounded топ-20 по свежести; reconcile_wa_conversation сам держит короткие
-            # сессии (сеть ВНЕ транзакции) → зовём в цикле без открытого коннекта.
+        # ПЕР-КАРТОЧНЫЙ reconcile активных WhatsApp-чатов КАЖДЫЙ цикл (~10мин) — быстро
+        # ПОМЕЧАЕТ удаления (sync_waha_history в %6-блоке выше — раз/час, только считает).
+        # Вынесен из %6, чтобы удаления отражались за ~10мин БЕЗ касания VPS (2b уровень 1;
+        # мгновенно — уровень 2 через подписку WAHA на message.revoked). Bounded топ-15;
+        # reconcile_wa_conversation держит короткие сессии (сеть ВНЕ транзакции).
+        import os as _osr2
+        if _osr2.getenv("WA_AUTO_RECONCILE", "1").strip() in ("1", "true", "yes"):
             try:
                 from datetime import timedelta as _td
                 from sqlalchemy import select as _sel
@@ -517,23 +526,23 @@ async def _worker_loop(*, tenant_config: dict, interval_sec: int) -> None:
                             _RConv.channel == "whatsapp",
                             _RConv.status != "ARCHIVED",
                             _RConv.last_message_at >= _rnow - _td(days=3),
-                        ).order_by(_RConv.last_message_at.desc()).limit(20)
+                        ).order_by(_RConv.last_message_at.desc()).limit(15)
                     ).scalars().all()
                 _marked = 0
                 for _acid in _active_ids:
                     try:
-                        _rr = await _recon(_mr2.settings, _acid, limit=80)
+                        _rr = await _recon(_mr2.settings, _acid, limit=60)
                         _marked += int(_rr.get("removed") or 0)
                     except asyncio.CancelledError:
                         raise
                     except Exception:  # noqa: BLE001
                         continue
-                logger.info("[cron] per-chat reconcile: chats=%d deletions_marked=%d",
+                logger.info("[cron] revoke-scan: chats=%d deletions_marked=%d",
                             len(_active_ids), _marked)
             except asyncio.CancelledError:
                 raise
             except Exception as _pe:  # noqa: BLE001
-                logger.warning("[cron] per-chat reconcile skipped: %s", _pe)
+                logger.warning("[cron] revoke-scan skipped: %s", _pe)
         # Умное авто-ведение WhatsApp — периодическая проверка актуальности:
         # ловит ручные договорённости/новую инфу, которые могли не прийти вебхуком,
         # двигает воронку и ставит созвон в календарь. ОПАСНО на едином процессе с

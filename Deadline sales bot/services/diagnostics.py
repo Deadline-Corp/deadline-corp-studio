@@ -180,11 +180,14 @@ def _stale_callbacks(db, CS) -> list:
     return out
 
 
-def auto_heal(*, move_empty_oncall_after_h: int = 48) -> dict:
+def auto_heal(*, move_empty_oncall_after_h: int = 48, noshow_grace_h: int = 3) -> dict:
     """БЕЗОПАСНОЕ авто-устранение (обратимое, ничего не удаляет):
       1) отменить сироты-напоминания (status→cancelled);
       2) снять устаревшую бронь у не-созвонной стадии (booked_call_at→pop) + её напоминания;
-      3) «пустой» on_call (нет брони) и тишина > move_empty_oncall_after_h → вернуть в qualified.
+      3) «пустой» on_call (нет брони) и тишина > move_empty_oncall_after_h → вернуть в qualified;
+      4) снять неактуальные задачи «связаться/завис» когда бот ведёт сам/лид активен;
+      5) NO-SHOW: on_call с бронью в ПРОШЛОМ (> noshow_grace_h) → снять бронь + откат в
+         qualified (лид пропал на созвоне — ведём дальше по воронке, НЕ в lost).
     Логирует каждое исправление в Журнал решений (actor=automation). Возвращает сводку."""
     from db.connection import session_scope
     from db.models import (
@@ -194,7 +197,7 @@ def auto_heal(*, move_empty_oncall_after_h: int = 48) -> dict:
     from services.bot_decisions import log_decision
     now = datetime.now(timezone.utc)
     out = {"orphan_reminders_cancelled": 0, "stale_bookings_cleared": 0,
-           "empty_oncall_reverted": 0, "stale_callbacks_cancelled": 0}
+           "empty_oncall_reverted": 0, "stale_callbacks_cancelled": 0, "noshow_healed": 0}
     with session_scope() as db:
         # 1) сироты-напоминания
         rem_rows = (
@@ -283,4 +286,44 @@ def auto_heal(*, move_empty_oncall_after_h: int = 48) -> dict:
             if conv.wa_autonomous or (is_stuck and newer_activity):
                 a.status = "cancelled"
                 out["stale_callbacks_cancelled"] += 1
+
+        # 5) NO-SHOW: on_call с бронью в ПРОШЛОМ (> noshow_grace_h) и без подтверждения →
+        # снять протухшую бронь+напоминания INLINE (не вложенный session_scope) + откатить
+        # on_call→qualified, чтобы лид вернулся в работу (нудж/воронка). НЕ в lost — ghost
+        # на созвоне это норма в продажах (просьба владельца), ведём дальше. Грейс 3ч —
+        # созвон мог идти прямо сейчас. Не трогаем будущие брони и денежные/юр стадии.
+        oncall_rows = (
+            db.query(Conv, Cu).join(Cu, Conv.customer_id == Cu.id)
+            .filter(Conv.lead_stage == "on_call", Conv.status != CS.ARCHIVED)
+            .limit(500).all()
+        )
+        for conv, c in oncall_rows:
+            bca = (c.profile_data or {}).get("booked_call_at")
+            bdt = _parse(bca) if bca else None
+            if bdt is None:
+                continue
+            if bdt.tzinfo is None:
+                bdt = bdt.replace(tzinfo=timezone.utc)
+            hours_ago = (now - bdt).total_seconds() / 3600.0
+            if hours_ago < noshow_grace_h:
+                continue  # бронь в будущем или созвон может идти прямо сейчас
+            for a in db.query(SA).filter(
+                    SA.conversation_id == conv.id,
+                    SA.action_type.in_(("call_booked", "call_reminder")),
+                    SA.status.in_(("pending", "processing"))).all():
+                a.status = "cancelled"
+            pd = dict(c.profile_data or {})
+            pd.pop("booked_call_at", None)
+            pd.pop("call_medium", None)
+            c.profile_data = pd
+            _from = conv.lead_stage
+            conv.lead_stage = "qualified"
+            db.add(StageTransition(conversation_id=conv.id, customer_id=conv.customer_id,
+                                   from_stage=_from, to_stage="qualified", by="automation"))
+            out["noshow_healed"] += 1
+            log_decision(
+                "no_show_healed",
+                f"No-show: созвон был {bdt.isoformat()} (прошло {hours_ago:.1f}ч), лид не "
+                f"подтвердил — снял бронь и вернул в «Квалифицирован», ведём дальше по воронке",
+                conversation_id=conv.id, customer_id=c.id, actor="automation", db=db)
     return out

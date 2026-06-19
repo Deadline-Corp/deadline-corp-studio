@@ -396,6 +396,49 @@ def dedup_wa_by_name(db: Optional[Session] = None) -> dict:
         return _run(_db)
 
 
+def dedup_empty_customer_stubs(db: Optional[Session] = None) -> dict:
+    """Чистка ПУСТЫХ дублей-клиентов: customer с телефоном, у которого 0 conversations
+    (merge_wa_split перенёс диалоги на канон → остался пустой stub) И есть ДРУГОЙ customer
+    с ТЕМ ЖЕ телефоном, у которого диалоги ЕСТЬ. Помечаем stub archived_stub в profile_data
+    (НЕ удаляем — правило never-delete). Идемпотентно (помеченные пропускаем). Эффективный
+    подзапрос, без полного скана."""
+    from db.connection import session_scope
+    out = {"archived_stubs": 0}
+
+    def _run(s: Session) -> dict:
+        with_conv = select(Conversation.customer_id).distinct()
+        stubs = s.execute(
+            select(Customer).where(
+                Customer.phone.isnot(None),
+                ~Customer.id.in_(with_conv),
+            )
+        ).scalars().all()
+        for st in stubs:
+            pd = st.profile_data or {}
+            if pd.get("archived_stub"):
+                continue
+            twin = s.execute(
+                select(Customer.id).where(
+                    Customer.phone == st.phone,
+                    Customer.id != st.id,
+                    Customer.id.in_(with_conv),
+                ).limit(1)
+            ).first()
+            if not twin:
+                continue  # одиночка без диалогов (напр. свежая форма) — не трогаем
+            npd = dict(pd)
+            npd["archived_stub"] = True
+            npd["archived_stub_at"] = datetime.now(timezone.utc).isoformat()
+            st.profile_data = npd
+            out["archived_stubs"] += 1
+        return out
+
+    if db is not None:
+        return _run(db)
+    with session_scope() as s:
+        return _run(s)
+
+
 def dedup_scheduled_actions(db: Optional[Session] = None) -> dict:
     """Дедуп задач (чисто БД): один pending/processing action на (диалог, тип, текст).
     Бот/брейн/массовые прогоны плодили ОДИНАКОВЫЕ задачи («Лид завис — связаться лично»
