@@ -57,6 +57,8 @@ type Lead = {
   deal_value: number | null
 }
 type ZoneId = 'approve_now' | 'your_turn' | 'bot_leading' | 'stuck' | 'waiting'
+// Вид доски: «Всё» / одна категория (секция) / срез «кто ведёт». Кликается вверху.
+type ViewKey = 'all' | 'overdue' | 'approve' | 'today' | 'notask' | 'stuck' | 'delivery' | 'bot' | 'human'
 // Упавшая bot-задача (дожим/напоминание не доставлено) — сигнал «нужен человек».
 type FailedItem = {
   id: string; conversation_id: string | null; name: string; channel: string
@@ -106,14 +108,14 @@ export function Tasks() {
       <div className="page-head">
         <h1>Задачи</h1>
         <div style={{ display: 'flex', gap: 4, background: 'var(--panel)', borderRadius: 8, padding: 3 }}>
-          <button className={`btn sm ${tab === 'day' ? 'primary' : 'ghost'}`} onClick={() => setTab('day')}>Приоритет сегодня</button>
-          <button className={`btn sm ${tab === 'all' ? 'primary' : 'ghost'}`} onClick={() => setTab('all')}>Все задачи</button>
+          <button className={`btn sm ${tab === 'day' ? 'primary' : 'ghost'}`} onClick={() => setTab('day')}>Доска</button>
+          <button className={`btn sm ${tab === 'all' ? 'primary' : 'ghost'}`} onClick={() => setTab('all')}>Все задачи (список)</button>
         </div>
       </div>
       <HintBar id="tasks" icon="⏰">
-        Задачи по дням: <b>просрочено</b> и <b>сегодня</b> — в первую очередь. <b>«Без задачи»</b>
-        (бледно-красным) — клиенты без следующего шага, их легко потерять: назначь задачу или
-        передай боту. 🤖 — бот сделает сам, 👤 — за тобой. «Будущее» свёрнуто внизу.
+        Кнопки сверху — фильтр: нажми <b>⏳ Одобрить</b>, <b>🆘 Бот завис</b> или любую — увидишь
+        только её, остальное скроется. <b>«Всё»</b> — общий вид по срочности. Зелёная рамка слева
+        у карточки = этот диалог ведёт бот.
       </HintBar>
       {tab === 'day' ? <CrmBoard showToast={showToast} /> : <AllTasks showToast={showToast} />}
       {toast && <div className="toast">{toast}</div>}
@@ -126,8 +128,9 @@ export function Tasks() {
 function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   const [board, setBoard] = useState<Board | null>(null)
   const [busy, setBusy] = useState('')
-  // Фильтр-фокус: клик по счётчику-зоне вверху → показать только эту зону.
-  const [view, setView] = useState<'all' | 'bot' | 'human'>('all')  // кто ведёт: все / бот / я
+  // Один кликабельный фильтр вверху: «Всё» или одна категория/срез — показывается ТОЛЬКО
+  // выбранное, остальные секции скрыты (не нужно крутить вниз).
+  const [view, setView] = useState<ViewKey>('all')
   const [daysOpen, setDaysOpen] = useState(false)  // будущие дни (завтра/неделя/позже) свёрнуты
   const [stageFilter, setStageFilter] = useState<string | null>(null)  // фильтр по СТАТУСУ (стадии воронки)
   const [rsId, setRsId] = useState('')    // id задачи с открытым пикером переноса
@@ -417,13 +420,16 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   }
   const stageList = [...stageCounts.entries()].sort((a, c) => c[1].n - a[1].n)
   const sStage = (st: string | null) => !stageFilter || st === stageFilter
-  // Единый предикат «кто ведёт» на ВСЕ источники: бот = автопилот ИЛИ шаг назначен боту.
-  // «Я веду» прячет ВСЁ бот-ведомое (а не сортирует) — чинит протечку approve/no_task/stuck.
+  // «кто ведёт»-срез: бот = автопилот ИЛИ шаг назначен боту. Применяется ТОЛЬКО в видах
+  // «🤖 Бот»/«👤 Я веду»; в «Всё» и категориях — показываем всех.
   const isBot = (it: { who?: string; wa_autonomous?: boolean }) => it.wa_autonomous === true || it.who === 'bot'
-  const inView = (it: { who?: string; wa_autonomous?: boolean }) =>
-    view === 'all' ? true : view === 'bot' ? isBot(it) : !isBot(it)
+  const whoOk = (it: { who?: string; wa_autonomous?: boolean }) =>
+    view === 'bot' ? isBot(it) : view === 'human' ? !isBot(it) : true
   const pass = (it: { who?: string; wa_autonomous?: boolean; stage?: string | null }) =>
-    inView(it) && sStage(it.stage ?? null)
+    whoOk(it) && sStage(it.stage ?? null)
+  // Категория видна, если выбран вид «Всё/Бот/Я веду» (показываем все секции) ИЛИ выбрана
+  // ИМЕННО эта категория (показываем только её — остальные прячем).
+  const showCat = (c: string) => view === 'all' || view === 'bot' || view === 'human' || view === c
   const approveIds = new Set(z.approve_now.map(l => l.conversation_id))
   const stuckIds = new Set(board.stuck.map(l => l.conversation_id))
   const fT = (items: BoardTask[]) => items.filter(pass)
@@ -436,11 +442,19 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   const overdue = fT(b.overdue), today = fT(b.today)
   const tomorrow = fT(b.tomorrow), week = fT(b.week), later = fT(b.later)
   const futureN = tomorrow.length + week.length + later.length
-  const nothing = overdue.length + fApprove.length + today.length + fNoTask.length + fStuck.length + futureN === 0
+  // Сколько реально видно при текущем виде (для пустого состояния).
+  const shownN = (showCat('overdue') ? overdue.length : 0) + (showCat('approve') ? fApprove.length : 0)
+    + (showCat('today') ? today.length : 0) + (showCat('notask') ? fNoTask.length : 0)
+    + (showCat('stuck') ? fStuck.length : 0) + (showCat('delivery') ? board.delivery_failed.length : 0)
+    + (showCat('future') ? futureN : 0)
+  const nothing = shownN === 0
   const staleSec = lastLoad ? Math.round((Date.now() - lastLoad) / 1000) : 0
 
-  const Seg = ({ id, label }: { id: 'all' | 'bot' | 'human'; label: string }) => (
-    <button className={`btn sm ${view === id ? 'primary' : 'ghost'}`} onClick={() => setView(id)}>{label}</button>
+  // Кликабельная кнопка-категория вверху. Активная подсвечена. Клик → показать ТОЛЬКО её.
+  const Chip = ({ id, label, color }: { id: ViewKey; label: string; color?: string }) => (
+    <button className={`btn sm ${view === id ? 'primary' : 'ghost'}`}
+            style={color && view !== id ? { color } : undefined}
+            onClick={() => setView(id)}>{label}</button>
   )
   const Head = ({ title, n, color, hint, action }: { title: string; n: number; color?: string; hint?: string; action?: JSX.Element }) => (
     <div style={{ margin: '2px 0 8px' }}>
@@ -451,19 +465,22 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
     </div>
   )
   const colS: React.CSSProperties = { display: 'flex', flexDirection: 'column', gap: 7 }
-  const numStat = (label: string, n: number, c?: string) =>
-    <span className="faint">{label} <b style={{ color: c || 'var(--text)' }}>{n}</b></span>
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* ОДИН фильтр-контрол «кто ведёт» (сегмент). «Я веду» прячет ВСЁ бот-ведомое. */}
-      <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        <span className="faint" style={{ fontSize: 11.5 }}>кто ведёт:</span>
-        <div style={{ display: 'flex', gap: 4, background: 'var(--panel)', borderRadius: 9, padding: 3 }}>
-          <Seg id="all" label="Всё" />
-          <Seg id="bot" label="🤖 Бот" />
-          <Seg id="human" label="👤 Я веду" />
-        </div>
+      {/* ОДНА кликабельная панель: «Всё» + категории + срез «кто ведёт». Клик → видна
+          ТОЛЬКО выбранная категория, остальные секции скрыты (не нужно крутить вниз). */}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Chip id="all" label="Всё" />
+        <Chip id="overdue" label={`⚠️ Просрочено ${sm.overdue}`} color="var(--danger)" />
+        <Chip id="approve" label={`⏳ Одобрить ${sm.approve_now}`} color="var(--accent)" />
+        <Chip id="today" label={`☀️ Сегодня ${sm.today}`} />
+        <Chip id="notask" label={`🏷 Без задачи ${sm.no_task}`} color="#b6791f" />
+        <Chip id="stuck" label={`🆘 Бот завис ${sm.stuck}`} color="#c9a23b" />
+        {board.delivery_failed.length > 0 && <Chip id="delivery" label={`📵 Не дошло ${board.delivery_failed.length}`} color="var(--danger)" />}
+        <span style={{ width: 1, alignSelf: 'stretch', minHeight: 20, background: 'var(--border)', margin: '0 3px' }} />
+        <Chip id="bot" label={`🤖 Бот ${sm.bot}`} />
+        <Chip id="human" label="👤 Я веду" />
         <span style={{ flex: 1 }} />
         {lastLoad > 0 && (
           <span className="faint" style={{ fontSize: 10.5, color: staleSec > 60 ? '#c9a23b' : undefined }}
@@ -478,30 +495,6 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
         <Help title="Проверить сейчас" text="Запускает проверку прямо сейчас: бот дожмёт молчунов, разошлёт напоминания, подтянет новые ответы и пересчитает задачи. Обычно делает это сам каждые ~10 минут — нажми, если не хочешь ждать." />
       </div>
 
-      {/* Пассивное ТАБЛО: только цифры (не кликается). «Одобрить» — якорь к секции. */}
-      <div style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap', fontSize: 12.5 }}>
-        {numStat('🤖 Ведёт бот', sm.bot, '#3bb4a0')}
-        {numStat('Сегодня', sm.today)}
-        {numStat('Просрочено', sm.overdue, sm.overdue ? 'var(--danger)' : undefined)}
-        {numStat('Без шага', sm.no_task, sm.no_task ? '#b6791f' : undefined)}
-        {sm.approve_now > 0
-          ? <span style={{ cursor: 'pointer', color: 'var(--accent)' }} title="Перейти к черновикам на одобрение"
-                  onClick={() => {
-                    // Секция «Сегодня» (#approve-anchor) могла быть скрыта фильтром вида/стадии
-                    // → сбрасываем их, чтобы она точно отрендерилась, и скроллим после ре-рендера.
-                    setView('all'); setStageFilter(null)
-                    setTimeout(() => document.getElementById('approve-anchor')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60)
-                  }}>⏳ Одобрить <b>{sm.approve_now}</b></span>
-          : numStat('⏳ Одобрить', 0)}
-        {numStat('Сделано за 7 дн', sm.done_7d ?? 0, '#1a8c6d')}
-        <span style={{ flex: 1 }} />
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, opacity: 0.75 }}
-              title="Бот сам отвечает в этом чате. Открой карточку — посмотришь/поправишь план бота.">
-          <span style={{ width: 3, height: 13, background: '#3bb4a0', borderRadius: 2, display: 'inline-block' }} />
-          <span className="faint" style={{ fontSize: 11 }}>зелёная рамка = ведёт бот</span>
-        </span>
-      </div>
-
       {(stageList.length > 1 || stageFilter) && (
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           <span className="faint" style={{ fontSize: 11.5, marginRight: 2 }}>стадия:</span>
@@ -514,7 +507,7 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
         </div>
       )}
 
-      {board.delivery_failed.length > 0 && (
+      {showCat('delivery') && board.delivery_failed.length > 0 && (
         <div>
           <Head title="📵 Доставка не удалась" n={board.delivery_failed.length} color="var(--danger)"
                 hint="Авто-сообщения бота этим лидам не дошли. Открой и ответь вручную." />
@@ -536,7 +529,7 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
         </div>
       )}
 
-      {overdue.length > 0 && (
+      {showCat('overdue') && overdue.length > 0 && (
         <div>
           <Head title="⚠️ Просрочено" n={overdue.length} color="var(--danger)"
                 hint="Срок прошёл, а шаг не сделан — в первую очередь." />
@@ -544,18 +537,22 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
         </div>
       )}
 
-      {(fApprove.length + today.length) > 0 && (
-        <div id="approve-anchor">
-          <Head title="Сегодня" n={fApprove.length + today.length}
-                hint="Что нужно сделать сегодня. ⏳ — бот подготовил ответ, нужно твоё «ОК»." />
-          <div style={colS}>
-            {fApprove.map(l => LeadCard(l, 'approve_now'))}
-            {today.map(TaskCard)}
-          </div>
+      {showCat('approve') && fApprove.length > 0 && (
+        <div>
+          <Head title="⏳ Одобрить" n={fApprove.length} color="var(--accent)"
+                hint="Бот подготовил ответы лидам — проверь и нажми «✅ Одобрить» (или поправь)." />
+          <div style={colS}>{fApprove.map(l => LeadCard(l, 'approve_now'))}</div>
         </div>
       )}
 
-      {fNoTask.length > 0 && (
+      {showCat('today') && today.length > 0 && (
+        <div>
+          <Head title="☀️ Сегодня" n={today.length} hint="Задачи на сегодня." />
+          <div style={colS}>{today.map(TaskCard)}</div>
+        </div>
+      )}
+
+      {showCat('notask') && fNoTask.length > 0 && (
         <div>
           <Head title="🏷 Без задачи" n={fNoTask.length} color="var(--danger)"
                 hint="По этим клиентам нет следующего шага — назначь задачу или передай боту, чтобы не потерять."
@@ -569,7 +566,7 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
         </div>
       )}
 
-      {fStuck.length > 0 && (
+      {showCat('stuck') && fStuck.length > 0 && (
         <div>
           <Head title="🆘 Бот завис — помоги" n={fStuck.length} color="#c9a23b"
                 hint="Бот не разобрался сам (молчат >2 суток). Объясни боту, что делать — он переразберёт диалог с твоей подсказкой и подготовит шаг. Или поставь задачу / закрой." />
@@ -577,7 +574,7 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
         </div>
       )}
 
-      {futureN > 0 && (
+      {showCat('future') && futureN > 0 && (
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }} onClick={() => setDaysOpen(v => !v)}>
             <b style={{ fontSize: 13 }}>{daysOpen ? '▾' : '▸'} Будущее · {futureN}</b>
@@ -595,9 +592,10 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
 
       {!stageFilter && view === 'all' && <SleepingPanel showToast={showToast} />}
       {nothing && <div className="empty">{
-        view === 'human' ? '👤 В режиме «Я веду» сейчас нет задач — всё либо ведёт бот (переключись на «🤖 Бот»), либо сделано.'
-          : view === 'bot' ? '🤖 Под ботом сейчас нет активных диалогов.'
-            : 'Всё под контролем — на сегодня задач, требующих тебя, нет 🎉'
+        view === 'all' ? 'Всё под контролем — задач, требующих тебя, нет 🎉'
+          : view === 'human' ? '👤 В режиме «Я веду» сейчас пусто — нажми «Всё».'
+            : view === 'bot' ? '🤖 Под ботом сейчас нет активных диалогов.'
+              : 'В этой категории сейчас пусто — нажми «Всё», чтобы увидеть остальное.'
       }</div>}
     </div>
   )
