@@ -1032,6 +1032,19 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
         content=req.content, extra_meta=req.extra_meta,
     )
 
+    # Голос не распознан ОБОИМИ STT (Groq+Gemini) → бот не понял лида → задача ЧЕЛОВЕКУ
+    # помочь (бот+человек в связке). stt_not_configured (нет ключа) — не техсбой, пропуск.
+    # Не трогаем активные/денежные стадии. Дедуп внутри (не плодит вторую задачу).
+    _tf = (req.extra_meta or {}).get("transcription_failed") if isinstance(req.extra_meta, dict) else None
+    if (_tf and _tf != "stt_not_configured"
+            and conversation.lead_stage not in ("on_call", "nda", "tz_approved", "prepayment", "in_work")):
+        try:
+            from services.next_action import maybe_create_stuck_task
+            if maybe_create_stuck_task(db, conversation, None, f"не распознал голосовое ({_tf})"):
+                db.commit()
+        except Exception:  # noqa: BLE001
+            pass
+
     log.info(f"[{str(conversation.id)[:8]}/{req.channel}/{req.message_type}] Q: {req.content[:200]}")
 
     # ---- Phase 13: Returning Lead Memory state machine ----

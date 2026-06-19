@@ -65,6 +65,36 @@ _KIND_DEFAULT_LABEL = {
 }
 
 
+def maybe_create_stuck_task(db: Session, conv: Conversation, cust: Customer,
+                            reason: str) -> bool:
+    """Бот не справляется с лидом (непонятно / не распознал голос / нет прогресса) →
+    ставим задачу ЧЕЛОВЕКУ помочь. Бот+человек в связке: бот сам сколько может, но если
+    затупил — зовёт человека, а не молчит/тупит. Дедуп: НЕ плодим вторую открытую
+    operator-задачу по этому диалогу. db.flush() — коммитит вызывающий. True если создал."""
+    from db.models import ScheduledAction as _SA
+    existing = db.query(_SA.id).filter(
+        _SA.conversation_id == conv.id,
+        _SA.action_type == "operator_callback",
+        _SA.status.in_(("pending", "processing")),
+    ).first()
+    if existing:
+        return False  # уже есть открытая задача человеку по лиду — не дублируем
+    db.add(_SA(
+        customer_id=conv.customer_id,
+        conversation_id=conv.id,
+        channel=conv.channel,
+        chat_id=conv.channel_conversation_id,
+        action_type="operator_callback",
+        executor="human",
+        due_at=datetime.now(timezone.utc),
+        status="pending",
+        payload={"text": f"🤖 Бот не справляется — помоги с лидом: {(reason or '')[:200]}",
+                 "title": "Бот затупил — нужна помощь", "by": "bot-stuck"},
+    ))
+    db.flush()
+    return True
+
+
 async def generate_next_action(db: Session, conv: Conversation, cust: Customer,
                                llm: Any) -> dict:
     """Сгенерировать следующий шаг по лиду и записать в conv.next_action."""
@@ -134,5 +164,12 @@ async def generate_next_action(db: Session, conv: Conversation, cust: Customer,
             "source": "next_action",
             "ts": na["ts"],
         }
+    # Бот не понял что делать → задача человеку помочь (бот+человек в связке).
+    if mode == "unclear":
+        try:
+            maybe_create_stuck_task(db, conv, cust,
+                                    na.get("reason") or na.get("label") or "не понял следующий шаг")
+        except Exception:  # noqa: BLE001
+            pass
     db.commit()
     return na
