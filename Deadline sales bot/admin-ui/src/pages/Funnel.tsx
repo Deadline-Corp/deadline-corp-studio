@@ -4,7 +4,8 @@ import { ConvSummary, StageDef } from '../api/types'
 import { usePolling } from '../hooks/usePolling'
 import { useDrawer } from '../components/DrawerContext'
 import { useStages } from '../overviewContext'
-import { CHANNEL_META, LOST_REASONS, TEMP_META, fmtAgo, initials } from '../lib'
+import { CHANNEL_META, LOST_REASONS, TEMP_META, fmtAgo, initials, onLeadsChanged, emitLeadsChanged, emitLeadDismissed } from '../lib'
+import { dismissLead } from '../api/leads'
 import { HintBar } from '../components/HintBar'
 import { Help } from '../components/Help'
 
@@ -46,8 +47,22 @@ export function Funnel() {
   }
 
   usePolling(load, 10000)
+  // Мгновенное обновление: любая мутация лида в другом вью/карточке → перечитать борд.
+  useEffect(() => onLeadsChanged(load), [])
 
   const showToast = (t: string) => { setToast(t); setTimeout(() => setToast(null), 3000) }
+
+  // Быстро «убрать» лид (спам/ненужный) → в архив одним кликом, карточка сразу улетает,
+  // глобальный тост «Вернуть». Обратимо (never-delete).
+  const dismiss = async (c: ConvSummary) => {
+    const prevStage = c.lead_stage
+    const label = c.customer.display_name || c.customer.name || 'Лид'
+    setItems(prev => prev.filter(x => x.id !== c.id))
+    try {
+      await dismissLead(c.id)
+      emitLeadDismissed({ id: c.id, stage: prevStage, label })
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message ?? 'ошибка'}`); void load() }
+  }
 
   const isLostStage = (key: string) =>
     key === 'lost' || stages.find(s => s.stage === key)?.kind === 'lost'
@@ -63,6 +78,7 @@ export function Funnel() {
       showToast(`✅ ${pending.conv.customer.name || 'Лид'} → ${stages.find(s => s.stage === pending.toStage)?.label}`)
       setPending(null)
       await load()
+      emitLeadsChanged()
     } catch (e: any) {
       showToast(`Ошибка: ${e.message}`)
     } finally { setBusy(false) }
@@ -105,6 +121,8 @@ export function Funnel() {
         onDragStart={e => e.dataTransfer.setData('text/conv', JSON.stringify({ id: c.id }))}
         onClick={() => openConversation(c.id)}
       >
+        <button className="kc-x" title="Убрать в архив (не сложилось / спам)"
+                onClick={e => { e.stopPropagation(); void dismiss(c) }}>✕</button>
         <div className="kc-name">
           <span style={{ color: 'var(--accent)', fontWeight: 700, fontSize: 11 }}>{initials(c.customer.name)}</span>
           {c.customer.display_name || c.customer.name || 'Без имени'}

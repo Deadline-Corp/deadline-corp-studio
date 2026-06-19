@@ -7,6 +7,8 @@ import { DrawerProvider } from './DrawerContext'
 import { OverviewCtx, MeCtx, Me } from '../overviewContext'
 import { Tour } from './Tour'
 import { CallSuggestionToasts } from './CallSuggestionToasts'
+import { UndoToast } from './UndoToast'
+import { emitLeadsChanged, onLeadsChanged } from '../lib'
 
 /* Постоянный сайдбар + Overview/Me контексты. Менеджеру навигация урезана
    (Мозг/Автоматизации/Каналы/Настройки скрыты; бэкенд форсит то же 403-ми). */
@@ -55,6 +57,11 @@ export function Layout() {
     try { setOverview(await api.get<Overview>('/overview')) } catch { /* ignore */ }
   }, 30000)
 
+  // Мгновенно обновляем обзор (счётчики канваса/сайдбара) после любой мутации лида.
+  useEffect(() => onLeadsChanged(() => {
+    void api.get<Overview>('/overview').then(setOverview).catch(() => { /* */ })
+  }), [])
+
   const [theme, setTheme] = useState(() => {
     // Разовая миграция после редизайна: показать новый светлый интерфейс всем один раз,
     // дальше уважаем выбор тумблера (Nick может вернуть тёмную).
@@ -96,7 +103,7 @@ export function Layout() {
   return (
     <MeCtx.Provider value={me}>
       <OverviewCtx.Provider value={overview}>
-        <DrawerProvider>
+        <DrawerProvider onChanged={emitLeadsChanged}>
           <div className="layout">
             <aside className="sidebar">
               <div className="brand">
@@ -142,6 +149,7 @@ export function Layout() {
             </main>
             <Tour />
             <CallSuggestionToasts />
+            <UndoToast />
           </div>
         </DrawerProvider>
       </OverviewCtx.Provider>

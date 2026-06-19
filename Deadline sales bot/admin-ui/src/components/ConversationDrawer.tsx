@@ -3,7 +3,8 @@ import { api } from '../api/client'
 import { ConvDetail, Msg } from '../api/types'
 import { usePolling } from '../hooks/usePolling'
 import { useStages, useStageLabel, useMe, useOverview } from '../overviewContext'
-import { CHANNEL_META, LOST_REASONS, TEMP_META, fmtTime, initials } from '../lib'
+import { CHANNEL_META, LOST_REASONS, TEMP_META, fmtTime, initials, emitLeadDismissed } from '../lib'
+import { dismissLead } from '../api/leads'
 import { Help } from './Help'
 
 /* Карточка лида: переписка + ответ + takeover + стадия + пинок + задача.
@@ -356,6 +357,21 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
     finally { setBusy(false) }
   }
 
+  // Быстро «убрать» лид → в архив (не сложилось / спам). Карточка закрывается,
+  // списки обновляются сами, глобальный тост «Вернуть». Обратимо (never-delete).
+  const dismissLeadAction = async () => {
+    if (busy || !detail) return
+    setBusy(true)
+    try {
+      await dismissLead(convId)
+      emitLeadDismissed({
+        id: convId, stage: detail.lead_stage,
+        label: detail.customer.display_name || detail.customer.name || 'Лид',
+      })
+      onClose()
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true); setBusy(false) }
+  }
+
   const nudgeDraft = async () => {
     setBusy(true)
     try {
@@ -557,6 +573,8 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                   </select>
                 )}
                 {stagePick && <button className="btn sm primary" onClick={applyStage} disabled={busy}>OK</button>}
+                <button className="btn sm danger" onClick={dismissLeadAction} disabled={busy}
+                        title="Убрать лид в архив (не сложилось / спам): исчезнет из воронки и переписок. Обратимо — кнопка «Вернуть».">🗑 Убрать</button>
                 <button className="btn sm" onClick={() => { setNudgeOpen(v => !v); setTaskOpen(false) }}>⚡ Пинок</button>
                 <Help title="Пинок" text="Лид замолчал? Отправьте напоминание от имени бота — диалог продолжится естественно. Кнопка «Черновик от LLM» сама сочинит текст по контексту переписки." />
                 <button className="btn sm" onClick={() => { setTaskOpen(v => !v); setNudgeOpen(false) }}>📋 Задача</button>

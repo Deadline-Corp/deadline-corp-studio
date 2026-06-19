@@ -75,3 +75,25 @@ export function initials(name: string | null | undefined): string {
   if (!name) return '?'
   return name.trim().split(/\s+/).slice(0, 2).map(w => w[0]?.toUpperCase() ?? '').join('')
 }
+
+/* ---------- Шина мгновенного обновления списков ----------
+   Любая мутация лида (стадия / архив / «убрать») шлёт событие — активные вью
+   (Воронка / Переписки / Канвас) перезагружаются сразу, не дожидаясь поллинга. */
+export const LEADS_CHANGED = 'deadline:leads-changed'
+export function emitLeadsChanged(): void { window.dispatchEvent(new Event(LEADS_CHANGED)) }
+export function onLeadsChanged(fn: () => void): () => void {
+  window.addEventListener(LEADS_CHANGED, fn)
+  return () => window.removeEventListener(LEADS_CHANGED, fn)
+}
+
+/* «Убрали лид» → глобальный тост «Вернуть» (один на всё приложение, рендерится в Layout). */
+export interface DismissedLead { id: string; stage: string; label: string }
+export const LEAD_DISMISSED = 'deadline:lead-dismissed'
+export function emitLeadDismissed(d: DismissedLead): void {
+  window.dispatchEvent(new CustomEvent<DismissedLead>(LEAD_DISMISSED, { detail: d }))
+}
+export function onLeadDismissed(fn: (d: DismissedLead) => void): () => void {
+  const h = (e: Event) => fn((e as CustomEvent<DismissedLead>).detail)
+  window.addEventListener(LEAD_DISMISSED, h)
+  return () => window.removeEventListener(LEAD_DISMISSED, h)
+}

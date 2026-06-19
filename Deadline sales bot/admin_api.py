@@ -493,10 +493,15 @@ def _wa_hidden_phone(cust: Customer, conv: Conversation) -> bool:
     return len(digits) >= 13  # скрытый @lid, а не реальный @c.us
 
 
-def _conv_summary_row(conv: Conversation, cust: Customer, preview: Optional[str]) -> dict:
+def _conv_summary_row(conv: Conversation, cust: Customer, preview: Optional[str],
+                      next_step: Optional[dict] = None) -> dict:
     return {
         "id": str(conv.id),
         "channel": conv.channel,
+        # amoCRM-style «следующий шаг»: статус ближайшей задачи лида
+        # (none=нет шага / overdue+дни / today / future). Считается в списке одним
+        # групповым запросом; в detail не нужен (None).
+        "next_step": next_step,
         "status": conv.status,
         "lead_stage": conv.lead_stage,
         "lost_reason": conv.lost_reason,
@@ -602,10 +607,38 @@ async def conversations_list(
         for cid, content in db.query(sub.c.conversation_id, sub.c.content).filter(sub.c.rn == 1):
             previews[cid] = (content or "")[:120]
 
+    # «Следующий шаг» по каждому лиду (amoCRM-логика) — ближайшая открытая задача.
+    # Один групповой запрос на страницу: MIN(due_at) среди pending/processing.
+    next_due: dict = {}
+    if conv_ids:
+        for cid, due in (
+            db.query(ScheduledAction.conversation_id, sql_func.min(ScheduledAction.due_at))
+            .filter(ScheduledAction.conversation_id.in_(conv_ids),
+                    ScheduledAction.status.in_(("pending", "processing")))
+            .group_by(ScheduledAction.conversation_id)
+            .all()
+        ):
+            next_due[cid] = due
+    _now = datetime.now(timezone.utc)
+    _eod = _now.replace(hour=23, minute=59, second=59, microsecond=0)
+
+    def _next_step(cid) -> dict:
+        due = next_due.get(cid)
+        if due is None:
+            return {"status": "none", "due_at": None}
+        if due.tzinfo is None:
+            due = due.replace(tzinfo=timezone.utc)
+        if due < _now:
+            return {"status": "overdue", "due_at": due.isoformat(),
+                    "overdue_days": max(0, (_now.date() - due.date()).days)}
+        if due <= _eod:
+            return {"status": "today", "due_at": due.isoformat()}
+        return {"status": "future", "due_at": due.isoformat()}
+
     return {
         "total": total,
         "items": [
-            _conv_summary_row(conv, cust, previews.get(conv.id))
+            _conv_summary_row(conv, cust, previews.get(conv.id), _next_step(conv.id))
             for conv, cust in rows
         ],
     }
@@ -2495,6 +2528,7 @@ async def whatsapp_recheck_suggestions(
 class StageRequest(BaseModel):
     to_stage: str
     lost_reason: Optional[str] = None
+    also_archive: bool = False  # «убрать лид» одним кликом: стадия + сразу в архив
 
 
 @router.post("/conversations/{conv_id}/stage")
@@ -2535,6 +2569,11 @@ async def conversation_stage(
         _pf.pop("booked_call_at", None)
         _pf.pop("call_medium", None)
         cust.profile_data = _pf
+    if req.also_archive:
+        # «Убрать лид» — сразу в архив (обратимо, never-delete): исчезает из
+        # воронки/инбокса/задачника, остаётся в экспорте и в архивных «Переписках».
+        from db.models import ConversationStatusEnum as _CSE
+        conv.status = _CSE.ARCHIVED.value
     # История воронки (для конверсионной аналитики) + аудит в самом диалоге.
     db.add(StageTransition(
         conversation_id=conv.id, customer_id=conv.customer_id,
@@ -2577,6 +2616,28 @@ async def conversation_stage(
         mirrored = True
 
     return {"ok": True, "from_stage": from_stage, "to_stage": req.to_stage, "crm_mirrored": mirrored}
+
+
+class ArchiveRequest(BaseModel):
+    archived: bool = True
+
+
+@router.post("/conversations/{conv_id}/archive")
+async def conversation_archive(
+    conv_id: str,
+    req: ArchiveRequest,
+    _: None = Depends(_verify_member),
+    db: Session = Depends(get_db),
+):
+    """Убрать лид в архив (обратимо) или вернуть из архива. status=ARCHIVED|OPEN.
+    Архив прячет лид из воронки/инбокса/задачника, но НЕ удаляет (never-delete) —
+    виден в экспорте и в «Переписках» с include_archived. Для быстрого «убрать»
+    ненужного/спамного лида + кнопки «Вернуть»."""
+    from db.models import ConversationStatusEnum as _CSE
+    conv, _cust = _get_conv_or_404(db, conv_id)
+    conv.status = _CSE.ARCHIVED.value if req.archived else _CSE.OPEN.value
+    db.commit()
+    return {"ok": True, "archived": req.archived}
 
 
 # ============================================================================
@@ -3148,6 +3209,15 @@ async def task_board(
         it["attempts"] = a.attempts or 0
         delivery_failed.append(it)
 
+    # Аналитика-полоска (amoCRM-style): сколько задач закрыто за последние 7 дней
+    # (executed_at ставится и при ручном «✓ Сделано», и при бот-исполнении).
+    done_7d = (
+        db.query(sql_func.count(ScheduledAction.id))
+        .filter(ScheduledAction.status == "done",
+                ScheduledAction.executed_at >= (now - timedelta(days=7)))
+        .scalar() or 0
+    )
+
     return {
         "summary": {
             "overdue": len(buckets["overdue"]), "today": len(buckets["today"]),
@@ -3158,6 +3228,7 @@ async def task_board(
             "approve_now": len(zones["approve_now"]), "your_turn": len(zones["your_turn"]),
             "bot_leading": len(zones["bot_leading"]), "stuck": len(stuck),
             "delivery_failed": len(delivery_failed),
+            "done_7d": int(done_7d),  # закрыто задач за неделю (аналитика-полоска)
         },
         "buckets": buckets,
         "no_task_leads": no_task[:300],

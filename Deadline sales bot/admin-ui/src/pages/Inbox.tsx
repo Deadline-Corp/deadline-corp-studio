@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api } from '../api/client'
 import { ConvSummary } from '../api/types'
@@ -6,7 +6,8 @@ import { usePolling } from '../hooks/usePolling'
 import { useDrawer } from '../components/DrawerContext'
 import { useStages, useStageLabel } from '../overviewContext'
 import { HintBar } from '../components/HintBar'
-import { CHANNEL_META, TEMP_META, fmtAgo, initials } from '../lib'
+import { CHANNEL_META, TEMP_META, fmtAgo, initials, onLeadsChanged, emitLeadDismissed } from '../lib'
+import { dismissLead } from '../api/leads'
 
 /* Единый inbox: все переписки всех каналов, фильтры, клик → drawer. */
 
@@ -15,6 +16,7 @@ export function Inbox() {
   const [items, setItems] = useState<ConvSummary[]>([])
   const [total, setTotal] = useState(0)
   const [loaded, setLoaded] = useState(false)
+  const [toast, setToast] = useState<string | null>(null)
   const { openConversation } = useDrawer()
   const stages = useStages()
   const stageLabel = useStageLabel()
@@ -54,6 +56,19 @@ export function Inbox() {
   }
 
   usePolling(load, 10000, [channel, stage, temperature, q])
+  // Мгновенно перечитать список после любой мутации лида (своей или из карточки).
+  useEffect(() => onLeadsChanged(load), [channel, stage, temperature, q])
+
+  // Быстро «убрать» лид (спам/ненужный) → в архив, строка сразу исчезает, тост «Вернуть».
+  const dismiss = async (c: ConvSummary) => {
+    const prevStage = c.lead_stage
+    const label = c.customer.display_name || c.customer.name || 'Лид'
+    setItems(prev => prev.filter(x => x.id !== c.id))
+    try {
+      await dismissLead(c.id)
+      emitLeadDismissed({ id: c.id, stage: prevStage, label })
+    } catch { setToast('Не удалось убрать'); setTimeout(() => setToast(null), 3000); void load() }
+  }
 
   return (
     <div className="page">
@@ -126,10 +141,13 @@ export function Inbox() {
                 </div>
                 <span className="c-time">{fmtAgo(c.last_message_at)} назад</span>
               </div>
+              <button className="conv-x" title="Убрать в архив (не сложилось / спам)"
+                      onClick={e => { e.stopPropagation(); void dismiss(c) }}>✕</button>
             </div>
           )
         })}
       </div>
+      {toast && <div className="toast">{toast}</div>}
     </div>
   )
 }
