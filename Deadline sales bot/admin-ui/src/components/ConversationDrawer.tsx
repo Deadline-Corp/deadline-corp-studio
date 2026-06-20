@@ -53,6 +53,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
   const [replyOpen, setReplyOpen] = useState(false) // окно ручного ответа оператора — по умолчанию свёрнуто
   const [callOpen, setCallOpen] = useState(false) // инлайн-панель назначения/переноса созвона
   const [moreOpen, setMoreOpen] = useState(false) // «⋯» — редкие действия (пинок / пауза дожима / регулярный / HubSpot)
+  const [sideOpen, setSideOpen] = useState(false) // выдвижная панель «Действия» слева (переписка остаётся в фокусе)
   const [historyOpen, setHistoryOpen] = useState(false) // «почему лид на этой стадии» — история переходов
   const [decisionsOpen, setDecisionsOpen] = useState(false) // «🤖 Решения бота» — журнал решений с причинами
   const msgsRef = useRef<HTMLDivElement>(null)
@@ -550,7 +551,16 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                 {me?.role === 'viewer' && (
                   <span className="chip" title="Роль «наблюдатель» — только просмотр, без изменений">👁 только просмотр</span>
                 )}
+                {me?.role !== 'viewer' && (
+                  <button className="d-tab" onClick={() => setSideOpen(true)} title="Действия со сделкой — выдвинуть панель">⚙ Действия</button>
+                )}
               </div>
+              {me && (
+                <div className={`d-side${sideOpen ? ' open' : ''}`}>
+                  <div className="d-side-head"><b>⚙ Действия</b>
+                    <button className="d-side-col" onClick={() => setSideOpen(false)} title="Свернуть — переписка во всю ширину">»</button>
+                  </div>
+                  <div className="d-side-body">
               {me?.role !== 'viewer' && (
                 <div className="d-bar">
                   <select className="ab" value={stagePick} onChange={e => setStagePick(e.target.value)} title="Сменить стадию сделки">
@@ -748,6 +758,9 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                   </div>
                 )
               })()}
+                  </div>
+                </div>
+              )}
             </>
           )}
         </div>
