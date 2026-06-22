@@ -4859,6 +4859,20 @@ async def kb_view(
     return {"sources": [{"source": r[0], "chunks": int(r[1])} for r in rows]}
 
 
+@router.get("/kb/usage")
+async def kb_usage(_: None = Depends(_verify_member)):
+    """Что бот реально ЦИТИРУЕТ из базы в ответах + «мёртвые» источники (0 цитат)."""
+    from services import kb_insights
+    return kb_insights.get_usage()
+
+
+@router.get("/kb/gaps")
+async def kb_gaps(_: None = Depends(_verify_member)):
+    """Вопросы лидов, на которые в базе не нашлось хорошего ответа (→ что дописать)."""
+    from services import kb_insights
+    return kb_insights.get_gaps()
+
+
 class KbUploadRequest(BaseModel):
     source: str = Field(..., max_length=120)
     content: str = Field(..., max_length=200_000)

@@ -113,6 +113,11 @@ def _kb_context(query: str, k: int = 3) -> str:
     try:
         from db.vector import similarity_search
         docs = similarity_search(q, k=k)
+        try:  # аналитика «мозга» — best-effort, ответ не роняет
+            from services import kb_insights
+            kb_insights.log_retrieval(docs, q)
+        except Exception:  # noqa: BLE001
+            pass
         return "\n".join(f"- {d.page_content.strip()}" for d in docs if d.page_content.strip())
     except Exception:  # noqa: BLE001
         return ""

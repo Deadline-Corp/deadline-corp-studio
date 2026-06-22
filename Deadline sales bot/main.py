@@ -1404,6 +1404,11 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     # контейнер «виснет» (инцидент 06-15, вис через ~20с после старта на 1-м лиде).
     import asyncio as _aio_rag
     docs = await _aio_rag.to_thread(pgvector_search, req.content, 4)
+    try:  # аналитика «мозга» (что цитируем / пробелы) — best-effort, ответ не блокирует
+        from services import kb_insights as _kbi
+        await _aio_rag.to_thread(_kbi.log_retrieval, docs, req.content)
+    except Exception:  # noqa: BLE001
+        pass
     context = "\n\n".join([
         f"[source: {d.metadata.get('source', '?')}]\n{d.page_content}" for d in docs
     ])

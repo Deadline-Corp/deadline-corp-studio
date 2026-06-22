@@ -362,6 +362,28 @@ class KBChunk(Base):
         return f"<KBChunk source={self.source}#{self.chunk_index}>"
 
 
+class KBUsageStat(Base):
+    """Аналитика «мозга»: что бот реально ЦИТИРУЕТ из базы (kind='cite',
+    key=имя источника) и вопросы, на которые в базе НЕТ ответа (kind='gap',
+    key=текст вопроса). Пишется неблокирующе из пути ответа
+    (services.kb_insights.log_retrieval), читается на странице «Мозг».
+    Счётчик инкрементится; пара (kind, key) уникальна."""
+    __tablename__ = "kb_usage_stat"
+    __table_args__ = (
+        UniqueConstraint("kind", "key", name="uq_kb_usage_kind_key"),
+        Index("ix_kb_usage_kind", "kind"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    kind: Mapped[str] = mapped_column(String(8), nullable=False)    # 'cite' | 'gap'
+    key: Mapped[str] = mapped_column(String(200), nullable=False)   # источник ИЛИ текст вопроса
+    count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<KBUsageStat {self.kind}:{self.key}={self.count}>"
+
+
 class TrainingCorrection(Base):
     """Operator-supplied corrections that adjust how the bot should respond
     in similar future situations. Populated through the /admin/training UI

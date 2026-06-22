@@ -161,6 +161,7 @@ export function Brain() {
       </div>
 
       <KbInsights kbSources={kbSources} showToast={showToast} />
+      <KbUsageGaps />
 
       {/* ---- База знаний ---- */}
       <div className="card" style={{ marginBottom: 14 }}>
@@ -694,5 +695,79 @@ function KbInsights({ kbSources, showToast }: {
         </div>
       )}
     </div>
+  )
+}
+
+/* ---------- Что бот цитирует + вопросы без ответа (бэкенд kb_usage_stat) ---------- */
+function KbUsageGaps() {
+  const [usage, setUsage] = useState<any>(null)
+  const [gaps, setGaps] = useState<any[]>([])
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    void api.get<any>('/kb/usage').then(setUsage).catch(() => { /* */ })
+    void api.get<{ items: any[] }>('/kb/gaps')
+      .then(r => setGaps(r.items || []))
+      .catch(() => { /* */ })
+      .finally(() => setLoaded(true))
+  }, [])
+
+  const items: any[] = usage?.items || []
+  const maxC = Math.max(1, ...items.map(i => i.count || 0))
+  const dead: string[] = usage?.dead || []
+
+  return (
+    <>
+      <div className="card" style={{ marginBottom: 14 }}>
+        <b>📈 Что бот реально цитирует</b>
+        <p className="muted" style={{ margin: '4px 0 10px', fontSize: 12.5 }}>
+          Какие источники базы попадают в ответы.{usage ? ` ${usage.sources_used}/${usage.sources_total} источников в деле · ${usage.total_cites} цитат.` : ''}
+        </p>
+        {items.length === 0 ? (
+          <div className="faint" style={{ fontSize: 12.5 }}>
+            {loaded ? 'Пока нет данных — копится по мере ответов бота.' : <><span className="spin" /> загрузка…</>}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+            {items.map(it => (
+              <div key={it.source} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5 }}>
+                <span style={{ width: 150, color: 'var(--text-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={it.source}>{it.source}</span>
+                <span style={{ flex: 1, height: 8, background: 'var(--panel-2)', borderRadius: 99, overflow: 'hidden' }}>
+                  <span style={{ display: 'block', height: '100%', width: `${Math.round((it.count / maxC) * 100)}%`, background: 'var(--ok)' }} />
+                </span>
+                <span style={{ width: 32, textAlign: 'right' }}>{it.count}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        {dead.length > 0 && (
+          <div style={{ marginTop: 10, fontSize: 12, color: 'var(--warn)' }}>
+            🪦 {dead.length} {dead.length === 1 ? 'источник ни разу не процитирован' : 'источников ни разу не процитированы'} — кандидаты убрать/переписать:{' '}
+            <span className="faint">{dead.slice(0, 6).join(', ')}{dead.length > 6 ? '…' : ''}</span>
+          </div>
+        )}
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <b>❓ Вопросы, на которые в базе нет ответа</b>
+        <p className="muted" style={{ margin: '4px 0 10px', fontSize: 12.5 }}>
+          Бот не нашёл хорошего ответа в базе (выкрутился сам / позвал вас). Добавьте по теме документ — и бот начнёт отвечать на это сам.
+        </p>
+        {gaps.length === 0 ? (
+          <div className="faint" style={{ fontSize: 12.5 }}>
+            {loaded ? 'Пока пусто — бот находит ответы в базе. 👍' : <><span className="spin" /> загрузка…</>}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {gaps.map((g, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 12.5 }}>
+                <span style={{ flex: 1 }}>«{g.q}»</span>
+                <span className="faint" style={{ fontSize: 11.5 }}>×{g.count}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </>
   )
 }
