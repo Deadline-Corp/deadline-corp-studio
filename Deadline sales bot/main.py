@@ -809,14 +809,17 @@ def _messages_to_dicts(messages: list[MessageRow]) -> list[dict]:
 # TELEGRAM HANDOFF BRIEF (to operator chat) — unchanged signature
 # ============================================================================
 
-async def send_telegram_brief(session_id: str, handoff_data: dict, history_dicts: list[dict]) -> None:
+async def send_telegram_brief(session_id: str, handoff_data: dict, history_dicts: list[dict]) -> bool:
     """Send the handoff brief to the configured operator Telegram chat.
-    No-op if token/chat_id not configured (logged)."""
+
+    Возвращает True = доставлено ИЛИ доставлять некуда (не настроено) → не зацикливаем;
+    False = пытались, но не дошло (сеть/код Telegram) → вызывающий НЕ метит handoff_done,
+    бриф уйдёт повторно при следующем сообщении лида (ретрай вместо тихой потери карточки)."""
     token = settings.telegram_bot_token
     chat_id = settings.telegram_chat_id
     if not token or not chat_id:
         log.info("Telegram not configured — skipping handoff brief")
-        return
+        return True  # доставлять некуда — не держим лида в вечном «не передан»
 
     conversation = "\n".join([f"{m['role']}: {m['content']}" for m in history_dicts])
     text = format_handoff_brief(session_id, handoff_data, conversation)[:4000]
@@ -829,10 +832,12 @@ async def send_telegram_brief(session_id: str, handoff_data: dict, history_dicts
             )
             if r.status_code != 200:
                 log.warning(f"Telegram brief returned {r.status_code}: {r.text[:200]}")
-            else:
-                log.info(f"Sent Telegram brief for conversation {session_id[:8]}")
+                return False
+            log.info(f"Sent Telegram brief for conversation {session_id[:8]}")
+            return True
     except Exception as e:
         log.error(f"Telegram brief send failed: {e}")
+        return False
 
 
 # ============================================================================
@@ -1462,6 +1467,20 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     if settings.crm_enabled and req.message_type != "comment":
         try:
             from services.lead_signals import apply_signals_on_turn
+            # #8: возвращающийся клиент — есть user-сообщения в ДРУГИХ диалогах. Тогда это не
+            # первое касание (иначе скор/тип сбрасывались при каждом новом диалоге).
+            _returning = False
+            try:
+                from db.models import Message as _Msg9, Conversation as _Conv9
+                _returning = db.query(_Msg9.id).join(
+                    _Conv9, _Msg9.conversation_id == _Conv9.id
+                ).filter(
+                    _Conv9.customer_id == customer.id,
+                    _Msg9.conversation_id != conversation.id,
+                    _Msg9.role == "user",
+                ).first() is not None
+            except Exception:  # noqa: BLE001
+                _returning = False
             signal_update = apply_signals_on_turn(
                 customer=customer,
                 recent_messages=recent,
@@ -1469,6 +1488,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 channel=req.channel,
                 message_type=req.message_type,
                 tenant_config=tenant.raw_config,
+                is_returning_customer=_returning,
             )
             if signal_update.is_first_touch:
                 log.info(
@@ -1600,6 +1620,28 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 r"свяж\w+\s+(со\s+мной\s+)?(позже|потом)|перезвон\w+\s+(позже|потом)",
                 (req.content or "").lower(),
             ))
+            # АВТОНОМИЯ: бот авто-бронит созвон ТОЛЬКО на автопилотном диалоге. На РУЧНОМ
+            # (observe/draft, не takeover) — НЕ бронируем сами: иначе лид оказывается «на
+            # созвоне», а напоминания ему гасит гард автономии в кроне → лид ждёт звонок
+            # впустую. Вместо брони кладём ПРЕДЛОЖЕНИЕ созвона на одобрение оператору
+            # (CallSuggestionBlock в карточке → оператор подтвердит = реальная бронь). _chosen
+            # → None, чтобы обе ветки брони ниже не сработали.
+            if _chosen is not None and not bool(getattr(conversation, "wa_autonomous", False)):
+                try:
+                    _sg_medium = _sched.detect_call_medium(req.content) or _profile.get("call_medium")
+                    conversation.pending_call_suggestion = {
+                        "at": _chosen.isoformat(),
+                        "when_human": _sched.format_slot_human(_chosen, _now),
+                        "medium": _sg_medium,
+                        "reason": "Лид выбрал время в переписке — подтвердите, чтобы создать бронь",
+                        "ts": _now.isoformat(),
+                    }
+                    log.info(f"[{str(conversation.id)[:8]}] ручной диалог → предложение созвона "
+                             f"оператору (не авто-бронь)")
+                except Exception as _sge:  # noqa: BLE001
+                    log.warning(f"[{str(conversation.id)[:8]}] call-suggestion set failed: {_sge}")
+                _chosen = None
+
             if _booked and _wants_cancel and _chosen is not None:
                 # --- ПЕРЕНОС С НОВЫМ ВРЕМЕНЕМ --- лид сразу назвал, КОГДА перенести
                 # («перенесём на пятницу в 15:00»). Раньше это попадало в чистую отмену
@@ -2144,6 +2186,34 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     # Пустой answer = поймали утечку мета-анализа и не смогли восстановить реплику
     # (см. гард выше). Не отправляем и не пишем в историю — лучше промолчать.
     _blank = not (answer or "").strip()
+
+    # Бот молча НЕ ответил (была реплика, но погасили утечку и восстановить не смогли) —
+    # не оставляем тишину: зовём человека (задача + алерт в Telegram), иначе лид теряется.
+    # Алерт шлём ТОЛЬКО когда задача реально создана (maybe_create_stuck_task дедупит по
+    # контакту) — так не спамим оператора на каждое сообщение молчащего лида.
+    if _blank and (raw_answer or "").strip():
+        log.error(f"[{str(conversation.id)[:8]}] бот не смог ответить (погашена утечка) — зову человека")
+        _created_blank_task = False
+        try:
+            from services.next_action import maybe_create_stuck_task
+            _created_blank_task = maybe_create_stuck_task(
+                db, conversation, customer,
+                "не смог сформулировать ответ (погашена утечка мета-анализа)")
+        except Exception as _ble:  # noqa: BLE001
+            log.warning(f"[{str(conversation.id)[:8]}] blank-reply task failed: {_ble}")
+        if _created_blank_task:
+            try:
+                from services import bot_settings as _bsb
+                _alert_chat = (_bsb.get("manager_chat_id") or "").strip() or (settings.telegram_chat_id or "")
+                if _alert_chat and settings.telegram_bot_token:
+                    _nm = customer.name or customer.email or "лид"
+                    await send_telegram_reply(
+                        settings.telegram_bot_token, _alert_chat,
+                        f"⚠️ Бот не смог ответить лиду «{_nm}» (канал {getattr(conversation.channel, 'value', conversation.channel)}) — "
+                        f"загляни в диалог и ответь сам. Поставил задачу.")
+            except Exception as _bne:  # noqa: BLE001
+                log.warning(f"[{str(conversation.id)[:8]}] blank-reply alert failed: {_bne}")
+
     _held = False
     if req.channel == "whatsapp" and not _blank:
         try:
@@ -2245,7 +2315,7 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                         _lead_nm = customer.name or customer.email or "лид"
                         _alert = (
                             f"⚠️ Нужно внимание ({trigger_summary})\n"
-                            f"Клиент: {_lead_nm} · канал: {conversation.channel}\n"
+                            f"Клиент: {_lead_nm} · канал: {getattr(conversation.channel, 'value', conversation.channel)}\n"
                             f"Сообщение: {(req.content or '')[:300]}"
                         )
                         await send_telegram_reply(settings.telegram_bot_token, _mgr, _alert)
@@ -2265,6 +2335,39 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
     handoff_triggered = False
     handoff_data = None  # Phase C1: kept in function scope so the CRM dispatch
                          # below can build a readable deal title + brief from it
+    # Не пере-передавать УЖЕ известного клиента как «🆕 НОВЫЙ ЛИД» (реальный кейс Нұрлытаң:
+    # рекламный @lid + раскрытый номер = разные треды одного человека / новый диалог у
+    # вернувшегося → handoff_done=False на свежем треде → бот слал «новый лид» по клиенту,
+    # который уже на КП/в работе). Признак известного: стадия выше начальной ИЛИ клиента
+    # уже передавали в ДРУГОМ диалоге. Брифа не шлём (оператор и так видит переписку),
+    # только метим handoff_done, чтобы не дёргать снова. handoff_done=True напрямую (не
+    # mark_handoff_done — тот ещё и статус в HANDED_OFF меняет, нам это не нужно).
+    if not conversation.handoff_done and not is_comment_mode:
+        _ADVANCED_STAGES = {"qualified", "on_call", "proposal", "prepayment",
+                            "nda", "tz_approved", "in_work", "completed_won", "post_sale"}
+        _known_client = (conversation.lead_stage or "") in _ADVANCED_STAGES
+        if not _known_client:
+            try:
+                from db.models import Conversation as _ConvH
+                _known_client = db.query(_ConvH.id).filter(
+                    _ConvH.customer_id == conversation.customer_id,
+                    _ConvH.handoff_done.is_(True),
+                    _ConvH.id != conversation.id,
+                ).first() is not None
+            except Exception:  # noqa: BLE001
+                _known_client = False
+        if _known_client:
+            conversation.handoff_done = True
+            db.flush()
+            try:
+                from services.bot_decisions import log_decision as _logk
+                _logk("handoff_skipped",
+                      f"Не передал как «новый лид»: уже известный клиент "
+                      f"(стадия {conversation.lead_stage}) — оператор ведёт его в панели",
+                      conversation_id=conversation.id, customer_id=conversation.customer_id, db=db)
+            except Exception:  # noqa: BLE001
+                pass
+
     if not conversation.handoff_done and not is_comment_mode:
         all_recent = get_recent_messages(db, conversation.id, limit=20)
         history_dicts = _messages_to_dicts(all_recent)
@@ -2355,20 +2458,25 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 # доставке — иначе бриф уйдёт повторно, когда лид напишет снова
                 # (ретрай вместо тихой потери карточки лида).
                 try:
-                    await send_telegram_brief(str(conversation.id), handoff_data, history_dicts)
-                    mark_handoff_done(db, conversation.id)
-                    handoff_triggered = True
-                    try:
-                        from services.bot_decisions import log_decision as _logd
-                        _hn = (handoff_data.get("lead_name") or customer.name or "лид")
-                        _hc = (handoff_data.get("lead_email") or handoff_data.get("lead_telegram_username")
-                               or handoff_data.get("lead_phone") or "контакт собран")
-                        _logd("handoff",
-                              f"Передал лида оператору: {_hn} ({_hc}) — собрал контакт и бриф, отправил карточку менеджеру",
-                              conversation_id=conversation.id, customer_id=customer.id,
-                              detail={"contact": _hc}, db=db)
-                    except Exception:  # noqa: BLE001
-                        pass
+                    _delivered = await send_telegram_brief(str(conversation.id), handoff_data, history_dicts)
+                    if _delivered:
+                        mark_handoff_done(db, conversation.id)
+                        handoff_triggered = True
+                        try:
+                            from services.bot_decisions import log_decision as _logd
+                            _hn = (handoff_data.get("lead_name") or customer.name or "лид")
+                            _hc = (handoff_data.get("lead_email") or handoff_data.get("lead_telegram_username")
+                                   or handoff_data.get("lead_phone") or "контакт собран")
+                            _logd("handoff",
+                                  f"Передал лида оператору: {_hn} ({_hc}) — собрал контакт и бриф, отправил карточку менеджеру",
+                                  conversation_id=conversation.id, customer_id=customer.id,
+                                  detail={"contact": _hc}, db=db)
+                        except Exception:  # noqa: BLE001
+                            pass
+                    else:
+                        # НЕ метим handoff_done — бриф не дошёл; повтор при след. сообщении лида
+                        # (раньше done ставился всегда → горячий лид молча терялся).
+                        log.warning("[handoff] бриф оператору НЕ доставлен — не помечаю done, повторю позже")
                 except Exception as _he:  # noqa: BLE001
                     log.warning("[handoff] бриф оператору не ушёл — повторю при след. сообщении: %s", _he)
             else:
@@ -2409,10 +2517,20 @@ async def _handle_message(req: MessageRequest, db: Session) -> MessageResponse:
                 classifier_says_ready=handoff_triggered,
                 hard_stop_signal=hard_stop_signal,
             )
+            # operator-override-wins: если оператор/владелец руками трогал стадию этого
+            # диалога недавно — НЕ перетираем авто-переходом (раньше бот возвращал
+            # откатанного оператором лида обратно в in_dialog при первом же его сообщении).
+            _op_recent = False
+            try:
+                from services.funnel_store import operator_set_stage_recently
+                _op_recent = operator_set_stage_recently(db, conversation.id)
+            except Exception:  # noqa: BLE001
+                _op_recent = False
             if (
                 decision.should_transition
                 and decision.target_stage
                 and can_auto_transition(current_stage, decision.target_stage)
+                and not _op_recent
             ):
                 new_stage = decision.target_stage
                 conversation.lead_stage = new_stage
@@ -3669,6 +3787,49 @@ async def _wa_send(to_peer: str, text: str, phone_number_id: str = "", wa_chat_i
     return False
 
 
+async def _alert_wa_send_failed(to_peer: str, text: str) -> None:
+    """Все WhatsApp-провайдеры не доставили исходящее → НЕ теряем молча: пингуем
+    оператора в Telegram, чтобы он ответил/переслал вручную (раньше был только лог в
+    консоль — оператор не знал, что ответ не ушёл, и лид молча оставался без ответа)."""
+    try:
+        from services import bot_settings as _bs
+        chat = (_bs.get("manager_chat_id") or "").strip() or (settings.telegram_chat_id or "")
+        if chat and settings.telegram_bot_token:
+            await send_telegram_reply(
+                settings.telegram_bot_token, chat,
+                f"⚠️ Ответ НЕ ушёл клиенту в WhatsApp (+{(to_peer or '')[:24]}) — все провайдеры "
+                f"недоступны. Ответь/перешли вручную:\n{(text or '')[:500]}")
+    except Exception as _e:  # noqa: BLE001
+        log.warning(f"[wa-send] не смог предупредить оператора о недоставке: {_e}")
+
+    # Пометить последнее сообщение бота как «не доставлено» → в карточке появится ⚠️ +
+    # кнопка «Повторить» (UI пере-отправит тот же текст). Раньше сбой был только в логе.
+    try:
+        from db.connection import SessionLocal
+        from sqlalchemy import select as _sel
+        with SessionLocal() as _db:
+            _conv = _db.execute(
+                _sel(ConvRow).where(ConvRow.channel == "whatsapp",
+                                    ConvRow.channel_conversation_id == to_peer)
+            ).scalars().first()
+            if _conv is not None:
+                _m = (
+                    _db.execute(
+                        _sel(MessageRow)
+                        .where(MessageRow.conversation_id == _conv.id,
+                               MessageRow.role == "assistant")
+                        .order_by(MessageRow.created_at.desc()).limit(1)
+                    ).scalars().first()
+                )
+                if _m is not None:
+                    _meta = dict(_m.extra_meta or {})
+                    _meta["failed"] = True
+                    _m.extra_meta = _meta
+                    _db.commit()
+    except Exception as _te:  # noqa: BLE001
+        log.warning(f"[wa-send] не смог пометить недоставленное сообщение: {_te}")
+
+
 async def _record_wa_operator_message(db: Session, normalized) -> None:
     """Ручной ответ команды с телефона (fromMe) — НЕ гоняем через бота, но
     СОХРАНЯЕМ в карточку, чтобы панель видела всю переписку (и менеджер, и я).
@@ -3955,8 +4116,10 @@ async def _process_wa_payload(payload: dict, engine: str) -> None:
             with session_scope() as db:
                 resp = await _handle_message(msg_req, db)
             if resp and not resp.suppress_send and resp.answer:
-                await _wa_send(normalized.channel_conversation_id, resp.answer,
-                               wa_chat_id=(normalized.extra_meta or {}).get("wa_chat_id") or "")
+                _ok_send = await _wa_send(normalized.channel_conversation_id, resp.answer,
+                                          wa_chat_id=(normalized.extra_meta or {}).get("wa_chat_id") or "")
+                if not _ok_send:
+                    await _alert_wa_send_failed(normalized.channel_conversation_id, resp.answer)
             # Умное авто-ведение (gated WA_BRAIN, само разрулит вкл/выкл).
             await _brain_bg(normalized.channel_conversation_id)
         except Exception as e:  # noqa: BLE001
@@ -4061,7 +4224,9 @@ async def whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
         or settings.whatsapp_phone_number_id
         or ""
     )
-    await _wa_send(normalized.channel_conversation_id, resp.answer, phone_number_id)
+    _ok_send = await _wa_send(normalized.channel_conversation_id, resp.answer, phone_number_id)
+    if not _ok_send:
+        await _alert_wa_send_failed(normalized.channel_conversation_id, resp.answer)
     return {"ok": True}
 
 
@@ -4122,7 +4287,7 @@ async def calendar_ics(token: str = "", db: Session = Depends(get_db)):
                    else f"☎️ {title or 'Задача'} — {name}")
         desc_parts = [title] if title else []
         if a.channel:
-            desc_parts.append(f"канал: {a.channel}")
+            desc_parts.append(f"канал: {getattr(a.channel, 'value', a.channel)}")
         if c.email:
             desc_parts.append(c.email)
         # Адрес визита (выездные услуги, P2): LOCATION + ссылка на Google Maps.
@@ -4435,7 +4600,7 @@ def _persist_lead_submission_sync(
         if cust is not None:
             # дозаполнить пустое, НЕ перетирая существующее
             if not (cust.name or "").strip():
-                cust.name = lead.name[:200]
+                cust.name = (lead.name or "").strip()[:200]
             if phone and not (cust.phone or "").strip():
                 cust.phone = phone
             if email and not (cust.email or "").strip():
@@ -4449,14 +4614,30 @@ def _persist_lead_submission_sync(
             cust.profile_data = _pd
             s.flush()
         else:
+            # Реальный стартовый скор (а не хардкод 70): база P1 + контент из брифа + фактор
+            # канала. Иначе все формы получали одинаковые «70» → дайджест выглядел фейком.
+            from services.scoring import compute_initial_score
+            _scoring_cfg = (tenant.raw_config or {}).get("scoring", {}) or {}
+            _first_text = " ".join(x for x in (lead.need, lead.task, lead.business) if x)
+            try:
+                _sc = compute_initial_score(
+                    interaction_type="P1",
+                    channel="website",
+                    first_message_text=_first_text or None,
+                    config_scoring=_scoring_cfg,
+                ).total
+            except Exception:  # noqa: BLE001 — скоринг не должен ронять приём заявки
+                _sc = 60
+            if _sc < 20:
+                _sc = 60   # форма с сайта (P1, заявлен запрос+срок) — тёплый лид, не занижаем
             cust = Customer(
-                name=lead.name[:200],
+                name=(lead.name or "").strip()[:200],
                 email=email,
                 phone=phone,
                 first_channel=ChannelEnum.WEBSITE,
                 utm_source=(lead.source or None),
                 utm_campaign=(lead.campaign or None),
-                lead_score=70,
+                lead_score=_sc,
                 lead_temperature="warm",   # fresh inbound form lead — NOT cold
                 interaction_type="P1",     # direct request: they stated need + timeframe
                 profile_data={

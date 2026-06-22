@@ -8,7 +8,7 @@ import { OverviewCtx, MeCtx, Me } from '../overviewContext'
 import { Tour } from './Tour'
 import { CallSuggestionToasts } from './CallSuggestionToasts'
 import { UndoToast } from './UndoToast'
-import { emitLeadsChanged, onLeadsChanged } from '../lib'
+import { emitLeadsChanged, onLeadsChanged, setBizTzOffset } from '../lib'
 
 /* Постоянный сайдбар + Overview/Me контексты. Менеджеру навигация урезана
    (Мозг/Автоматизации/Каналы/Настройки скрыты; бэкенд форсит то же 403-ми). */
@@ -37,6 +37,8 @@ export function Layout() {
   useEffect(() => {
     void api.get<Me>('/me').then(m => {
       setMe(m)
+      // Пояс бизнеса из настроек → весь UI показывает/задаёт время в нём, не в поясе браузера.
+      if (typeof m.tz_offset === 'number') setBizTzOffset(m.tz_offset)
       // White-label: акцентный цвет клиента поверх дефолтного фиолетового.
       if (m.accent_color) {
         document.documentElement.style.setProperty('--accent', m.accent_color)

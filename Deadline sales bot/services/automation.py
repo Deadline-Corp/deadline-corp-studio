@@ -354,7 +354,11 @@ async def _run_sequence_rule(s, rule, now, stats, budget: int) -> int:
         text = (steps[k].get("text") or "").strip()
         detail: dict[str, Any] = {"step": k + 1}
         try:
-            if (conv.channel or "").lower() == "telegram" and conv.channel_conversation_id:
+            _seq_tg_auto = ((conv.channel or "").lower() == "telegram"
+                            and conv.channel_conversation_id
+                            and bool(getattr(conv, "wa_autonomous", False))
+                            and not bool(getattr(conv, "operator_takeover", False)))
+            if _seq_tg_auto:
                 from services.scheduled_actions import write_scheduled_action
                 action_id, _ = write_scheduled_action(
                     customer_id=str(conv.customer_id),
@@ -368,6 +372,7 @@ async def _run_sequence_rule(s, rule, now, stats, budget: int) -> int:
             else:
                 from db.models import ScheduledAction
                 from services.manager_schedule import schedule_for_manager
+                from services import tzcfg
                 row = ScheduledAction(
                     customer_id=conv.customer_id,
                     conversation_id=conv.id,
@@ -375,7 +380,7 @@ async def _run_sequence_rule(s, rule, now, stats, budget: int) -> int:
                     chat_id=conv.channel_conversation_id,
                     action_type="operator_callback",
                     executor="human",
-                    due_at=schedule_for_manager(),  # осмысленный слот, не now()
+                    due_at=schedule_for_manager(tz_offset=tzcfg.biz_offset()),  # слот пояса бизнеса, не now()
                     status="pending",
                     payload={"text": f"Касание {k + 1} цепочки «{rule.name}» — написать лиду: {text}",
                              "by": f"sequence:{rule.name}"},
@@ -402,10 +407,17 @@ async def _execute_actions(s, rule, conv, cust) -> dict:
         at = a.get("type")
         try:
             if at == "bot_message":
-                if (conv.channel or "").lower() != "telegram":
-                    # Не-Telegram канал: бот не может писать сам — создаём задачу оператору.
+                # Бот шлёт сам ТОЛЬКО на Telegram-диалоге на автопилоте (wa_autonomous И не
+                # takeover). Иначе (не-TG ИЛИ TG не на автопилоте) bot-followup молча погасит
+                # гард автономии в sweep, а лид ничего не получит — ставим задачу человеку.
+                _tg_auto = ((conv.channel or "").lower() == "telegram"
+                            and bool(getattr(conv, "wa_autonomous", False))
+                            and not bool(getattr(conv, "operator_takeover", False)))
+                if not _tg_auto:
+                    # Бот не может писать сам — создаём задачу оператору.
                     from db.models import ScheduledAction
                     from services.manager_schedule import schedule_for_manager
+                    from services import tzcfg
                     text = a.get("text", "")
                     row = ScheduledAction(
                         customer_id=conv.customer_id,
@@ -414,7 +426,7 @@ async def _execute_actions(s, rule, conv, cust) -> dict:
                         chat_id=conv.channel_conversation_id,
                         action_type="operator_callback",
                         executor="human",
-                        due_at=schedule_for_manager(),  # осмысленный слот, не now()
+                        due_at=schedule_for_manager(tz_offset=tzcfg.biz_offset()),  # слот пояса бизнеса, не now()
                         status="pending",
                         payload={
                             "text": text,
@@ -465,8 +477,33 @@ async def _execute_actions(s, rule, conv, cust) -> dict:
                 if to_stage == from_stage:
                     detail[at] = "skipped: уже на стадии"
                     continue
+                # Валидация словаря стадий: правило настроил владелец (operator_override),
+                # но мусорную/несуществующую стадию всё равно не пускаем (раньше set_stage
+                # писал ЛЮБУЮ стадию в обход validate_transition).
+                try:
+                    from services.funnel import validate_transition
+                    validate_transition(from_stage or "", to_stage or "",
+                                        lost_reason=a.get("lost_reason"), operator_override=True)
+                except Exception as _ve:  # noqa: BLE001
+                    detail[at] = f"skipped: invalid stage {to_stage!r} ({_ve})"
+                    continue
                 conv.lead_stage = to_stage
                 conv.lost_reason = a.get("lost_reason") if to_stage == "lost" else None
+                if to_stage == "lost":
+                    # как hot-path: снять бронь + будущие напоминания, иначе проигранному
+                    # лиду уйдёт напоминание о созвоне (раньше set_stage этого НЕ делал).
+                    try:
+                        import asyncio as _aio
+                        if cust:
+                            _pf = dict(cust.profile_data or {})
+                            _pf.pop("booked_call_at", None)
+                            _pf.pop("call_medium", None)
+                            cust.profile_data = _pf
+                        s.flush()
+                        from services.scheduled_actions import cancel_future_actions
+                        await _aio.to_thread(cancel_future_actions, str(conv.id))
+                    except Exception as _le:  # noqa: BLE001
+                        logger.warning("[automation] lost cleanup failed: %s", _le)
                 s.add(StageTransition(
                     conversation_id=conv.id, customer_id=conv.customer_id,
                     from_stage=from_stage, to_stage=to_stage, by="automation",
@@ -497,7 +534,7 @@ async def _execute_actions(s, rule, conv, cust) -> dict:
                     continue
                 name = cust.name or cust.email or str(cust.id)[:8]
                 text = (f"⚡ Автоматизация «{rule.name}»\n"
-                        f"Лид: {name} · {conv.channel} · стадия {conv.lead_stage}\n"
+                        f"Лид: {name} · {getattr(conv.channel, 'value', conv.channel)} · стадия {conv.lead_stage}\n"
                         f"{a.get('text', '')}")
                 async with httpx.AsyncClient(timeout=10) as client:
                     r = await client.post(

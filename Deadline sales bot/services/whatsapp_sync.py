@@ -472,7 +472,10 @@ def dedup_scheduled_actions(db: Optional[Session] = None) -> dict:
                 due_min = a.due_at.replace(second=0, microsecond=0).isoformat() if a.due_at else ""
                 key = (str(a.conversation_id), a.action_type, payload.get("audience") or "", due_min)
             elif a.action_type in NON_CONV_TYPES:
-                key = (str(a.customer_id), a.action_type)
+                # +источник (payload.by): winback / stuck / automation / warming / ручная
+                # задача оператора — разный смысл, нельзя схлопывать в одну. Раньше ключ был
+                # (customer, type) → осмысленная задача оператора молча исчезала под winback.
+                key = (str(a.customer_id), a.action_type, (payload.get("by") or ""))
             else:
                 key = (str(a.conversation_id), a.action_type, text)
             if key in seen:

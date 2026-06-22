@@ -19,6 +19,7 @@ export interface Me {
   onboarding_done: boolean
   logo_url?: string | null
   accent_color?: string | null
+  tz_offset?: number   // пояс бизнеса (UTC±), для отображения/задания времён в панели
 }
 
 export const MeCtx = createContext<Me | null>(null)

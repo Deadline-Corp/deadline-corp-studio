@@ -335,6 +335,42 @@ def dispatch_operator_task(
         description=description,
         on_task_id=on_task_id,
     ))
+    # ЗЕРКАЛО В ЛОКАЛЬНЫЙ scheduled_actions → задача видна в task-board панели. Раньше эти
+    # задачи (warming / «подхватить после handoff» / подтверждение созвона) уходили ТОЛЬКО в
+    # HubSpot, и оператор НЕ видел «лид ждёт» в «Мой день», пока не откроет CRM. Канал/chat_id
+    # берём из диалога (channel — обязательный enum). Дедуп по (customer, тип, by=crm:category)
+    # — согласован с dedup_scheduled_actions. Best-effort: сбой зеркала не рушит CRM-задачу.
+    if conversation_id:
+        try:
+            from uuid import UUID as _UUID
+            from db.connection import session_scope
+            from db.models import ScheduledAction as _SA, Conversation as _Conv
+            with session_scope() as _s:
+                _conv = _s.get(_Conv, _UUID(str(conversation_id)))
+                if _conv is not None:
+                    _by = f"crm:{category}"
+                    _ex = _s.query(_SA.id).filter(
+                        _SA.customer_id == _conv.customer_id,
+                        _SA.action_type == "operator_callback",
+                        _SA.status.in_(("pending", "processing")),
+                        _SA.payload["by"].astext == _by,
+                    ).first()
+                    if _ex is None:
+                        _s.add(_SA(
+                            customer_id=_conv.customer_id,
+                            conversation_id=_conv.id,
+                            channel=_conv.channel,
+                            chat_id=_conv.channel_conversation_id,
+                            action_type="operator_callback",
+                            executor="human",
+                            due_at=due_at,
+                            status="pending",
+                            payload={"text": description or title, "title": title,
+                                     "by": _by, "source": "crm_mirror", "category": category},
+                        ))
+        except Exception as _me:  # noqa: BLE001
+            import logging as _lg
+            _lg.getLogger(__name__).warning("[crm_dispatch] local task mirror failed: %s", _me)
 
 
 # =============================================================================

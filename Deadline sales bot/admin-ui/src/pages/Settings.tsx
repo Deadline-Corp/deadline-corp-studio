@@ -3,6 +3,7 @@ import { api, getToken } from '../api/client'
 import { HintBar, hintsEnabled, setHintsEnabled } from '../components/HintBar'
 import { Help } from '../components/Help'
 import { useDrawer } from '../components/DrawerContext'
+import { setBizTzOffset } from '../lib'
 
 /* Настройки: редактируемое поведение бота (прогрев/нудж — применяется без
    деплоя за ~минуту) + статус каналов/CRM/LLM (read-only) + состав KB. */
@@ -52,6 +53,10 @@ export function Settings() {
       <FieldsCard />
       <div style={{ height: 14 }} />
       <FeatureFlagsCard />
+      <div style={{ height: 14 }} />
+      {/* Слияние дублей карточек — обычное пользовательское действие (один человек = одна
+          карточка), не «для разработчика». Поэтому в простом разделе, а не в расширенном. */}
+      <DuplicateMergeCard />
 
       {/* ── Переход в РАСШИРЕННЫЕ (технические / разработческие) ── */}
       <div style={{ marginTop: 20, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
@@ -74,7 +79,6 @@ export function Settings() {
       <ConfigAgentCard />
       <div style={{ height: 14 }} />
       <MaintenanceCard />
-      <DuplicateMergeCard />
       <DiagnosticsCard />
       <div style={{ height: 14 }} />
       <BackupCard />
@@ -1049,7 +1053,10 @@ function BehaviorCard() {
   useEffect(() => {
     void api.get<any>('/behavior').then(r => {
       setDefaults(r.defaults)
-      setOverrides({ ...r.defaults, ...r.overrides })
+      const merged = { ...r.defaults, ...r.overrides }
+      setOverrides(merged)
+      const tz = Number(merged.digest_tz_offset ?? 7)
+      if (Number.isFinite(tz)) setBizTzOffset(tz)
     }).catch(() => { /* ignore */ })
   }, [])
 
@@ -1103,6 +1110,16 @@ function BehaviorCard() {
             <option value="consult">💬 Консультировать, мягко передавать</option>
             <option value="sale">💰 Вести к оплате/предоплате</option>
           </select>
+        </div>
+        <div style={{ ...row, paddingBottom: 10, borderBottom: '1px solid var(--border)' }}>
+          <span className="muted" style={{ width: 280 }}>🕒 Часовой пояс бизнеса:
+            <Help title="Часовой пояс" text="В этом поясе панель показывает и задаёт ВСЕ времена: задачи, календарь, созвоны, дайджест. Пхукет = UTC+7 (это +4 к Москве). Меняйте, если работаете из другого города — времена пересчитаются сами." />
+          </span>
+          <span>UTC</span>
+          <input type="number" min={-12} max={14} step={1} value={overrides.digest_tz_offset ?? 7}
+                 onChange={e => { upd('digest_tz_offset', e.target.value); const n = Number(e.target.value); if (Number.isFinite(n)) setBizTzOffset(n) }}
+                 style={{ width: 72 }} />
+          <span className="faint" style={{ fontSize: 11 }}>Пхукет = +7 (это +4 к Москве)</span>
         </div>
         <label style={row}>
           <input type="checkbox" checked={!!overrides.nudge_enabled}
@@ -1202,6 +1219,14 @@ function BehaviorCard() {
               showToast(r.sent ? '📨 Дайджест отправлен в Telegram' : `Не отправлен: ${r.error}`, !r.sent)
             } catch (e: any) { showToast(`Ошибка: ${e.message}`, true) }
           }}>📨 Прислать сейчас</button>
+        </div>
+        <div style={{ ...row, alignItems: 'flex-start' }}>
+          <span className="muted" style={{ width: 280, paddingTop: 6 }}>🙅 Не считать лидами (через запятую):
+            <Help title="Исключения дайджеста" text="Имена/телефоны/почты, которые НЕ показывать как лидов и в «дожать сегодня»: ты сам, тестовые заявки, коллеги. Напр.: Александр Егоров, +79991234567" />
+          </span>
+          <textarea value={overrides.digest_exclude ?? ''} placeholder="Александр Егоров, +7999…, test@…"
+                    onChange={e => upd('digest_exclude', e.target.value)}
+                    style={{ flex: 1, minHeight: 42 }} />
         </div>
       </div>
       {toast && <div className={`toast ${toast.err ? 'err' : ''}`}>{toast.text}</div>}

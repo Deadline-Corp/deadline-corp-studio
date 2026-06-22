@@ -322,11 +322,12 @@ def plan_winback_tasks(after_days: int, limit: int = 25) -> dict:
             hint = _WINBACK_REASONS.get(reason, "")
             name = cust.name or cust.email or (cust.phone or str(cust.id)[:8])
             from services.manager_schedule import schedule_for_manager
+            from services import tzcfg
             db.add(_SA(
                 customer_id=cust.id, conversation_id=conv.id,
                 channel=conv.channel, chat_id=conv.channel_conversation_id,
                 action_type="operator_callback", executor="human",
-                due_at=schedule_for_manager(now), status="pending",  # слот, не now()
+                due_at=schedule_for_manager(now, tz_offset=tzcfg.biz_offset()), status="pending",  # слот пояса бизнеса, не now()
                 payload={
                     "text": f"♻️ Вернуть проигранного — {name}. Причина: {hint}.",
                     "by": "winback", "winback_reason": reason,
@@ -791,11 +792,20 @@ async def sweep_once(*, tenant_config: dict) -> dict:
                     extend_warm=_extend_warm_lost,
                     warm_threshold_d=_warm_lost_d,
                 )
+            # operator-override-wins: не авто-теряем лида, которого оператор/владелец
+            # руками трогал недавно (он его ведёт — молчание не значит «проигран»).
+            _op_recent_cron = False
+            try:
+                from services.funnel_store import operator_set_stage_recently
+                _op_recent_cron = operator_set_stage_recently(s, conversation.id)
+            except Exception:  # noqa: BLE001
+                _op_recent_cron = False
             if (
                 funnel_decision is not None
                 and funnel_decision.should_transition
                 and funnel_decision.target_stage
                 and can_auto_transition(current_stage, funnel_decision.target_stage)
+                and not _op_recent_cron
             ):
                 new_stage = funnel_decision.target_stage
                 conversation.lead_stage = new_stage
@@ -877,8 +887,9 @@ async def sweep_once(*, tenant_config: dict) -> dict:
                     f"({pause_type}) — {customer.name or customer.email or str(customer.id)[:8]}"
                 )
                 from services.manager_schedule import schedule_for_manager
+                from services import tzcfg
                 _now_aware = now if now.tzinfo else now.replace(tzinfo=timezone.utc)
-                _warm_slot = schedule_for_manager(_now_aware)
+                _warm_slot = schedule_for_manager(_now_aware, tz_offset=tzcfg.biz_offset())
                 _warm_due_min = max(0, int((_warm_slot - _now_aware).total_seconds() // 60))
                 dispatch_operator_task(
                     customer_id=str(customer.id),

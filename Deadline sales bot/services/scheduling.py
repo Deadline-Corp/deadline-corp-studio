@@ -196,11 +196,26 @@ def explicit_tz_from_text(text: str):
     return None
 
 
+def _biz_tz() -> timezone:
+    """Пояс БИЗНЕСА (панель/созвоны/слоты) из настройки digest_tz_offset, fail-safe →
+    BANGKOK (+7). Ленивый импорт bot_settings — модуль остаётся чистым и тестируемым без
+    БД (тот же приём, что в reminder_schedule). Раньше пояс был захардкожен BANGKOK; теперь
+    при смене пояса бизнеса в Настройках слоты созвонов и отображение едут вместе со всем."""
+    try:
+        from services import bot_settings as _bs
+        v = _bs.get("digest_tz_offset")
+        if v is not None:
+            return timezone(timedelta(hours=int(v)))
+    except Exception:  # noqa: BLE001 — пояс никогда не должен блокировать логику
+        pass
+    return BANGKOK
+
+
 def _to_local(dt_utc: datetime) -> datetime:
-    """UTC-aware → локальное (Бангкок) время."""
+    """UTC-aware → локальное (пояс бизнеса) время."""
     if dt_utc.tzinfo is None:
         dt_utc = dt_utc.replace(tzinfo=timezone.utc)
-    return dt_utc.astimezone(BANGKOK)
+    return dt_utc.astimezone(_biz_tz())
 
 
 def _hour_key(dt_utc: datetime) -> datetime:
@@ -375,7 +390,7 @@ def format_slot_human(
     """
     if dt_utc.tzinfo is None:
         dt_utc = dt_utc.replace(tzinfo=timezone.utc)
-    display_tz = tz if tz is not None else BANGKOK
+    display_tz = tz if tz is not None else _biz_tz()
     loc = dt_utc.astimezone(display_tz)
     hhmm = loc.strftime("%H:%M")
     if now_utc is not None:

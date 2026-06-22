@@ -3,7 +3,7 @@ import { api } from '../api/client'
 import { ScheduledActionItem } from '../api/types'
 import { usePolling } from '../hooks/usePolling'
 import { useDrawer } from '../components/DrawerContext'
-import { CHANNEL_META, fmtTime, fmtAgo } from '../lib'
+import { CHANNEL_META, fmtTime, fmtAgo, bizLocalToUtc } from '../lib'
 import { HintBar } from '../components/HintBar'
 import { Help } from '../components/Help'
 
@@ -35,6 +35,7 @@ type NoTaskLead = {
   next_action: string; bot_can: boolean; wa_autonomous: boolean
   mode: string | null; kind: string | null; draft: string; reason: string; analyzed: boolean
   deal_value: number | null
+  extra_channels?: number
 }
 // Режимы умного шага (см. services/next_action.py).
 const MODE: Record<string, { e: string; t: string; c?: string }> = {
@@ -55,6 +56,7 @@ type Lead = {
   has_human_task: boolean; task_id: string | null; task_due: string | null; task_text: string | null
   bot_next_action_type: string | null; bot_next_due: string | null; bot_next_text: string | null
   deal_value: number | null
+  extra_channels?: number
 }
 type ZoneId = 'approve_now' | 'your_turn' | 'bot_leading' | 'stuck' | 'waiting'
 // Вид доски: «Всё» / одна категория (секция) / срез «кто ведёт». Кликается вверху.
@@ -68,7 +70,7 @@ type FailedItem = {
 type Board = {
   summary: { overdue: number; today: number; no_task: number; bot: number; human: number
     approve_now: number; your_turn: number; bot_leading: number; stuck: number
-    delivery_failed: number; done_7d?: number }
+    delivery_failed: number; done_7d?: number; truncated?: boolean; cap?: number }
   buckets: Record<'overdue' | 'today' | 'tomorrow' | 'week' | 'later', BoardTask[]>
   no_task_leads: NoTaskLead[]
   zones: { approve_now: Lead[]; your_turn: Lead[]; bot_leading: Lead[]; waiting: Lead[] }
@@ -78,6 +80,13 @@ type Board = {
 
 const StageChip = ({ s }: { s: string }) =>
   s ? <span className="chip" style={{ fontSize: 10.5 }}>{s}</span> : null
+// «+N каналов» — у человека есть второй диалог в другом мессенджере (дедуп показывает
+// одну строку, но не прячет факт второго канала). Клик по карточке откроет свежий диалог.
+const ChannelsChip = ({ n }: { n?: number }) =>
+  n && n > 0
+    ? <span className="chip" style={{ fontSize: 10 }} title="Этот человек пишет ещё и в другом мессенджере">
+        +{n} канал{n === 1 ? '' : (n < 5 ? 'а' : 'ов')}</span>
+    : null
 const TempDot = ({ t }: { t: string | null }) => {
   const m = TEMP[(t || '').toLowerCase()]
   return m ? <span title={t || ''} style={{ fontSize: 12 }}>{m.e}</span> : null
@@ -130,7 +139,8 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
   const [busy, setBusy] = useState('')
   // Один кликабельный фильтр вверху: «Всё» или одна категория/срез — показывается ТОЛЬКО
   // выбранное, остальные секции скрыты (не нужно крутить вниз).
-  const [view, setView] = useState<ViewKey>('all')
+  const [view, setView] = useState<ViewKey>(() => (localStorage.getItem('tasks_view') as ViewKey) || 'all')
+  useEffect(() => { try { localStorage.setItem('tasks_view', view) } catch { /* */ } }, [view])
   const [daysOpen, setDaysOpen] = useState(false)  // будущие дни (завтра/неделя/позже) свёрнуты
   const [stageFilter, setStageFilter] = useState<string | null>(null)  // фильтр по СТАТУСУ (стадии воронки)
   const [rsId, setRsId] = useState('')    // id задачи с открытым пикером переноса
@@ -208,7 +218,7 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
       <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }} onClick={e => e.stopPropagation()}>
         <input type="datetime-local" value={rsVal} autoFocus onChange={e => setRsVal(e.target.value)} style={{ fontSize: 11 }} />
         <button className="btn sm primary" disabled={!rsVal || !!busy}
-                onClick={() => rescheduleTo(taskId, new Date(rsVal).toISOString())}>OK</button>
+                onClick={() => rescheduleTo(taskId, bizLocalToUtc(rsVal))}>OK</button>
         <button className="btn sm ghost" onClick={() => { setRsId(''); setRsVal('') }}>✕</button>
       </span>
     ) : (
@@ -224,7 +234,7 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
                onChange={e => setNtText(e.target.value)} style={{ fontSize: 11, width: 150 }} />
         <input type="datetime-local" value={ntVal} onChange={e => setNtVal(e.target.value)} style={{ fontSize: 11 }} />
         <button className="btn sm primary" disabled={!ntVal || !ntText.trim() || !!busy}
-                onClick={() => createTask(convId, new Date(ntVal).toISOString(), ntText.trim())}>OK</button>
+                onClick={() => createTask(convId, bizLocalToUtc(ntVal), ntText.trim())}>OK</button>
         <button className="btn sm ghost" onClick={() => { setNtConvId(''); setNtVal(''); setNtText('') }}>✕</button>
       </span>
     ) : (
@@ -244,6 +254,7 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
           <DealChip v={l.deal_value} />
           <span className="chip" style={{ fontSize: 10 }} title="Статус автоматизации по лиду">{l.bot_status_label}</span>
           <span className="faint" style={{ fontWeight: 400 }}>{CHANNEL_META[l.channel]?.icon}</span>
+          <ChannelsChip n={l.extra_channels} />
         </div>
         <div className="c-preview">
           {zone === 'approve_now'
@@ -353,6 +364,7 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
           <StageChip s={l.stage_label} />
           <DealChip v={l.deal_value} />
           <span className="faint" style={{ fontWeight: 400 }}>{CHANNEL_META[l.channel]?.icon}</span>
+          <ChannelsChip n={l.extra_channels} />
         </div>
         <div className="c-preview" style={{ color: 'var(--danger)' }}>
           нет следующего шага{l.last_message_at ? ` · молчит ${fmtAgo(l.last_message_at)}` : ''}
@@ -381,6 +393,7 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
             <StageChip s={l.stage_label} />
             <DealChip v={l.deal_value} />
             <span className="faint" style={{ fontWeight: 400 }}>{CHANNEL_META[l.channel]?.icon}</span>
+            <ChannelsChip n={l.extra_channels} />
           </div>
           <div className="c-preview" style={{ color: '#c9a23b' }}>
             бот не разобрался{l.last_message_at ? ` · молчит ${fmtAgo(l.last_message_at)}` : ''} — объясни ему, что делать
@@ -477,6 +490,11 @@ function CrmBoard({ showToast }: { showToast: (t: string) => void }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      {sm.truncated && (
+        <div className="chip warn" style={{ alignSelf: 'flex-start', fontSize: 11.5 }}>
+          ⚠️ Показаны первые {sm.cap ?? 5000} — лидов/задач больше. Используй категории и фильтры выше, чтобы увидеть остальное.
+        </div>
+      )}
       {/* ОДНА кликабельная панель: «Всё» + категории + срез «кто ведёт». Клик → видна
           ТОЛЬКО выбранная категория, остальные секции скрыты (не нужно крутить вниз). */}
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>

@@ -7,6 +7,7 @@ import ruLocale from '@fullcalendar/core/locales/ru'
 import { api, getToken } from '../api/client'
 import { useDrawer } from '../components/DrawerContext'
 import { HintBar } from '../components/HintBar'
+import { getBizTzOffset } from '../lib'
 
 /* Календарь v3 — FullCalendar (как Google Calendar): виды месяц/неделя/3 дня/день,
    перетаскивание событий мышью → перенос бронируется на бэке (созвон и задача).
@@ -31,6 +32,13 @@ type ApiEvent = {
 function addMin(iso: string, min: number) {
   return new Date(new Date(iso).getTime() + min * 60000).toISOString()
 }
+
+// Рендерим в поясе БИЗНЕСА независимо от пояса браузера: FullCalendar с timeZone="UTC"
+// показывает время как есть, поэтому кормим его «настенным» временем бизнеса (реальный UTC +
+// смещение, помеченный Z), а на перетаскивании конвертируем обратно в реальный UTC.
+const _calOff = () => getBizTzOffset() * 3600_000
+const toBizWall = (utcIso: string) => new Date(new Date(utcIso).getTime() + _calOff()).toISOString()
+const fromBizWall = (d: Date) => new Date(d.getTime() - _calOff()).toISOString()
 
 export function Calendar() {
   const [copied, setCopied] = useState(false)
@@ -69,8 +77,9 @@ export function Calendar() {
     return (r.events || []).filter(e => visibleRef.current[e.kind] !== false).map(e => {
       const overdue = e.kind !== 'call' && new Date(e.start).getTime() < now
       const col = overdue ? COLORS.overdue : COLORS[e.kind]
+      const startWall = toBizWall(e.start)
       return {
-        id: e.id, title: e.title, start: e.start, end: addMin(e.start, 30),
+        id: e.id, title: e.title, start: startWall, end: addMin(startWall, 30),
         backgroundColor: col, borderColor: col,
         extendedProps: { kind: e.kind, conv: e.conversation_id, actionId: e.action_id },
       }
@@ -80,7 +89,7 @@ export function Calendar() {
   // Перетащил событие → переносим на бэке. Ошибка → откат на место.
   const onMove = async (mv: any) => {
     const p = mv.event.extendedProps
-    const startISO: string | undefined = mv.event.start?.toISOString()
+    const startISO: string | undefined = mv.event.start ? fromBizWall(mv.event.start) : undefined
     if (!startISO) { mv.revert(); return }
     try {
       if (p.kind === 'call') {
@@ -142,6 +151,7 @@ export function Calendar() {
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
           initialView="timeGridWeek"
           locale={ruLocale}
+          timeZone="UTC"
           firstDay={1}
           nowIndicator
           headerToolbar={{

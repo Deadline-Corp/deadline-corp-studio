@@ -184,26 +184,39 @@ def resolve_or_create_customer(
         if customer is not None:
             log.info("[identity] phone-merge → customer %s", customer.id)
 
-    # ----- Step 3: new customer if nothing matched -----
-    if customer is None:
-        customer = Customer(
-            email=email,
-            first_channel=channel,
-        )
-        db.add(customer)
-        db.flush()  # populate customer.id before linking identity
-
-    # ----- Attach the identity (we know it does not yet exist on customer) -----
-    identity = ChannelIdentity(
-        customer_id=customer.id,
-        channel=channel,
-        external_id=external_id,
-        username=username,
-    )
-    db.add(identity)
-    db.flush()
-
-    return customer
+    # ----- Step 3 + attach: гонко-безопасно (SAVEPOINT) -----
+    # Два одновременных сообщения с одним (channel, external_id) оба проходят Step 1
+    # (identity ещё нет) и оба создают identity → второй flush ловит UNIQUE
+    # uq_channel_external_id и РУШИТ обработку. Оборачиваем в begin_nested(): при
+    # IntegrityError откатываем только SAVEPOINT, перечитываем identity (её уже создал
+    # конкурент) и возвращаем ТОГО ЖЕ customer — без краша и без дубля.
+    from sqlalchemy.exc import IntegrityError as _IntegrityError
+    try:
+        with db.begin_nested():
+            if customer is None:
+                customer = Customer(email=email, first_channel=channel)
+                db.add(customer)
+                db.flush()  # populate customer.id before linking identity
+            identity = ChannelIdentity(
+                customer_id=customer.id,
+                channel=channel,
+                external_id=external_id,
+                username=username,
+            )
+            db.add(identity)
+            db.flush()
+        return customer
+    except _IntegrityError:
+        log.info("[identity] race on (%s, %s) — реюзаю identity конкурента", channel, external_id)
+        existing = db.execute(
+            select(ChannelIdentity).where(
+                ChannelIdentity.channel == channel,
+                ChannelIdentity.external_id == external_id,
+            )
+        ).scalar_one_or_none()
+        if existing is not None:
+            return existing.customer
+        raise
 
 
 def resolve_or_create_customer_with_meta(
@@ -397,17 +410,30 @@ def update_email(db: Session, customer_id: UUID, email: str) -> Customer:
     db.flush()
 
     # (3.5) CRM dedup: согласовать crm_contact_id, чтобы в HubSpot не осталось
-    #       двух карточек на человека. ДО удаления other — иначе потеряем его id.
+    #       двух карточек на человека. ДО мерджа other — иначе потеряем его id.
     _absorb_crm_contacts(target, other)
     db.flush()
 
-    # (4) delete the now-orphaned customer (its identities list is empty
-    #     after the UPDATE in step 1, so cascade has nothing to delete)
-    db.delete(other)
+    # (4) NEVER-DELETE + НЕ ТЕРЯТЬ ПЕРЕПИСКУ. Раньше тут был db.delete(other): шаг (1)
+    #     переносил только IDENTITIES, а cascade="all, delete-orphan" на Customer.conversations
+    #     (→ messages) сносил ВСЕ диалоги и сообщения other — тихая потеря данных + нарушение
+    #     правила «ничего не удалять». ScheduledAction вообще не переносились → битый FK.
+    #     Теперь: переносим диалоги и задачи на target (raw UPDATE, как в merge_customers) и
+    #     помечаем other как merged_into (обратимо), а НЕ удаляем.
+    from db.models import Conversation as _Conv, ScheduledAction as _SA
+    db.execute(
+        update(_Conv).where(_Conv.customer_id == other.id).values(customer_id=target.id)
+    )
+    db.execute(
+        update(_SA).where(_SA.customer_id == other.id).values(customer_id=target.id)
+    )
+    _opd = dict(other.profile_data or {})
+    _opd["merged_into"] = str(target.id)
+    other.profile_data = _opd
     db.flush()
 
-    # Make sure target.identities reflects the freshly re-pointed rows
-    db.expire(target, ["identities"])
+    # Make sure target reflects the freshly re-pointed rows
+    db.expire(target, ["identities", "conversations"])
 
     return target
 
@@ -616,12 +642,19 @@ def bridge_telegram_to_website_session(
         from db.models import Conversation
         db.execute(update(ChannelIdentity).where(ChannelIdentity.customer_id == T.id).values(customer_id=W.id))
         db.execute(update(Conversation).where(Conversation.customer_id == T.id).values(customer_id=W.id))
+        from db.models import ScheduledAction as _SA2
+        db.execute(update(_SA2).where(_SA2.customer_id == T.id).values(customer_id=W.id))
         # CRM dedup: у телеграм-кастомера T могла быть СВОЯ карточка в HubSpot.
-        # Согласуем crm_contact_id ДО удаления T, иначе карточка осиротеет.
+        # Согласуем crm_contact_id ДО мерджа T, иначе карточка осиротеет.
         _absorb_crm_contacts(W, T)
         db.expire(T, ["identities"])
         db.flush()
-        db.delete(T)
+        # NEVER-DELETE: метим T merged_into вместо db.delete. Раньше delete каскадом сносил
+        # задачи T (SA не переносились) и саму карточку — теперь задачи перенесли, карточку
+        # помечаем (обратимо, не теряется).
+        _tpd = dict(T.profile_data or {})
+        _tpd["merged_into"] = str(W.id)
+        T.profile_data = _tpd
         db.flush()
         db.expire(W, ["identities"])
         log.info("[identity] deep-link bridge: merged TG customer %s into website customer %s", T.id, W.id)

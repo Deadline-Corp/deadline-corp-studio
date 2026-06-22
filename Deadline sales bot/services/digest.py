@@ -24,6 +24,51 @@ def _now_local(offset_h: int) -> datetime:
     return datetime.now(timezone.utc) + timedelta(hours=offset_h)
 
 
+# Стадии, которые НЕ «тёплые молчат» — их нельзя дожимать как живых (исправляет «стадия lost»).
+_DEAD_STAGES = ("lost", "completed_won", "post_sale", "archived")
+
+
+def _norm_digits(s) -> str:
+    return "".join(ch for ch in str(s or "") if ch.isdigit())
+
+
+def _clean_name(s) -> str:
+    """Схлопнуть пробелы/перевести в нормальную форму (убирает огрызки «Александр » с хвостом)."""
+    return " ".join((s or "").split()).strip()
+
+
+def _parse_exclude(raw) -> set:
+    """CSV из digest_exclude → множество (имена/телефоны/почты владельца и внутренних)."""
+    return {p.strip() for p in str(raw or "").split(",") if p.strip()}
+
+
+def _excluded(c, exclude: set) -> bool:
+    """Карточка — в exclude-списке владельца (имя/телефон/почта). Чтобы владелец и
+    внутренние НЕ считались лидами и не лезли в «дожать» (исправляет «Александр Егоров в лидах»)."""
+    if not exclude:
+        return False
+    name = (getattr(c, "name", None) or "").strip().lower()
+    email = (getattr(c, "email", None) or "").strip().lower()
+    phone = _norm_digits(getattr(c, "phone", None))
+    for e in exclude:
+        ed = _norm_digits(e)
+        if ed and len(ed) >= 5 and phone and (ed in phone or phone in ed):
+            return True
+        el = e.strip().lower()
+        if el and (el == name or (email and el == email)):
+            return True
+    return False
+
+
+def _is_real_lead(c, exclude: set) -> bool:
+    """Реальный лид для счётчиков: не demo, не тень-дубль (merged_into), не из exclude.
+    Один предикат для «за сутки» и «за 7 дней» — чтобы счёт был ОДИНАКОВЫЙ (исправляет «90»)."""
+    pd = c.profile_data or {}
+    if pd.get("demo") or pd.get("merged_into"):
+        return False
+    return not _excluded(c, exclude)
+
+
 async def run_digest_if_due() -> dict:
     """Зовётся кроном каждые ~10 мин. Шлёт максимум раз в день, в свой час."""
     from services import bot_settings
@@ -57,15 +102,19 @@ def _collect_data() -> dict:
     day_ago = now - timedelta(hours=24)
     out: dict = {}
 
+    from services import bot_settings
+    exclude = _parse_exclude(bot_settings.get("digest_exclude"))
+
     with session_scope() as s:
         new_leads = (
             s.query(Customer).filter(Customer.created_at >= day_ago).all()
         )
-        # Не считаем демо-лидов — дайджест про реальную работу.
-        real_new = [c for c in new_leads if not (c.profile_data or {}).get("demo")]
+        # Реальные лиды: не demo, не тень-дубль (merged_into), не владелец/внутренние.
+        real_new = [c for c in new_leads if _is_real_lead(c, exclude)]
         by_channel: dict = {}
         for c in real_new:
-            ch = str(c.first_channel or "?").lower()
+            # .value — иначе Python 3.11 str(enum) даёт «ChannelEnum.WHATSAPP» → «channelenum.whatsapp».
+            ch = (getattr(c.first_channel, "value", None) or str(c.first_channel or "?")).lower()
             by_channel[ch] = by_channel.get(ch, 0) + 1
         out["new_leads"] = len(real_new)
         out["by_channel"] = by_channel
@@ -86,7 +135,7 @@ def _collect_data() -> dict:
         two_weeks_ago = now - timedelta(days=14)
 
         def _real_count(rows):
-            return sum(1 for c in rows if not (c.profile_data or {}).get("demo"))
+            return sum(1 for c in rows if _is_real_lead(c, exclude))
 
         out["week_leads"] = _real_count(
             s.query(Customer).filter(Customer.created_at >= week_ago).all()
@@ -112,7 +161,9 @@ def _collect_data() -> dict:
             logger.debug("digest: weekly revenue skipped: %s", _re)
             out["week_won_value"] = 0.0
 
-        # Зависшие тёплые: скор ≥40, открытый диалог, молчат 48ч+ (не демо).
+        # Зависшие тёплые: скор ≥40, открытый диалог, молчат 48ч+, НЕ мёртвая стадия
+        # (lost/выигран/архив — это НЕ «дожать»). Берём с запасом (30) — отфильтруем в Python.
+        from sqlalchemy import or_ as _or
         stuck_rows = (
             s.query(Conversation, Customer)
             .join(Customer, Conversation.customer_id == Customer.id)
@@ -120,25 +171,34 @@ def _collect_data() -> dict:
             .filter(Customer.lead_score >= 40)
             .filter(Conversation.last_message_at.isnot(None))
             .filter(Conversation.last_message_at <= now - timedelta(hours=48))
+            .filter(_or(Conversation.lead_stage.is_(None),
+                        Conversation.lead_stage.notin_(list(_DEAD_STAGES))))
             .order_by(Customer.lead_score.desc())
-            .limit(8)
+            .limit(30)
             .all()
         )
         stuck = []
         for conv, cust in stuck_rows:
-            if (cust.profile_data or {}).get("demo"):
-                continue
+            if not _is_real_lead(cust, exclude):
+                continue  # demo / тень-дубль / владелец-внутренний
+            if (conv.lead_stage or "") in _DEAD_STAGES:
+                continue  # страховка к SQL-фильтру
+            nm = _clean_name(cust.name)
+            if len(nm) < 2 and not cust.email:
+                continue  # мусорное имя без почты — не показываем огрызок «a»
             lm = conv.last_message_at
             if lm and lm.tzinfo is None:
                 lm = lm.replace(tzinfo=timezone.utc)
             days = round((now - lm).total_seconds() / 86400, 1) if lm else 0
             stuck.append({
-                "name": cust.name or cust.email or "лид",
+                "name": nm or cust.email or "лид",
                 "stage": conv.lead_stage,
                 "score": cust.lead_score,
                 "silent_days": days,
             })
-        out["stuck"] = stuck[:5]
+            if len(stuck) >= 5:
+                break
+        out["stuck"] = stuck
 
         out["overdue_tasks"] = (
             s.query(ScheduledAction)
@@ -151,7 +211,8 @@ def _collect_data() -> dict:
 
 
 def _format_message(d: dict, advice: str | None) -> str:
-    ch_names = {"website": "сайт", "telegram": "TG", "instagram": "IG", "messenger": "FB"}
+    ch_names = {"website": "сайт", "telegram": "TG", "instagram": "IG", "messenger": "FB",
+                "whatsapp": "WA", "email": "почта", "tiktok": "TikTok", "line": "LINE"}
     ch_str = ", ".join(f"{ch_names.get(k, k)}: {v}" for k, v in d["by_channel"].items()) or "—"
     lines = [
         "☀️ Утренний дайджест продаж",

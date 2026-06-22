@@ -172,7 +172,7 @@ class ChannelIdentity(Base):
     customer: Mapped["Customer"] = relationship(back_populates="identities")
 
     def __repr__(self) -> str:
-        return f"<ChannelIdentity {self.channel}:{self.external_id} → customer={self.customer_id}>"
+        return f"<ChannelIdentity {getattr(self.channel, 'value', self.channel)}:{self.external_id} → customer={self.customer_id}>"
 
 
 # ============================================================================
@@ -306,7 +306,7 @@ class Conversation(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<Conversation {self.id} channel={self.channel} status={self.status}>"
+        return f"<Conversation {self.id} channel={getattr(self.channel, 'value', self.channel)} status={self.status}>"
 
 
 # ============================================================================

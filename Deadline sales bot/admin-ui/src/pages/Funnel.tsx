@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api/client'
 import { ConvSummary, StageDef } from '../api/types'
 import { usePolling } from '../hooks/usePolling'
@@ -99,10 +99,24 @@ export function Funnel() {
     finally { setBusy(false) }
   }
 
-  const displayItems = channelFilter === 'all' ? items : items.filter(c => c.channel === channelFilter)
-  const byStage = (stage: string) => displayItems.filter(c => c.lead_stage === stage)
-  const known = new Set(stages.map(s => s.stage))
-  const other = displayItems.filter(c => !known.has(c.lead_stage))
+  const displayItems = useMemo(
+    () => channelFilter === 'all' ? items : items.filter(c => c.channel === channelFilter),
+    [items, channelFilter])
+  const known = useMemo(() => new Set(stages.map(s => s.stage)), [stages])
+  // Предпосчёт «стадия → карточки» за ОДИН проход. Было O(стадии×карточки) на КАЖДЫЙ
+  // рендер и тик поллинга (10с) — при ~1000 карточек лишняя работа каждые 10с.
+  const { byStageMap, other } = useMemo(() => {
+    const m = new Map<string, ConvSummary[]>()
+    const oth: ConvSummary[] = []
+    for (const c of displayItems) {
+      if (known.has(c.lead_stage)) {
+        const arr = m.get(c.lead_stage)
+        if (arr) arr.push(c); else m.set(c.lead_stage, [c])
+      } else oth.push(c)
+    }
+    return { byStageMap: m, other: oth }
+  }, [displayItems, known])
+  const byStage = (stage: string) => byStageMap.get(stage) || []
 
   const stuckDays = (lastMsgAt: string | null): number | null => {
     if (!lastMsgAt) return null

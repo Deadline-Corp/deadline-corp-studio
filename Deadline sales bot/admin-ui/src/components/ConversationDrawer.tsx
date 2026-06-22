@@ -3,7 +3,7 @@ import { api } from '../api/client'
 import { ConvDetail, Msg } from '../api/types'
 import { usePolling } from '../hooks/usePolling'
 import { useStages, useStageLabel, useMe, useOverview } from '../overviewContext'
-import { CHANNEL_META, LOST_REASONS, TEMP_META, fmtTime, initials, emitLeadDismissed } from '../lib'
+import { CHANNEL_META, LOST_REASONS, TEMP_META, fmtTime, initials, emitLeadDismissed, bizLocalToUtc, utcToBizLocal, tzLabel } from '../lib'
 import { dismissLead } from '../api/leads'
 import { Help } from './Help'
 
@@ -89,12 +89,31 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
     setTimeout(() => setToast(null), 3500)
   }
 
+  // Скопировать контакт по клику (телефон/почта) — частая мелкая операция оператора.
+  const copyText = (v: string, label: string) => {
+    navigator.clipboard?.writeText(v)
+    showToast(`📋 ${label} скопирован`)
+  }
+
+  // Повторная отправка сообщения, которое не доставилось (все провайдеры легли / сбой).
+  // Переотправляем тот же текст обычным operator-reply (он же проставит новый статус).
+  const resendFailed = async (text: string) => {
+    if (!text.trim() || busy) return
+    setBusy(true)
+    try {
+      const r = await api.post<{ delivered: boolean }>(`/conversations/${convId}/reply`, { text: text.trim() })
+      showToast(r.delivered ? '✅ Повтор доставлен лиду' : '⚠️ Снова не доставлено — проверь WhatsApp/провайдеры', !r.delivered)
+      await loadMessages(false)
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
   const setCall = async (action: 'reschedule' | 'cancel') => {
     if (busy) return
     const body: any = { action }
     if (action === 'reschedule') {
       if (!callDt) { showToast('Выберите дату и время созвона', true); return }
-      body.time = new Date(callDt).toISOString()  // datetime-local (локальное) → UTC
+      body.time = bizLocalToUtc(callDt)  // datetime-local трактуем как пояс бизнеса → UTC
     }
     setBusy(true)
     try {
@@ -477,7 +496,7 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
       await api.post('/tasks', {
         conversation_id: convId,
         text: taskText.trim(),
-        due_at: new Date(taskDue).toISOString(),
+        due_at: bizLocalToUtc(taskDue),
         executor: taskExec,
       })
       showToast(taskExec === 'bot' ? '🤖 Бот напишет лиду в срок' : '📋 Задача поставлена')
@@ -504,9 +523,19 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
             <div className="avatar" style={{ width: 38, height: 38, borderRadius: '50%', background: 'var(--panel-2)', display: 'grid', placeItems: 'center', color: 'var(--accent)', fontWeight: 700 }}>
               {initials(detail?.customer.name)}
             </div>
-            <h2>{detail?.customer.display_name || detail?.customer.name || 'Без имени'}</h2>
+            <h2>{detail
+              ? (detail.customer.display_name || detail.customer.name || 'Без имени')
+              : <span style={{ display: 'inline-block', width: 150, height: 16, borderRadius: 6, background: 'var(--panel-2)', opacity: 0.6, verticalAlign: 'middle' }} />}</h2>
             <button className="btn ghost" onClick={onClose}>✕</button>
           </div>
+          {/* Скелетон загрузки — пока карточка не пришла, не показываем фальшивое «Без имени». */}
+          {!detail && (
+            <div className="d-chips" style={{ opacity: 0.55 }}>
+              {[78, 104, 56].map((w, i) => (
+                <span key={i} className="chip" style={{ width: w, height: 18, background: 'var(--panel-2)', color: 'transparent' }}>·</span>
+              ))}
+            </div>
+          )}
           {detail && (
             <>
               <div className="d-chips">
@@ -517,14 +546,16 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                   text="Насколько лид «горячий», бот определяет АВТОМАТИЧЕСКИ по поведению: 🧊 cold (нет вовлечения) → 🌤 warm (2+ ответа по делу) → 🔥 hot (спросил цену/сроки/портфолио) → 🚀 ready (готов начинать) → 🤝 client (внёс предоплату). ❄️ frozen — молчит 21+ день. Остывание: 14 дней тишины → на уровень ниже, 21 день → frozen; клиент не остывает. Влияет на ПРИОРИТЕТ дожима и скоринг (кого пинать первым), но НЕ на текст ответов бота." />}
                 <span className="chip">скор {detail.customer.lead_score}</span>
                 {detail.operator_takeover && <span className="chip ok">👤 на операторе</span>}
-                {detail.customer.email && <span className="chip mono">{detail.customer.email}</span>}
+                {detail.customer.email && <span className="chip mono" style={{ cursor: 'pointer' }}
+                  title="Скопировать почту" onClick={() => copyText(detail.customer.email!, 'Email')}>{detail.customer.email}</span>}
                 {/* Телефон-чип показываем ТОЛЬКО если его ещё нет в заголовке (иначе дубль). */}
                 {(() => {
                   const t = (detail.customer.display_name || detail.customer.name || '')
                   const pd = (detail.customer.phone || '').replace(/\D/g, '')
                   const inTitle = pd.length >= 6 && t.replace(/\D/g, '').includes(pd)
                   return detail.customer.phone && !inTitle
-                    ? <span className="chip mono">{detail.customer.phone}</span> : null
+                    ? <span className="chip mono" style={{ cursor: 'pointer' }} title="Скопировать телефон"
+                            onClick={() => copyText(detail.customer.phone!, 'Телефон')}>{detail.customer.phone}</span> : null
                 })()}
                 {!detail.customer.phone && detail.wa_hidden_phone && (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
@@ -840,6 +871,13 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
                 {m.role === 'operator' && '👤 оператор · '}
                 {m.role === 'assistant' && m.extra_meta?.kind === 'manual_nudge' && '⚡ ручной пинок · '}
                 {fmtTime(m.created_at)}
+                {m.extra_meta?.failed === true && (
+                  <span style={{ marginLeft: 8, color: 'var(--danger)' }}>
+                    ⚠️ не доставлено
+                    <a style={{ marginLeft: 6, color: 'var(--accent)', cursor: 'pointer' }}
+                       title="Отправить это сообщение ещё раз" onClick={() => resendFailed(m.content)}>↻ Повторить</a>
+                  </span>
+                )}
                 {m.role === 'operator' && (!me || me.role === 'owner') && (
                   learned.has(m.id)
                     ? <span style={{ marginLeft: 8 }}>🎓 выучено</span>
@@ -887,9 +925,14 @@ export function ConversationDrawer({ convId, onClose }: { convId: string; onClos
         ) : detail && (
           /* ЕДИНОЕ поле ответа: предложка системы сразу в поле — измените, очистите
              или напишите своё, затем «Отправить». Второго поля ввода нет. */
-          <div style={{ borderTop: '1px solid var(--accent-border)', background: detail.pending_wa_draft ? 'var(--accent-soft)' : 'var(--panel-2)', padding: '8px 14px' }}>
+          <div style={{
+            borderTop: '1px solid var(--accent-border)',
+            borderLeft: detail.pending_wa_draft && !detail.pending_wa_draft.stale ? '3px solid var(--accent)' : undefined,
+            background: detail.pending_wa_draft ? 'var(--accent-soft)' : 'var(--panel-2)', padding: '8px 14px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
               <b style={{ fontSize: 12.5 }}>{detail.pending_wa_draft?.kind === 'nudge' ? '✍️ Дожать молчащего лида' : '✍️ Ответ лиду'}</b>
+              {detail.pending_wa_draft && !detail.pending_wa_draft.stale &&
+                <span className="chip accent" style={{ fontSize: 10 }}>⏳ требует одобрения</span>}
               {detail.pending_wa_draft
                 ? (detail.pending_wa_draft.stale
                     ? <span className="faint" style={{ fontSize: 11, color: 'var(--warn, #c90)' }}>был ответ вручную — нажмите 🔄 Переформулировать для свежего</span>
@@ -934,19 +977,13 @@ function CallSuggestionBlock({ convId, suggestion, showToast, reload }: {
 }) {
   const [busy, setBusy] = useState(false)
   const [edit, setEdit] = useState(false)
-  const toLocal = (iso?: string) => {
-    if (!iso) return ''
-    const d = new Date(iso)
-    const p = (n: number) => String(n).padStart(2, '0')
-    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`
-  }
-  const [at, setAt] = useState(toLocal(suggestion.at))
+  const [at, setAt] = useState(utcToBizLocal(suggestion.at))
   const [medium, setMedium] = useState(suggestion.medium || '')
 
   const confirm = async () => {
     setBusy(true)
     try {
-      const iso = edit && at ? new Date(at).toISOString() : suggestion.at
+      const iso = edit && at ? bizLocalToUtc(at) : suggestion.at
       await api.post(`/conversations/${convId}/call-suggestion`, { action: 'confirm', at: iso, medium: medium || null })
       showToast('📅 Событие создано в календаре')
       await reload()
@@ -981,7 +1018,7 @@ function CallSuggestionBlock({ convId, suggestion, showToast, reload }: {
             <option value="Zoom">Zoom</option>
             <option value="Google Meet">Google Meet</option>
           </select>
-          <span className="faint" style={{ fontSize: 11 }}>время — в вашем поясе (браузера)</span>
+          <span className="faint" style={{ fontSize: 11 }}>время — пояс бизнеса ({tzLabel()})</span>
         </div>
       )}
       <div style={{ display: 'flex', gap: 8 }}>

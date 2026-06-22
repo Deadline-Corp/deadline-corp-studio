@@ -307,6 +307,33 @@ def auto_heal(*, move_empty_oncall_after_h: int = 48, noshow_grace_h: int = 3) -
             hours_ago = (now - bdt).total_seconds() / 3600.0
             if hours_ago < noshow_grace_h:
                 continue  # бронь в будущем или созвон может идти прямо сейчас
+            # НЕ считать no-show, если лид был активен ПОСЛЕ времени созвона — звонок мог
+            # СОСТОЯТЬСЯ, а оператор просто не передвинул карточку. Тогда стадию НЕ трогаем,
+            # а ставим оператору задачу подтвердить исход (раньше ЛЮБОЙ on_call старше 3ч
+            # молча откатывался как «не пришёл» → успешные созвоны логировались как провал
+            # и договорённый лид возвращался в пул дожима).
+            lm = conv.last_message_at
+            if lm is not None and lm.tzinfo is None:
+                lm = lm.replace(tzinfo=timezone.utc)
+            if lm is not None and lm >= bdt:
+                _ex = db.query(SA.id).filter(
+                    SA.customer_id == conv.customer_id,
+                    SA.action_type == "operator_callback",
+                    SA.status.in_(("pending", "processing"))).first()
+                if _ex is None:
+                    from services.manager_schedule import schedule_for_manager
+                    from services import tzcfg
+                    db.add(SA(
+                        customer_id=conv.customer_id, conversation_id=conv.id,
+                        channel=conv.channel, chat_id=conv.channel_conversation_id,
+                        action_type="operator_callback", executor="human",
+                        due_at=schedule_for_manager(tz_offset=tzcfg.biz_offset()), status="pending",
+                        payload={"text": f"Подтвердите исход созвона — {c.name or c.email or 'лид'} "
+                                         f"(был {bdt.isoformat()}, лид активен после — не отмечен как no-show)",
+                                 "title": "Подтвердите исход созвона", "by": "noshow-confirm"}))
+                    out["noshow_confirm_task"] = out.get("noshow_confirm_task", 0) + 1
+                continue
+            # Нет активности лида после звонка → классический no-show: снять бронь + откат.
             for a in db.query(SA).filter(
                     SA.conversation_id == conv.id,
                     SA.action_type.in_(("call_booked", "call_reminder")),

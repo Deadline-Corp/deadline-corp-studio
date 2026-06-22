@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import {
   ReactFlow, Background, Controls, Node, Edge, Handle, Position, useNodesState,
 } from '@xyflow/react'
+import '@xyflow/react/dist/style.css'
 import { api } from '../api/client'
 import { AnalyticsView } from '../api/types'
 import { useOverview } from '../overviewContext'

@@ -161,6 +161,7 @@ async def run_due_followups(*, tenant_config: Optional[dict] = None) -> dict:
     _send_window_on = bool(_sw.get("send_window_enabled", True))
     _qstart = int(_sw.get("send_window_start", 9) or 9)
     _qend = int(_sw.get("send_window_end", 21) or 21)
+    _lead_def_off = int(_sw.get("lead_default_tz_offset", 3) or 3)  # пояс лида для TG/IG (без номера)
     from services.scheduling import is_within_send_window, clamp_to_send_window
 
     # 1) КЛЕЙМ: атомарно забираем созревшие строки (FOR UPDATE SKIP LOCKED) и
@@ -222,15 +223,20 @@ async def run_due_followups(*, tenant_config: Optional[dict] = None) -> dict:
                     r.claimed_at = None
                     stats["skipped_takeover"] = stats.get("skipped_takeover", 0) + 1
                     continue
-            # QUIET HOURS: вне дневного окна по поясу лида — НЕ клеймим, переносим due_at
-            # на ближайшее start:00 локального, оставляем pending (без инкремента attempts —
-            # это отложенная доставка, не сбой). ТОЛЬКО WhatsApp: там chat_id=номер → пояс по
-            # нему; у Telegram/IG chat_id — числовой ID платформы (не телефон), пояс не вывести.
-            if (_send_window_on and (r.channel or "").lower() == "whatsapp"
-                    and not is_within_send_window(now, r.chat_id, _qstart, _qend)):
-                r.due_at = clamp_to_send_window(now, r.chat_id, _qstart, _qend)
-                stats["deferred_quiet"] = stats.get("deferred_quiet", 0) + 1
-                continue
+            # QUIET HOURS: вне дневного окна по поясу лида — НЕ клеймим, переносим due_at на
+            # ближайшее start:00 локального, оставляем pending (без инкремента attempts — это
+            # отложенная доставка, не сбой). WhatsApp: пояс по номеру (chat_id). Telegram/IG:
+            # chat_id — числовой ID платформы (не номер), поэтому берём ДЕФОЛТНЫЙ пояс лида
+            # (lead_default_tz_offset, деф. +3 Москва) явным lead_tz — иначе писали бы ночью.
+            if _send_window_on:
+                if (r.channel or "").lower() == "whatsapp":
+                    _q_phone, _q_tz = r.chat_id, None  # пояс выведется из номера внутри
+                else:
+                    _q_phone, _q_tz = "", timezone(_td(hours=_lead_def_off))
+                if not is_within_send_window(now, _q_phone, _qstart, _qend, lead_tz=_q_tz):
+                    r.due_at = clamp_to_send_window(now, _q_phone, _qstart, _qend, lead_tz=_q_tz)
+                    stats["deferred_quiet"] = stats.get("deferred_quiet", 0) + 1
+                    continue
             r.status = "processing"
             r.claimed_at = now
             stats["due"] += 1

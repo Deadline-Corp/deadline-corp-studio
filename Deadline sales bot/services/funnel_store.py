@@ -17,6 +17,25 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
+
+def operator_set_stage_recently(db, conversation_id, hours: int = 6) -> bool:
+    """True, если стадию ЭТОГО диалога руками трогал оператор/владелец за последние N часов
+    (StageTransition.by in admin/operator). Авто-писатели стадии (hot-path воронка и
+    cron «молчание→lost») уважают это и НЕ перетирают ручное решение N часов —
+    operator-override-wins. Fail-safe → False (никогда не блокируем из-за ошибки чтения)."""
+    try:
+        from datetime import datetime, timezone, timedelta
+        from db.models import StageTransition
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+        return db.query(StageTransition.id).filter(
+            StageTransition.conversation_id == conversation_id,
+            StageTransition.by.in_(("admin", "operator")),
+            StageTransition.created_at >= cutoff,
+        ).first() is not None
+    except Exception:  # noqa: BLE001
+        return False
+
+
 # Встроенный набор (совпадает с HubSpot 8-стадийной воронкой).
 BUILTIN_STAGES: list[dict] = [
     {"key": "new_lead", "label": "🆕 Новый лид", "kind": "active"},

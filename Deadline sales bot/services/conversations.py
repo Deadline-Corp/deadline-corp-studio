@@ -66,13 +66,24 @@ def get_or_create_conversation(
         Conversation.channel == channel,
         Conversation.status.in_(resumable),
     )
-    if channel_conversation_id:
+    # WhatsApp: один человек приходит под РАЗНЫМИ ключами треда (рекламный @lid и раскрытый
+    # номер) → фильтр по ключу плодит ПАРАЛЛЕЛЬНЫЕ треды на одного (реальный кейс: 1 клиент =
+    # 42 диалога, бот «терял память» и пере-передавал как нового). Для WhatsApp консолидируем
+    # по КЛИЕНТУ (любой ключ) — берём недавний тред. Telegram/IG/сайт: ключ стабилен,
+    # фильтруем по нему как прежде.
+    _wa = (channel or "").lower() == "whatsapp"
+    if channel_conversation_id and not _wa:
         base = base.where(Conversation.channel_conversation_id == channel_conversation_id)
     existing = db.execute(
         base.order_by(desc(Conversation.created_at)).limit(1)
     ).scalar_one_or_none()
 
     if existing is not None:
+        # WhatsApp: переносим тред на текущий ключ (последний адрес, где пишет клиент —
+        # @lid → раскрытый номер и наоборот), чтобы исходящие шли туда и не плодился второй.
+        if _wa and channel_conversation_id and existing.channel_conversation_id != channel_conversation_id:
+            existing.channel_conversation_id = channel_conversation_id
+            db.flush()
         if existing.status == ConversationStatusEnum.OPEN.value:
             return existing
         # Закрыт handoff'ом/resolved: продолжаем тем же тредом, если недавно.

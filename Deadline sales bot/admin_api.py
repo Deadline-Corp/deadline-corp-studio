@@ -124,6 +124,8 @@ async def me(member: dict = Depends(_verify_member)):
         "accent_color": ws.get("accent_color"),
         "role": member["role"],
         "member_name": member["name"],
+        # Пояс бизнеса — фронт показывает/задаёт ВСЕ времена в нём (не в поясе браузера).
+        "tz_offset": int(ws.get("digest_tz_offset", 7) or 7),
     }
 
 
@@ -3162,6 +3164,9 @@ _NEXT_ACTION = {
 }
 _TEMP_PRI = {"ready": 4, "hot": 3, "warm": 2, "cold": 1}
 _BOT_ACTIONS = {"followup_message", "warming_touch"}
+# Потолок выборок задачника: выше — баннер «показаны первые N» (раньше было 1500 МОЛЧА —
+# задачи/лиды за пределом тихо исчезали с доски). 5000 с запасом; truncated → UI предупредит.
+_TB_CAP = 5000
 
 
 @router.get("/task-board")
@@ -3185,11 +3190,12 @@ async def task_board(
         .filter((Conversation.id.is_(None)) |
                 (Conversation.status != ConversationStatusEnum.ARCHIVED))
         .order_by(ScheduledAction.due_at.asc())
-        .limit(1500)
+        .limit(_TB_CAP)
         .all()
     )
-    if len(rows) >= 1500:
-        log.warning("[task-board] rows hit cap 1500 — задачи за пределом не видны на доске")
+    _truncated = len(rows) >= _TB_CAP
+    if _truncated:
+        log.warning("[task-board] rows hit cap %d — задачи за пределом не видны (показываем баннер)", _TB_CAP)
 
     def pri(temp: Optional[str], stage: Optional[str]) -> int:
         try:
@@ -3255,11 +3261,19 @@ async def task_board(
         .filter(Conversation.status != ConversationStatusEnum.ARCHIVED)
         .filter(Conversation.lead_stage.in_(list(_ACTIVE_STAGES)))
         .order_by(Conversation.last_message_at.desc().nullslast())
-        .limit(1500)
+        .limit(_TB_CAP)
         .all()
     )
-    if len(active_convs) >= 1500:
-        log.warning("[task-board] active_convs hit cap 1500 — старые активные лиды не видны на доске")
+    if len(active_convs) >= _TB_CAP:
+        _truncated = True
+        log.warning("[task-board] active_convs hit cap %d — старые активные лиды не видны (баннер)", _TB_CAP)
+    # Кросс-канал: один человек в нескольких мессенджерах. Дедуп ниже показывает ОДНУ строку
+    # на контакт — чтобы второй канал не пропадал молча, считаем каналы на контакт и отдаём
+    # «+N каналов» на карточке (extra_channels). Настоящее объединение — identity-merge по
+    # телефону/почте; это — видимая страховка отображения.
+    chan_by_contact: dict = {}
+    for _cv, _cu in active_convs:
+        chan_by_contact.setdefault(_contact_key(_cu), set()).add((_cv.channel or "").lower())
     no_task = []
     seen_lead_contact: set = set()  # один человек с N активными диалогами = одна строка «без задачи»
     for conv, c in active_convs:
@@ -3289,6 +3303,7 @@ async def task_board(
             "bot_can": bot_ok,
             "wa_autonomous": bool(getattr(conv, "wa_autonomous", False)),
             "deal_value": float(conv.deal_value) if conv.deal_value else None,
+            "extra_channels": max(0, len(chan_by_contact.get(lkey, set())) - 1),
             "priority": pri(c.lead_temperature, conv.lead_stage),
         })
     # Сначала неразобранные/срочные (по приоритету), unclear (нужна помощь) — выше.
@@ -3385,6 +3400,7 @@ async def task_board(
             "task_due": ti.get("hdue"), "task_text": ti.get("htext"),
             "bot_next_action_type": ti.get("btype"), "bot_next_due": ti.get("bdue"),
             "bot_next_text": ti.get("btext"),
+            "extra_channels": max(0, len(chan_by_contact.get(zkey, set())) - 1),
             "priority": pri(c.lead_temperature, conv.lead_stage),
         }
         # «Одобри сейчас» = есть РЕАЛЬНЫЙ черновик (pending_wa_draft), который можно
@@ -3459,6 +3475,8 @@ async def task_board(
             "bot_leading": len(zones["bot_leading"]), "stuck": len(stuck),
             "delivery_failed": len(delivery_failed),
             "done_7d": int(done_7d),  # закрыто задач за неделю (аналитика-полоска)
+            "truncated": _truncated,  # упёрлись в потолок выборки → часть не показана
+            "cap": _TB_CAP,
         },
         "buckets": buckets,
         "no_task_leads": no_task[:300],
@@ -3872,6 +3890,7 @@ async def behavior_get(_: None = Depends(_verify_owner)):
             "send_window_enabled": True,
             "send_window_start": 9,
             "send_window_end": 21,
+            "lead_default_tz_offset": 3,
             "silence_lost_days": 7,
             "silence_lost_extend_warm": False,
             "silence_lost_warm_days": 14,
@@ -3879,6 +3898,7 @@ async def behavior_get(_: None = Depends(_verify_owner)):
             "digest_enabled": True,
             "digest_hour": 8,
             "digest_tz_offset": 7,
+            "digest_exclude": "",
         },
         "known_keys": sorted(bot_settings.KNOWN_KEYS.keys()),
     }
@@ -4127,7 +4147,7 @@ async def conversation_advise(
         f"Имя: {name}; стадия воронки: {conv.lead_stage}; "
         f"score: {getattr(cust, 'lead_score', 0)}; "
         f"температура: {getattr(cust, 'lead_temperature', 'cold')}; "
-        f"канал: {conv.channel}"
+        f"канал: {getattr(conv.channel, 'value', conv.channel)}"
     )
     prompt = (
         "Ты — старший менеджер по продажам веб-студии Deadline и наставник оператора. "
@@ -4184,7 +4204,7 @@ async def assign_conversation(
             if _main.settings.telegram_bot_token:
                 nm = cust.name or cust.email or "лид"
                 txt = (f"📋 Вам назначен лид: {nm}\n"
-                       f"Стадия: {conv.lead_stage} · канал: {conv.channel}")
+                       f"Стадия: {conv.lead_stage} · канал: {getattr(conv.channel, 'value', conv.channel)}")
                 await send_telegram_reply(_main.settings.telegram_bot_token, member.telegram_chat_id, txt)
     except Exception as e:  # noqa: BLE001
         _lg.getLogger("admin").warning("assign notify failed: %s", e)
@@ -5463,7 +5483,7 @@ async def analytics(
         ],
         "lost_reasons": {k: int(v) for k, v in lost_reasons.items()},
         "temperatures": {k: int(v) for k, v in temp_dist.items()},
-        "messages_by_role": {str(r[0]).lower(): int(r[1]) for r in msgs_period},
+        "messages_by_role": {(getattr(r[0], "value", None) or str(r[0])).lower(): int(r[1]) for r in msgs_period},
         "stage_moves": {k: int(v) for k, v in transitions},
         "stage_flows": [
             {"from": r[0], "to": r[1], "by": r[2], "count": int(r[3])} for r in flows
