@@ -1,0 +1,1387 @@
+import { useEffect, useState } from 'react'
+import { api, getToken } from '../api/client'
+import { HintBar, hintsEnabled, setHintsEnabled } from '../components/HintBar'
+import { Help } from '../components/Help'
+import { useDrawer } from '../components/DrawerContext'
+import { setBizTzOffset } from '../lib'
+
+/* Настройки: редактируемое поведение бота (прогрев/нудж — применяется без
+   деплоя за ~минуту) + статус каналов/CRM/LLM (read-only) + состав KB. */
+
+export function Settings() {
+  const [s, setS] = useState<any>(null)
+  const [kb, setKb] = useState<Array<{ source: string; chunks: number }>>([])
+  const [adv, setAdv] = useState(() => localStorage.getItem('deadline_adv_settings') === '1')
+  const toggleAdv = () => { const n = !adv; setAdv(n); localStorage.setItem('deadline_adv_settings', n ? '1' : '0') }
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        setS(await api.get('/settings'))
+        const r = await api.get<{ sources: Array<{ source: string; chunks: number }> }>('/kb')
+        setKb(r.sources)
+      } catch { /* ignore */ }
+    })()
+  }, [])
+
+  if (!s) return <div className="page"><div className="empty"><span className="spin" /> Загрузка…</div></div>
+
+  const Bool = ({ v }: { v: boolean }) => (
+    <span className={`chip ${v ? 'ok' : ''}`}>{v ? 'да' : 'нет'}</span>
+  )
+
+  return (
+    <div className="page">
+      <div className="page-head"><h1>Настройки</h1></div>
+
+      <HintBar id="settings" icon="⚙️">
+        Всё «под себя»: пресет ниши (перестроит систему в 1 клик), поля лида, поведение бота
+        (когда напоминать молчунам), демо-данные для тренировки. Подсказки и обучение
+        включаются/выключаются здесь же.
+      </HintBar>
+      {/* ── ПРОСТЫЕ настройки (для всех, не программиста) ── */}
+      <WorkspaceCard />
+      <div style={{ height: 14 }} />
+      <LanguagesCard />
+      <div style={{ height: 14 }} />
+      <BehaviorCard />
+      <div style={{ height: 14 }} />
+      <CallRemindersCard />
+      <div style={{ height: 14 }} />
+      <TimezoneCard />
+      <div style={{ height: 14 }} />
+      <FieldsCard />
+      <div style={{ height: 14 }} />
+      <FeatureFlagsCard />
+      <div style={{ height: 14 }} />
+      {/* Слияние дублей карточек — обычное пользовательское действие (один человек = одна
+          карточка), не «для разработчика». Поэтому в простом разделе, а не в расширенном. */}
+      <DuplicateMergeCard />
+
+      {/* ── Переход в РАСШИРЕННЫЕ (технические / разработческие) ── */}
+      <div style={{ marginTop: 20, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+        <button className="btn ghost" onClick={toggleAdv}>
+          {adv ? '▾ Скрыть расширенные настройки' : '🔧 Расширенные настройки (для разработчика) →'}
+        </button>
+        <p className="faint" style={{ fontSize: 11.5, margin: '6px 0 0' }}>
+          Технические и редко-используемые: команда и доступы, смена ниши/пресета, авто-настройка,
+          синхронизация/дедуп, бэкап и экспорт, версии конфигурации, LLM, каналы, CRM-зеркало,
+          база знаний, логи системы. Обычному пользователю сюда заходить не нужно.
+        </p>
+      </div>
+
+      {adv && (<>
+      <div style={{ height: 14 }} />
+      <TeamCard />
+      <div style={{ height: 14 }} />
+      <PresetsCard />
+      <div style={{ height: 14 }} />
+      <ConfigAgentCard />
+      <div style={{ height: 14 }} />
+      <MaintenanceCard />
+      <DiagnosticsCard />
+      <div style={{ height: 14 }} />
+      <BackupCard />
+      <div style={{ height: 14 }} />
+      <ExportCard />
+      <div style={{ height: 14 }} />
+      <SnapshotsCard />
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 14, marginTop: 14 }}>
+        <div className="card">
+          <b>🧠 LLM</b>
+          <table className="tbl" style={{ marginTop: 8 }}>
+            <tbody>
+              <tr><td className="muted">Провайдер</td><td>{s.llm.provider}</td></tr>
+              <tr><td className="muted">Модель</td><td className="mono" style={{ fontSize: 12 }}>{s.llm.model}</td></tr>
+              <tr><td className="muted">Fallback</td><td className="mono" style={{ fontSize: 12 }}>{s.llm.fallback_model}</td></tr>
+            </tbody>
+          </table>
+          <p className="faint" style={{ fontSize: 11.5, margin: '8px 0 0' }}>
+            «Подключи свои мозги»: в Railway → Variables задайте <span className="mono">LLM_PROVIDER</span>
+            = <span className="mono">gemini</span> | <span className="mono">openrouter</span> | <span className="mono">ollama</span> +
+            ключ провайдера (<span className="mono">GOOGLE_API_KEY</span> / <span className="mono">OPENROUTER_API_KEY</span>).
+            Пусто = текущий провайдер. Gemini = <span className="mono">gemini-2.5-flash</span>.
+          </p>
+        </div>
+
+        <div className="card">
+          <b>📡 Каналы и интеграции</b>
+          <table className="tbl" style={{ marginTop: 8 }}>
+            <tbody>
+              <tr><td className="muted">Telegram</td><td><Bool v={s.channels.telegram_configured} /></td></tr>
+              <tr><td className="muted">Meta (IG / Messenger)</td><td><Bool v={s.channels.meta_configured} /></td></tr>
+              <tr><td className="muted">Операторская группа</td><td><Bool v={s.channels.operator_group_configured} /></td></tr>
+              <tr><td className="muted">Распознавание голоса</td><td><Bool v={s.channels.voice_transcription} /></td></tr>
+            </tbody>
+          </table>
+          <button className="btn sm primary" style={{ marginTop: 10 }}
+                  onClick={() => { location.hash = '#/channels' }}>
+            🔌 Подключить / настроить каналы →
+          </button>
+        </div>
+
+        <div className="card">
+          <b>🗂 CRM (зеркало)</b>
+          <table className="tbl" style={{ marginTop: 8 }}>
+            <tbody>
+              <tr><td className="muted">Включена</td><td><Bool v={s.crm.enabled} /></td></tr>
+              <tr><td className="muted">Провайдер</td><td>{s.crm.provider}</td></tr>
+              <tr><td className="muted">HubSpot portal</td><td><Bool v={s.crm.hubspot_portal_configured} /></td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div className="card">
+          <b>🏷 Тенант</b>
+          <table className="tbl" style={{ marginTop: 8 }}>
+            <tbody>
+              <tr><td className="muted">Slug</td><td className="mono">{s.tenant.slug}</td></tr>
+              <tr><td className="muted">Название</td><td>{s.tenant.display_name}</td></tr>
+              <tr><td className="muted">Языки</td><td>{(s.tenant.languages || []).join(', ')}</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div className="card" style={{ gridColumn: '1 / -1' }}>
+          <b>📚 База знаний ({kb.length} документов)</b>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+            {kb.map(k => (
+              <span key={k.source} className="chip">{k.source} · {k.chunks}</span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <p className="faint" style={{ fontSize: 12, marginTop: 16 }}>
+        Серые карточки читаются из env/конфига на сервере — секреты живут в Railway.
+        Тон и правила бота — во вкладке «Мозг»; стадии воронки — в «Воронке» (⚙ Настроить стадии).
+      </p>
+      </>)}
+    </div>
+  )
+}
+
+/* ---------- Бэкап базы ---------- */
+
+function MaintenanceCard() {
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+  const run = async () => {
+    setBusy(true); setMsg('')
+    try {
+      const r = await api.post<{ removed_dupes: number; merged_cards: number }>('/maintenance/dedup', {})
+      setMsg(`✅ Готово: убрано дублей ${r.removed_dupes}, склеено карточек ${r.merged_cards}`)
+    } catch (e: any) { setMsg('Ошибка: ' + (e?.detail ?? e?.message ?? 'не вышло')) }
+    finally { setBusy(false) }
+  }
+  return (
+    <div className="card">
+      <b>🔄 Синхронизация и чистка дублей</b>
+      <p className="faint" style={{ fontSize: 11.5, margin: '6px 0 10px' }}>
+        Разово пройтись по ВСЕМ каналам и убрать задвоенные сообщения + склеить разорванные
+        карточки одного человека. Бот делает это сам каждые ~10 минут — кнопка нужна, если
+        хотите почистить прямо сейчас, без сюрпризов. Безопасно: только база, ничего не теряется.
+      </p>
+      <button className="btn sm primary" onClick={run} disabled={busy}>
+        {busy ? <span className="spin" /> : '🔄 Синхронизировать сейчас'}
+      </button>
+      {msg && <span style={{ marginLeft: 10, fontSize: 12.5 }}>{msg}</span>}
+    </div>
+  )
+}
+
+/* ---------- Ручное слияние дублей карточек ----------
+   Для случаев, что авто-склейка не берёт (рекламный @lid без номера + карточка с
+   номером, или один человек двумя заявками). Оператор подтверждает — сливаем. */
+function DuplicateMergeCard() {
+  const [busy, setBusy] = useState('')
+  const [groups, setGroups] = useState<any[] | null>(null)
+  const [msg, setMsg] = useState('')
+  const find = async () => {
+    setBusy('find'); setMsg('')
+    try {
+      const r = await api.get<{ groups: any[] }>('/maintenance/duplicate-candidates')
+      setGroups(r.groups || [])
+      if (!r.groups?.length) setMsg('✅ Похожих карточек не найдено')
+    } catch (e: any) { setMsg('Ошибка: ' + (e?.detail ?? e?.message ?? 'не вышло')) }
+    finally { setBusy('') }
+  }
+  const merge = async (canon_id: string, shadow_id: string, gi: number) => {
+    setBusy('m' + gi); setMsg('')
+    try {
+      await api.post('/maintenance/merge-customers', { canon_id, shadow_id })
+      setMsg('✅ Объединено')
+      await find()
+    } catch (e: any) { setMsg('Ошибка: ' + (e?.detail ?? e?.message ?? 'не вышло')) }
+    finally { setBusy('') }
+  }
+  return (
+    <div className="card">
+      <b>🧩 Объединить дубли карточек (вручную)</b>
+      <p className="faint" style={{ fontSize: 11.5, margin: '6px 0 10px' }}>
+        Если ОДИН человек завёлся двумя карточками (например рекламный лид со скрытым
+        номером + карточка с номером) и бот не склеил их сам — найдите и объедините здесь.
+        Сливаем только по вашему подтверждению, чтобы не схлопнуть разных людей с одним
+        именем. История и задачи переедут на главную (⭐) карточку; дубль не удаляется,
+        а помечается «слит» (обратимо).
+      </p>
+      <button className="btn sm" onClick={find} disabled={!!busy}>
+        {busy === 'find' ? <span className="spin" /> : '🔎 Найти похожие'}
+      </button>
+      {msg && <span style={{ marginLeft: 10, fontSize: 12.5 }}>{msg}</span>}
+      {groups && groups.length > 0 && (
+        <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {groups.map((g, gi) => {
+            const canon = g.cards.find((c: any) => c.id === g.suggested_canon) || g.cards[0]
+            const others = g.cards.filter((c: any) => c.id !== canon.id)
+            return (
+              <div key={gi} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 10 }}>
+                <div className="faint" style={{ fontSize: 11, marginBottom: 4 }}>совпадение: {g.reason}</div>
+                {g.cards.map((c: any) => (
+                  <div key={c.id} style={{ fontSize: 12.5, padding: '2px 0' }}>
+                    {c.id === canon.id ? '⭐ ' : '• '}
+                    <b>{c.name}</b>
+                    {c.phone ? ` · ${c.phone}` : ''}
+                    {c.channel ? ` · ${c.channel}` : ''}
+                    {c.stage ? ` · ${c.stage}` : ''}
+                    {c.last_message_at ? ` · ${new Date(c.last_message_at).toLocaleDateString()}` : ''}
+                  </div>
+                ))}
+                <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                  {others.map((o: any) => (
+                    <button key={o.id} className="btn sm primary" disabled={!!busy}
+                            onClick={() => merge(canon.id, o.id, gi)}>
+                      {busy === 'm' + gi ? <span className="spin" /> : `Объединить «${o.name}» → ⭐`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* 🩺 Проверка целостности: находит рассинхроны (стадия «Созвон» без брони,
+   бронь в прошлом, напоминания-сироты) и безопасно их чинит. Бот делает это сам
+   каждые ~10 мин — здесь можно проверить/исправить вручную. */
+function DiagnosticsCard() {
+  const [busy, setBusy] = useState('')
+  const [data, setData] = useState<{ issues: any[]; ok: boolean; total_problems: number } | null>(null)
+  const [msg, setMsg] = useState('')
+  const { openConversation } = useDrawer()
+  const check = async () => {
+    setBusy('check'); setMsg('')
+    try { setData(await api.get('/diagnostics')) }
+    catch (e: any) { setMsg('Ошибка: ' + (e?.detail ?? e?.message ?? 'не вышло')) }
+    finally { setBusy('') }
+  }
+  const heal = async () => {
+    setBusy('heal'); setMsg('')
+    try {
+      const r = await api.post<any>('/diagnostics/heal', {})
+      const f = r.fixed || {}
+      setMsg(`✅ Исправлено: напоминаний-сирот ${f.orphan_reminders_cancelled || 0}, ` +
+             `броней снято ${f.stale_bookings_cleared || 0}, стадий откатано ${f.empty_oncall_reverted || 0}, ` +
+             `лишних задач снято ${f.stale_callbacks_cancelled || 0}`)
+      await check()
+    } catch (e: any) { setMsg('Ошибка: ' + (e?.detail ?? e?.message ?? 'не вышло')) }
+    finally { setBusy('') }
+  }
+  return (
+    <div className="card">
+      <b>🩺 Проверка системы (целостность данных)</b>
+      <p className="faint" style={{ fontSize: 11.5, margin: '6px 0 10px' }}>
+        Находит рассинхроны: «Созвон назначен» без времени, созвон в прошлом, бронь не на той
+        стадии, напоминания без созвона. Бот чинит безопасные сам каждые ~10 минут — здесь можно
+        проверить и исправить прямо сейчас. Безопасно и обратимо: ничего не удаляется.
+      </p>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <button className="btn sm" onClick={check} disabled={!!busy}>{busy === 'check' ? <span className="spin" /> : '🔍 Проверить'}</button>
+        {data && !data.ok && <button className="btn sm primary" onClick={heal} disabled={!!busy}>{busy === 'heal' ? <span className="spin" /> : '🛠 Исправить безопасно'}</button>}
+        {msg && <span style={{ fontSize: 12.5 }}>{msg}</span>}
+      </div>
+      {data && (data.ok
+        ? <div className="chip ok" style={{ marginTop: 10, display: 'inline-block' }}>✅ Рассинхронов не найдено</div>
+        : <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {data.issues.map((it: any) => (
+              <div key={it.code} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className={`chip ${it.severity === 'high' ? 'danger' : 'warn'}`}>{it.count}</span>
+                  <b style={{ fontSize: 12.5 }}>{it.title}</b>
+                </div>
+                <div className="faint" style={{ fontSize: 11.5, marginTop: 3 }}>{it.detail}</div>
+                {it.auto_fix && <div className="faint" style={{ fontSize: 11, marginTop: 2 }}>🛠 авто: {it.auto_fix}</div>}
+                <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 5 }}>
+                  {(it.items || []).slice(0, 10).map((x: any, i: number) => x.conversation_id ? (
+                    <button key={i} className="btn sm ghost" style={{ fontSize: 11 }}
+                            onClick={() => openConversation(x.conversation_id)}>
+                      {x.name || x.conversation_id.slice(0, 8)} →
+                    </button>
+                  ) : null)}
+                </div>
+              </div>
+            ))}
+          </div>
+      )}
+    </div>
+  )
+}
+
+function BackupCard() {
+  const [busy, setBusy] = useState('')
+  const [msg, setMsg] = useState('')
+  const download = async () => {
+    setBusy('dl'); setMsg('')
+    try {
+      const r = await fetch('/admin/api/db-backup', { headers: { Authorization: `Bearer ${getToken() || ''}` } })
+      if (!r.ok) throw new Error('HTTP ' + r.status)
+      const blob = await r.blob()
+      const cd = r.headers.get('Content-Disposition') || ''
+      const m = cd.match(/filename="?([^"]+)"?/)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = m ? m[1] : 'deadline-backup.json.gz'; a.click()
+      URL.revokeObjectURL(url)
+      setMsg('✅ Скачано')
+    } catch (e: any) { setMsg('Ошибка: ' + (e?.message ?? 'не вышло')) }
+    finally { setBusy('') }
+  }
+  const sendTg = async () => {
+    setBusy('tg'); setMsg('')
+    try { const r = await api.post<any>('/db-backup/send-telegram', {}); setMsg(`✅ В Telegram (${r.size_kb} КБ)`) }
+    catch (e: any) { setMsg('Ошибка: ' + (e?.detail ?? e?.message ?? 'не вышло')) }
+    finally { setBusy('') }
+  }
+  return (
+    <div className="card">
+      <b>💾 Бэкап базы</b>
+      <p className="faint" style={{ fontSize: 11.5, margin: '6px 0 10px' }}>
+        Полная копия всех переписок, статусов, стадий, задач и правил. Авто-бэкап уходит
+        владельцу в Telegram раз в день (offsite-копия). Скачать вручную — в любой момент.
+      </p>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <button className="btn sm primary" onClick={download} disabled={!!busy}>{busy === 'dl' ? '…' : '💾 Скачать бэкап'}</button>
+        <button className="btn sm" onClick={sendTg} disabled={!!busy}>{busy === 'tg' ? '…' : '📤 В Telegram сейчас'}</button>
+        {msg && <span className="chip accent">{msg}</span>}
+      </div>
+    </div>
+  )
+}
+
+/* ---------- Экспорт в таблицу (Excel/CSV) ---------- */
+
+function ExportCard() {
+  const [busy, setBusy] = useState('')
+  const [msg, setMsg] = useState('')
+  const dl = async (path: string, fallback: string, key: string) => {
+    setBusy(key); setMsg('')
+    try {
+      const r = await fetch('/admin/api' + path, { headers: { Authorization: `Bearer ${getToken() || ''}` } })
+      if (!r.ok) throw new Error('HTTP ' + r.status)
+      const blob = await r.blob()
+      const cd = r.headers.get('Content-Disposition') || ''
+      const m = cd.match(/filename="?([^"]+)"?/)
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url; a.download = m ? m[1] : fallback; a.click()
+      URL.revokeObjectURL(url)
+      setMsg('✅ Скачано')
+    } catch (e: any) { setMsg('Ошибка: ' + (e?.message ?? 'не вышло')) }
+    finally { setBusy('') }
+  }
+  return (
+    <div className="card">
+      <b>📊 Экспорт в таблицу (Excel / CSV)</b>
+      <p className="faint" style={{ fontSize: 11.5, margin: '6px 0 10px' }}>
+        Выгрузка на всякий случай: <b>лиды</b> (CRM-таблица: имя, телефон, канал, стадия,
+        температура, поля) и <b>полный архив переписок</b> (каждое сообщение строкой). Открывается
+        в Excel / Google Sheets (UTF-8, разделитель «;»).
+      </p>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+        <button className="btn sm primary" onClick={() => dl('/export/leads.csv', 'leads.csv', 'leads')} disabled={!!busy}>{busy === 'leads' ? '…' : '👤 Лиды (CRM)'}</button>
+        <button className="btn sm" onClick={() => dl('/export/conversations.csv', 'conversations.csv', 'conv')} disabled={!!busy}>{busy === 'conv' ? '…' : '💬 Все переписки'}</button>
+        {msg && <span className="chip accent">{msg}</span>}
+      </div>
+    </div>
+  )
+}
+
+/* ---------- Версии конфигурации (откат на любую точку) ---------- */
+
+function SnapshotsCard() {
+  const [items, setItems] = useState<any[]>([])
+  const [label, setLabel] = useState('')
+  const [busy, setBusy] = useState('')
+  const [msg, setMsg] = useState('')
+  const [confirmId, setConfirmId] = useState<string | null>(null)
+  const load = () => api.get<{ items: any[] }>('/config/snapshots').then(r => setItems(r.items)).catch(() => { /* */ })
+  useEffect(() => { void load() }, [])
+  const save = async () => {
+    setBusy('save'); setMsg('')
+    try { await api.post('/config/snapshot', { label: label.trim() || undefined }); setLabel(''); setMsg('✅ Чекпойнт сохранён'); await load() }
+    catch (e: any) { setMsg('Ошибка: ' + (e?.detail ?? e?.message ?? 'не вышло')) }
+    finally { setBusy('') }
+  }
+  const restore = async (id: string) => {
+    setBusy(id); setMsg('')
+    try {
+      const r = await api.post<any>(`/config/restore/${id}`, {})
+      const errN = r.errors ? Object.keys(r.errors).length : 0
+      setMsg(errN ? `⚠️ Частично (ошибки: ${Object.keys(r.errors).join(', ')})` : '✅ Конфигурация восстановлена')
+      setConfirmId(null); await load()
+    } catch (e: any) { setMsg('Ошибка: ' + (e?.detail ?? e?.message ?? 'не вышло')) }
+    finally { setBusy('') }
+  }
+  const fmt = (iso: string) => {
+    try { return new Date(iso).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) }
+    catch { return (iso || '').slice(0, 16) }
+  }
+  return (
+    <div className="card">
+      <b>🗂 Версии конфигурации · откат</b>
+      <p className="faint" style={{ fontSize: 11.5, margin: '6px 0 10px' }}>
+        Снимок настроек (воронка, поля, автоматизации, поведение, промпт) — можно вернуться на любую версию.
+        Снимок берётся автоматически <b>перед каждым изменением</b> + вручную кнопкой. Откат меняет только
+        настройки — переписки и клиенты не трогаются.
+      </p>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+        <input
+          placeholder="Название чекпойнта (необязательно)"
+          value={label}
+          onChange={e => setLabel(e.target.value)}
+          style={{ flex: 1, minWidth: 200, fontSize: 12.5, padding: '6px 9px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }}
+        />
+        <button className="btn sm primary" onClick={save} disabled={!!busy}>{busy === 'save' ? '…' : '💾 Сохранить чекпойнт'}</button>
+        {msg && <span className="chip accent">{msg}</span>}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 320, overflowY: 'auto' }}>
+        {items.length === 0 && <span className="faint" style={{ fontSize: 12 }}>Пока нет снимков</span>}
+        {items.map(it => (
+          <div key={it.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--bg)' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12.5, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.label}</div>
+              <div className="faint" style={{ fontSize: 11 }}>
+                {fmt(it.created_at)} · {it.reason || 'manual'} · воронка {it.counts?.stages} · поля {it.counts?.fields} · авто {it.counts?.automations}
+              </div>
+            </div>
+            {confirmId === it.id ? (
+              <>
+                <button className="btn sm" style={{ color: '#e0524f', borderColor: '#e0524f' }} onClick={() => restore(it.id)} disabled={!!busy}>{busy === it.id ? '…' : 'Точно откатить'}</button>
+                <button className="btn sm ghost" onClick={() => setConfirmId(null)}>Отмена</button>
+              </>
+            ) : (
+              <button className="btn sm" onClick={() => setConfirmId(it.id)} disabled={!!busy}>↩︎ Восстановить</button>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/* ---------- Часовые пояса лидов ---------- */
+
+function TimezoneCard() {
+  const [multi, setMulti] = useState<boolean | null>(null)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { void (async () => {
+    try { const r = await api.get<any>('/behavior'); const v = r.overrides?.tz_multi; setMulti(v === undefined ? true : !!v) }
+    catch { setMulti(true) }
+  })() }, [])
+  const toggle = async () => {
+    if (multi === null) return
+    setBusy(true)
+    const nv = !multi
+    try { await api.post('/behavior', { values: { tz_multi: nv } }); setMulti(nv) }
+    catch { /* */ } finally { setBusy(false) }
+  }
+  return (
+    <div className="card">
+      <b>🌍 Часовые пояса лидов</b>
+      <p className="faint" style={{ fontSize: 11.5, margin: '6px 0 10px' }}>
+        ВКЛ — бот понимает время в поясе ЛИДА (по его номеру): «после 18 по Астане» переведётся
+        верно (= 20:00 Пхукета). Для DEADLINE (лиды из разных стран) держите ВКЛ. ВЫКЛ — все
+        времена в вашем поясе (если работаете в одном городе — не нужны чужие пояса).
+      </p>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+        <input type="checkbox" checked={!!multi} disabled={multi === null || busy} onChange={toggle} />
+        Учитывать часовой пояс лида {multi === null ? '…' : (multi ? '— включено' : '— выключено (всё в вашем поясе)')}
+      </label>
+    </div>
+  )
+}
+
+/* ---------- Рабочее пространство: имя, обучение, демо-песочница ---------- */
+
+function WorkspaceCard() {
+  const [name, setName] = useState('')
+  const [logoUrl, setLogoUrl] = useState('')
+  const [accent, setAccent] = useState('')
+  const [demoLeads, setDemoLeads] = useState(0)
+  const [busy, setBusy] = useState(false)
+  const [dirty, setDirty] = useState(false)
+  const [toast, setToast] = useState<{ text: string; err?: boolean } | null>(null)
+
+  const showToast = (text: string, err = false) => {
+    setToast({ text, err })
+    setTimeout(() => setToast(null), 4500)
+  }
+
+  const load = () => api.get<any>('/workspace').then(w => {
+    setName(w.business_name || '')
+    setLogoUrl(w.logo_url || '')
+    setAccent(w.accent_color || '')
+    setDemoLeads(w.demo_leads || 0)
+  }).catch(() => { /* */ })
+
+  useEffect(() => { void load() }, [])
+
+  const saveName = async () => {
+    setBusy(true)
+    try {
+      await api.post('/workspace', { business_name: name, logo_url: logoUrl, accent_color: accent })
+      setDirty(false)
+      showToast('✅ Сохранено — имя обновится в шапке после перезагрузки страницы')
+    } catch (e: any) { showToast(`Ошибка: ${e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  const seed = async () => {
+    setBusy(true)
+    try {
+      const r = await api.post<any>('/demo/seed')
+      showToast(`🧪 Добавлено демо: ${r.created.customers} лидов, ${r.created.messages} сообщений, ${r.created.tasks} задачи`)
+      await load()
+    } catch (e: any) { showToast(`Ошибка: ${e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  const clear = async () => {
+    if (!confirm(`Удалить ${demoLeads} демо-лидов? Реальные клиенты не затронутся.`)) return
+    setBusy(true)
+    try {
+      await api.post('/demo/clear')
+      showToast('🧹 Демо-данные удалены')
+      await load()
+    } catch (e: any) { showToast(`Ошибка: ${e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className="card">
+      <b>🏢 Рабочее пространство</b>
+      <div style={{ display: 'flex', gap: 18, marginTop: 12, flexWrap: 'wrap', alignItems: 'flex-start' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 280 }}>
+          <span className="muted" style={{ fontSize: 12.5 }}>Название бизнеса (в шапке панели):</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <input value={name} onChange={e => { setName(e.target.value); setDirty(true) }} style={{ flex: 1 }} />
+            <button className="btn sm primary" onClick={saveName} disabled={busy || !dirty}>💾</button>
+          </div>
+          <span className="muted" style={{ fontSize: 12.5 }}>White-label: логотип (URL картинки) и фирменный цвет:</span>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input placeholder="https://…/logo.png" value={logoUrl}
+                   onChange={e => { setLogoUrl(e.target.value); setDirty(true) }} style={{ flex: 1 }} />
+            <input type="color" value={accent || '#7c6cff'} title="Акцентный цвет"
+                   onChange={e => { setAccent(e.target.value); setDirty(true) }}
+                   style={{ width: 42, height: 34, padding: 2 }} />
+            {accent && <button className="btn sm ghost" onClick={() => { setAccent(''); setDirty(true) }}>↺</button>}
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn sm" onClick={() => { import('../components/Tour').then(m => m.startTour()) }}>
+              🎓 Показать обучение
+            </button>
+            <button className="btn sm ghost" onClick={() => { location.hash = '#/onboarding' }}>
+              ↻ Мастер настройки заново
+            </button>
+            <button className="btn sm ghost" onClick={() => { location.hash = '#/logs' }}
+                    title="История работы приложения: что/как/почему/кто — причины ошибок и изменений">
+              📋 Логи системы
+            </button>
+            <button className="btn sm ghost" onClick={() => { location.hash = '#/bot-decisions' }}
+                    title="Отдельный журнал РЕШЕНИЙ БОТА: что бот решил и почему (стадии/созвоны/дожим/передача)">
+              🤖 Журнал решений бота
+            </button>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, cursor: 'pointer' }}>
+            <input type="checkbox" defaultChecked={hintsEnabled()}
+                   onChange={e => setHintsEnabled(e.target.checked)} />
+            💡 Подсказки на страницах (что это за окно и как с ним работать)
+          </label>
+        </div>
+        <div style={{ flex: 1, minWidth: 280, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <span className="muted" style={{ fontSize: 12.5 }}>
+            🧪 Демо-песочница: учебные лиды с перепиской и задачами — тренируйтесь без риска.
+            {demoLeads > 0 && <b style={{ color: 'var(--text)' }}> Сейчас в системе: {demoLeads} демо-лидов.</b>}
+          </span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn sm" onClick={seed} disabled={busy}>
+              {busy ? <span className="spin" /> : (demoLeads > 0 ? '↻ Пересоздать демо' : '+ Добавить демо-данные')}
+            </button>
+            {demoLeads > 0 && (
+              <button className="btn sm danger" onClick={clear} disabled={busy}>🧹 Удалить демо</button>
+            )}
+          </div>
+        </div>
+      </div>
+      {toast && <div className={`toast ${toast.err ? 'err' : ''}`}>{toast.text}</div>}
+    </div>
+  )
+}
+
+/* ---------- Команда: именные токены менеджеров ---------- */
+
+function TeamCard() {
+  const [items, setItems] = useState<any[]>([])
+  const [newName, setNewName] = useState('')
+  const [newDept, setNewDept] = useState('')
+  const [newTg, setNewTg] = useState('')
+  const [newRole, setNewRole] = useState('manager')
+  const [freshToken, setFreshToken] = useState<{ name: string; token: string } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [toast, setToast] = useState<{ text: string; err?: boolean } | null>(null)
+
+  const showToast = (text: string, err = false) => {
+    setToast({ text, err })
+    setTimeout(() => setToast(null), 4000)
+  }
+
+  const load = () => api.get<{ items: any[] }>('/team').then(r => setItems(r.items)).catch(() => { /* */ })
+  useEffect(() => { void load() }, [])
+
+  const create = async () => {
+    const name = newName.trim()
+    if (!name || busy) return
+    setBusy(true)
+    try {
+      const r = await api.post<{ token: string }>('/team', {
+        name, department: newDept.trim() || undefined, telegram_chat_id: newTg.trim() || undefined,
+        role: newRole,
+      })
+      setFreshToken({ name, token: r.token })
+      setNewName(''); setNewDept(''); setNewTg(''); setNewRole('manager')
+      await load()
+    } catch (e: any) { showToast(`Ошибка: ${e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  const toggle = async (id: string) => {
+    setBusy(true)
+    try { await api.post(`/team/${id}/toggle`); await load() }
+    catch (e: any) { showToast(`Ошибка: ${e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className="card">
+      <b>👥 Команда и роли
+        <Help title="Роли и права" text="Каждому участнику — свой токен входа (показывается один раз). Роли: 👑 Владелец (вы) — полный доступ. 🧑‍💼 Менеджер — ведёт лидов: отвечает, берёт на себя, двигает стадии, ставит задачи; НО не трогает Настройки, Мозг, Автоматизации и не делает разрушительных изменений. 👁 Наблюдатель — только просмотр, ничего изменить не может (для стажёра/контроля)." />
+      </b>
+      <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap', maxWidth: 720 }}>
+        <input placeholder="Имя (напр. «Николай»)"
+               value={newName} onChange={e => setNewName(e.target.value)}
+               onKeyDown={e => { if (e.key === 'Enter') create() }} style={{ flex: '1 1 150px' }} />
+        <select value={newRole} onChange={e => setNewRole(e.target.value)} style={{ flex: '0 0 auto' }}
+                title="Роль определяет права участника">
+          <option value="manager">🧑‍💼 Менеджер (ведёт лидов)</option>
+          <option value="viewer">👁 Наблюдатель (только просмотр)</option>
+        </select>
+        <input placeholder="Отдел (клининг / ремонт)"
+               value={newDept} onChange={e => setNewDept(e.target.value)} style={{ flex: '1 1 130px' }} />
+        <input placeholder="Telegram chat_id (уведомления)"
+               value={newTg} onChange={e => setNewTg(e.target.value)} style={{ flex: '1 1 160px' }} />
+        <button className="btn sm primary" onClick={create} disabled={busy || !newName.trim()}>
+          {busy ? <span className="spin" /> : '+ Выдать доступ'}
+        </button>
+      </div>
+      {freshToken && (
+        <div className="card" style={{ marginTop: 10, borderColor: 'var(--accent-border)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <b style={{ fontSize: 13 }}>🔑 Токен для «{freshToken.name}» — показывается один раз:</b>
+          <code className="mono" style={{ fontSize: 12.5, wordBreak: 'break-all', background: 'var(--bg-soft)', padding: '8px 10px', borderRadius: 6 }}>
+            {freshToken.token}
+          </code>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn sm" onClick={() => { navigator.clipboard?.writeText(freshToken.token); showToast('Скопировано') }}>
+              📋 Скопировать
+            </button>
+            <button className="btn sm ghost" onClick={() => setFreshToken(null)}>Скрыть</button>
+          </div>
+          <span className="faint" style={{ fontSize: 11.5 }}>
+            Менеджер вводит этот токен на экране входа панели. Потерял — деактивируйте и выдайте новый.
+          </span>
+        </div>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 10 }}>
+        {items.length === 0 && <span className="faint" style={{ fontSize: 12.5 }}>Пока только вы (владелец). Добавьте менеджера — он получит свой вход.</span>}
+        {items.map(m => (
+          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+            <span style={{ opacity: m.active ? 1 : 0.5 }}>👤 {m.name}</span>
+            <span className={`chip ${m.role === 'viewer' ? '' : 'accent'}`}>
+              {m.role === 'viewer' ? '👁 наблюдатель' : '🧑‍💼 менеджер'}
+            </span>
+            {m.department && <span className="chip">{m.department}</span>}
+            {m.telegram_chat_id && <span className="chip" title="уведомления в Telegram">🔔</span>}
+            {m.last_seen_at && <span className="faint" style={{ fontSize: 11 }}>был: {fmtTimeShort(m.last_seen_at)}</span>}
+            <div style={{ flex: 1 }} />
+            <button className={`btn sm ${m.active ? 'danger' : ''}`} onClick={() => toggle(m.id)} disabled={busy}>
+              {m.active ? 'Деактивировать' : 'Включить'}
+            </button>
+          </div>
+        ))}
+      </div>
+      {toast && <div className={`toast ${toast.err ? 'err' : ''}`}>{toast.text}</div>}
+    </div>
+  )
+}
+
+function fmtTimeShort(iso: string): string {
+  const d = new Date(iso)
+  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) + ' ' +
+    d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+}
+
+/* ---------- Пресеты ниш (паттерн GHL Snapshots) ---------- */
+
+function PresetsCard() {
+  const [items, setItems] = useState<any[]>([])
+  const [busy, setBusy] = useState(false)
+  const [confirmKey, setConfirmKey] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ text: string; err?: boolean } | null>(null)
+
+  const showToast = (text: string, err = false) => {
+    setToast({ text, err })
+    setTimeout(() => setToast(null), 5000)
+  }
+
+  useEffect(() => {
+    void api.get<{ items: any[] }>('/presets').then(r => setItems(r.items)).catch(() => { /* ignore */ })
+  }, [])
+
+  const apply = async (key: string) => {
+    setBusy(true)
+    try {
+      const r = await api.post<{ applied: any; preset: string; migrated?: { migrated: number } }>('/presets/apply', { key })
+      const mg = r.migrated?.migrated || 0
+      showToast(`✅ «${r.preset}»: стадии ${r.applied.stages}, поля ${r.applied.fields}, правила ${r.applied.automations}.${mg ? ` ${mg} карточек безопасно перенесено (не потеряны).` : ''} Обнови вкладки Воронка/Автоматизации.`)
+      setConfirmKey(null)
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className="card">
+      <b>📦 Пресеты ниш — настроить систему под бизнес в 1 клик
+        <Help title="Пресет" text="Готовый набор под нишу: стадии воронки + поля лида + правила автоматизаций + текст напоминаний. Применяется мгновенно, данные лидов не трогает. Потом всё можно подправить руками." />
+      </b>
+      <p className="muted" style={{ margin: '4px 0 10px', fontSize: 12.5 }}>
+        Пресет заменит стадии воронки, поля лида и пресет-правила автоматизаций (📦) под выбранную нишу.
+        Ваши ручные правила и данные лидов не трогаются — карточки с убранных стадий <b>безопасно переедут</b> на
+        ближайшую (не потеряются). Перед применением автоматически сохраняется снимок конфигурации (откат в
+        «Версии конфигурации»). Тон бота настраивается отдельно во вкладке «Мозг».
+      </p>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: 10 }}>
+        {items.map(p => (
+          <div key={p.key} style={{ border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <b style={{ fontSize: 13.5 }}>{p.emoji} {p.title}</b>
+            <span className="muted" style={{ fontSize: 12, flex: 1 }}>{p.desc}</span>
+            <span className="faint" style={{ fontSize: 11 }}>
+              {p.stages_count} стадий · {p.fields_count} полей · {p.automations_count} правил
+            </span>
+            {confirmKey === p.key ? (
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button className="btn sm primary" onClick={() => apply(p.key)} disabled={busy}>
+                  {busy ? <span className="spin" /> : 'Точно применить'}
+                </button>
+                <button className="btn sm" onClick={() => setConfirmKey(null)}>Отмена</button>
+              </div>
+            ) : (
+              <button className="btn sm" onClick={() => setConfirmKey(p.key)}>Применить</button>
+            )}
+          </div>
+        ))}
+      </div>
+      {toast && <div className={`toast ${toast.err ? 'err' : ''}`}>{toast.text}</div>}
+    </div>
+  )
+}
+
+/* ---------- Поля лида (редактор определений) ---------- */
+
+const REMINDER_OPTS = [
+  { k: '1d', label: '🗓 За день' },
+  { k: '3h', label: '⏰ За 3 часа' },
+  { k: '1h', label: '🔔 За час' },
+  { k: 'morning', label: '🌅 Утром в день созвона' },
+]
+
+function CallRemindersCard() {
+  const [sel, setSel] = useState<string[]>([])
+  const [msg, setMsg] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    void api.get<any>('/behavior').then(r => {
+      const raw = String(r.overrides?.call_reminder_offsets || '1d,3h,1h')
+      setSel(raw.split(',').map((x: string) => x.trim()).filter(Boolean))
+    }).catch(() => { /* */ })
+  }, [])
+  const toggle = async (k: string) => {
+    if (busy) return
+    const next = sel.includes(k) ? sel.filter(x => x !== k) : [...sel, k]
+    if (next.length === 0) { setMsg('Оставьте хотя бы одно напоминание'); return }
+    const prev = sel
+    setSel(next); setBusy(true)
+    try {
+      const order = ['1d', '3h', '2h', '1h', '30m', 'morning']  // от дальнего к ближнему
+      await api.post('/behavior', { values: { call_reminder_offsets: order.filter(o => next.includes(o)).join(',') } })
+      setMsg('✅ Сохранено — применится к новым созвонам')
+    } catch (e: any) { setMsg(`Ошибка: ${e.detail ?? e.message}`); setSel(prev) }
+    finally { setBusy(false) }
+  }
+  return (
+    <div className="card">
+      <h3 style={{ marginTop: 0 }}>🔔 Напоминания о созвоне</h3>
+      <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+        Когда система напомнит лиду и вам о назначенном созвоне. Выберите удобные интервалы —
+        напр. только «за час», или «утром + за час». Применяется к новым созвонам; каждый
+        интервал — напоминание и лиду, и вам.
+      </p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
+        {REMINDER_OPTS.map(o => {
+          const on = sel.includes(o.k)
+          return (
+            <label key={o.k} className={`chip ${on ? 'accent' : ''}`}
+                   style={{ cursor: 'pointer', padding: '6px 11px', opacity: on ? 1 : 0.6 }}>
+              <input type="checkbox" checked={on} onChange={() => toggle(o.k)}
+                     style={{ marginRight: 6, verticalAlign: 'middle' }} />
+              {o.label}
+            </label>
+          )
+        })}
+      </div>
+      {msg && <div className="faint" style={{ marginTop: 8, fontSize: 12 }}>{msg}</div>}
+    </div>
+  )
+}
+
+const HIDEABLE_SECTIONS = [
+  { k: 'funnel', label: '📊 Воронка' },
+  { k: 'inbox', label: '💬 Переписки' },
+  { k: 'tasks', label: '⏰ Задачи' },
+  { k: 'calendar', label: '📅 Календарь' },
+  { k: 'automations', label: '⚡ Автоматизации' },
+  { k: 'analytics', label: '📈 Аналитика' },
+  { k: 'brain', label: '🧠 Мозг' },
+  { k: 'channels', label: '🔌 Каналы' },
+]
+
+const HIDEABLE_ACTIONS = [
+  { k: 'recurring', label: '🔁 Регулярный клиент' },
+  { k: 'call_schedule', label: '📞 Назначить созвон' },
+  { k: 'assign', label: '📋 Назначить на оператора' },
+]
+
+function FeatureFlagsCard() {
+  const [hidden, setHidden] = useState<string[]>([])
+  const [hiddenAct, setHiddenAct] = useState<string[]>([])
+  const [msg, setMsg] = useState('')
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    void api.get<any>('/behavior').then(r => {
+      setHidden(String(r.overrides?.hidden_sections || '').split(',').map((x: string) => x.trim()).filter(Boolean))
+      setHiddenAct(String(r.overrides?.hidden_actions || '').split(',').map((x: string) => x.trim()).filter(Boolean))
+    }).catch(() => { /* */ })
+  }, [])
+  const toggleAct = async (k: string) => {
+    if (busy) return
+    const next = hiddenAct.includes(k) ? hiddenAct.filter(x => x !== k) : [...hiddenAct, k]
+    const prev = hiddenAct
+    setHiddenAct(next); setBusy(true)
+    try {
+      await api.post('/behavior', { values: { hidden_actions: next.join(',') } })
+      setMsg('✅ Сохранено — обновите карточку лида')
+    } catch (e: any) { setMsg(`Ошибка: ${e.detail ?? e.message}`); setHiddenAct(prev) }
+    finally { setBusy(false) }
+  }
+  const toggle = async (k: string) => {
+    if (busy) return
+    const next = hidden.includes(k) ? hidden.filter(x => x !== k) : [...hidden, k]
+    setHidden(next); setBusy(true)
+    try {
+      await api.post('/behavior', { values: { hidden_sections: next.join(',') } })
+      setMsg('✅ Сохранено — меню обновится в течение 30 секунд')
+    } catch (e: any) {
+      setMsg(`Ошибка: ${e.detail ?? e.message}`); setHidden(hidden)  // откат
+    } finally { setBusy(false) }
+  }
+  return (
+    <div className="card">
+      <h3 style={{ marginTop: 0 }}>🧩 Разделы под нишу</h3>
+      <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.5 }}>
+        Скрыть лишние разделы под ваш бизнес — интерфейс станет проще. Напр. салону красоты
+        не нужны Автоматизации/Аналитика/Мозг: оставьте Переписки, Задачи, Календарь и Воронку.
+        Снятая галочка = раздел скрыт из меню. Канвас и Настройки скрыть нельзя.
+      </p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
+        {HIDEABLE_SECTIONS.map(s => {
+          const on = !hidden.includes(s.k)
+          return (
+            <label key={s.k} className={`chip ${on ? 'accent' : ''}`}
+                   style={{ cursor: 'pointer', padding: '6px 11px', opacity: on ? 1 : 0.55 }}>
+              <input type="checkbox" checked={on} onChange={() => toggle(s.k)}
+                     style={{ marginRight: 6, verticalAlign: 'middle' }} />
+              {s.label}
+            </label>
+          )
+        })}
+      </div>
+      <p className="faint" style={{ fontSize: 12.5, lineHeight: 1.5, marginTop: 14 }}>
+        Действия в карточке лида под нишу — скрыть лишние кнопки. Напр. если нет постоянных
+        клиентов и команды операторов: уберите «Регулярный» и «Назначить на».
+      </p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+        {HIDEABLE_ACTIONS.map(a => {
+          const on = !hiddenAct.includes(a.k)
+          return (
+            <label key={a.k} className={`chip ${on ? 'accent' : ''}`}
+                   style={{ cursor: 'pointer', padding: '6px 11px', opacity: on ? 1 : 0.55 }}>
+              <input type="checkbox" checked={on} onChange={() => toggleAct(a.k)}
+                     style={{ marginRight: 6, verticalAlign: 'middle' }} />
+              {a.label}
+            </label>
+          )
+        })}
+      </div>
+      {msg && <div className="faint" style={{ marginTop: 8, fontSize: 12 }}>{msg}</div>}
+    </div>
+  )
+}
+
+function FieldsCard() {
+  const [items, setItems] = useState<any[] | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [dirty, setDirty] = useState(false)
+  const [toast, setToast] = useState<{ text: string; err?: boolean } | null>(null)
+
+  const showToast = (text: string, err = false) => {
+    setToast({ text, err })
+    setTimeout(() => setToast(null), 4000)
+  }
+
+  const load = () => api.get<{ items: any[] }>('/custom-fields').then(r => setItems(r.items)).catch(() => { /* ignore */ })
+  useEffect(() => { void load() }, [])
+
+  if (!items) return null
+
+  const upd = (i: number, patch: any) => {
+    setItems(items.map((it, k) => (k === i ? { ...it, ...patch } : it)))
+    setDirty(true)
+  }
+  const remove = (i: number) => { setItems(items.filter((_, k) => k !== i)); setDirty(true) }
+  const add = () => { setItems([...items, { key: '', label: 'Новое поле', field_type: 'text', options: null, active: true }]); setDirty(true) }
+
+  const save = async () => {
+    setBusy(true)
+    try {
+      await api.post('/custom-fields', {
+        items: items.map(it => ({
+          key: it.key || undefined, label: it.label, field_type: it.field_type,
+          options: it.field_type === 'select'
+            ? (typeof it.options === 'string' ? it.options.split(',').map((s: string) => s.trim()).filter(Boolean) : it.options)
+            : null,
+          active: it.active,
+        })),
+      })
+      setDirty(false)
+      showToast('✅ Поля сохранены — появятся в карточках лидов')
+      await load()
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <div className="card">
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+        <b>📇 Поля лида (под вашу нишу)</b>
+        {dirty && <span className="chip warn" style={{ marginLeft: 10 }}>не сохранено</span>}
+        <div style={{ flex: 1 }} />
+        <button className="btn sm" onClick={add}>+ Поле</button>
+        <button className="btn sm primary" style={{ marginLeft: 8 }} onClick={save} disabled={busy || !dirty}>
+          {busy ? <span className="spin" /> : '💾 Сохранить'}
+        </button>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+        {items.length === 0 && <span className="faint" style={{ fontSize: 12.5 }}>Полей нет — добавьте («Бюджет», «Тип проекта»…) или примените пресет ниши выше</span>}
+        {items.map((it, i) => (
+          <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input value={it.label} onChange={e => upd(i, { label: e.target.value })} style={{ width: 220 }} />
+            <select value={it.field_type} onChange={e => upd(i, { field_type: e.target.value })} style={{ fontSize: 12.5 }}>
+              <option value="text">текст</option>
+              <option value="number">число</option>
+              <option value="select">список</option>
+            </select>
+            {it.field_type === 'select' && (
+              <input placeholder="варианты через запятую"
+                     value={Array.isArray(it.options) ? it.options.join(', ') : (it.options ?? '')}
+                     onChange={e => upd(i, { options: e.target.value })} style={{ flex: 1 }} />
+            )}
+            <button className="btn sm ghost" style={{ marginLeft: 'auto' }} onClick={() => remove(i)}>✕</button>
+          </div>
+        ))}
+      </div>
+      {toast && <div className={`toast ${toast.err ? 'err' : ''}`}>{toast.text}</div>}
+    </div>
+  )
+}
+
+/* ---------- Поведение бота (редактируемое) ---------- */
+
+function BehaviorCard() {
+  const [overrides, setOverrides] = useState<any>(null)
+  const [defaults, setDefaults] = useState<any>({})
+  const [busy, setBusy] = useState(false)
+  const [toast, setToast] = useState<{ text: string; err?: boolean } | null>(null)
+  const [dirty, setDirty] = useState(false)
+
+  const showToast = (text: string, err = false) => {
+    setToast({ text, err })
+    setTimeout(() => setToast(null), 4000)
+  }
+
+  useEffect(() => {
+    void api.get<any>('/behavior').then(r => {
+      setDefaults(r.defaults)
+      const merged = { ...r.defaults, ...r.overrides }
+      setOverrides(merged)
+      const tz = Number(merged.digest_tz_offset ?? 7)
+      if (Number.isFinite(tz)) setBizTzOffset(tz)
+    }).catch(() => { /* ignore */ })
+  }, [])
+
+  if (!overrides) return null
+
+  const upd = (k: string, v: any) => { setOverrides({ ...overrides, [k]: v }); setDirty(true) }
+
+  const save = async () => {
+    setBusy(true)
+    try {
+      const values: any = {}
+      for (const k of Object.keys(defaults)) {
+        values[k] = overrides[k] === defaults[k] || overrides[k] === '' ? null : overrides[k]
+      }
+      // числовые поля приводим
+      for (const k of ['nudge_after_hours', 'nudge_max_hours']) {
+        if (values[k] != null) values[k] = parseFloat(values[k])
+      }
+      if (values.silence_lost_days != null) values.silence_lost_days = parseInt(values.silence_lost_days, 10)
+      if (values.silence_lost_warm_days != null) values.silence_lost_warm_days = parseInt(values.silence_lost_warm_days, 10)
+      for (const k of ['digest_hour', 'digest_tz_offset', 'send_window_start', 'send_window_end']) {
+        if (values[k] != null) values[k] = parseInt(values[k], 10)
+      }
+      await api.post('/behavior', { values })
+      setDirty(false)
+      showToast('✅ Сохранено — бот подхватит в течение минуты (следующий крон-проход)')
+    } catch (e: any) { showToast(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+
+  const row: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }
+
+  return (
+    <div className="card">
+      <div style={{ display: 'flex', alignItems: 'center' }}>
+        <b>⚡ Поведение бота — прогрев молчунов</b>
+        {dirty && <span className="chip warn" style={{ marginLeft: 10 }}>не сохранено</span>}
+        <div style={{ flex: 1 }} />
+        <button className="btn sm primary" onClick={save} disabled={busy || !dirty}>
+          {busy ? <span className="spin" /> : '💾 Сохранить'}
+        </button>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 12 }}>
+        <div style={{ ...row, paddingBottom: 10, borderBottom: '1px solid var(--border)' }}>
+          <span className="muted" style={{ width: 280 }}>🎯 Цель бота (к чему ведёт диалог):
+            <Help title="Цель бота" text="Главная настройка поведения. «Созвон» — текущий стиль: квалифицирует и зовёт на звонок. «Сбор заявок» — без созвонов, берёт контакты и бриф. «Консультация» — помогает, не давит. «Продажа» — называет цены и ведёт к предоплате. Применяется к новым ответам сразу." />
+          </span>
+          <select value={overrides.bot_goal ?? 'call'} onChange={e => upd('bot_goal', e.target.value)}>
+            <option value="call">📞 Вести на созвон (по умолчанию)</option>
+            <option value="collect_lead">📥 Собирать заявки (контакт + бриф)</option>
+            <option value="consult">💬 Консультировать, мягко передавать</option>
+            <option value="sale">💰 Вести к оплате/предоплате</option>
+          </select>
+        </div>
+        <div style={{ ...row, paddingBottom: 10, borderBottom: '1px solid var(--border)' }}>
+          <span className="muted" style={{ width: 280 }}>🕒 Часовой пояс бизнеса:
+            <Help title="Часовой пояс" text="В этом поясе панель показывает и задаёт ВСЕ времена: задачи, календарь, созвоны, дайджест. Пхукет = UTC+7 (это +4 к Москве). Меняйте, если работаете из другого города — времена пересчитаются сами." />
+          </span>
+          <span>UTC</span>
+          <input type="number" min={-12} max={14} step={1} value={overrides.digest_tz_offset ?? 7}
+                 onChange={e => { upd('digest_tz_offset', e.target.value); const n = Number(e.target.value); if (Number.isFinite(n)) setBizTzOffset(n) }}
+                 style={{ width: 72 }} />
+          <span className="faint" style={{ fontSize: 11 }}>Пхукет = +7 (это +4 к Москве)</span>
+        </div>
+        <label style={row}>
+          <input type="checkbox" checked={!!overrides.nudge_enabled}
+                 onChange={e => upd('nudge_enabled', e.target.checked)} />
+          Дожимать вовлечённого лида, если он замолчал (по шагам ниже; ответил — дожим прекращается сам)
+        </label>
+        <label style={row}>
+          <input type="checkbox" checked={overrides.nudge_draft_for_manual !== false}
+                 onChange={e => upd('nudge_draft_for_manual', e.target.checked)} />
+          Для лидов на РУЧНОМ ведении — готовить дожим как черновик на одобрение (бот не молчит и не пишет сам; черновик в «Одобри сейчас»)
+        </label>
+        <div style={row}>
+          <span className="muted" style={{ width: 280 }}>Каденция дожима (через сколько тишины):</span>
+          <select value={['', '1d', '2d', '3d', '1h,1d,3d'].includes(overrides.nudge_sequence ?? '') ? (overrides.nudge_sequence ?? '') : '__custom'}
+                  onChange={e => { if (e.target.value !== '__custom') upd('nudge_sequence', e.target.value || null) }}
+                  style={{ width: 200, marginRight: 8 }}>
+            <option value="">Один пинг</option>
+            <option value="1d">Раз в сутки</option>
+            <option value="2d">Раз в 2 суток</option>
+            <option value="3d">Раз в 3 суток</option>
+            <option value="1h,1d,3d">Через 1ч → 1д → 3д</option>
+            <option value="__custom">Свой формат →</option>
+          </select>
+          <input type="text" value={overrides.nudge_sequence ?? ''} placeholder="1h,1d,3d"
+                 onChange={e => upd('nudge_sequence', e.target.value || null)} style={{ width: 120 }} />
+        </div>
+        <div style={row}>
+          <span className="muted" style={{ width: 280 }}>Первый пинг через (часов тишины, если каденция пуста):</span>
+          <input type="number" min={0.5} step={0.5} value={overrides.nudge_after_hours}
+                 onChange={e => upd('nudge_after_hours', e.target.value)} style={{ width: 90 }} />
+        </div>
+        <div style={row}>
+          <span className="muted" style={{ width: 280 }}>Уже не пинговать после (часов):</span>
+          <input type="number" min={1} step={1} value={overrides.nudge_max_hours}
+                 onChange={e => upd('nudge_max_hours', e.target.value)} style={{ width: 90 }} />
+        </div>
+        <div style={{ ...row, flexWrap: 'wrap' }}>
+          <span className="muted" style={{ width: 280 }}>Окно отправки (по времени лида):</span>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <input type="checkbox" checked={overrides.send_window_enabled ?? true}
+                   onChange={e => upd('send_window_enabled', e.target.checked)} />
+            <span style={{ fontSize: 12.5 }}>не писать ночью</span>
+          </label>
+          <span style={{ marginLeft: 6 }}>с</span>
+          <input type="number" min={0} max={23} step={1} value={overrides.send_window_start ?? 9}
+                 onChange={e => upd('send_window_start', e.target.value)} style={{ width: 64 }} />
+          <span>до</span>
+          <input type="number" min={1} max={24} step={1} value={overrides.send_window_end ?? 21}
+                 onChange={e => upd('send_window_end', e.target.value)} style={{ width: 64 }} />
+          <span className="faint" style={{ fontSize: 11 }}>дожимы/напоминания вне окна сдвигаются на ближайшее утро</span>
+        </div>
+        <div style={{ ...row, alignItems: 'flex-start' }}>
+          <span className="muted" style={{ width: 280, paddingTop: 6 }}>Текст пинка (пусто = стандартный):</span>
+          <textarea value={overrides.nudge_text ?? ''} placeholder="Здравствуйте! Вы недавно интересовались — актуально ещё?.."
+                    onChange={e => upd('nudge_text', e.target.value || null)}
+                    style={{ flex: 1, minHeight: 50 }} />
+        </div>
+        <div style={row}>
+          <span className="muted" style={{ width: 280 }}>Считать лида потерянным после (дней тишины):</span>
+          <input type="number" min={1} step={1} value={overrides.silence_lost_days}
+                 onChange={e => upd('silence_lost_days', e.target.value)} style={{ width: 90 }} />
+          <span className="faint" style={{ fontSize: 11, marginLeft: 8 }}>стадия «в диалоге»</span>
+        </div>
+        <label style={row}>
+          <input type="checkbox" checked={!!overrides.silence_lost_extend_warm}
+                 onChange={e => upd('silence_lost_extend_warm', e.target.checked)} />
+          Уводить в «Не сложилось» и долго молчащих <b>квалифицированных</b> лидов и лидов с висящим <b>КП</b> (обратимо)
+        </label>
+        <div style={row}>
+          <span className="muted" style={{ width: 280 }}>↳ для «тёплых» стадий — порог тишины (дней):</span>
+          <input type="number" min={1} step={1} value={overrides.silence_lost_warm_days ?? 14}
+                 onChange={e => upd('silence_lost_warm_days', e.target.value)} style={{ width: 90 }} />
+          <span className="faint" style={{ fontSize: 11, marginLeft: 8 }}>консервативно; созвон/деньги/работа не трогаются</span>
+        </div>
+        <div style={row}>
+          <span className="muted" style={{ width: 280 }}>♻️ Возвращать проигранного через (дней, 0 = выкл):</span>
+          <input type="number" min={0} step={1} value={overrides.winback_after_days ?? 0}
+                 onChange={e => upd('winback_after_days', e.target.value)} style={{ width: 90 }} />
+          <span className="faint" style={{ fontSize: 11, marginLeft: 8 }}>
+            ставит задачу оператору по восстановимым причинам (цена/отложил/нет бюджета — не жёсткий отказ), одна попытка на лида
+          </span>
+        </div>
+        <div style={{ ...row, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+            <input type="checkbox" checked={!!overrides.digest_enabled}
+                   onChange={e => upd('digest_enabled', e.target.checked)} />
+            ☀️ Утренний дайджест в Telegram
+            <Help title="Дайджест" text="Каждое утро система сама присылает сводку: новые лиды, кого дожать сегодня, просроченные задачи + совет. Идёт в тот же Telegram-чат, куда падают уведомления о лидах." />
+          </label>
+          <span className="muted">в</span>
+          <input type="number" min={0} max={23} value={overrides.digest_hour}
+                 onChange={e => upd('digest_hour', e.target.value)} style={{ width: 64 }} />
+          <span className="muted">ч (UTC+{overrides.digest_tz_offset})</span>
+          <button className="btn sm" onClick={async () => {
+            try {
+              const r = await api.post<any>('/digest/test')
+              showToast(r.sent ? '📨 Дайджест отправлен в Telegram' : `Не отправлен: ${r.error}`, !r.sent)
+            } catch (e: any) { showToast(`Ошибка: ${e.message}`, true) }
+          }}>📨 Прислать сейчас</button>
+        </div>
+        <div style={{ ...row, alignItems: 'flex-start' }}>
+          <span className="muted" style={{ width: 280, paddingTop: 6 }}>🙅 Не считать лидами (через запятую):
+            <Help title="Исключения дайджеста" text="Имена/телефоны/почты, которые НЕ показывать как лидов и в «дожать сегодня»: ты сам, тестовые заявки, коллеги. Напр.: Александр Егоров, +79991234567" />
+          </span>
+          <textarea value={overrides.digest_exclude ?? ''} placeholder="Александр Егоров, +7999…, test@…"
+                    onChange={e => upd('digest_exclude', e.target.value)}
+                    style={{ flex: 1, minHeight: 42 }} />
+        </div>
+      </div>
+      {toast && <div className={`toast ${toast.err ? 'err' : ''}`}>{toast.text}</div>}
+    </div>
+  )
+}
+
+/* ---------- Авто-настройка из дампа (конфиг-агент, P4) ---------- */
+
+const NICHE_OPTIONS: Array<[string, string]> = [
+  ['cleaning_repair', 'Клининг + Ремонт'],
+  ['dentistry', 'Стоматология'],
+  ['fitness', 'Фитнес'],
+  ['realty', 'Недвижимость'],
+  ['online_school', 'Онлайн-школа'],
+  ['beauty', 'Салон красоты'],
+  ['web_studio', 'Веб-студия'],
+]
+
+function ConfigAgentCard() {
+  const [dump, setDump] = useState('')
+  const [url, setUrl] = useState('')
+  const [draft, setDraft] = useState<any>(null)
+  const [busy, setBusy] = useState(false)
+  const [toast, setToast] = useState<{ text: string; err?: boolean } | null>(null)
+  const show = (text: string, err = false) => { setToast({ text, err }); setTimeout(() => setToast(null), 6000) }
+
+  const generate = async () => {
+    if (!dump.trim() && !url.trim()) { show('Вставьте текст о компании или ссылку на сайт', true); return }
+    setBusy(true)
+    try {
+      const r = await api.post<{ draft: any }>('/onboarding/generate', { dump, url: url || undefined })
+      setDraft(r.draft || {})
+      show('✅ Черновик готов — проверьте и поправьте, затем «Применить»')
+    } catch (e: any) { show(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+  const apply = async () => {
+    if (!draft) return
+    setBusy(true)
+    try {
+      const r = await api.post<{ applied: any }>('/onboarding/apply', {
+        system_prompt: draft.system_prompt, kb_md: draft.kb_md,
+        preset_key: draft.preset_key || undefined, bot_goal: draft.bot_goal || undefined,
+      })
+      show(`✅ Применено: ${Object.keys(r.applied || {}).join(', ') || '—'}. Обновите вкладки «Мозг»/«Воронка».`)
+    } catch (e: any) { show(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+  const upd = (k: string, v: any) => setDraft({ ...draft, [k]: v })
+  const ta: React.CSSProperties = { width: '100%', minHeight: 90, fontSize: 13 }
+
+  return (
+    <div className="card">
+      <b>🪄 Авто-настройка из информации о компании
+        <Help title="Конфиг-агент" text="Вставьте всё о компании (текст с сайта, регламенты, прайс — или просто опишите) и/или ссылку. AI соберёт черновик: тон бота, базу знаний (услуги/цены/FAQ), подходящую воронку и цель. Проверьте, поправьте — и «Применить»." />
+      </b>
+      <p className="muted" style={{ margin: '4px 0 10px', fontSize: 12.5 }}>
+        «Вывалите» всё о компании — агент разложит по мозгам, знаниям и воронке. Потом поправите.
+      </p>
+      <textarea value={dump} onChange={e => setDump(e.target.value)} style={ta}
+                placeholder="Услуги, цены, как работаете, частые вопросы, регламенты… (можно копипастом с сайта)" />
+      <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+        <input value={url} onChange={e => setUrl(e.target.value)} style={{ flex: 1 }}
+               placeholder="Ссылка на сайт (опционально) — агент скачает" />
+        <button className="btn sm primary" onClick={generate} disabled={busy}>
+          {busy ? <span className="spin" /> : '🪄 Сгенерировать'}
+        </button>
+      </div>
+
+      {draft && (
+        <div style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {draft.summary && <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>🧩 {draft.summary}</p>}
+          {draft._parse_failed && <span className="chip warn">агент вернул текст не в формате — поправьте вручную ниже</span>}
+          <span className="muted" style={{ fontSize: 12 }}>Тон / мозг бота:</span>
+          <textarea value={draft.system_prompt || ''} onChange={e => upd('system_prompt', e.target.value)} style={ta} />
+          <span className="muted" style={{ fontSize: 12 }}>База знаний (услуги / цены / FAQ):</span>
+          <textarea value={draft.kb_md || ''} onChange={e => upd('kb_md', e.target.value)} style={{ ...ta, minHeight: 120 }} />
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <span className="muted" style={{ fontSize: 12 }}>Ниша:</span>
+            <select value={draft.preset_key || ''} onChange={e => upd('preset_key', e.target.value)}>
+              <option value="">— не менять —</option>
+              {NICHE_OPTIONS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
+            <span className="muted" style={{ fontSize: 12 }}>Цель:</span>
+            <select value={draft.bot_goal || ''} onChange={e => upd('bot_goal', e.target.value)}>
+              <option value="">— не менять —</option>
+              <option value="call">Созвон / визит</option>
+              <option value="collect_lead">Собрать заявку</option>
+              <option value="consult">Консультировать</option>
+              <option value="sale">Продажа</option>
+            </select>
+            <div style={{ flex: 1 }} />
+            <button className="btn sm primary" onClick={apply} disabled={busy}>✅ Применить</button>
+          </div>
+        </div>
+      )}
+      {toast && <div className={`toast ${toast.err ? 'err' : ''}`}>{toast.text}</div>}
+    </div>
+  )
+}
+
+/* ---------- Языки (P5) ---------- */
+
+const LANG_LABELS: Record<string, string> = {
+  ru: 'Русский', en: 'English', th: 'ไทย', my: 'မြန်မာ', uk: 'Українська', kk: 'Қазақша',
+}
+const LANG_ADDABLE: Array<[string, string]> = [
+  ['ru', 'Русский'], ['en', 'English'], ['th', 'ไทย (тайский)'], ['my', 'မြန်မာ (бирманский)'],
+]
+
+function LanguagesCard() {
+  const [langs, setLangs] = useState<string[]>([])
+  const [busy, setBusy] = useState(false)
+  const [toast, setToast] = useState<{ text: string; err?: boolean } | null>(null)
+  const show = (text: string, err = false) => { setToast({ text, err }); setTimeout(() => setToast(null), 4000) }
+
+  useEffect(() => {
+    void api.get<{ languages: string[] }>('/languages').then(r => setLangs(r.languages || [])).catch(() => { /* */ })
+  }, [])
+
+  const save = async (next: string[]) => {
+    setBusy(true)
+    try {
+      const r = await api.post<{ languages: string[] }>('/languages', { languages: next })
+      setLangs(r.languages || next)
+      show('✅ Сохранено')
+    } catch (e: any) { show(`Ошибка: ${e.detail ?? e.message}`, true) }
+    finally { setBusy(false) }
+  }
+  const add = (c: string) => { if (c && !langs.includes(c)) save([...langs, c]) }
+  const remove = (c: string) => { if (langs.length > 1) save(langs.filter(x => x !== c)) }
+
+  return (
+    <div className="card">
+      <b>🌐 Языки
+        <Help title="Языки" text="Языки, которые поддерживает система. Первый — основной (язык приветствия). В живом диалоге бот и так отвечает на языке клиента; список задаёт основной язык и набор для шаблонов напоминаний." />
+      </b>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginTop: 10 }}>
+        {langs.map((l, i) => (
+          <span key={l} className={`chip ${i === 0 ? 'ok' : ''}`}>
+            {LANG_LABELS[l] || l}{i === 0 ? ' · основной' : ''}
+            {langs.length > 1 && (
+              <button className="btn sm ghost" style={{ marginLeft: 6, padding: '0 5px' }}
+                      onClick={() => remove(l)} disabled={busy}>×</button>
+            )}
+          </span>
+        ))}
+        <select value="" disabled={busy} style={{ fontSize: 12.5 }}
+                onChange={e => { const v = e.target.value; if (v) { add(v); e.currentTarget.value = '' } }}>
+          <option value="">+ добавить язык…</option>
+          {LANG_ADDABLE.filter(([k]) => !langs.includes(k)).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+        </select>
+      </div>
+      {toast && <div className={`toast ${toast.err ? 'err' : ''}`}>{toast.text}</div>}
+    </div>
+  )
+}

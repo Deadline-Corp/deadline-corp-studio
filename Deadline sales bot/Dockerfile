@@ -1,6 +1,17 @@
 # ============================================================
 # Deadline Sales Bot — production image for Railway
 # ============================================================
+
+# ---- Stage 1: Admin UI (React SPA → static dist) ----
+# Отдельный stage: node не попадает в финальный образ, только dist.
+FROM node:20-alpine AS admin-ui
+WORKDIR /ui
+COPY admin-ui/package.json admin-ui/package-lock.json ./
+RUN npm ci
+COPY admin-ui/ ./
+RUN npm run build
+
+# ---- Stage 2: Python backend ----
 FROM python:3.11-slim
 
 # System deps for sentence-transformers / chroma
@@ -21,6 +32,9 @@ RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTr
 
 # Copy project files
 COPY . .
+
+# Admin UI SPA из build-stage → FastAPI отдаёт его на /admin/ui (StaticFiles)
+COPY --from=admin-ui /ui/dist ./admin-ui/dist
 
 # Build the Chroma index at image-build time so the first request is fast
 # (re-runs whenever kb/ contents change)

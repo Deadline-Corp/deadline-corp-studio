@@ -107,6 +107,7 @@ def apply_signals_on_turn(
     message_type: str,
     tenant_config: dict,
     silent_days_before_this_turn: float = 0.0,
+    is_returning_customer: bool = False,
 ) -> SignalUpdate:
     """Update customer.interaction_type / lead_score / lead_temperature for this turn.
 
@@ -119,7 +120,11 @@ def apply_signals_on_turn(
     scoring_cfg = (tenant_config or {}).get("scoring", {}) or {}
 
     lead_msg_count = _count_lead_messages(recent_messages)
-    is_first_touch = (lead_msg_count <= 1)
+    # #8: возвращающийся клиент (есть прошлые user-сообщения в ДРУГИХ диалогах) — это НЕ
+    # первое касание, даже если в ТЕКУЩЕМ диалоге сейчас одно сообщение. Иначе
+    # compute_initial_score сбрасывал накопленный lead_score на базовый, а interaction_type
+    # (set-once) переустанавливался у постоянных/мультиканальных лидов → скор «прыгал».
+    is_first_touch = (lead_msg_count <= 1) and not is_returning_customer
 
     old_interaction_type = customer.interaction_type or "P2"
     old_score = customer.lead_score or 0

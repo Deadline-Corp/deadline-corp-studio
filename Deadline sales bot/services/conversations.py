@@ -17,7 +17,7 @@ This module is dormant until Day 4 — main.py still uses `SESSIONS` dict.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
@@ -48,30 +48,57 @@ def get_or_create_conversation(
          logical conversation per customer-channel.
       3. If nothing found → create a new OPEN conversation.
     """
-    if channel_conversation_id:
-        existing = db.execute(
-            select(Conversation).where(
-                Conversation.customer_id == customer_id,
-                Conversation.channel == channel,
-                Conversation.channel_conversation_id == channel_conversation_id,
-                Conversation.status == ConversationStatusEnum.OPEN.value,
-            )
-        ).scalar_one_or_none()
-        if existing is not None:
+    # Продолжаем ТОТ ЖЕ тред. Раньше искали только OPEN → после handoff диалог
+    # становился HANDED_OFF, и СЛЕДУЮЩЕЕ сообщение того же чата плодило НОВЫЙ
+    # conversation (+ новый forum-топик «[ПОВТОРНЫЙ]») с ПУСТОЙ историей — бот
+    # «терял память», переспрашивал, дублировал. Теперь продолжаем недавний
+    # не-терминальный диалог и реоткрываем его. ARCHIVED/ABANDONED не трогаем —
+    # их архивирует recall намеренно (возврат после долгой паузы → новый тред +
+    # приветствие). RESUME_WINDOW — насколько «недавним» считаем продолжение.
+    RESUME_WINDOW = timedelta(days=3)
+    resumable = (
+        ConversationStatusEnum.OPEN.value,
+        ConversationStatusEnum.HANDED_OFF.value,
+        ConversationStatusEnum.RESOLVED.value,
+    )
+    base = select(Conversation).where(
+        Conversation.customer_id == customer_id,
+        Conversation.channel == channel,
+        Conversation.status.in_(resumable),
+    )
+    # WhatsApp: один человек приходит под РАЗНЫМИ ключами треда (рекламный @lid и раскрытый
+    # номер) → фильтр по ключу плодит ПАРАЛЛЕЛЬНЫЕ треды на одного (реальный кейс: 1 клиент =
+    # 42 диалога, бот «терял память» и пере-передавал как нового). Для WhatsApp консолидируем
+    # по КЛИЕНТУ (любой ключ) — берём недавний тред. Telegram/IG/сайт: ключ стабилен,
+    # фильтруем по нему как прежде.
+    _wa = (channel or "").lower() == "whatsapp"
+    if channel_conversation_id and not _wa:
+        base = base.where(Conversation.channel_conversation_id == channel_conversation_id)
+    existing = db.execute(
+        base.order_by(desc(Conversation.created_at)).limit(1)
+    ).scalar_one_or_none()
+
+    if existing is not None:
+        # WhatsApp: переносим тред на текущий ключ (последний адрес, где пишет клиент —
+        # @lid → раскрытый номер и наоборот), чтобы исходящие шли туда и не плодился второй.
+        if _wa and channel_conversation_id and existing.channel_conversation_id != channel_conversation_id:
+            existing.channel_conversation_id = channel_conversation_id
+            db.flush()
+        if existing.status == ConversationStatusEnum.OPEN.value:
             return existing
-    else:
-        existing = db.execute(
-            select(Conversation)
-            .where(
-                Conversation.customer_id == customer_id,
-                Conversation.channel == channel,
-                Conversation.status == ConversationStatusEnum.OPEN.value,
+        # Закрыт handoff'ом/resolved: продолжаем тем же тредом, если недавно.
+        last = existing.last_message_at
+        if last is not None and last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        if last is None or last >= datetime.now(timezone.utc) - RESUME_WINDOW:
+            existing.status = ConversationStatusEnum.OPEN.value
+            db.flush()
+            log.info(
+                "resumed conversation %s (reopened) for (%s, chat=%s)",
+                existing.id, channel, channel_conversation_id,
             )
-            .order_by(desc(Conversation.created_at))
-            .limit(1)
-        ).scalar_one_or_none()
-        if existing is not None:
             return existing
+        # Старый закрытый диалог — это новое обращение, создаём новый ниже.
 
     conversation = Conversation(
         customer_id=customer_id,
@@ -213,6 +240,29 @@ def set_operator_takeover(
     if conversation is None:
         raise ValueError(f"Conversation {conversation_id} not found")
     conversation.operator_takeover = enabled
+    if enabled:
+        # КАСКАД ПЕРЕХВАТА (I4): раньше ставился ТОЛЬКО флаг — wa_autonomous не гас,
+        # созревающие bot-дожимы не отменялись, run_due_followups их не проверял →
+        # бот продолжал дожимать лида, которого человек лично взял на себя (прямое
+        # противоречие статуса «ты ведёшь» и поведения). Теперь перехват глушит
+        # автопилот И отменяет созревающие проактивные bot-задачи этого диалога.
+        # Обратимо (status→cancelled). НЕ трогаем call_reminder (созвон всё равно
+        # состоится) и operator_callback (это человеческие задачи).
+        conversation.wa_autonomous = False
+        from db.models import ScheduledAction
+        from sqlalchemy import update as _update
+        db.execute(
+            _update(ScheduledAction)
+            .where(
+                ScheduledAction.conversation_id == conversation_id,
+                ScheduledAction.executor == "bot",
+                # followup_message — реальный проактивный bot-дожим/нудж (warming идёт
+                # человеку через operator_task, bot-строки warming_touch не создаются).
+                ScheduledAction.action_type == "followup_message",
+                ScheduledAction.status.in_(("pending", "processing")),
+            )
+            .values(status="cancelled")
+        )
     db.flush()
     return conversation
 

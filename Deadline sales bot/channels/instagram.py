@@ -77,6 +77,18 @@ def parse_instagram_webhook(payload: dict) -> Optional[NormalizedMessage]:
             msg = event.get("message", {})
             text = (msg.get("text") or "").strip()
             if not text:
+                # Голосовое/медиа без текста: РАНЬШЕ → continue → бот молча игнорил лида
+                # с голосовым в Instagram (тихая потеря). Теперь отдаём заглушку, чтобы
+                # бот ответил и попросил текст, а не пропадал.
+                if msg.get("attachments"):
+                    return NormalizedMessage(
+                        external_id=str(igsid),
+                        content="[голосовое/вложение в Instagram — напишите, пожалуйста, текстом]",
+                        channel_conversation_id=str(igsid),
+                        message_type="dm",
+                        extra_meta=({"mid": str(msg.get("mid")), "source": "attachment"}
+                                    if msg.get("mid") else {"source": "attachment"}),
+                    )
                 continue
 
             return NormalizedMessage(
@@ -84,6 +96,8 @@ def parse_instagram_webhook(payload: dict) -> Optional[NormalizedMessage]:
                 content=text,
                 channel_conversation_id=str(igsid),
                 message_type="dm",
+                # mid — нативный id для идемпотентности (ретрай Meta не дублирует).
+                extra_meta=({"mid": str(msg.get("mid"))} if msg.get("mid") else None),
             )
 
     return None

@@ -127,6 +127,7 @@ async def transcribe_voice(
     if language:
         data["language"] = language
 
+    transcript = None
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             r = await client.post(
@@ -140,16 +141,64 @@ async def transcribe_voice(
         # want it lingering until the next natural GC cycle while the
         # subsequent RAG/LLM pipeline allocates more memory.
         del files, data
-        if r.status_code != 200:
+        if r.status_code == 200:
+            # response_format=text → body is plain text, not JSON
+            transcript = (r.text or "").strip() or None
+        else:
             log.warning(f"groq transcribe {r.status_code}: {r.text[:200]}")
-            return None
-        # response_format=text → body is plain text, not JSON
-        transcript = r.text.strip()
-        if not transcript:
-            return None
-        return transcript
     except Exception as e:
         log.error(f"groq transcribe exception: {e}")
+    if transcript:
+        return transcript
+
+    # FALLBACK → Gemini (умеет распознавать аудио). Ключ GOOGLE_API_KEY уже на проде
+    # (основной LLM), новый не нужен. Спасает, когда Groq мёртв/лимит/сбой — голос лида
+    # не теряется (владелец: «бот ОБЯЗАН распознавать голос»). Лениво берём ключ из
+    # settings (import внутри функции — без циклического импорта на загрузке модуля).
+    try:
+        import main as _m
+        gkey = getattr(_m.settings, "google_api_key", None)
+        gmodel = getattr(_m.settings, "gemini_model", None) or "gemini-2.5-flash"
+        if gkey:
+            log.info("groq STT не сработал → fallback на Gemini-аудио")
+            gtxt = await _transcribe_gemini(audio, gkey, gmodel)
+            if gtxt:
+                return gtxt
+    except Exception as e:  # noqa: BLE001
+        log.error(f"gemini STT fallback exception: {e}")
+    return None
+
+
+async def _transcribe_gemini(
+    audio: bytes, api_key: str, model: str, mime: str = "audio/ogg",
+) -> Optional[str]:
+    """Fallback-STT через Gemini generateContent (inline-аудio). Возвращает дословный
+    текст или None. Gemini принимает audio/ogg(opus) напрямую (наш формат со всех каналов)."""
+    if not api_key or not audio:
+        return None
+    import base64 as _b64
+    url = (f"https://generativelanguage.googleapis.com/v1beta/models/{model}"
+           f":generateContent?key={api_key}")
+    body = {
+        "contents": [{"parts": [
+            {"text": "Транскрибируй это голосовое сообщение ДОСЛОВНО. Верни ТОЛЬКО "
+                     "распознанный текст — без кавычек, пояснений и префиксов."},
+            {"inline_data": {"mime_type": mime, "data": _b64.b64encode(audio).decode("ascii")}},
+        ]}],
+        "generationConfig": {"temperature": 0},
+    }
+    try:
+        async with httpx.AsyncClient(timeout=45) as client:
+            r = await client.post(url, json=body)
+        if r.status_code != 200:
+            log.warning(f"gemini transcribe {r.status_code}: {r.text[:200]}")
+            return None
+        data = r.json()
+        parts = (((data.get("candidates") or [{}])[0].get("content") or {}).get("parts") or [])
+        txt = " ".join(p.get("text", "") for p in parts).strip()
+        return txt or None
+    except Exception as e:  # noqa: BLE001
+        log.error(f"gemini transcribe exception: {e}")
         return None
 
 
@@ -281,6 +330,33 @@ async def send_telegram_reply(token: str, chat_id: str, text: str) -> bool:
         return True
     except Exception as e:
         log.error(f"telegram sendMessage exception: {e}")
+        return False
+
+
+async def send_telegram_document(
+    token: str, chat_id: str, filename: str, data: bytes,
+    caption: Optional[str] = None,
+) -> bool:
+    """Отправить файл (бэкап БД) владельцу в Telegram через sendDocument (multipart).
+    Telegram хранит файл — это и есть offsite-копия. Лимит файла 50 МБ."""
+    if not token or not chat_id or not data:
+        return False
+    files = {"document": (filename, data, "application/gzip")}
+    payload: dict = {"chat_id": str(chat_id)}
+    if caption:
+        payload["caption"] = caption[:1024]
+    try:
+        async with httpx.AsyncClient(timeout=120) as client:
+            r = await client.post(
+                f"{TELEGRAM_API_BASE}/bot{token}/sendDocument",
+                data=payload, files=files,
+            )
+        if r.status_code != 200:
+            log.warning(f"sendDocument {r.status_code}: {r.text[:200]}")
+            return False
+        return True
+    except Exception as e:
+        log.error(f"sendDocument exception: {e}")
         return False
 
 

@@ -181,12 +181,14 @@ class CRMAdapter(ABC):
     provider_name: str = "abstract"
 
     @abstractmethod
-    async def upsert_contact(self, lead: Lead) -> str:
+    async def upsert_contact(self, lead: Lead, known_id: Optional[str] = None) -> str:
         """Create or update a contact. Returns the CRM-side contact id.
 
         Implementations should dedup by lead.identity_keys (email, phone,
         tg_handle) before creating a new contact, so the same person from
         different channels lands on one record.
+
+        known_id: если задан — обновлять контакт по этому id (минуя поиск).
         """
 
     @abstractmethod
@@ -196,6 +198,15 @@ class CRMAdapter(ABC):
         On first run, the adapter may need to auto-create the pipeline +
         custom properties — driven by tenant config.crm.auto_create_pipeline.
         """
+
+    async def find_open_deal_for_contact(self, contact_id: Optional[str]) -> Optional[str]:
+        """Вернуть id ОТКРЫТОЙ сделки контакта (не закрытой won/lost) или None.
+
+        Дедуп #2: один клиент = одна активная сделка. Перед созданием новой
+        сделки воркер зовёт это; если открытая уже есть — переиспользует её
+        вместо плодения «2 карточек». Дефолт — None (адаптеры без поддержки
+        просто всегда создают новую, как раньше)."""
+        return None
 
     @abstractmethod
     async def update_deal_stage(
@@ -233,6 +244,21 @@ class CRMAdapter(ABC):
     async def complete_task(self, task_id: str) -> bool:
         """Mark a CRM task COMPLETED (закрыть зеркальную задачу после
         самоисполнения ботом). Default no-op — переопределяется в адаптере."""
+        return False
+
+    async def update_task(self, task_id: str, subject=None, body=None) -> bool:
+        """Дополнить задачу (тема/тело). Default no-op — переопределяется в адаптере."""
+        return False
+
+    async def list_tasks_for_deal(self, deal_id: str) -> list:
+        """Задачи сделки [{id, subject}]. Default — пусто; переопределяется в адаптере."""
+        return []
+
+    async def merge_contacts(self, primary_id: str, secondary_id: str) -> bool:
+        """Слить два контакта в CRM в один (primary выживает, secondary
+        вливается). Нужно когда два наших Postgres-кастомера склеились в один
+        (общий email / deep-link), а в CRM остались две карточки на человека.
+        Default no-op — переопределяется в адаптере, поддерживающем merge."""
         return False
 
     @abstractmethod

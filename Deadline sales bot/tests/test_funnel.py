@@ -163,6 +163,39 @@ class TestDecideOnSilence:
     def test_under_threshold_no_op(self):
         assert not decide_on_silence("in_dialog", 5, 7).should_transition
 
+    # --- extend_warm: молчун→lost на тёплых стадиях (qualified/proposal), default OFF ---
+
+    def test_extend_warm_off_by_default_qualified(self):
+        # Регрессия: без extend_warm квалифицированный молчун НЕ уходит в lost.
+        assert not decide_on_silence("qualified", 30, 7).should_transition
+
+    def test_extend_warm_qualified_lost(self):
+        d = decide_on_silence("qualified", 14, 7, extend_warm=True, warm_threshold_d=14)
+        assert d.should_transition and d.target_stage == "lost"
+        assert d.lost_reason == "delayed"
+
+    def test_extend_warm_proposal_lost(self):
+        d = decide_on_silence("proposal", 20, 7, extend_warm=True, warm_threshold_d=14)
+        assert d.target_stage == "lost"
+
+    def test_extend_warm_under_warm_threshold_no_op(self):
+        assert not decide_on_silence(
+            "qualified", 13, 7, extend_warm=True, warm_threshold_d=14
+        ).should_transition
+
+    def test_extend_warm_never_touches_money_legal_call_stages(self):
+        # КРИТИЧНО: деньги/юр/созвон/работа НИКОГДА не авто-проигрываются по тишине,
+        # даже с extend_warm — там есть обязательство/бронь, решает оператор.
+        for stage in ("nda", "on_call", "tz_approved", "prepayment", "in_work"):
+            assert not decide_on_silence(
+                stage, 99, 7, extend_warm=True, warm_threshold_d=14
+            ).should_transition, f"{stage} must NOT auto-lose even with extend_warm"
+
+    def test_extend_warm_in_dialog_uses_base_threshold_not_warm(self):
+        # in_dialog не зависит от warm-порога — всегда базовый порог.
+        d = decide_on_silence("in_dialog", 8, 7, extend_warm=True, warm_threshold_d=99)
+        assert d.target_stage == "lost"
+
 
 class TestDecideOnHardStop:
     def test_active_stage_loses(self):

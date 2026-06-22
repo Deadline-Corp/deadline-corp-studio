@@ -16,6 +16,7 @@ when the migration to /message lands.
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Optional
 
 from langchain_core.documents import Document
@@ -30,20 +31,35 @@ log = logging.getLogger(__name__)
 
 EMBEDDING_MODEL = "BAAI/bge-m3"
 
+# Стабильность памяти/CPU (Railway, маленький контейнер): ограничиваем число
+# потоков torch — иначе bge-m3 на CPU хватает ВСЕ ядра → CPU/мем-стерв, голодает
+# event-loop. 1 поток = предсказуемо и достаточно для лид-бота.
+try:
+    import torch as _torch
+    _torch.set_num_threads(1)
+except Exception:  # noqa: BLE001
+    pass
+
 # Lazy singleton — load once, reuse across requests
 _EMBEDDER: Optional[HuggingFaceEmbeddings] = None
+# Сериализуем эмбеддинг: только ОДИН инференс bge-m3 одновременно → пик памяти
+# предсказуем (а не N×тензоры при параллельных запросах). Вызовы идут из to_thread,
+# поэтому обычный threading.Lock корректен.
+_EMBED_LOCK = threading.Lock()
 
 
 def _get_embedder() -> HuggingFaceEmbeddings:
     """Return cached HuggingFaceEmbeddings, loading on first call."""
     global _EMBEDDER
     if _EMBEDDER is None:
-        log.info(f"Loading {EMBEDDING_MODEL} (first call — ~3-5s)...")
-        _EMBEDDER = HuggingFaceEmbeddings(
-            model_name=EMBEDDING_MODEL,
-            model_kwargs={"device": "cpu"},
-            encode_kwargs={"normalize_embeddings": True},
-        )
+        with _EMBED_LOCK:
+            if _EMBEDDER is None:  # double-check под локом
+                log.info(f"Loading {EMBEDDING_MODEL} (first call — ~3-5s)...")
+                _EMBEDDER = HuggingFaceEmbeddings(
+                    model_name=EMBEDDING_MODEL,
+                    model_kwargs={"device": "cpu"},
+                    encode_kwargs={"normalize_embeddings": True},
+                )
     return _EMBEDDER
 
 
@@ -59,7 +75,8 @@ def similarity_search(query: str, k: int = 4) -> list[Document]:
         Empty list if kb_chunks is empty.
     """
     embedder = _get_embedder()
-    query_vec = embedder.embed_query(query)
+    with _EMBED_LOCK:  # один инференс bge-m3 за раз — предсказуемый пик памяти
+        query_vec = embedder.embed_query(query)
 
     with session_scope() as db:
         # pgvector exposes .cosine_distance() on the Vector column type.
