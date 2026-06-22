@@ -160,6 +160,8 @@ export function Brain() {
         )}
       </div>
 
+      <KbInsights kbSources={kbSources} showToast={showToast} />
+
       {/* ---- База знаний ---- */}
       <div className="card" style={{ marginBottom: 14 }}>
         <b>📚 База знаний</b>
@@ -533,6 +535,162 @@ function KbSourceRow({ source, chunks, busy, onDeleteSource, showToast }: {
               </div>
             )
           })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ---------- Покрытие и здоровье базы знаний ----------
+   «Покрытие» — что бот знает о компании и где дыры (из имён источников, без бэкенда).
+   «Здоровье» — по кнопке тянет все чанки, считает дубли/размеры на клиенте. */
+const KB_TOPICS: { label: string; kw: string[]; multi?: boolean }[] = [
+  { label: 'Прайс', kw: ['pric', 'прайс', 'цен'] },
+  { label: 'FAQ', kw: ['faq', 'вопрос'] },
+  { label: 'Кейсы', kw: ['case', 'кейс'], multi: true },
+  { label: 'Услуги: веб', kw: ['services_web', 'web', 'сайт'] },
+  { label: 'Услуги: авто', kw: ['automation', 'авто'] },
+  { label: 'Услуги: AI', kw: ['_ai', 'нейро', 'ии'] },
+  { label: 'Процесс работы', kw: ['process', 'процесс', 'этап'] },
+  { label: 'О компании', kw: ['about', 'company', 'site', 'компани'] },
+  { label: 'Отзывы', kw: ['testimonial', 'review', 'отзыв'] },
+  { label: 'Передача (handoff)', kw: ['handoff', 'передач'] },
+]
+const KB_GAPS: { label: string; kw: string[] }[] = [
+  { label: 'Возражения', kw: ['objection', 'возражен'] },
+  { label: 'Гарантии / условия', kw: ['guarantee', 'warrant', 'гарант', 'услови'] },
+  { label: 'Поддержка / абонплата', kw: ['support', 'поддержк', 'абон'] },
+  { label: 'Договор / оплата', kw: ['contract', 'payment', 'договор', 'оплат', 'рассроч'] },
+]
+
+type KbHealth = {
+  total: number; min: number; avg: number; max: number; tiny: number
+  nearDup: number; dupPairs: string[]
+}
+
+function Stat({ label, value, tone }: { label: string; value: string | number; tone?: string }) {
+  return (
+    <div style={{ background: 'var(--panel-2)', borderRadius: 8, padding: '8px 10px' }}>
+      <div style={{ fontSize: 11.5, color: 'var(--text-dim)' }}>{label}</div>
+      <div style={{ fontSize: 18, fontWeight: 600, color: tone }}>{value}</div>
+    </div>
+  )
+}
+
+function KbInsights({ kbSources, showToast }: {
+  kbSources: { source: string; chunks: number }[]
+  showToast: (t: string, err?: boolean) => void
+}) {
+  const [health, setHealth] = useState<KbHealth | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  const has = (kw: string[]) => kbSources.some(s => kw.some(k => s.source.toLowerCase().includes(k)))
+  const countMatch = (kw: string[]) => kbSources.filter(s => kw.some(k => s.source.toLowerCase().includes(k))).length
+  const totalChunks = kbSources.reduce((a, s) => a + s.chunks, 0)
+  const covered = KB_TOPICS.filter(t => has(t.kw))
+  const gaps = KB_GAPS.filter(g => !has(g.kw))
+
+  const runHealth = async () => {
+    if (busy || kbSources.length === 0) return
+    setBusy(true)
+    try {
+      const all: { src: string; idx: number; text: string }[] = []
+      for (const s of kbSources) {
+        const r = await api.get<{ chunks: { index: number; content: string }[] }>(
+          `/kb/${encodeURIComponent(s.source)}/chunks`)
+        r.chunks.forEach(c => all.push({ src: s.source, idx: c.index, text: c.content || '' }))
+      }
+      const sizes = all.map(c => c.text.length).filter(n => n > 0)
+      const wordSet = (t: string) => new Set(
+        t.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(w => w.length > 3))
+      const sets = all.map(c => wordSet(c.text))
+      let nearDup = 0
+      const dupPairs: string[] = []
+      if (all.length <= 600) {  // O(n²) — безопасно на сотнях чанков, не на тысячах
+        for (let i = 0; i < all.length; i++) {
+          for (let j = i + 1; j < all.length; j++) {
+            const a = sets[i], b = sets[j]
+            if (!a.size || !b.size) continue
+            let inter = 0
+            a.forEach(w => { if (b.has(w)) inter++ })
+            const jac = inter / (a.size + b.size - inter)
+            if (jac > 0.8) {
+              nearDup++
+              if (dupPairs.length < 6) dupPairs.push(`${all[i].src}#${all[i].idx} ~ ${all[j].src}#${all[j].idx}`)
+            }
+          }
+        }
+      }
+      setHealth({
+        total: all.length,
+        min: sizes.length ? Math.min(...sizes) : 0,
+        avg: sizes.length ? Math.round(sizes.reduce((a, b) => a + b, 0) / sizes.length) : 0,
+        max: sizes.length ? Math.max(...sizes) : 0,
+        tiny: sizes.filter(x => x < 120).length, nearDup, dupPairs,
+      })
+    } catch { showToast('Не удалось проверить базу', true) } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="card" style={{ marginBottom: 14 }}>
+      <b>🩺 Покрытие и здоровье базы</b>
+      <p className="muted" style={{ margin: '4px 0 10px', fontSize: 12.5 }}>
+        Что бот знает о вас и где дыры. {kbSources.length} источников · {totalChunks} фактов.
+      </p>
+
+      {covered.length > 0 && (
+        <>
+          <div style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 6 }}>✓ покрыто</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {covered.map(t => (
+              <span key={t.label} className="chip" style={{ background: 'var(--ok-soft)', color: 'var(--ok)' }}>
+                {t.label}{t.multi ? ` · ${countMatch(t.kw)}` : ''}
+              </span>
+            ))}
+          </div>
+        </>
+      )}
+
+      {gaps.length > 0 && (
+        <>
+          <div style={{ fontSize: 12, color: 'var(--text-dim)', margin: '12px 0 6px' }}>⚠ пробелы — нет отдельного блока</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {gaps.map(g => (
+              <span key={g.label} className="chip" style={{ background: 'var(--warn-soft)', color: 'var(--warn)' }}>{g.label}</span>
+            ))}
+          </div>
+          <p className="faint" style={{ fontSize: 11.5, marginTop: 6 }}>
+            Добавьте документ по теме-пробелу ниже — бот начнёт отвечать на эти вопросы сам, не дёргая вас.
+          </p>
+        </>
+      )}
+
+      <div style={{ borderTop: '1px solid var(--border)', margin: '12px 0 10px' }} />
+      {!health ? (
+        <button className="btn sm" onClick={runHealth} disabled={busy || kbSources.length === 0}>
+          {busy ? <span className="spin" /> : '🔍 Проверить базу на дубли и качество'}
+        </button>
+      ) : (
+        <div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(86px, 1fr))', gap: 8 }}>
+            <Stat label="чанков" value={health.total} />
+            <Stat label="дублей" value={health.nearDup} tone={health.nearDup > 0 ? 'var(--warn)' : 'var(--ok)'} />
+            <Stat label="крошечных" value={health.tiny} tone={health.tiny > 0 ? 'var(--warn)' : undefined} />
+            <Stat label="размер" value={`${health.min}–${health.max}`} />
+            <Stat label="средний" value={health.avg} />
+          </div>
+          {health.dupPairs.length > 0 && (
+            <div style={{ marginTop: 10 }}>
+              <div style={{ fontSize: 12, color: 'var(--warn)', marginBottom: 4 }}>Похожие чанки (кандидаты объединить):</div>
+              {health.dupPairs.map((p, i) => (
+                <div key={i} className="faint" style={{ fontSize: 11.5, fontFamily: 'var(--mono)' }}>{p}</div>
+              ))}
+            </div>
+          )}
+          {health.nearDup === 0 && health.tiny === 0 && (
+            <div style={{ fontSize: 12.5, color: 'var(--ok)', marginTop: 10 }}>✓ База чистая — дублей и мусорных чанков нет.</div>
+          )}
+          <button className="btn sm ghost" onClick={runHealth} disabled={busy} style={{ marginTop: 10 }}>↻ Перепроверить</button>
         </div>
       )}
     </div>
